@@ -268,9 +268,11 @@ export const ChatBox = ({
   const connectorsDropdownTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolModalRef = useRef<HTMLDivElement | null>(null); // Ref for the tool modal itself
   const [toolModalPosition, setToolModalPosition] = useState<{ top: number; left: number } | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools";
+  const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId";
 
   // Helper functions for localStorage operations
   const loadToolSelectionsFromStorage = (): Record<string, Set<string>> => {
@@ -362,29 +364,65 @@ export const ChatBox = ({
   ]);
 
   useEffect(() => {
-    const fetchConnectors = async () => {
+    const loadInitialData = async () => {
+      let processedConnectors: FetchedConnector[] = [];
       try {
         const response = await api.admin.connectors.all.$get(undefined, { credentials: "include" });
         const data = await response.json();
-
         if (Array.isArray(data)) {
-          const processedConnectors = data.map((conn: any) => ({
+          processedConnectors = data.map((conn: any) => ({
             ...conn,
             displayName: conn.config?.name || conn.app || conn.id,
           }));
-          setAllConnectors(processedConnectors);
         } else {
           console.error("Fetched connectors data is not an array:", data);
-          setAllConnectors([]);
         }
       } catch (error) {
         console.error("Error fetching connectors:", error);
-        setAllConnectors([]);
       }
+      
+      setAllConnectors(processedConnectors);
+      
+      const storedMcpId = localStorage.getItem(SELECTED_MCP_CONNECTOR_ID_KEY);
+      if (storedMcpId && processedConnectors.length > 0) {
+        const connectorExists = processedConnectors.find(c => c.id === storedMcpId && c.type === ConnectorType.MCP);
+        if (connectorExists) {
+          setSelectedConnectorId(storedMcpId);
+        } else {
+          // If stored ID is invalid (not found or not MCP), remove it.
+          localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY);
+        }
+      }
+      setInitialLoadComplete(true); // Mark initial load as complete
     };
 
-    fetchConnectors();
-  }, []);
+    loadInitialData();
+  }, []); // Empty dependency array ensures this runs once on mount
+
+  // useEffect to save selected MCP connector ID
+  useEffect(() => {
+    if (!initialLoadComplete) { // Don't run save logic during initial load phase
+      return;
+    }
+
+    if (selectedConnectorId) {
+      // Only proceed if allConnectors has been populated.
+      if (allConnectors.length > 0) {
+        const connector = allConnectors.find(c => c.id === selectedConnectorId);
+        if (connector && connector.type === ConnectorType.MCP) {
+          localStorage.setItem(SELECTED_MCP_CONNECTOR_ID_KEY, selectedConnectorId);
+        } else {
+          // If the selected connector is not an MCP, or not found, remove the key.
+          localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY);
+        }
+      }
+      // If allConnectors is not yet populated (should not happen if initialLoadComplete is true),
+      // this effect will re-run when allConnectors changes.
+    } else {
+      // If selectedConnectorId is null (deselected)
+      localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY);
+    }
+  }, [selectedConnectorId, allConnectors, initialLoadComplete]);
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -1013,11 +1051,9 @@ export const ChatBox = ({
     if (selectedConnectorId) {
       const connector = allConnectors.find(c => c.id === selectedConnectorId);
       if (connector && connector.type === ConnectorType.MCP) {
-        const selectedToolNamesSet = selectedConnectorTools[connector.id]; // connector.id is the externalId string for the connector
-        if (selectedToolNamesSet && selectedToolNamesSet.size > 0) {
-          toolIdsToSend = connectorTools
-            .filter(tool => selectedToolNamesSet.has(tool.toolName))
-            .map(tool => tool.externalId.toString()); // Assuming FetchedTool.id is the externalId and needs to be a string
+        const selectedToolExternalIdsSet = selectedConnectorTools[connector.id]; // connector.id is externalId of connector
+        if (selectedToolExternalIdsSet && selectedToolExternalIdsSet.size > 0) {
+          toolIdsToSend = Array.from(selectedToolExternalIdsSet); // externalIds are already strings
         }
       }
     }
@@ -1595,7 +1631,7 @@ export const ChatBox = ({
                 <span>
                   {selectedConnectorId
                     ? allConnectors.find(c => c.id === selectedConnectorId)?.displayName || "Connector"
-                    : "Connectors"}
+                    : "Mcp"}
                 </span>
                 <ChevronDown size={16} className="ml-1 text-gray-500" />
               </button>
@@ -1712,9 +1748,9 @@ export const ChatBox = ({
                                       
                                       if (existingSelections && existingSelections.size > 0) {
                                         // Use existing selections from localStorage, but only for enabled tools
-                                        const enabledToolNames = new Set(enabledTools.map(t => t.toolName));
+                                        const enabledToolExternalIds = new Set(enabledTools.map(t => t.externalId));
                                         const validSelections = new Set(
-                                          Array.from(existingSelections).filter(toolName => enabledToolNames.has(toolName))
+                                          Array.from(existingSelections).filter(toolExternalId => enabledToolExternalIds.has(toolExternalId))
                                         );
                                         
                                         setSelectedConnectorTools(prev => ({
@@ -1724,7 +1760,7 @@ export const ChatBox = ({
                                       } else {
                                         // No existing selections, default to all enabled tools being selected
                                         const initiallySelectedEnabledTools = new Set(
-                                          enabledTools.map(t => t.toolName)
+                                          enabledTools.map(t => t.externalId)
                                         );
                                         setSelectedConnectorTools(prev => ({
                                           ...prev,
@@ -1813,10 +1849,10 @@ export const ChatBox = ({
                             onClick={() => {
                               setSelectedConnectorTools(prev => {
                                 const newSelected = new Set(prev[selectedConnectorId!] || []);
-                                if (newSelected.has(tool.toolName)) {
-                                  newSelected.delete(tool.toolName);
+                                if (newSelected.has(tool.externalId)) {
+                                  newSelected.delete(tool.externalId);
                                 } else {
-                                  newSelected.add(tool.toolName);
+                                  newSelected.add(tool.externalId);
                                 }
                                 return { ...prev, [selectedConnectorId!]: newSelected };
                               });
@@ -1826,7 +1862,7 @@ export const ChatBox = ({
                               {tool.toolName}
                             </span>
                             <div className="h-4 w-4 flex items-center justify-center">
-                              {(selectedConnectorTools[selectedConnectorId!] || new Set()).has(tool.toolName) && (
+                              {(selectedConnectorTools[selectedConnectorId!] || new Set()).has(tool.externalId) && (
                                 <Check className="h-4 w-4 text-green-500" />
                               )}
                             </div>

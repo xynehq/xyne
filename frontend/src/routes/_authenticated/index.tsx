@@ -124,7 +124,7 @@ const Index = () => {
         q: string
         reasoning?: boolean
         sources?: string
-        toolExternalIds?: string // Changed from connectorId to toolExternalIds, will be a comma-separated string
+        toolExternalIds?: string[]
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -137,7 +137,7 @@ const Index = () => {
       }
 
       if (toolExternalIds && toolExternalIds.length > 0) {
-        searchParams.toolExternalIds = toolExternalIds.join(',');
+        searchParams.toolExternalIds = toolExternalIds;
       }
 
       navigate({
