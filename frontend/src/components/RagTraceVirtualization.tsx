@@ -549,7 +549,7 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div
         className={`${
-          darkMode ? "bg-slate-900 text-gray-200" : "bg-white text-gray-700" // Modal background
+          darkMode ? "bg-gray-800 text-gray-200" : "bg-white text-gray-700"
         } rounded-lg p-6 w-3/4 max-w-4xl h-3/4 max-h-[80vh] flex flex-col shadow-xl border ${
           darkMode ? "border-gray-700" : "border-gray-200"
         } resize overflow-auto`}
@@ -559,7 +559,7 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
           <div className="flex items-center space-x-2">
             <button
               onClick={handleCopy}
-              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-slate-700 relative group"
+              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 relative group"
               title={isCopied ? "Copied!" : "Copy to clipboard"}
             >
               <ClipboardCopy size={20} />
@@ -571,7 +571,7 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
               title="Close"
             >
               <svg
@@ -590,9 +590,9 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto bg-gray-50 dark:bg-slate-800 p-4 rounded border border-gray-200 dark:border-gray-600"> {/* Content area background */}
+        <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 p-4 rounded border border-gray-200 dark:border-gray-600">
           {isJson ? (
-            <div className="max-h-full overflow-y-auto text-sm font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-gray-700"> {/* ReactJson background */}
+            <div className="max-h-full overflow-y-auto text-sm font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
               <ReactJson
                 src={displayValue}
                 theme={darkMode ? "ocean" : "summerfruit:inverted"}
@@ -600,7 +600,7 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
                 displayDataTypes={false}
                 name={false}
                 enableClipboard={false}
-                style={{ backgroundColor: darkMode ? "rgb(30 41 59 / 1)" : "#ffffff" }} /* slate-800 */
+                style={{ backgroundColor: darkMode ? "#1f2937" : "#ffffff" }}
               />
             </div>
           ) : isUrl ? (
@@ -608,12 +608,12 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
               href={String(displayValue)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-500 dark:text-blue-400 hover:underline break-all"
+              className="text-blue-500 hover:underline break-all"
             >
               {String(displayValue)}
             </a>
           ) : isLongText || (attributeKey === "vespaPayload" && !isJson) ? (
-            <div className="max-h-full overflow-y-auto whitespace-pre-wrap text-sm font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-gray-700"> {/* Text content background */}
+            <div className="max-h-full overflow-y-auto whitespace-pre-wrap text-sm font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
               {String(displayValue)}
             </div>
           ) : (
@@ -859,7 +859,7 @@ export function RagTraceVirtualization({
     const { answerText, citationValues, citationMap } = citationData
     if (!answerText) return null
     return (
-      <div className="mb-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">
           Answer
         </h4>
@@ -915,7 +915,7 @@ export function RagTraceVirtualization({
     return (
       <div className="overflow-auto max-h-96 border border-gray-200 dark:border-gray-600 rounded">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-100 dark:bg-slate-700">
+          <thead className="bg-gray-100 dark:bg-gray-700">
             <tr>
               <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
                 Key
@@ -953,11 +953,11 @@ export function RagTraceVirtualization({
                   key={key}
                   className={
                     index % 2 === 0
-                      ? "bg-white dark:bg-slate-800"
-                      : "bg-gray-50 dark:bg-slate-900"
+                      ? "bg-white dark:bg-gray-800"
+                      : "bg-gray-50 dark:bg-gray-900"
                   }
                 >
-                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200">
+                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200">
                     <button
                       onClick={() => {
                         setSelectedAttribute({ key, value: attributes[key] })
@@ -969,19 +969,19 @@ export function RagTraceVirtualization({
                       {key}
                     </button>
                   </td>
-                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                     {isUrl ? (
                       <a
                         href={value}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 dark:text-blue-400 hover:underline"
+                        className="text-blue-500 hover:underline"
                       >
                         {value}
                       </a>
                     ) : isLongText ||
                       (key === "vespaPayload" && typeof value === "string") ? (
-                      <div className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
                         {value}
                       </div>
                     ) : (
@@ -992,8 +992,8 @@ export function RagTraceVirtualization({
               )
             })}
             {contextItems && (
-              <tr className="bg-white dark:bg-slate-800">
-                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200">
+              <tr className="bg-white dark:bg-gray-800">
+                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200">
                   <button
                     onClick={() => {
                       setSelectedAttribute({
@@ -1008,7 +1008,7 @@ export function RagTraceVirtualization({
                     context
                   </button>
                 </td>
-                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <h5 className="font-bold text-sm text-gray-800 dark:text-gray-200">
@@ -1016,7 +1016,7 @@ export function RagTraceVirtualization({
                       </h5>
                       <div className="flex items-center space-x-2">
                         <button
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
                           onClick={() => navigateToContextItem("prev")}
                           title="Previous context item"
                           disabled={contextItems.length <= 1}
@@ -1027,7 +1027,7 @@ export function RagTraceVirtualization({
                           {selectedContextItemIndex + 1} / {contextItems.length}
                         </div>
                         <button
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
                           onClick={() => navigateToContextItem("next")}
                           title="Next context item"
                           disabled={contextItems.length <= 1}
@@ -1038,7 +1038,7 @@ export function RagTraceVirtualization({
                     </div>
                     <div className="border border-gray-200 dark:border-gray-600 rounded">
                       <table className="min-w-full text-sm">
-                        <thead className="bg-gray-100 dark:bg-slate-700">
+                        <thead className="bg-gray-100 dark:bg-gray-700">
                           <tr>
                             <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
                               Key
@@ -1054,7 +1054,7 @@ export function RagTraceVirtualization({
                               contextItems[selectedContextItemIndex]
                             if (!currentItem) {
                               return (
-                                <tr className="bg-white dark:bg-slate-800">
+                                <tr className="bg-white dark:bg-gray-800">
                                   <td
                                     colSpan={2}
                                     className="px-4 py-2 text-center text-gray-500 dark:text-gray-400"
@@ -1090,25 +1090,25 @@ export function RagTraceVirtualization({
                                   key={key}
                                   className={
                                     index % 2 === 0
-                                      ? "bg-white dark:bg-slate-800"
-                                      : "bg-gray-50 dark:bg-slate-900"
+                                      ? "bg-white dark:bg-gray-800"
+                                      : "bg-gray-50 dark:bg-gray-900"
                                   }
                                 >
-                                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200 capitalize">
+                                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200 capitalize">
                                     {key}
                                   </td>
-                                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                                     {isUrl ? (
                                       <a
                                         href={value}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-blue-500 dark:text-blue-400 hover:underline"
+                                        className="text-blue-500 hover:underline"
                                       >
                                         {value}
                                       </a>
                                     ) : isLongText ? (
-                                      <div className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-gray-700">
+                                      <div className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
                                         {value}
                                       </div>
                                     ) : (
@@ -1127,8 +1127,8 @@ export function RagTraceVirtualization({
               </tr>
             )}
             {citationValues && (
-              <tr className="bg-white dark:bg-slate-800">
-                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200">
+              <tr className="bg-white dark:bg-gray-800">
+                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200">
                   <button
                     onClick={() => {
                       setSelectedAttribute({
@@ -1143,7 +1143,7 @@ export function RagTraceVirtualization({
                     citation_values
                   </button>
                 </td>
-                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <h5 className="font-bold text-sm text-gray-800 dark:text-gray-200">
@@ -1151,7 +1151,7 @@ export function RagTraceVirtualization({
                       </h5>
                       <div className="flex items-center space-x-2">
                         <button
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
                           onClick={() => navigateToCitation("prev")}
                           title="Previous citation"
                           disabled={Object.keys(citationValues).length <= 1}
@@ -1163,7 +1163,7 @@ export function RagTraceVirtualization({
                           {Object.keys(citationValues).length}
                         </div>
                         <button
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400 disabled:opacity-50"
                           onClick={() => navigateToCitation("next")}
                           title="Next citation"
                           disabled={Object.keys(citationValues).length <= 1}
@@ -1171,7 +1171,7 @@ export function RagTraceVirtualization({
                           <ChevronRight size={18} />
                         </button>
                         <button
-                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400 flex items-center"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400 flex items-center"
                           onClick={() => setShowCitations(!showCitations)}
                           title={
                             showCitations ? "Hide citations" : "Show citations"
@@ -1191,7 +1191,7 @@ export function RagTraceVirtualization({
                     {showCitations && (
                       <div className="border border-gray-200 dark:border-gray-600 rounded">
                         <table className="min-w-full text-sm">
-                          <thead className="bg-gray-100 dark:bg-slate-700">
+                          <thead className="bg-gray-100 dark:bg-gray-700">
                             <tr>
                               <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
                                 Key
@@ -1211,7 +1211,7 @@ export function RagTraceVirtualization({
                                 .sort((a, b) => a.index - b.index)
                               if (citations.length === 0) {
                                 return (
-                                  <tr className="bg-white dark:bg-slate-800">
+                                  <tr className="bg-white dark:bg-gray-800">
                                     <td
                                       colSpan={2}
                                       className="px-4 py-2 text-center text-gray-500 dark:text-gray-400"
@@ -1225,11 +1225,11 @@ export function RagTraceVirtualization({
                                 citations[currentCitationIndex]
                               return (
                                 <>
-                                  <tr className="bg-white dark:bg-slate-800">
-                                    <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200">
+                                  <tr className="bg-white dark:bg-gray-800">
+                                    <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200">
                                       Citation Number
                                     </td>
-                                    <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                                    <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                                       {currentCitation.index}
                                     </td>
                                   </tr>
@@ -1243,20 +1243,20 @@ export function RagTraceVirtualization({
                                           key={key}
                                           className={
                                             (index + 1) % 2 === 0
-                                              ? "bg-white dark:bg-slate-800"
-                                              : "bg-gray-50 dark:bg-slate-900"
+                                              ? "bg-white dark:bg-gray-800"
+                                              : "bg-gray-50 dark:bg-gray-900"
                                           }
                                         >
-                                          <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-medium text-gray-700 dark:text-gray-200 capitalize">
+                                          <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-medium text-gray-700 dark:text-gray-200 capitalize">
                                             {key}
                                           </td>
-                                          <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-mono text-gray-700 dark:text-gray-200">
+                                          <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-600 font-mono text-gray-700 dark:text-gray-200">
                                             {isUrl ? (
                                               <a
                                                 href={value}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-blue-500 dark:text-blue-400 hover:underline"
+                                                className="text-blue-500 hover:underline"
                                               >
                                                 {value}
                                               </a>
@@ -1316,7 +1316,7 @@ export function RagTraceVirtualization({
         {renderSpanBasicInfo(span)}
         {showSpanDetails && (
           <>
-            <div className="mt-4 border-t pt-4 border-gray-200 dark:border-gray-700">
+            <div className="mt-4 border-t pt-4 border-gray-200 dark:border-gray-600">
               <h5 className="font-bold text-sm text-gray-800 dark:text-gray-200 mb-2">
                 Span Details
               </h5>
@@ -1360,7 +1360,7 @@ export function RagTraceVirtualization({
                 <h5 className="font-bold text-sm text-gray-800 dark:text-gray-200 mb-2">
                   Events ({span.events.length})
                 </h5>
-                <div className="bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
+                <div className="bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
                   <pre className="text-sm whitespace-pre-wrap text-gray-700 dark:text-gray-200">
                     {JSON.stringify(span.events, null, 2)}
                   </pre>
@@ -1387,13 +1387,13 @@ export function RagTraceVirtualization({
     return (
       <div key={spanId} className="my-1">
         <div
-          className={`flex items-center text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 rounded px-2 py-1`}
+          className={`flex items-center text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded px-2 py-1`}
           style={{ paddingLeft: `${level * 24 + 8}px` }}
           onClick={() => toggleSelected(spanId)}
         >
           {hasChildren ? (
             <button
-              className="mr-1 text-gray-500 dark:text-slate-400"
+              className="mr-1 text-gray-500 dark:text-gray-400"
               onClick={(e) => {
                 e.stopPropagation()
                 toggleExpandSpan(spanId)
@@ -1415,14 +1415,14 @@ export function RagTraceVirtualization({
             } ${
               selectedSpanIds.includes(spanId)
                 ? "text-blue-600 dark:text-blue-400"
-                : "text-gray-700 dark:text-slate-300"
+                : "text-gray-700 dark:text-gray-300"
             }`}
             title={span.name}
           >
             {span.name}
             {isUnderstandMessage && " 🔍"}
           </span>
-          <span className="text-gray-500 dark:text-slate-400 ml-4">
+          <span className="text-gray-500 dark:text-gray-400 ml-4">
             {formatDuration(duration)}
           </span>
         </div>
@@ -1458,7 +1458,7 @@ export function RagTraceVirtualization({
   const renderTimeline = () => {
     if (!traceData?.spans || !Array.isArray(traceData.spans)) {
       return (
-        <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+        <div className="p-4 text-center text-gray-500">
           No spans available for timeline visualization
         </div>
       )
@@ -1466,7 +1466,7 @@ export function RagTraceVirtualization({
     const validSpans = traceData.spans.filter(validateSpanData)
     if (validSpans.length === 0) {
       return (
-        <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+        <div className="p-4 text-center text-gray-500">
           No valid spans available for visualization
         </div>
       )
@@ -1474,7 +1474,7 @@ export function RagTraceVirtualization({
     const timelineData = safeTimelineCalculation(validSpans)
     if (!timelineData) {
       return (
-        <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+        <div className="p-4 text-center text-gray-500">
           Could not calculate timeline data
         </div>
       )
@@ -1539,7 +1539,7 @@ export function RagTraceVirtualization({
                     </div>
                   </div>
                   <div className="flex-1 relative h-8">
-                    <div className="absolute inset-0 bg-gray-100 dark:bg-slate-700 rounded" />
+                    <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded" />
                     <div
                       className={`absolute h-5 top-1.5 rounded cursor-pointer ${
                         selectedSpanIds.includes(spanId)
@@ -1573,7 +1573,7 @@ export function RagTraceVirtualization({
           </div>
         ) : (
           selectedSpanIds.length > 0 && (
-            <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="text-lg font-extrabold text-blue-600 dark:text-blue-400">
                   {getSelectedSpanDetails(validSpans, selectedSpanIds[0])
@@ -1581,17 +1581,17 @@ export function RagTraceVirtualization({
                 </h4>
                 <div className="flex space-x-2">
                   <button
-                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400"
+                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400"
                     onClick={() => navigateToSpan("prev")}
                     title="Previous span"
                   >
                     <ChevronLeft size={18} />
                   </button>
-                  <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
                     {selectedSpanIndex + 1} / {validSpans.length}
                   </div>
                   <button
-                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400"
+                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400"
                     onClick={() => navigateToSpan("next")}
                     title="Next span"
                   >
@@ -1612,7 +1612,7 @@ export function RagTraceVirtualization({
   const renderJsonView = () => {
     if (!rawTraceData)
       return (
-        <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+        <div className="p-6 text-center text-gray-500">
           No trace data available
         </div>
       )
@@ -1633,14 +1633,14 @@ export function RagTraceVirtualization({
     }
 
     return (
-      <div className="w-full overflow-auto bg-gray-50 dark:bg-slate-800 p-6 rounded border border-gray-200 dark:border-gray-700">
+      <div className="w-full overflow-auto bg-gray-50 dark:bg-gray-800 p-6 rounded border border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200 dark:border-gray-600">
           <div className="text-sm text-gray-600 dark:text-gray-200">
             Total Duration: {formatDuration(totalDuration)}
           </div>
           <button
             onClick={handleCopyJson}
-            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-gray-400 relative group text-sm flex items-center"
+            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 relative group text-sm flex items-center"
           >
             <ClipboardCopy size={18} className="mr-1" />
             {isJsonCopied && (
@@ -1660,7 +1660,7 @@ export function RagTraceVirtualization({
             enableClipboard={false} // Using custom copy button
             style={{
               backgroundColor: darkMode
-                ? "rgb(30 41 59 / 1)" /* slate-800 */
+                ? "rgb(31 41 55 / 1)"
                 : "rgb(249 250 251 / 1)",
             }} // Match tab background
           />
@@ -1678,7 +1678,7 @@ export function RagTraceVirtualization({
 
     return (
       <div
-        className="bg-gray-50 dark:bg-slate-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto"
+        className="bg-gray-50 dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto"
         style={{
           width: `${panelWidth}px`,
           minWidth: "500px",
@@ -1691,18 +1691,18 @@ export function RagTraceVirtualization({
           </h4>
           <div className="flex items-center space-x-2">
             <button
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400"
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400"
               onClick={() => navigateToSpan("prev")}
               title="Previous span"
               disabled={validSpans.length <= 1}
             >
               <ChevronLeft size={18} />
             </button>
-            <span className="text-xs text-gray-500 dark:text-slate-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {selectedSpanIndex + 1} / {validSpans.length}
             </span>
             <button
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-400"
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400"
               onClick={() => navigateToSpan("next")}
               title="Next span"
               disabled={validSpans.length <= 1}
@@ -1757,20 +1757,20 @@ export function RagTraceVirtualization({
   return (
     <div
       className={`flex flex-col h-screen ${
-        darkMode ? "dark bg-[#1E1E1E]" : "bg-gray-100" // Use #1E1E1E for dark background
+        darkMode ? "dark bg-gray-900" : "bg-gray-100"
       }`}
     >
       <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-bold text-gray-800 dark:text-[#F1F3F4]"> {/* Use #F1F3F4 for dark text */}
+          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-200">
             Trace Visualization
           </h2>
           <div className="flex space-x-2">
             <button
               className={`px-3 py-1 rounded text-sm font-medium ${
                 activeTab === "timeline"
-                  ? "bg-blue-500 text-white" // Active tab can keep its specific style
-                  : "bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
               }`}
               onClick={() => setActiveTab("timeline")}
             >
@@ -1780,7 +1780,7 @@ export function RagTraceVirtualization({
               className={`px-3 py-1 rounded text-sm font-medium ${
                 activeTab === "hierarchy"
                   ? "bg-blue-500 text-white"
-                  : "bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
               }`}
               onClick={() => setActiveTab("hierarchy")}
             >
@@ -1790,7 +1790,7 @@ export function RagTraceVirtualization({
               className={`px-3 py-1 rounded text-sm font-medium ${
                 activeTab === "json"
                   ? "bg-blue-500 text-white"
-                  : "bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
               }`}
               onClick={() => setActiveTab("json")}
             >
@@ -1800,7 +1800,7 @@ export function RagTraceVirtualization({
         </div>
         <div className="flex items-center space-x-2">
           <button
-            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-400"
+            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
             onClick={toggleDarkMode}
             title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
           >
@@ -1808,7 +1808,7 @@ export function RagTraceVirtualization({
           </button>
           {activeTab === "timeline" && (
             <button
-              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-400"
+              className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
               onClick={toggleTimelineView}
               title={showTimeline ? "Hide timeline" : "Show timeline"}
             >
@@ -1820,11 +1820,11 @@ export function RagTraceVirtualization({
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-auto">
           {isLoading ? (
-            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+            <div className="p-6 text-center text-gray-500">
               Loading trace data...
             </div>
           ) : error ? (
-            <div className="p-6 text-center text-red-500 dark:text-red-400 flex items-center justify-center">
+            <div className="p-6 text-center text-red-500 flex items-center justify-center">
               <AlertCircle size={20} className="mr-2" />
               Error loading trace data: {error.message}
             </div>
@@ -1839,19 +1839,19 @@ export function RagTraceVirtualization({
         {selectedSpanIds.length > 0 && (
           <div className="flex flex-col">
             <div
-              className="w-4 cursor-col-resize flex items-center justify-center bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600"
+              className="w-4 cursor-col-resize flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
               onMouseDown={handleMouseDown}
             >
               <GripVertical
                 size={16}
-                className="text-gray-500 dark:text-slate-400"
+                className="text-gray-500 dark:text-gray-400"
               />
             </div>
             {renderSpanDetailsPanel()}
           </div>
         )}
       </div>
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-slate-400">
+      <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400">
         Trace ID: {traceData?.traceId || "N/A"} | Total Duration:{" "}
         {getFooterDuration()}
       </div>

@@ -1526,7 +1526,7 @@ export const ChatBox = ({
                         </TooltipTrigger>
                         <TooltipContent
                           side="bottom"
-                          className="bg-black text-white text-xs rounded-sm" /* Uses CSS vars */
+                          className="bg-black text-white text-xs rounded-sm"
                         >
                           <p>Clear all</p>
                         </TooltipContent>
