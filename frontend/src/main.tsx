@@ -1,4 +1,4 @@
-import { StrictMode } from "react"
+import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 // import App from './App.tsx'
 import "./index.css"
@@ -26,16 +26,44 @@ declare module "@tanstack/react-router" {
   }
 }
 
+const App = () => {
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const handleChange = () => {
+      const storedTheme = localStorage.getItem("theme")
+      if (storedTheme) {
+        document.documentElement.classList.toggle("dark", storedTheme === "dark")
+      } else {
+        document.documentElement.classList.toggle("dark", mediaQuery.matches)
+      }
+    }
+
+    handleChange() // Initial check
+
+    mediaQuery.addEventListener("change", handleChange)
+    window.addEventListener('storage', handleChange); // Listen for changes from other tabs
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange)
+      window.removeEventListener('storage', handleChange);
+    }
+  }, [])
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+      <Toaster />
+    </QueryClientProvider>
+  )
+}
+
 // Render the app
 const rootElement = document.getElementById("root")!
 if (!rootElement.innerHTML) {
   const root = createRoot(rootElement)
   root.render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
-      </QueryClientProvider>
+      <App />
     </StrictMode>,
   )
 }

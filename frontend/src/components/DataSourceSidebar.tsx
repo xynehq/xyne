@@ -19,9 +19,9 @@ export function DataSourceSidebar({
   onDeleteDataSource,
 }: DataSourceSidebarProps) {
   return (
-    <div className="w-[263px] border-r border-[#D7E0E9] h-full bg-white shadow-sm overflow-auto">
+    <div className="w-[263px] border-r border-[#D7E0E9] dark:border-gray-700 h-full bg-white dark:bg-[#1E1E1E] shadow-sm overflow-auto">
       <div className="flex justify-between items-center p-4">
-        <h3 className="font-medium text-gray-900">Data Sources</h3>
+        <h3 className="font-medium text-gray-900 dark:text-gray-100">Data Sources</h3>
         <Button
           onClick={onAddNewDataSource}
           variant="ghost"
@@ -38,8 +38,8 @@ export function DataSourceSidebar({
             key={name}
             className={`px-3 py-2 text-sm rounded-md cursor-pointer flex items-center justify-between ${
               activeDataSource === name
-                ? "bg-[#EBEFF2] text-gray-900"
-                : "hover:bg-[#F5F7F9] text-gray-700"
+                ? "bg-[#EBEFF2] dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                : "hover:bg-[#F5F7F9] dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300"
             }`}
           >
             <span
@@ -67,7 +67,7 @@ export function DataSourceSidebar({
                       }
                     }}
                   >
-                    <Trash2 className="h-3.5 w-3.5 text-gray-500 hover:text-red-500" />
+                    <Trash2 className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400" />
                   </Button>
                 </TooltipTrigger>
                 <Tip side="left" info="Delete data source" />
@@ -77,7 +77,7 @@ export function DataSourceSidebar({
         ))}
 
         {dataSources.length === 0 && (
-          <div className="text-sm text-gray-500 p-4 text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">
             No data sources yet
           </div>
         )}

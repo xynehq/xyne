@@ -82,7 +82,7 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       href={newRef.url || "#"}
       target="_blank"
       rel="noopener noreferrer"
-      className="reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semibold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
+      className="reference-pill bg-[#F1F5F9] dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-[#2074FA] dark:text-blue-400 text-sm font-semibold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
       contentEditable={false}
       data-reference-id={newRef.id}
       {...(newRef.docId && { "data-doc-id": newRef.docId })}

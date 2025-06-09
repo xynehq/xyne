@@ -46,14 +46,14 @@ const GroupFilterItem = ({
       <div
         onClick={onClick}
         className={`${
-          isFilter(filter) ? "bg-[#F0F4F7]" : ""
+          isFilter(filter) ? "bg-[#F0F4F7] dark:bg-slate-700" : ""
         } flex flex-row rounded-[6px] items-center justify-between cursor-pointer  pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
       >
         <div className="flex items-center">
           {Image}
-          <p className="text-[#5D6878] text-[13px] font-medium">{title}</p>
+          <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">{title}</p>
         </div>
-        {<p className="text-[#97A6C4] ml-7">{total}</p>}
+        {<p className="text-[#97A6C4] dark:text-slate-400 ml-7">{total}</p>}
       </div>
     </div>
   )
@@ -113,7 +113,7 @@ export const GroupFilter = ({
 }) => {
   return (
     <div className="flex flex-col">
-      <p className="text-[11.5px] font-medium text-[#97A6C4] ml-[40px] mt-[28px] tracking-[0.08em]">{`FOUND ${humanizeNumbers(total)} RESULTS`}</p>
+      <p className="text-[11.5px] font-medium text-[#97A6C4] dark:text-slate-400 ml-[40px] mt-[28px] tracking-[0.08em]">{`FOUND ${humanizeNumbers(total)} RESULTS`}</p>
       <GroupFilterItem
         className={"mt-4"}
         title={"All"}
