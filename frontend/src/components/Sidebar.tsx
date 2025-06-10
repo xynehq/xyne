@@ -49,13 +49,22 @@ export const Sidebar = ({
   const router = useRouter()
 
   const logout = async (): Promise<void> => {
-    const res = await api.auth.logout.$post()
-    if (res.ok) {
-      router.navigate({ to: "/auth" })
-    } else {
+    try {
+      const res = await api.auth.logout.$post()
+      if (res.ok) {
+        router.navigate({ to: "/auth" })
+      } else {
+        toast({
+          title: "Error logging out",
+          description: "Could not logout",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Logout failed:", error)
       toast({
         title: "Error logging out",
-        description: "Could not logout.",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       })
     }
