@@ -1,4 +1,5 @@
-import { Link, useLocation } from "@tanstack/react-router"
+import { api } from "@/api"
+import { Link, useLocation, useRouter } from "@tanstack/react-router"
 import { Bot, Plug, Plus, History, LogOut, ExternalLink } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -17,6 +18,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
+import { toast } from "@/hooks/use-toast"
 
 export const Sidebar = ({
   className = "",
@@ -31,6 +33,20 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
+  const router = useRouter()
+
+  const logout = async (): Promise<void> => {
+    const res = await api.auth.logout.$post()
+    if (res.ok) {
+      router.navigate({ to: "/auth" })
+    } else {
+      toast({
+        title: "Error logging out",
+        description: "Could not logout.",
+        variant: "destructive",
+      })
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -170,7 +186,7 @@ export const Sidebar = ({
                 key={"logout"}
                 role="button"
                 className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                onClick={() => {}}
+                onClick={() => logout()}
               >
                 <LogOut size={16} className="text-red-500" />
                 <span className="text-red-500">Logout</span>
