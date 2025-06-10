@@ -59,7 +59,7 @@ import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
-import { setCookieByEnv } from "@/utils"
+import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -185,6 +185,12 @@ export const WsApp = app.get(
   }),
 )
 
+const LogOut = async (c: Context) => {
+  deleteCookieByEnv(c, CookieName)
+  Logger.info("Cookie deleted, logged out")
+  return c.json({ ok: true })
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
@@ -241,6 +247,7 @@ export const AppRoutes = app
     UpdateAgentApi,
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
+  .post("/auth/logout", LogOut)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug

@@ -1,5 +1,15 @@
-import { Link, useLocation } from "@tanstack/react-router"
-import { Bot, Plug, Plus, History, Sun, Moon } from "lucide-react"
+import { api } from "@/api"
+import { Link, useLocation, useRouter } from "@tanstack/react-router"
+import {
+  Bot,
+  Plug,
+  Plus,
+  History,
+  Sun,
+  Moon,
+  LogOut,
+  ExternalLink,
+} from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
@@ -12,6 +22,13 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import Logo from "@/assets/logo.svg"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import { toast } from "@/hooks/use-toast"
 
 export const Sidebar = ({
   className = "",
@@ -27,8 +44,31 @@ export const Sidebar = ({
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
   const { theme, toggleTheme } = useTheme()
-  const isDarkMode = theme === 'dark'
+  const isDarkMode = theme === "dark"
 
+  const router = useRouter()
+
+  const logout = async (): Promise<void> => {
+    try {
+      const res = await api.auth.logout.$post()
+      if (res.ok) {
+        router.navigate({ to: "/auth" })
+      } else {
+        toast({
+          title: "Error logging out",
+          description: "Could not logout",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Logout failed:", error)
+      toast({
+        title: "Error logging out",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,7 +132,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plus size={18} stroke="#384049" className="dark:stroke-[#F1F3F4]" />
+                <Plus
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="New" />
             </Tooltip>
@@ -104,7 +148,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <History size={18} stroke="#384049" className="dark:stroke-[#F1F3F4]" />
+                <History
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="History" />
             </Tooltip>
@@ -115,12 +163,18 @@ export const Sidebar = ({
             <Link
               to="/agent"
               className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
-                location.pathname.includes("/agent") ? "bg-[#D8DFE680] dark:bg-gray-700" : ""
+                location.pathname.includes("/agent")
+                  ? "bg-[#D8DFE680] dark:bg-gray-700"
+                  : ""
               }`}
             >
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Bot stroke="#384049" size={18} className="dark:stroke-[#F1F3F4]" />
+                  <Bot
+                    stroke="#384049"
+                    size={18}
+                    className="dark:stroke-[#F1F3F4]"
+                  />
                 </TooltipTrigger>
                 <Tip side="right" info="agent" />{" "}
                 {/* Placeholder: Update this tooltip info */}
@@ -139,7 +193,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plug stroke="#384049" size={18} className="dark:stroke-[#F1F3F4]" />
+                <Plug
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
             </Tooltip>
@@ -157,17 +215,46 @@ export const Sidebar = ({
                   <Moon size={18} stroke="#384049" />
                 )}
               </TooltipTrigger>
-              <Tip side="right" info={isDarkMode ? "Light Mode" : "Dark Mode"} />
+              <Tip
+                side="right"
+                info={isDarkMode ? "Light Mode" : "Dark Mode"}
+              />
             </Tooltip>
           </div>
         </div>
-
-        <a
-          href="https://xynehq.com"
-          className="mt-auto mb-4 flex justify-center"
-        >
-          <img src={Logo} alt="Logo" />
-        </a>
+        <div className="mt-auto mb-4 flex justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <img src={Logo} alt="Logo" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="ml-2">
+              <DropdownMenuItem
+                key={"xyne"}
+                role="button"
+                className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                onClick={() => {
+                  window.open(
+                    "https://xynehq.com",
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }}
+              >
+                <ExternalLink size={16} />
+                <span>Visit Xyne</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                key={"logout"}
+                role="button"
+                className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                onClick={() => logout()}
+              >
+                <LogOut size={16} className="text-red-500" />
+                <span className="text-red-500">Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </TooltipProvider>
   )

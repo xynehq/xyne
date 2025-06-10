@@ -1,5 +1,5 @@
 import type { Context } from "hono"
-import { setCookie } from "hono/cookie"
+import { deleteCookie, setCookie } from "hono/cookie"
 import type { CookieOptions } from "hono/utils/cookie"
 import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
@@ -58,6 +58,24 @@ export const setCookieByEnv = (
   } else {
     Logger.info("Setting Cookie")
     setCookie(c, CookieName, jwtToken, {
+      ...opts,
+      secure: false,
+      sameSite: "Lax",
+      httpOnly: true,
+    })
+  }
+}
+
+export const deleteCookieByEnv = (
+  c: Context,
+  CookieName: string,
+  opts?: CookieOptions,
+) => {
+  const env = process.env.NODE_ENV
+  if (env === "production") {
+    deleteCookie(c, CookieName, opts)
+  } else {
+    deleteCookie(c, CookieName, {
       ...opts,
       secure: false,
       sameSite: "Lax",
