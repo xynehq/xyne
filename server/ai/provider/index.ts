@@ -1061,7 +1061,7 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  params.messages = []
+  if(isAgentPromptEmpty(params.agentPrompt))params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
