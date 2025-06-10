@@ -41,7 +41,6 @@ export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
   tracker: Tracker,
-  logger: Logger,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -126,7 +125,7 @@ export const handleGmailIngestion = async (
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
-            logger.error(
+            Logger.child({email:email}).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -155,7 +154,7 @@ export const handleGmailIngestion = async (
     }
   } while (nextPageToken)
 
-  Logger.info(`Inserted ${totalMails} mails`)
+  Logger.child({email: email}).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 

@@ -106,12 +106,13 @@ export async function getAllConversations(
   client: WebClient,
   excludeArchived: boolean,
   abortController: AbortController,
+  email:string,
 ): Promise<ConversationsListResponse["channels"]> {
   let channels: Channel[] = []
   let cursor: string | undefined = undefined
   do {
     if (abortController.signal.aborted) {
-      Logger.info("Aborted fetching conversations")
+      getUserLogger(email).info("Aborted fetching conversations")
       break
     }
     const response = await client.conversations.list({
@@ -374,7 +375,7 @@ export async function insertChannelMessages(
               team_id: message.team,
             })
           } catch (error) {
-            Logger.error(error, `Error inserting chat message`)
+            getUserLogger(email).error(error, `Error inserting chat message`)
           }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
@@ -463,7 +464,7 @@ export async function insertChannelMessages(
                   team_id: message.team,
                 })
               } catch (error) {
-                Logger.error(error, `Error inserting chat message`)
+                getUserLogger(email).error(error, `Error inserting chat message`)
               }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
@@ -583,8 +584,9 @@ export async function getConversationUsers(
   userId: string,
   client: WebClient,
   conversation: Channel,
+  email: string,
 ): Promise<string[]> {
-  Logger.info("fetching users from conversation")
+  getUserLogger(email).info("fetching users from conversation")
 
   if (conversation.is_im) {
     if (!conversation.user) {
@@ -614,7 +616,7 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    console.error("Error fetching channel users:", error)
+    getUserLogger(email).error("Error fetching channel users:", error)
     return []
   }
 }
@@ -761,7 +763,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         status: OperationStatus.Success,
       })
     } catch (error) {
-      Logger.info(`Error inserting team`)
+      getUserLogger(data.email).info(`Error inserting team`)
       ingestedTeamErrorTotalCount.inc({
         email_domain: team.email_domain,
         enterprise_id: team.enterprise_id,
@@ -770,7 +772,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       })
     }
     const conversations = (
-      (await getAllConversations(client, true, new AbortController())) || []
+      (await getAllConversations(client, true, new AbortController(), data.email)) || []
     ).filter((conversation) => {
       return (
         conversation.is_mpim ||
@@ -795,7 +797,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           !existenceMap[conversation.id!].exists) ||
         !existenceMap[conversation.id!],
     )
-    Logger.info(
+    getUserLogger(data.email).info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
     const user = await getAuthenticatedUserId(client)
@@ -807,7 +809,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     let conversationIndex = 0
     // can be done concurrently, but can cause issues with ratelimits
     for (const conversation of conversationsToInsert) {
-      const memberIds = await getConversationUsers(user, client, conversation)
+      const memberIds = await getConversationUsers(user, client, conversation, data.email)
       const membersToFetch = memberIds.filter((m: string) => !memberMap.get(m))
       const concurrencyLimit = pLimit(5)
       const memberPromises = membersToFetch.map((memberId: string) =>
@@ -838,7 +840,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
               status: OperationStatus.Success,
             })
           } catch (error) {
-            Logger.error(error, `Error inserting member`)
+            getUserLogger(data.email).error(error, `Error inserting member`)
             ingestedTeamErrorTotalCount.inc({
               email_domain: teamResp.team!.email_domain,
               enterprise_id: teamResp.team!.enterprise_id,
@@ -855,7 +857,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           })
           tracker.updateUserStats(data.email, StatType.Slack_User, 1)
         } catch (error) {
-          Logger.error(`Error inserting member ${member.id}: ${error}`)
+          getUserLogger(data.email).error(`Error inserting member ${member.id}: ${error}`)
           ingestedMembersErrorTotalCount.inc({
             team_id: team.id,
             status: OperationStatus.Failure,
@@ -903,7 +905,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         })
         tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
       } catch (error) {
-        Logger.error("Error inserting Channel Messages")
+        getUserLogger(data.email).error("Error inserting Channel Messages")
         insertChannelMessagesErrorCount.inc({
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
@@ -927,7 +929,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         conversationIndex++
         tracker.setCurrent(conversationIndex)
       } catch (error) {
-        Logger.error(`Error inserting Conversation`)
+        getUserLogger(data.email).error(`Error inserting Conversation`)
         insertConversationErrorCount.inc({
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
@@ -961,7 +963,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       })
     })
   } catch (error) {
-    Logger.error(error)
+    getUserLogger(data.email).error(error)
   }
 }
 
@@ -1026,4 +1028,9 @@ async function getAuthenticatedUserId(client: WebClient): Promise<string> {
     )
   }
   return authResponse.user_id
+}
+
+
+export const getUserLogger = (email:string) => {
+  return Logger.child({email: email})
 }

@@ -207,7 +207,7 @@ export const handleGmailIngestion = async (
   if (dateFilters.length > 0) {
     query = `${query} ${dateFilters.join(" AND ")}`
   }
-  Logger.info(`query: ${query}`)
+  getUserLogger(email).info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -273,7 +273,7 @@ export const handleGmailIngestion = async (
               )
             }
           } catch (error) {
-            Logger.error(
+            getUserLogger(email).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -297,14 +297,14 @@ export const handleGmailIngestion = async (
 
       // Post stats based on successful operations in this batch
       // Always post Gmail count, even if it's zero for this batch, to confirm processing.
-      Logger.info(
+      getUserLogger(email).info(
         ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${insertedMessagesInBatch}, jobId: ${jobId}`,
       )
       sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
 
       // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        Logger.info(
+        getUserLogger(email).info(
           ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
         )
         sendStatsUpdate(
@@ -322,7 +322,7 @@ export const handleGmailIngestion = async (
     // clean up explicitly
   } while (nextPageToken)
 
-  Logger.info(`Inserted ${totalMails} mails`)
+  getUserLogger(email).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
@@ -576,4 +576,9 @@ const getBody = (payload: any): string => {
   const data = parseEmailBody(body).replace(/[\r?\n]+/g, "\n")
 
   return data
+}
+
+
+export const getUserLogger = (email:string) => {
+  return Logger.child({email: email})
 }
