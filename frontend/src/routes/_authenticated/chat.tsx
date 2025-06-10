@@ -19,6 +19,7 @@ import {
   ThumbsDown,
 } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import {
   ChatSSEvents,
   SelectPublicMessage,
@@ -233,6 +234,7 @@ export const ChatPage = ({
   workspace,
   agentWhiteList,
 }: ChatPageProps) => {
+  const { theme } = useTheme()
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -1304,8 +1306,8 @@ export const ChatPage = ({
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-              fill={bookmark ? (document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#4A4F59") : "none"}
-              stroke={document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#4A4F59"}
+              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
+              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
@@ -1676,6 +1678,7 @@ export const ChatMessage = ({
   feedbackStatus?: MessageFeedback | null
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
 
@@ -1721,12 +1724,12 @@ export const ChatMessage = ({
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
-                      "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                      "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#627384", // gray-400 for dark
+                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1744,12 +1747,12 @@ export const ChatMessage = ({
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: document.documentElement.classList.contains('dark') ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}

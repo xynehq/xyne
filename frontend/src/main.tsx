@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from "react"
+import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 // import App from './App.tsx'
 import "./index.css"
@@ -6,7 +6,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router"
 
 // Import the generated route tree
 import { routeTree } from "@/routeTree.gen"
-
+import { ThemeProvider } from "@/components/ThemeContext"
 import { Toaster } from "@/components/ui/toaster"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -27,33 +27,13 @@ declare module "@tanstack/react-router" {
 }
 
 const App = () => {
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
-    const handleChange = () => {
-      const storedTheme = localStorage.getItem("theme")
-      if (storedTheme) {
-        document.documentElement.classList.toggle("dark", storedTheme === "dark")
-      } else {
-        document.documentElement.classList.toggle("dark", mediaQuery.matches)
-      }
-    }
-
-    handleChange() // Initial check
-
-    mediaQuery.addEventListener("change", handleChange)
-    window.addEventListener('storage', handleChange); // Listen for changes from other tabs
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange)
-      window.removeEventListener('storage', handleChange);
-    }
-  }, [])
-
   return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <Toaster />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <Toaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 }
 

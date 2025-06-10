@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Search as SearchIcon } from "lucide-react"
@@ -26,6 +27,7 @@ enum Tabs {
 }
 
 const Index = () => {
+  const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
@@ -191,7 +193,7 @@ const Index = () => {
                     onClick={() => setActiveTab(Tabs.Ask)}
                   >
                     <Sparkle
-                      stroke={activeTab === Tabs.Ask ? (document.documentElement.classList.contains('dark') ? "#F3F4F6" : "#33383D") : (document.documentElement.classList.contains('dark') ? "#9CA3AF" : "#728395")}
+                      stroke={activeTab === Tabs.Ask ? (theme === 'dark' ? "#F3F4F6" : "#33383D") : (theme === 'dark' ? "#9CA3AF" : "#728395")}
                       className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
                     />
                     Ask
@@ -211,7 +213,7 @@ const Index = () => {
                   >
                     <SearchIcon
                       size={16}
-                      stroke={activeTab === Tabs.Search ? (document.documentElement.classList.contains('dark') ? "#F3F4F6" : "#33383D") : (document.documentElement.classList.contains('dark') ? "#9CA3AF" : "#728395")}
+                      stroke={activeTab === Tabs.Search ? (theme === 'dark' ? "#F3F4F6" : "#33383D") : (theme === 'dark' ? "#9CA3AF" : "#728395")}
                       className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
                     />
                     Search
