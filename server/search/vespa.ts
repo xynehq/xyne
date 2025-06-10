@@ -56,6 +56,7 @@ import { VespaSearchResponseToSearchResult } from "./mappers"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -968,20 +969,22 @@ export const groupVespaSearch = async (
 ): Promise<AppEntityCounts> => {
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
+
   Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
@@ -1048,17 +1051,18 @@ export const searchVespa = async (
   // Check if Slack sync job exists for the user
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
