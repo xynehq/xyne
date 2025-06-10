@@ -1,59 +1,59 @@
-import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
+import llama3Tokenizer from "llama3-tokenizer-js"
 
-import type { Context } from "hono"
-import {
-  autocomplete,
-  deduplicateAutocomplete,
-  groupVespaSearch,
-  searchVespa,
-  searchUsersByNamesAndEmails,
-  getTimestamp,
-  insert,
-  GetDocument,
-  UpdateDocument,
-  updateUserQueryHistory,
-  SearchModes,
-} from "@/search/vespa"
-import { z } from "zod"
-import config from "@/config"
-import { HTTPException } from "hono/http-exception"
-import {
-  userQuerySchema,
-  userSchema,
-  type VespaSearchResponse,
-  type VespaUser,
-} from "@/search/types"
-import {
-  VespaAutocompleteResponseToResult,
-  VespaSearchResponseToSearchResult,
-} from "@/search/mappers"
-import {
-  analyzeQueryForNamesAndEmails,
-  analyzeQueryMetadata,
-  askQuestion,
-} from "@/ai/provider"
 import {
   answerContextMap,
   answerMetadataContextMap,
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
-import { streamSSE } from "hono/streaming"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
-import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
-import { db } from "@/db/client"
-import type { PublicUserWorkspace } from "@/db/schema"
-import { getErrorMessage } from "@/utils"
+import {
+  analyzeQueryForNamesAndEmails,
+  analyzeQueryMetadata,
+  askQuestion,
+} from "@/ai/provider"
 import { QueryCategory } from "@/ai/types"
+import config from "@/config"
+import { db } from "@/db/client"
 import {
   getUserPersonalization,
-  getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
+  getUserPersonalizationByEmail,
 } from "@/db/personalization"
+import type { PublicUserWorkspace } from "@/db/schema"
+import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
+import { getLogger } from "@/logger"
+import {
+  VespaAutocompleteResponseToResult,
+  VespaSearchResponseToSearchResult,
+} from "@/search/mappers"
+import {
+  type VespaSearchResponse,
+  type VespaUser,
+  userQuerySchema,
+  userSchema,
+} from "@/search/types"
+import { VespaSearchResultsSchema } from "@/search/types"
+import {
+  GetDocument,
+  SearchModes,
+  UpdateDocument,
+  autocomplete,
+  deduplicateAutocomplete,
+  getTimestamp,
+  groupVespaSearch,
+  insert,
+  searchUsersByNamesAndEmails,
+  searchVespa,
+  updateUserQueryHistory,
+} from "@/search/vespa"
+import { AnswerSSEvents } from "@/shared/types"
+import { Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+import type { Context } from "hono"
+import { HTTPException } from "hono/http-exception"
+import { streamSSE } from "hono/streaming"
+import { z } from "zod"
 const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -109,6 +109,8 @@ export const chatHistorySchema = z.object({
 export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
+  tabId: z.string().optional(),
+  localChatId: z.string().optional(),
   modelId: z.string().min(1),
   toolExternalIds: z.preprocess((val) => {
     if (Array.isArray(val)) {

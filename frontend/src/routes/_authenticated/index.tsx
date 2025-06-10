@@ -20,6 +20,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
+import { ensureTabId, setLocalChatId } from "@/lib/utils"
+import { v4 as uuidv4 } from "uuid"
 
 enum Tabs {
   Search = "search",
@@ -35,6 +37,8 @@ const Index = () => {
     return storedValue ? JSON.parse(storedValue) : true
   })
 
+  const tabId = ensureTabId()
+  
   useEffect(() => {
     localStorage.setItem(
       "isReasoningGlobalState",
@@ -127,14 +131,21 @@ const Index = () => {
     toolExternalIds?: string[],
   ) => {
     if (messageToSend.trim()) {
+      const newLocalChatId = uuidv4()
+      setLocalChatId(newLocalChatId)
+
       const searchParams: {
         q: string
         reasoning?: boolean
         sources?: string
         agentId?: string
         toolExternalIds?: string[]
+        tabId?: string
+        localChatId?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
+        tabId,
+        localChatId: newLocalChatId,
       }
       if (isReasoningActive) {
         searchParams.reasoning = true

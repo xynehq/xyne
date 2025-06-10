@@ -3720,6 +3720,8 @@ export const MessageApi = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
+      tabId,
+      localChatId,
     }: MessageReqType = body
     const agentPrompt = agentId && isCuid(agentId) ? agentId : ""
 
@@ -3867,6 +3869,8 @@ export const MessageApi = async (c: Context) => {
             event: ChatSSEvents.ResponseMetadata,
             data: JSON.stringify({
               chatId: chat.externalId,
+              tabId,
+              localChatId,
             }),
           })
 
@@ -4024,6 +4028,8 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: assistantMessageId,
+                  tabId,
+                  localChatId,
                 }),
               })
             } else {
@@ -4036,6 +4042,8 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: lastMessage.externalId,
+                  tabId,
+                  localChatId,
                 }),
               })
               await stream.writeSSE({
@@ -4489,6 +4497,8 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: assistantMessageId,
+                  tabId,
+                  localChatId,
                 }),
               })
             } else {
@@ -4501,6 +4511,8 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: lastMessage.externalId,
+                  tabId,
+                  localChatId,
                 }),
               })
               await stream.writeSSE({
@@ -4549,6 +4561,8 @@ export const MessageApi = async (c: Context) => {
             data: JSON.stringify({
               chatId: chat.externalId,
               messageId: lastMessage.externalId,
+              tabId,
+              localChatId,
             }),
           })
           await stream.writeSSE({
@@ -4601,6 +4615,8 @@ export const MessageApi = async (c: Context) => {
             data: JSON.stringify({
               chatId: errorChatId,
               messageId: errorMsgId,
+              tabId,
+              localChatId,
             }),
           })
           // Try to get the last message again for error reporting
