@@ -257,7 +257,6 @@ export const ChatPage = ({
     };
   }, []);
 
-
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
