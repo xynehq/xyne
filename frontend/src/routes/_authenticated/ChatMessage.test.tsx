@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import { vi } from "vitest"
-import { ChatMessage, THINKING_PLACEHOLDER } from "./chat" // Assuming chat.tsx is in the same directory
+import { ChatMessage, THINKING_PLACEHOLDER } from "./chat"
+import { ThemeProvider } from "@/components/ThemeContext"
 
 // Mock child components or external dependencies
 vi.mock("@uiw/react-markdown-preview", () => ({
@@ -9,6 +10,21 @@ vi.mock("@uiw/react-markdown-preview", () => ({
     <div data-testid="markdown-preview">{source}</div>
   ),
 }))
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation(query => ({
+    matches: false, // Default to light mode for tests, or true for dark
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
 
 // Mock SVG assets
 vi.mock("@/assets/assistant-logo.svg", () => ({
@@ -61,14 +77,16 @@ describe("Thinking State Scenarios", () => {
     test('it ensures "Thinking..." text disappears and relevant action buttons are shown', () => {
       // 1. Initial render: component is actively streaming/thinking
       const { rerender } = render(
-        <ChatMessage
-          {...baseProps}
-          message="" // No final message content yet
-          thinking="" // Thinking prop has content
-          responseDone={false} // Response is NOT done
-          isStreaming={true} // IS streaming
-          dots="..." // Dots are present
-        />,
+        <ThemeProvider>
+          <ChatMessage
+            {...baseProps}
+            message="" // No final message content yet
+            thinking="" // Thinking prop has content
+            responseDone={false} // Response is NOT done
+            isStreaming={true} // IS streaming
+            dots="..." // Dots are present
+          />
+        </ThemeProvider>,
       )
 
       expect(
@@ -83,15 +101,17 @@ describe("Thinking State Scenarios", () => {
       // - thinking content is cleared
       // - dots are cleared
       rerender(
-        <ChatMessage
-          {...baseProps}
-          message="" // Message is EMPTY after stop
-          thinking="" // Thinking content is cleared
-          responseDone={true} // Response IS now done (stopped)
-          isStreaming={false} // Is NOT streaming
-          isRetrying={false} // Not retrying
-          dots="" // Dots are gone
-        />,
+        <ThemeProvider>
+          <ChatMessage
+            {...baseProps}
+            message="" // Message is EMPTY after stop
+            thinking="" // Thinking content is cleared
+            responseDone={true} // Response IS now done (stopped)
+            isStreaming={false} // Is NOT streaming
+            isRetrying={false} // Not retrying
+            dots="" // Dots are gone
+          />
+        </ThemeProvider>,
       )
       expect(
         screen.queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
@@ -106,15 +126,17 @@ describe("Thinking State Scenarios", () => {
 
       // 1. Initial render: A completed message is shown
       const { rerender } = render(
-        <ChatMessage
-          {...baseProps}
-          message={originalMessage}
-          thinking=""
-          responseDone={true}
-          isStreaming={false}
-          isRetrying={false}
-          dots=""
-        />,
+        <ThemeProvider>
+          <ChatMessage
+            {...baseProps}
+            message={originalMessage}
+            thinking=""
+            responseDone={true}
+            isStreaming={false}
+            isRetrying={false}
+            dots=""
+          />
+        </ThemeProvider>,
       )
 
       expect(
@@ -128,15 +150,17 @@ describe("Thinking State Scenarios", () => {
       // - isStreaming might become true if the retry process involves streaming
       // - dots appear
       rerender(
-        <ChatMessage
-          {...baseProps}
-          message="" // Message is often cleared for a retry
-          thinking="" // No specific thinking prop content for this phase, just "Thinking..."
-          responseDone={false} // Or true, depending on how parent handles it. Let's assume false for active retry.
-          isStreaming={true} // Retry is now "streaming"
-          isRetrying={true} // CRITICAL: Component is in retrying state
-          dots="..."
-        />,
+        <ThemeProvider>
+          <ChatMessage
+            {...baseProps}
+            message="" // Message is often cleared for a retry
+            thinking="" // No specific thinking prop content for this phase, just "Thinking..."
+            responseDone={false} // Or true, depending on how parent handles it. Let's assume false for active retry.
+            isStreaming={true} // Retry is now "streaming"
+            isRetrying={true} // CRITICAL: Component is in retrying state
+            dots="..."
+          />
+        </ThemeProvider>,
       )
 
       // Assert "Thinking..." text IS visible during retry
@@ -153,15 +177,17 @@ describe("Thinking State Scenarios", () => {
       // - dots disappear
       const retryResponseMessage = "Retry attempt resulted in this."
       rerender(
-        <ChatMessage
-          {...baseProps}
-          message={retryResponseMessage} // Message from the retry attempt
-          thinking=""
-          responseDone={true} // Retry attempt is "done"
-          isStreaming={false} // No longer streaming
-          isRetrying={false} // No longer in active retrying state for display purposes
-          dots=""
-        />,
+        <ThemeProvider>
+          <ChatMessage
+            {...baseProps}
+            message={retryResponseMessage} // Message from the retry attempt
+            thinking=""
+            responseDone={true} // Retry attempt is "done"
+            isStreaming={false} // No longer streaming
+            isRetrying={false} // No longer in active retrying state for display purposes
+            dots=""
+          />
+        </ThemeProvider>,
       )
 
       // Assert "Thinking..." text is NOT visible after stopping retry

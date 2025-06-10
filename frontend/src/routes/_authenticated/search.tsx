@@ -9,6 +9,7 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 const page = 8
 
 import { Sidebar } from "@/components/Sidebar"
+import { useTheme } from "@/components/ThemeContext"
 
 import { useEffect, useRef, useState } from "react"
 
@@ -78,6 +79,7 @@ interface IndexProps {
 }
 
 export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
+  const { theme } = useTheme()
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
@@ -483,12 +485,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                     <MarkdownPreview
                       source={answer}
                       wrapperElement={{
-                        "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                        "data-color-mode": theme,
                       }}
                       style={{
                         padding: 0,
-                        backgroundColor: document.documentElement.classList.contains('dark') ? "#1F2937" : "#ffffff", // bg-slate-800 for dark
-                        color: document.documentElement.classList.contains('dark') ? "#E5E7EB" : "#464B53", // text-gray-200 for dark
+                        backgroundColor: theme === 'dark' ? "#1F2937" : "#ffffff",
+                        color: theme === 'dark' ? "#E5E7EB" : "#464B53",
                       }}
                     />
                     {/* Gradient overlay when not expanded */}
