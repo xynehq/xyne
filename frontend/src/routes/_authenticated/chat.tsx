@@ -1778,7 +1778,7 @@ export const ChatMessage = ({
                           textAlign: "left",
                           overflowWrap: "break-word",
                         }}
-                        className="dark:text-gray-200"
+                        className="dark:text-white"
                         {...props}
                       />
                     ),
@@ -1790,14 +1790,14 @@ export const ChatMessage = ({
                           padding: "4px 8px",
                           overflowWrap: "break-word",
                         }}
-                        className="dark:border-gray-700 dark:text-gray-300"
+                        className="dark:border-gray-700 dark:text-white"
                         {...props}
                       />
                     ),
                     tr: ({ node, ...props }) => (
                       <tr
-                        style={{ backgroundColor: "#ffffff", border: "none" }} // Handled by className for dark
-                        className="dark:bg-slate-800"
+                        style={{ border: "none" }}
+                        className="bg-white dark:bg-[#1E1E1E]"
                         {...props}
                       />
                     ),
