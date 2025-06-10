@@ -841,7 +841,7 @@ export const handleSlackChannelIngestion = async (
         )
       }
     }
-     allConversationsInTotal.inc({team_id:team.id??team.name??"",user_email:data.email, status:OperationStatus.Success
+     allConversationsInTotal.inc({team_id:team.id??team.name??"",user_email:email, status:OperationStatus.Success
          }, conversations.length)
     for (const conv of conversations) {
       if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
