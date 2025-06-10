@@ -13,6 +13,8 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
+  DeleteDocumentApi, 
+  deleteDocumentSchema ,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -219,6 +221,11 @@ export const AppRoutes = app
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .post(
+    "/search/document/delete", 
+    zValidator("json", deleteDocumentSchema),
+    DeleteDocumentApi,
+  )
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(

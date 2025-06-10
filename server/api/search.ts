@@ -12,6 +12,7 @@ import {
   insert,
   GetDocument,
   UpdateDocument,
+  DeleteDocument,
   updateUserQueryHistory,
   SearchModes,
 } from "@/search/vespa"
@@ -23,6 +24,7 @@ import {
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
+  type VespaSchema,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -133,6 +135,11 @@ export const messageRetrySchema = z.object({
 })
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
+
+export const deleteDocumentSchema = z.object({
+  docId: z.string().min(1),
+  schema: z.string().min(1),
+})
 
 export const AutocompleteApi = async (c: Context) => {
   try {
@@ -383,4 +390,22 @@ export const AnswerApi = async (c: Context) => {
       Logger.error("SSE stream aborted")
     })
   })
+}
+
+export const DeleteDocumentApi = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    // @ts-ignore
+    const { docId, schema } = c.req.valid("json")
+    
+    await DeleteDocument(docId, schema as VespaSchema)
+    
+    return c.json({ success: true })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(error, `Delete Document Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not delete document",
+    })
+  }
 }
