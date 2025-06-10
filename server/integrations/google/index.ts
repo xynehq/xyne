@@ -139,6 +139,7 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 Logger.info("Gmail worker initialized")
 
+gmailWorker.onmessage
 // Map to store Tracker instances for active jobs, keyed by a unique jobId.
 const activeJobTrackers = new Map<string, Tracker>()
 
@@ -209,6 +210,14 @@ const initializeGmailWorker = () => {
           `Main Thread: No active tracker found for jobId: ${jobIdFromResult} when trying to update stats. (User: ${result.userEmail}, StatType: ${result.statType}, Count: ${result.count})`,
         )
       }
+    } else if(result.type === WorkerResponseTypes.ProgressUpdate) {
+      Logger.info(
+        `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
+      ) 
+      totalIngestedMails.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Success}, result.stats.messageCount)
+      totalAttachmentIngested.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Success}, result.stats.attachmentCount)
+      ingestionMailErrorsTotal.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Failure}, result.stats.failedMessageCount)
+      totalAttachmentError.inc({email:result.email,account_type: "SERVICE_ACCOUNT", status:OperationStatus.Failure}, result.stats.failedAttachmentCount)
     }
   }
 
@@ -941,6 +950,7 @@ import {
 } from "@/metrics/google/metadata_metrics"
 import type { Logger } from "pino"
 import { totalGmailToBeIngestedCount, totalSkippedMails } from "@/metrics/google/gmail-metrics"
+import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),

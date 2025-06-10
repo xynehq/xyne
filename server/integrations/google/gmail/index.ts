@@ -134,6 +134,7 @@ export const handleGmailIngestion = async (
                 mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                 status: "FAILED",
                 error_type: "ERROR_IN_GMAIL_INGESTION",
+                account_type: "SERVICE_ACCOUNT"
               },
               1,
             )
