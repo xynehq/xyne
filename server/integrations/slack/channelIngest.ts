@@ -218,22 +218,56 @@ export const safeConversationHistory = async (
   endDate: string,
 ): Promise<ConversationsHistoryResponse> => {
   // Convert date strings to Unix timestamps
-  const oldestTimestamp = startDate
-    ? Math.floor(new Date(startDate).getTime() / 1000).toString()
-    : timestamp
-  const latestTimestamp = endDate
-    ? Math.floor(new Date(endDate).getTime() / 1000).toString()
-    : undefined
-  console.log(oldestTimestamp)
-  console.log(latestTimestamp)
+  let oldestTs: string = timestamp; // Initialize with the fallback timestamp
+  let latestTs: string | undefined = undefined;
+
+  if (startDate) {
+    try {
+      const startDateObj = new Date(startDate);
+      if (isNaN(startDateObj.getTime())) {
+        Logger.warn(
+          `Invalid startDate "${startDate}" provided for channel ${channelId}. Falling back to oldest: ${timestamp}.`,
+        );
+      } else {
+        startDateObj.setUTCHours(0, 0, 0, 0); // Set to the very beginning of the day in UTC
+        oldestTs = Math.floor(startDateObj.getTime() / 1000).toString();
+      }
+    } catch (e) {
+      Logger.warn(
+        `Error processing startDate "${startDate}" for channel ${channelId}. Falling back to oldest: ${timestamp}. Error: ${e}`,
+      );
+    }
+  }
+
+  if (endDate) {
+    try {
+      const endDateObj = new Date(endDate);
+      if (isNaN(endDateObj.getTime())) {
+        Logger.warn(
+          `Invalid endDate "${endDate}" provided for channel ${channelId}. Not applying 'latest' filter.`,
+        );
+      } else {
+        endDateObj.setUTCHours(23, 59, 59, 999); // Set to the very end of the day in UTC
+        latestTs = Math.floor(endDateObj.getTime() / 1000).toString();
+      }
+    } catch (e) {
+      Logger.warn(
+        `Error processing endDate "${endDate}" for channel ${channelId}. Not applying 'latest' filter. Error: ${e}`,
+      );
+    }
+  }
+
+  console.log("Calculated oldestTimestamp:", oldestTs);
+  console.log("Calculated latestTimestamp:", latestTs);
+
   return retryOnFatal(
     () =>
       client.conversations.history({
         channel: channelId,
         limit: 999,
         cursor,
-        oldest: oldestTimestamp,
-        latest: latestTimestamp,
+        oldest: oldestTs,
+        latest: latestTs,
       }),
     3,
     1000,

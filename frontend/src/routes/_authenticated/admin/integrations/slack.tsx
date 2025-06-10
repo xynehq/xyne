@@ -438,7 +438,7 @@ const SlackOAuthTab = ({
               onClick={handleRegularIngestion}
               disabled={isRegularIngestionActive}
             >
-              {isRegularIngestionActive ? "Ingesting..." : "Ingest More"}
+              {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
             </Button>
           )}
 
@@ -944,7 +944,7 @@ const ManualIngestionForm = ({
       />
 
       <Button type="submit" disabled={isManualIngestionActive}>
-        {isManualIngestionActive ? "Ingesting..." : "Start Ingestion"}
+        {isManualIngestionActive ? "Ingesting..." : "Ingest Channels"}
       </Button>
     </form>
   )
