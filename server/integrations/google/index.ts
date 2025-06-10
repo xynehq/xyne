@@ -1111,6 +1111,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           countDriveFiles(userJwtClient,userEmail),
           getGmailCounts(userJwtClient, userEmail),
         ])
+        
         const mailCountExcludingPromotions =
           gmailCounts.messagesExcludingPromotions
 

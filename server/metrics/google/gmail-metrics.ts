@@ -35,3 +35,11 @@ export const totalAttachmentError = new Counter({
   labelNames: ["mime_type", "status", "email", "account_type", "error_type"],
 })
 metricRegister.registerMetric(totalAttachmentError)
+
+export const totalGmailToBeIngested = new Counter({
+  name:"gmail_to_be_ingested_total",
+  help:"Total Number of Gmails to be Ingested",
+  labelNames:["mime_type", "status", "email", "account_type"]
+})
+
+metricRegister.registerMetric(totalGmailToBeIngested)
