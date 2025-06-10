@@ -13,8 +13,6 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
-  DeleteDocumentApi, 
-  deleteDocumentSchema ,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -62,7 +60,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi } from "@/api/dataSource"
+import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, } from "@/api/dataSource" 
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
