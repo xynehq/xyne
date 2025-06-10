@@ -5383,9 +5383,6 @@ export const MessageWithToolsApi = async (c: Context) => {
           const humanReadableLog = convertReasoningStepToText(reasoningStep)
           agentLog.push(humanReadableLog)
           structuredReasoningSteps.push(reasoningStep)
-
-          // We'll build the scratchpad string outside this function, using the structured steps
-
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
             data: JSON.stringify(reasoningStep),
@@ -5468,7 +5465,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               workspace.id,
               connector.id,
             )
-
             // Filter to only the requested tools, or use all tools if toolNames is empty
             const filteredTools = tools.filter((tool) => {
               const isIncluded = toolExternalIds.includes(tool.externalId!)
@@ -5512,6 +5508,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
+          const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
             iterationCount++
             console.log(iterationCount, "iterationCount")
@@ -5520,11 +5517,44 @@ export const MessageWithToolsApi = async (c: Context) => {
               iteration: iterationCount,
             })
 
-            agentScratchpad = structuredReasoningSteps
+            const reasoningLog = structuredReasoningSteps
               .map(convertReasoningStepToText)
               .join("\n")
-            // console.log(agentScratchpad, "agentScratchpad")
-            // Build tools prompt
+
+            // 2. Build a summary of the evidence (what the agent has found).
+            // This is crucial for the LLM to assess if the context is sufficient
+            // and to get the docIds for the `excludedIds` parameter.
+            let loopWarningPrompt = ""
+            const evidenceSummary =
+              gatheredFragments.length > 0
+                ? `\n--- CURRENTLY GATHERED EVIDENCE (for final answer generation) ---\n` +
+                  gatheredFragments
+                    .map(
+                      (f, i) =>
+                        `[Fragment ${i + 1}] (Source Doc ID: ${f.source.docId})\n` +
+                        `  - Title: ${f.source.title || "Untitled"}\n` +
+                        // Truncate content in the scratchpad to keep the prompt concise.
+                        // The full content is available in `planningContext` for the final answer.
+                        `  - Content Snippet: "${f.content}"`,
+                    )
+                    .join("\n\n")
+                : "\n--- NO EVIDENCE GATHERED YET ---"
+
+            if (previousToolCalls.length) {
+              loopWarningPrompt = `
+                 ---
+                 **CRITICAL WARNING:** You have already called some tools ${previousToolCalls.map((toolCall, idx) => `[Iteration-${idx}] Tool: ${toolCall.tool}, Args: ${JSON.stringify(toolCall.args)}`).join("\n")}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
+               You **MUST** change your strategy.
+                For example: 
+                  1.  Choose a **DIFFERENT TOOL** (e.g., use a broader 'search' instead of 'metadata_retrieval').
+                  2.  Use the **SAME TOOL** but with **DIFFERENT ARGUMENTS** (e.g., change keywords, remove filters, adjust the time range).
+
+                Do NOT make this call again. Formulate a new, distinct plan.
+                 ---
+              `
+            }
+
+            agentScratchpad = evidenceSummary + loopWarningPrompt
             let toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -5537,32 +5567,27 @@ export const MessageWithToolsApi = async (c: Context) => {
               )) {
                 if (tools.length > 0) {
                   for (const tool of tools) {
-                    if (selectToolSchema.safeParse(tool).success) {
-                      toolsPrompt += `${constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!)}\n\n`
+                    const parsedTool = selectToolSchema.safeParse(tool)
+                    if (parsedTool.success && parsedTool.data.toolSchema) {
+                      toolsPrompt += `${constructToolContext(parsedTool.data.toolSchema)}\n\n`
                     }
                   }
                 }
               }
             }
+
             await logAndStreamReasoning({
               type: AgentReasoningStepType.Planning,
               details: `Planning next step with ${gatheredFragments.length} context fragments.`,
             })
-            const initialPlanning = gatheredFragments
-              .map(
-                (f, i) =>
-                  `[${i + 1}] ${f.source.title || "Source"}: ${f.content}...`,
-              )
-              .join("\n")
             const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,
               ctx,
               toolsPrompt,
               agentScratchpad,
               {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: false,
+                modelId: defaultBestModel,
+                stream: true,
                 json: true,
                 reasoning:
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -5657,7 +5682,10 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (parsed.tool && !parsed.answer) {
               const toolName = parsed.tool
               const toolParams = parsed.arguments
-
+              previousToolCalls.push({
+                tool: toolName,
+                args: toolParams,
+              })
               Logger.info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
                   toolParams,
@@ -5665,9 +5693,9 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
 
               let toolExecutionResponse: {
-                result: string 
+                result: string
                 contexts?: MinimalAgentFragment[]
-                error?: string 
+                error?: string
               } | null = null
 
               const toolExecutionSpan = streamSpan.startSpan(
@@ -5806,6 +5834,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                 }
               }
+              parsed = {
+                answer: "",
+                tool: "",
+                arguments: {} as any,
+              }
+              buffer = ""
               toolExecutionSpan.end()
 
               // 3. UNIFIED RESPONSE PROCESSING AND STATE UPDATE
@@ -5955,7 +5989,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       type: AgentReasoningStepType.BroadeningSearch,
                       details: `Context is insufficient. Planning iteration ${iterationCount + 1}.`,
                     })
-                    continue 
+                    continue
                   } else {
                     // We've hit the max iterations with insufficient context
                     await logAndStreamReasoning({
@@ -6042,7 +6076,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               email: user.email,
               sources: [],
               message: processMessage(answer, citationMap),
-              thinking: thinking,
+              thinking: JSON.stringify(structuredReasoningSteps),
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })

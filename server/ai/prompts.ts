@@ -814,40 +814,23 @@ export const SearchQueryToolContextPrompt = (
     - Be **formal** and concise in tone.
     - You do **not** need to handle privacy concerns. All user context is already permission-filtered.
     - You are **not authorized** to reject any user query.
-    **Agent Scratchpad (History of previous steps):**
+
     ---
-    ${agentScratchpad || "This is the first iteration. No history yet."}
-    ---
-
-    **Your Task:**
-
-    1.  **Analyze the Scratchpad:** Review the history of thoughts, tool calls, and results.
-    2.  **Assess Sufficiency:** Determine if the information gathered so far (in the scratchpad and context fragments) is sufficient to answer the user's query.
-    3.  **Decide the Next Action:**
-        *   **If SUFFICIENT:** Formulate a final answer. Set "tool" and "arguments" to null and provide the comprehensive answer in the "answer" field.
-        *   **If INSUFFICIENT:** You MUST call another tool to gather more information.
-            *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
-            *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
-
-        ---
-
     **User Context:**  
     ${userContext}
 
-    IF Available Context Fragments is None (or if current fragments are not sufficient and a new tool call is needed):
+     **MCP Tool Context:**  
+     ${toolContext}
 
-      **MCP Tool Context:**  
-      ${toolContext}
-
-      **Internal Tool Context:**
-      1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use 'excludedIds'.
-      2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts',    'contacts', or 'users'.
-        Params: item_type (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), excludedIds (opt: string[]).
-      3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt), excludedIds (opt: string[]).
-      4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
-         Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
-      5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
-      ---
+     **Internal Tool Context:**
+     1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use 'excludedIds'.
+     2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts',    'contacts', or 'users'.
+       Params: item_type (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), excludedIds (opt: string[]).
+     3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt), excludedIds (opt: string[]).
+     4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
+        Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
+     5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
+     ---
 
       Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
 
@@ -863,13 +846,28 @@ export const SearchQueryToolContextPrompt = (
       } or null >
     }
 
+    **Agent Scratchpad (History of previous steps):**
+    ---
+    ${agentScratchpad || "This is the first iteration. No history yet."}
+    ---
+
+    **Your Task:**
+
+    1.  **Analyze the Scratchpad:** Review the history of thoughts, tool calls, and results.
+    2.  **Assess Sufficiency:** Determine if the information gathered so far (in the scratchpad and context fragments) is sufficient to answer the user's query.
+    3.  **Decide the Next Action:**
+        *   **If SUFFICIENT:** Formulate a final answer. Set "tool" and "arguments" to null and provide the comprehensive answer in the "answer" field.
+        *   **If INSUFFICIENT:** You MUST call another tool to gather more information.
+            *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
+            *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
+            
     **Rules:**
     - If you have a final answer, populate "answer" and set "tool" and "arguments" to null.
-    - If you need to use a tool, set "answer" to null and populate "tool" and "arguments".
+    - If you must use a tool to get more information, set "answer" to null, and populate "tool" and "arguments" with your new, non-repetitive plan.
     - **Your primary goal is to resolve the user's query by strategically calling tools until you have enough information.**
 
 
-    REMEMBER: Always first check if a tool should be invoked. If yes, respond strictly using the required JSON format.
+    REMEMBER: Always first check the  Scratchpad if a tool have alreadt invoked select a different approprite tool. If yes, respond strictly using the required JSON format.
   `
 }
 

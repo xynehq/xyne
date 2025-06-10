@@ -28,14 +28,13 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
 export const constructToolContext = (tool_schema: string) => {
   const tool = JSON.parse(tool_schema);
-  const toolSchema = JSON.parse(tool.tool_schema)
-  const toolSchemaContext = Object.entries(toolSchema).map(
-    ([key, value]) => `- ${key}: ${value}`
+  const toolSchemaContext = Object.entries(tool).map(
+    ([key, value]) => `- ${key}: ${JSON.stringify(value)}`
   );
-  return `Tool Schema:
-  ToolName: ${tool.tool_name} \n
-  Description: ${tool.description} \n
-   ${toolSchemaContext.join('\n')}`;
+  return `
+  Tool Schema:
+   ${toolSchemaContext.join('\n')}
+   `;
 };
 
 // Function for handling file context
