@@ -434,6 +434,7 @@ export async function insertChannelMessages(
               conversation_id: channelId,
               status: OperationStatus.Success,
               team_id: message.team,
+              email: email
             })
           } catch (error) {
             Logger.error(error, `Error inserting chat message`)
@@ -523,6 +524,7 @@ export async function insertChannelMessages(
                   conversation_id: channelId,
                   status: OperationStatus.Success,
                   team_id: message.team,
+                  email: email
                 })
               } catch (error) {
                 Logger.error(error, `Error inserting chat message`)
