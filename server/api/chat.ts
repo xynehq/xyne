@@ -1133,6 +1133,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
+      messages,
     })
 
     const answer = yield* processIterator(
