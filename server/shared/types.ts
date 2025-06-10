@@ -318,3 +318,8 @@ export enum MessageFeedback {
   Like = "like",
   Dislike = "dislike",
 }
+
+export enum IngestionType {
+  fullIngestion = "full_ingestion",
+  partialIngestion = "partial_Ingestion",
+}
