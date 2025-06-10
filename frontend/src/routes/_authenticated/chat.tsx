@@ -257,6 +257,7 @@ export const ChatPage = ({
     };
   }, []);
 
+
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -652,8 +653,6 @@ export const ChatPage = ({
         thinking: (prevResp?.thinking || "") + event.data,
       }))
     })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
