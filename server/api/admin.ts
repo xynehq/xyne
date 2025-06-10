@@ -56,7 +56,6 @@ export const GetConnectors = async (c: Context) => {
   }
   const user = users[0]
   const connectors = await getConnectors(workspaceId, user.id)
-  console.log(connectors)
   return c.json(connectors)
 }
 
@@ -645,7 +644,6 @@ export const StartSlackIngestionApi = async (c: Context) => {
 
 export const IngestMoreChannelApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
-  console.log(sub)
   // @ts-ignore
   const payload = c.req.valid("json") as {
     connectorId: string
@@ -668,10 +666,10 @@ export const IngestMoreChannelApi = async (c: Context) => {
       message: "Successfully ingested the channels",
     })
   } catch (error) {
-    Logger.info(error)
+    Logger.error(error, "Failed to ingest Slack channels")
     return c.json({
       success: false,
-      message: error,
+      message: getErrorMessage(error),
     })
   }
 }

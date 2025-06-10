@@ -613,23 +613,6 @@ export const Slack = ({
       setIsRegularIngestionActive(false)
     }
   }
-
-  useEffect(() => {
-    console.log("slackUserStats changed:", slackUserStats)
-  }, [slackUserStats])
-
-  useEffect(() => {
-    console.log("isRegularIngestionActive:", isRegularIngestionActive)
-  }, [isRegularIngestionActive])
-
-  useEffect(() => {
-    console.log("isManualIngestionActive:", isManualIngestionActive)
-  }, [isManualIngestionActive])
-
-  useEffect(() => {
-    console.log("slackProgress:", slackProgress)
-  }, [slackProgress])
-
   return (
     <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar

@@ -218,47 +218,48 @@ export const safeConversationHistory = async (
   endDate: string,
 ): Promise<ConversationsHistoryResponse> => {
   // Convert date strings to Unix timestamps
-  let oldestTs: string = timestamp; // Initialize with the fallback timestamp
-  let latestTs: string | undefined = undefined;
+  let oldestTs: string = timestamp // Initialize with the fallback timestamp
+  let latestTs: string | undefined = undefined
+
+  Logger.info(
+    `starting the slack ingestion for data rage ${startDate} -> ${endDate}`,
+  )
 
   if (startDate) {
     try {
-      const startDateObj = new Date(startDate);
+      const startDateObj = new Date(startDate)
       if (isNaN(startDateObj.getTime())) {
         Logger.warn(
           `Invalid startDate "${startDate}" provided for channel ${channelId}. Falling back to oldest: ${timestamp}.`,
-        );
+        )
       } else {
-        startDateObj.setUTCHours(0, 0, 0, 0); // Set to the very beginning of the day in UTC
-        oldestTs = Math.floor(startDateObj.getTime() / 1000).toString();
+        startDateObj.setUTCHours(0, 0, 0, 0) // Set to the very beginning of the day in UTC
+        oldestTs = Math.floor(startDateObj.getTime() / 1000).toString()
       }
     } catch (e) {
       Logger.warn(
         `Error processing startDate "${startDate}" for channel ${channelId}. Falling back to oldest: ${timestamp}. Error: ${e}`,
-      );
+      )
     }
   }
 
   if (endDate) {
     try {
-      const endDateObj = new Date(endDate);
+      const endDateObj = new Date(endDate)
       if (isNaN(endDateObj.getTime())) {
         Logger.warn(
           `Invalid endDate "${endDate}" provided for channel ${channelId}. Not applying 'latest' filter.`,
-        );
+        )
       } else {
-        endDateObj.setUTCHours(23, 59, 59, 999); // Set to the very end of the day in UTC
-        latestTs = Math.floor(endDateObj.getTime() / 1000).toString();
+        endDateObj.setUTCHours(23, 59, 59, 999) // Set to the very end of the day in UTC
+        latestTs = Math.floor(endDateObj.getTime() / 1000).toString()
       }
     } catch (e) {
       Logger.warn(
         `Error processing endDate "${endDate}" for channel ${channelId}. Not applying 'latest' filter. Error: ${e}`,
-      );
+      )
     }
   }
-
-  console.log("Calculated oldestTimestamp:", oldestTs);
-  console.log("Calculated latestTimestamp:", latestTs);
 
   return retryOnFatal(
     () =>
@@ -791,9 +792,6 @@ export const handleSlackChannelIngestion = async (
   email: string,
 ) => {
   try {
-    console.log(email)
-    console.log(connectorId)
-
     const abortController = new AbortController()
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(
       db,
