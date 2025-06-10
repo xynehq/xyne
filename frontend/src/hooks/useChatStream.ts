@@ -15,9 +15,9 @@ interface StreamState {
   messageId?: string
   chatId?: string
   isStreaming: boolean
+  isRetrying?: boolean
   subscribers: Set<() => void>
 }
-
 interface StreamInfo {
   partial: string
   thinking: string
@@ -26,6 +26,7 @@ interface StreamInfo {
   messageId?: string
   chatId?: string
   isStreaming: boolean
+  isRetrying?: boolean
 }
 
 // Global map to store active streams - persists across component unmounts
@@ -333,7 +334,7 @@ export const startStream = async (
 }
 
 // Stop a specific stream
-export const stopStream = async (streamKey: string, queryClient?: any): Promise<void> => {
+export const stopStream = async (streamKey: string, queryClient?: any, setRetryIsStreaming?: (isRetrying: boolean) => void): Promise<void> => {
   const resolvedKey = chatIdToUUIDMap.get(streamKey) || streamKey
   const stream = activeStreams.get(resolvedKey)
   
@@ -346,6 +347,11 @@ export const stopStream = async (streamKey: string, queryClient?: any): Promise<
   
   stream.isStreaming = false
   stream.es.close()
+  
+  // Set retry streaming flag to false when stopping
+  if (setRetryIsStreaming) {
+    setRetryIsStreaming(false)
+  }
   
   // Send stop request to backend using the real chatId if available
   const currentChatId = stream.chatId
@@ -414,7 +420,8 @@ export const getStreamState = (streamKey: string): StreamInfo => {
 // React hook that subscribes to stream updates
 export const useChatStream = (
   chatId: string | null,
-  onTitleUpdate?: (title: string) => void
+  onTitleUpdate?: (title: string) => void,
+  setRetryIsStreaming?: (isRetrying: boolean) => void
 ) => {
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -505,8 +512,8 @@ export const useChatStream = (
   }, [chatId, queryClient, router, onTitleUpdate])
 
   const wrappedStopStream = useCallback(async () => {
-    await stopStream(currentStreamKey, queryClient)
-  }, [currentStreamKey, queryClient])
+    await stopStream(currentStreamKey, queryClient, setRetryIsStreaming)
+  }, [currentStreamKey, queryClient, setRetryIsStreaming])
 
   const retryMessage = useCallback(async (
     messageId: string,
@@ -515,6 +522,21 @@ export const useChatStream = (
     if (!messageId || streamInfo.isStreaming) return
 
     console.log(`[useChatStream] Retrying message: ${messageId}`)
+
+    // STEP 1 – mark old answer as streaming and clear its content
+    if (chatId) {
+      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+        if (!old?.messages) return old
+        return {
+          ...old,
+          messages: old.messages.map((m: any) =>
+            m.externalId === messageId
+              ? { ...m, isRetrying: true, message: "" } // reset content, keep position
+              : m,
+          ),
+        }
+      })
+    }
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
@@ -525,6 +547,11 @@ export const useChatStream = (
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
+
+    // Set retry streaming flag to true when starting
+    if (setRetryIsStreaming) {
+      setRetryIsStreaming(true)
+    }
 
     const streamKey = currentStreamKey
     
@@ -537,7 +564,8 @@ export const useChatStream = (
       citationMap: {},
       messageId: undefined,
       chatId: chatId || undefined,
-      isStreaming: true,
+      isStreaming: false,
+      isRetrying: true,
       subscribers: new Set(),
     }
 
@@ -550,58 +578,89 @@ export const useChatStream = (
       subscriberRef.current()
     }
 
+    // STEP 2 – helper to update the cached message in-place
+    const patchContent = (delta: string, isFinal = false) => {
+      if (!chatId) return
+      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+        if (!old?.messages) return old
+        return {
+          ...old,
+          messages: old.messages.map((m: any) =>
+            m.externalId === messageId
+              ? {
+                  ...m,
+                  message: isFinal ? delta : (m.message || "") + delta,
+                  isRetrying: !isFinal,
+                }
+              : m,
+          ),
+        }
+      })
+    }
+
     // Setup event listeners for retry
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       streamState.partial += event.data
-      notifySubscribers(streamKey)
+      patchContent(event.data) // incremental text
+    //   notifySubscribers(streamKey)
     })
 
     eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
       streamState.thinking += event.data
-      notifySubscribers(streamKey)
+    //   notifySubscribers(streamKey)
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
       streamState.sources = contextChunks
       streamState.citationMap = citationMap
-      notifySubscribers(streamKey)
+    //   notifySubscribers(streamKey)
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
       const { messageId: newMessageId } = JSON.parse(event.data)
       streamState.messageId = newMessageId
-      notifySubscribers(streamKey)
+    //   notifySubscribers(streamKey)
     })
 
     eventSource.addEventListener(ChatSSEvents.End, () => {
-      streamState.isStreaming = false
+      patchContent(streamState.partial, true) // final text
       if (chatId) {
         queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
       }
-      notifySubscribers(streamKey)
+      // Set retry streaming flag to false when done
+      if (setRetryIsStreaming) {
+        setRetryIsStreaming(false)
+      }
+    //   notifySubscribers(streamKey)
       eventSource.close()
     })
 
     eventSource.addEventListener(ChatSSEvents.Error, (event) => {
       console.error("Retry stream error:", event.data)
-      streamState.isStreaming = false
       toast({
         title: "Error",
         description: event.data,
         variant: "destructive",
       })
-      notifySubscribers(streamKey)
+      // Set retry streaming flag to false on error
+      if (setRetryIsStreaming) {
+        setRetryIsStreaming(false)
+      }
+    //   notifySubscribers(streamKey)
       eventSource.close()
     })
 
     eventSource.onerror = () => {
-      streamState.isStreaming = false
       console.error("Retry EventSource error")
-      notifySubscribers(streamKey)
+      // Set retry streaming flag to false on connection error
+      if (setRetryIsStreaming) {
+        setRetryIsStreaming(false)
+      }
+    //   notifySubscribers(streamKey)
       eventSource.close()
     }
-  }, [currentStreamKey, streamInfo.isStreaming, queryClient, chatId])
+  }, [currentStreamKey, queryClient, chatId, setRetryIsStreaming])
 
   return {
     ...streamInfo,

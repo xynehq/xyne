@@ -69,6 +69,7 @@ interface ChatBoxProps {
   setQuery: (query: string) => void
   handleSend: (messageToSend: string, selectedSources?: string[]) => void
   isStreaming?: boolean
+  retryIsStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null
   allCitations: Map<string, Citation>
@@ -188,6 +189,7 @@ export const ChatBox = ({
   setQuery,
   handleSend,
   isStreaming = false,
+  retryIsStreaming = false,
   allCitations,
   handleStop,
   chatId,
@@ -1526,7 +1528,7 @@ export const ChatBox = ({
             {/* Use prop for styling */}
             <span>Reasoning</span>
           </button>
-          {isStreaming && chatId ? (
+          {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}
               style={{ marginLeft: "auto" }}
@@ -1536,7 +1538,7 @@ export const ChatBox = ({
             </button>
           ) : (
             <button
-              disabled={isStreaming}
+              disabled={isStreaming || retryIsStreaming}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
               className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"

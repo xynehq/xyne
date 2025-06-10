@@ -177,6 +177,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [query, setQuery] = useState("")
   const chatId = (params as any).chatId || null
   
+  // Add retryIsStreaming state
+  const [retryIsStreaming, setRetryIsStreaming] = useState(false)
+  
   // Use custom hooks for streaming and history
   const { data: historyData, isLoading: historyLoading } = useChatHistory(chatId)
   const {
@@ -189,7 +192,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     startStream,
     stopStream,
     retryMessage,
-  } = useChatStream(chatId, (title: string) => setChatTitle(title))
+  } = useChatStream(chatId, (title: string) => setChatTitle(title), setRetryIsStreaming)
   
   // Use history data if available, otherwise fall back to loader data
   const messages = historyData?.messages || (isWithChatId ? data?.messages || [] : [])
@@ -229,6 +232,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
     return storedValue ? JSON.parse(storedValue) : true
   })
+
+  // Compute disableRetry flag for retry buttons
+  const disableRetry = isStreaming || retryIsStreaming
 
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
@@ -345,7 +351,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
-    if (isStreaming) {
+    if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
           if (prev.length >= 3) {
@@ -360,7 +366,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     } else {
       setDots("")
     }
-  }, [isStreaming])
+  }, [isStreaming, retryIsStreaming])
 
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
@@ -681,6 +687,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       onShowRagTrace={handleShowRagTrace}
                       feedbackStatus={feedbackMap[message.externalId!] || null}
                       onFeedback={handleFeedback}
+                      disableRetry={disableRetry}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -714,6 +721,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         onShowRagTrace={handleShowRagTrace}
                         feedbackStatus={feedbackMap[message.externalId!] || null}
                         onFeedback={handleFeedback}
+                        disableRetry={disableRetry}
                       />
                     )}
                   </Fragment>
@@ -752,6 +760,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   onShowRagTrace={handleShowRagTrace}
                   feedbackStatus={null} 
                   onFeedback={handleFeedback}
+                  disableRetry={disableRetry}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -774,6 +783,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               handleSend={handleSend}
               handleStop={stopStream}
               isStreaming={isStreaming}
+              retryIsStreaming={retryIsStreaming}
               allCitations={allCitations}
               chatId={chatId}
               isReasoningActive={isReasoningActive}
@@ -963,6 +973,7 @@ export const ChatMessage = ({
   onShowRagTrace,
   feedbackStatus,
   onFeedback,
+  disableRetry = false,
 }: {
   message: string
   thinking: string
@@ -981,6 +992,7 @@ export const ChatMessage = ({
   onShowRagTrace: (messageId: string) => void
   feedbackStatus?: MessageFeedback | null;
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
+  disableRetry?: boolean;
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1149,9 +1161,9 @@ export const ChatMessage = ({
                   }
                 />
                 <img
-                  className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                  className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => messageId && !isStreaming && handleRetry(messageId)}
+                  onClick={() => messageId && !disableRetry && handleRetry(messageId)}
                   title="Retry"
                 />
                 {messageId && onFeedback && (
