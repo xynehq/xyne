@@ -1,4 +1,9 @@
-import { answerContextMap, cleanContext, constructToolContext, userContext } from "@/ai/context"
+import {
+  answerContextMap,
+  cleanContext,
+  constructToolContext,
+  userContext,
+} from "@/ai/context"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
@@ -11,6 +16,7 @@ import {
   generateAnswerBasedOnToolOutput,
   meetingPromptJsonStream,
   generateToolSelectionOutput,
+  generateSynthesisBasedOnToolOutput,
 } from "@/ai/provider"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -56,7 +62,15 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
+import {
+  AgentReasoningStepType,
+  AgentToolName,
+  ChatSSEvents,
+  ContextSysthesisState,
+  OpenAIError,
+  type AgentReasoningStep,
+  type MessageReqType,
+} from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -86,6 +100,7 @@ import {
 } from "@/search/vespa"
 import {
   Apps,
+  CalendarEntity,
   chatMessageSchema,
   DriveEntity,
   entitySchema,
@@ -95,7 +110,9 @@ import {
   isValidApp,
   isValidEntity,
   mailAttachmentSchema,
+  MailEntity,
   mailSchema,
+  SystemEntity,
   userSchema,
   type Entity,
   type VespaChatMessage,
@@ -125,6 +142,7 @@ import {
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
+import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -4280,45 +4298,18 @@ async function* getToolContinuationIterator(
   }
 }
 
-function isValidToolCall(toolSelection: any, jsonString: string): boolean {
-  // Must have a tool property with a non-empty string value
-  if (
-    !toolSelection ||
-    typeof toolSelection.tool !== "string" ||
-    !toolSelection.tool.trim()
-  ) {
-    return false
-  }
+function flattenObject(obj: any, parentKey = ""): [string, string][] {
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const fullKey = parentKey ? `${parentKey}.${key}` : key
 
-  // Must have arguments property
-  if (!toolSelection.hasOwnProperty("arguments")) {
-    return false
-  }
-
-  // Count opening and closing braces to ensure balance
-  let openBraces = 0
-  let closeBraces = 0
-  for (const char of jsonString) {
-    if (char === "{") openBraces++
-    if (char === "}") closeBraces++
-  }
-
-  if (openBraces !== closeBraces) {
-    return false
-  }
-
-  // Check for special keywords that might indicate incomplete JSON
-  if (
-    jsonString.includes('"tool": "') &&
-    !jsonString.includes('"arguments":')
-  ) {
-    return false
-  }
-
-  return true
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return flattenObject(value, fullKey)
+    } else {
+      return [[fullKey, JSON.stringify(value)]]
+    }
+  })
 }
 
-// New message api with Tools
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -4376,6 +4367,932 @@ export const MessageWithToolsApi = async (c: Context) => {
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
+    interface AgentTool {
+      name: string
+      description: string
+      parameters: Record<
+        string,
+        {
+          type: string
+          description: string
+          required: boolean
+        }
+      >
+      execute: (
+        params: any,
+        span?: Span,
+      ) => Promise<{
+        result: string // Human-readable summary of action/result
+        contexts?: MinimalAgentFragment[] // Data fragments found
+        error?: string // Error message if failed
+      }>
+    }
+
+    const convertReasoningStepToText = (step: AgentReasoningStep): string => {
+      switch (step.type) {
+        case AgentReasoningStepType.AnalyzingQuery:
+          return step.details
+        case AgentReasoningStepType.Iteration:
+          return `### Iteration ${step.iteration}`
+        case AgentReasoningStepType.Planning:
+          return step.details // e.g., "Planning next step..."
+        case AgentReasoningStepType.ToolSelected:
+          return `Tool selected: ${step.toolName}`
+        case AgentReasoningStepType.ToolParameters:
+          const params = Object.entries(step.parameters)
+            .map(
+              ([key, value]) =>
+                `• ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+            )
+            .join("\n")
+          return `Parameters:\n${params}`
+        case AgentReasoningStepType.ToolExecuting:
+          return `Executing tool: ${step.toolName}...`
+        case AgentReasoningStepType.ToolResult:
+          let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
+          if (step.itemsFound !== undefined) {
+            resultText += ` (Found ${step.itemsFound} item(s))`
+          }
+          if (step.error) {
+            resultText += `\nError: ${step.error}`
+          }
+          return resultText
+        case AgentReasoningStepType.Synthesis:
+          return step.details // e.g., "Synthesizing answer from X fragments..."
+        case AgentReasoningStepType.ValidationError:
+          return `Validation Error: ${step.details}`
+        case AgentReasoningStepType.BroadeningSearch:
+          return `Broadening Search: ${step.details}`
+        case AgentReasoningStepType.LogMessage:
+          return step.message
+        default:
+          return "Unknown reasoning step"
+      }
+    }
+    interface MinimalAgentFragment {
+      id: string // Unique ID for the fragment
+      content: string
+      source: Citation
+      confidence: number
+    }
+    // Search Tool (existing)
+    const searchTool: AgentTool = {
+      name: "search",
+      description:
+        "Search for general information across all data sources (Gmail, Calendar, Drive) using keywords.",
+      parameters: {
+        query: {
+          type: "string",
+          description: "The keywords or question to search for.",
+          required: true,
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (default: 10).",
+          required: false,
+        },
+        excludedIds: {
+          type: "array",
+          description: "Optional list of document IDs to exclude from results.",
+          required: false,
+        },
+      },
+      execute: async (
+        params: { query: string; limit?: number; excludedIds?: string[] },
+        span?: Span,
+      ) => {
+        const execSpan = span?.startSpan("execute_search_tool")
+        try {
+          const searchLimit = params.limit || 10
+          execSpan?.setAttribute("query", params.query)
+          execSpan?.setAttribute("limit", searchLimit)
+          if (params.excludedIds && params.excludedIds.length > 0) {
+            execSpan?.setAttribute(
+              "excludedIds",
+              JSON.stringify(params.excludedIds),
+            )
+          }
+          const searchResults = await searchVespa(
+            params.query,
+            email,
+            null,
+            null,
+            {
+              limit: searchLimit,
+              alpha: 0.5,
+              excludedIds: params.excludedIds, // Pass excludedIds
+              span: execSpan?.startSpan("vespa_search"),
+            },
+          )
+          const children = searchResults?.root?.children || []
+          execSpan?.setAttribute("results_count", children.length)
+          if (children.length === 0)
+            return { result: "No results found.", contexts: [] }
+          const fragments = children.map((r) => {
+            const citation = searchToCitation(r as any)
+            return {
+              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              content: answerContextMap(r as any, maxDefaultSummary),
+              source: citation,
+              confidence: r.relevance || 0.7,
+            }
+          })
+          const topItemsList = fragments
+            .slice(0, 3)
+            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+            .join("\n")
+          const summaryText = `Found ${fragments.length} results matching '${params.query}'.\nTop items:\n${topItemsList}`
+          return { result: summaryText, contexts: fragments }
+        } catch (error) {
+          const errMsg = getErrorMessage(error)
+          execSpan?.setAttribute("error", errMsg)
+          return { result: `Search error: ${errMsg}`, error: errMsg }
+        } finally {
+          execSpan?.end()
+        }
+      },
+    }
+
+    // Filtered Search Tool (existing)
+    const filteredSearchTool: AgentTool = {
+      name: "filtered_search",
+      description:
+        "Search for information using keywords within a specific application. The 'app' parameter MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'.",
+      parameters: {
+        query: {
+          type: "string",
+          description: "The keywords or question to search for.",
+          required: true,
+        },
+        app: {
+          type: "string",
+          description:
+            "The app to search in (MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'). Case-insensitive.",
+          required: true,
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (default: 10).",
+          required: false,
+        },
+        excludedIds: {
+          type: "array",
+          description: "Optional list of document IDs to exclude from results.",
+          required: false,
+        },
+      },
+      execute: async (
+        params: {
+          query: string
+          app: string
+          limit?: number
+          excludedIds?: string[]
+        },
+        span?: Span,
+      ) => {
+        const execSpan = span?.startSpan("execute_filtered_search_tool")
+        const lowerCaseApp = params.app.toLowerCase()
+        try {
+          const searchLimit = params.limit || 10
+          execSpan?.setAttribute("query", params.query)
+          execSpan?.setAttribute("app_original", params.app)
+          execSpan?.setAttribute("app_processed", lowerCaseApp)
+          execSpan?.setAttribute("limit", searchLimit)
+          if (params.excludedIds && params.excludedIds.length > 0) {
+            execSpan?.setAttribute(
+              "excludedIds",
+              JSON.stringify(params.excludedIds),
+            )
+          }
+
+          let appEnum: Apps | null = null
+          if (lowerCaseApp === "gmail") appEnum = Apps.Gmail
+          else if (lowerCaseApp === "googlecalendar")
+            appEnum = Apps.GoogleCalendar
+          else if (lowerCaseApp === "googledrive") appEnum = Apps.GoogleDrive
+          else {
+            const errorMsg = `Error: Invalid app specified: '${params.app}'. Valid apps are 'gmail', 'googlecalendar', 'googledrive'.`
+            execSpan?.setAttribute("error", errorMsg)
+            return { result: errorMsg, error: "Invalid app" }
+          }
+
+          const vespaOptions: any = {
+            limit: searchLimit,
+            offset: 0,
+            excludedIds: params.excludedIds,
+            span: execSpan,
+          }
+
+          // Use lowerCaseApp in the error message
+          if (!appEnum) {
+            // Use correct app names in error message
+            const errorMsg = `Invalid app specified: ${params.app}. Valid apps: gmail, google-calendar, google-drive.`
+            execSpan?.setAttribute("error", errorMsg)
+            return { result: errorMsg, error: "Invalid app" }
+          }
+          const searchResults = await searchVespa(
+            params.query,
+            email,
+            appEnum,
+            null,
+            {
+              limit: searchLimit,
+              alpha: 0.5,
+              excludedIds: params.excludedIds, // Pass excludedIds
+              span: execSpan?.startSpan("vespa_search"),
+            },
+          )
+          const children = searchResults?.root?.children || []
+          execSpan?.setAttribute("results_count", children.length)
+          // Use lowerCaseApp in the success message
+          if (children.length === 0)
+            return {
+              result: `No results found in ${lowerCaseApp}.`,
+              contexts: [],
+            }
+          const fragments = children.map((r) => {
+            const citation = searchToCitation(r as any)
+            return {
+              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              content: answerContextMap(r as any, maxDefaultSummary),
+              source: citation,
+              confidence: r.relevance || 0.7,
+            }
+          })
+          // Use lowerCaseApp in the summary
+          const topItemsList = fragments
+            .slice(0, 3)
+            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+            .join("\n")
+          const summaryText = `Found ${fragments.length} results in \`${lowerCaseApp}\`.\nTop items:\n${topItemsList}`
+          return { result: summaryText, contexts: fragments }
+        } catch (error) {
+          const errMsg = getErrorMessage(error)
+          execSpan?.setAttribute("error", errMsg)
+          // Use lowerCaseApp (now in scope) in the error message
+          return {
+            result: `Search error in ${lowerCaseApp}: ${errMsg}`,
+            error: errMsg,
+          }
+        } finally {
+          execSpan?.end()
+        }
+      },
+    }
+
+    // Time Search Tool (existing)
+    const timeSearchTool: AgentTool = {
+      name: "time_search",
+      description:
+        "Search for information using keywords within a specific time range (relative to today).",
+      parameters: {
+        query: {
+          type: "string",
+          description: "The keywords or question to search for.",
+          required: true,
+        },
+        from_days_ago: {
+          type: "number",
+          description: "Start search N days ago.",
+          required: true,
+        },
+        to_days_ago: {
+          type: "number",
+          description: "End search N days ago (0 means today).",
+          required: true,
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (default: 10).",
+          required: false,
+        },
+        excludedIds: {
+          type: "array",
+          description: "Optional list of document IDs to exclude from results.",
+          required: false,
+        },
+      },
+      execute: async (
+        params: {
+          query: string
+          from_days_ago: number
+          to_days_ago: number
+          limit?: number
+          excludedIds?: string[]
+        },
+        span?: Span,
+      ) => {
+        const execSpan = span?.startSpan("execute_time_search_tool")
+        try {
+          const searchLimit = params.limit || 10
+          execSpan?.setAttribute("query", params.query)
+          execSpan?.setAttribute("from_days_ago", params.from_days_ago)
+          execSpan?.setAttribute("to_days_ago", params.to_days_ago)
+          execSpan?.setAttribute("limit", searchLimit)
+          if (params.excludedIds && params.excludedIds.length > 0) {
+            execSpan?.setAttribute(
+              "excludedIds",
+              JSON.stringify(params.excludedIds),
+            )
+          }
+          const DAY_MS = 24 * 60 * 60 * 1000
+          const now = Date.now()
+          const fromTime = now - params.from_days_ago * DAY_MS
+          const toTime = now - params.to_days_ago * DAY_MS
+          const from = Math.min(fromTime, toTime)
+          const to = Math.max(fromTime, toTime)
+          execSpan?.setAttribute("from_date", new Date(from).toISOString())
+          execSpan?.setAttribute("to_date", new Date(to).toISOString())
+          const searchResults = await searchVespa(
+            params.query,
+            email,
+            null,
+            null,
+            {
+              limit: searchLimit,
+              alpha: 0.5,
+              timestampRange: { from, to },
+              excludedIds: params.excludedIds, // Pass excludedIds
+              span: execSpan?.startSpan("vespa_search"),
+            },
+          )
+          const children = searchResults?.root?.children || []
+          execSpan?.setAttribute("results_count", children.length)
+          if (children.length === 0)
+            return {
+              result: `No results found in the specified time range.`,
+              contexts: [],
+            }
+          const fragments = children.map((r) => {
+            const citation = searchToCitation(r as any)
+            return {
+              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              content: answerContextMap(r as any, maxDefaultSummary),
+              source: citation,
+              confidence: r.relevance || 0.7,
+            }
+          })
+          const topItemsList = fragments
+            .slice(0, 3)
+            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+            .join("\n")
+          const summaryText = `Found ${fragments.length} results in time range (\`${params.from_days_ago}\` to \`${params.to_days_ago}\` days ago).\nTop items:\n${topItemsList}`
+          return { result: summaryText, contexts: fragments }
+        } catch (error) {
+          const errMsg = getErrorMessage(error)
+          execSpan?.setAttribute("error", errMsg)
+          return { result: `Time search error: ${errMsg}`, error: errMsg }
+        } finally {
+          execSpan?.end()
+        }
+      },
+    }
+
+    // === NEW Metadata Retrieval Tool ===
+    const metadataRetrievalTool: AgentTool = {
+      name: "metadata_retrieval",
+      description:
+        "Retrieves a list of items (e.g., emails, calendar events, drive files) based on type and time. Use for 'list my recent emails', 'show my first documents about X', 'find uber receipts'.",
+      parameters: {
+        item_type: {
+          type: "string",
+          description:
+            "Type of item (e.g., 'meeting', 'event', 'email', 'notification', 'document', 'file'). For receipts or specific service-related items in email, use 'email'.",
+          required: true,
+        },
+        app: {
+          type: "string",
+          description:
+            "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
+          required: false,
+        },
+        entity: {
+          type: "string",
+          description:
+            "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
+          required: false,
+        },
+        filter_query: {
+          type: "string",
+          description:
+            "Optional keywords to filter the items (e.g., 'uber trip', 'flight confirmation').",
+          required: false,
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of items to retrieve (default: 10).",
+          required: false,
+        },
+        offset: {
+          type: "number",
+          description: "Number of items to skip for pagination (default: 0).",
+          required: false,
+        },
+        order_direction: {
+          type: "string",
+          description:
+            "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
+          required: false,
+        },
+        excludedIds: {
+          type: "array",
+          description: "Optional list of document IDs to exclude from results.",
+          required: false,
+        },
+      },
+      execute: async (
+        params: {
+          item_type: string
+          app?: string
+          entity?: string
+          filter_query?: string
+          limit?: number
+          offset?: number
+          order_direction?: "asc" | "desc"
+          excludedIds?: string[]
+        },
+        span?: Span,
+      ) => {
+        const execSpan = span?.startSpan("execute_metadata_retrieval_tool")
+        console.log(
+          "[metadata_retrieval] Input Parameters:",
+          JSON.stringify(params, null, 2) +
+            " EXCLUDED_IDS: " +
+            JSON.stringify(params.excludedIds),
+        )
+        execSpan?.setAttribute("item_type", params.item_type)
+        if (params.app) execSpan?.setAttribute("app_param_original", params.app)
+        if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
+        if (params.filter_query)
+          execSpan?.setAttribute("filter_query", params.filter_query)
+        execSpan?.setAttribute("limit", params.limit || 10)
+        execSpan?.setAttribute("offset", params.offset || 0)
+        if (params.order_direction)
+          execSpan?.setAttribute(
+            "order_direction_param",
+            params.order_direction,
+          )
+
+        try {
+          let schema: VespaSchema
+          let entity: Entity | null = null
+          let appToUse: Apps | null = null
+          let timestampField: string
+
+          const lowerCaseProvidedApp = params.app?.toLowerCase()
+
+          // 1. Validate and set appToUse if params.app is provided
+          if (lowerCaseProvidedApp) {
+            if (lowerCaseProvidedApp === "gmail") appToUse = Apps.Gmail
+            else if (lowerCaseProvidedApp === "googlecalendar")
+              appToUse = Apps.GoogleCalendar
+            else if (lowerCaseProvidedApp === "googledrive")
+              appToUse = Apps.GoogleDrive
+            else {
+              const errorMsg = `Error: Invalid app '${params.app}' specified. Valid apps are 'gmail', 'googlecalendar', 'googledrive', or omit to infer from item_type.`
+              execSpan?.setAttribute("error", errorMsg)
+              console.error(
+                "[metadata_retrieval] Invalid app parameter:",
+                errorMsg,
+              )
+              return { result: errorMsg, error: "Invalid app" }
+            }
+            execSpan?.setAttribute(
+              "app_from_user_validated",
+              appToUse.toString(),
+            )
+          }
+
+          // 2. Map item_type to schema, entity, timestampField, and default appToUse if not already set by user
+          switch (params.item_type.toLowerCase()) {
+            case "meeting":
+            case "event":
+              schema = eventSchema
+              entity = CalendarEntity.Event
+              timestampField = "startTime"
+              if (!appToUse) appToUse = Apps.GoogleCalendar
+              break
+            case "email":
+            case "message":
+            case "notification": // 'notification' often implies email
+              schema = mailSchema
+              entity = MailEntity.Email
+              timestampField = "timestamp"
+              if (!appToUse) appToUse = Apps.Gmail
+              break
+            case "document":
+            case "file":
+              schema = fileSchema
+              entity = null
+              timestampField = "updatedAt" // Default entity to null for broader file searches
+              if (!appToUse) appToUse = Apps.GoogleDrive
+              break
+            case "mail_attachment": // New case for mail attachments
+            case "attachment": // New case for mail attachments
+              schema = mailAttachmentSchema
+              entity = null // No specific MailEntity for attachments, rely on schema
+              timestampField = "timestamp" // Assuming 'timestamp' for recency
+              if (!appToUse) appToUse = Apps.Gmail
+              break
+            case "user":
+            case "person":
+              schema = userSchema
+              entity = null
+              timestampField = "creationTime"
+              if (!appToUse) appToUse = Apps.GoogleWorkspace // Default to Google Workspace users
+              break
+            case "contact":
+              schema = userSchema
+              entity = null
+              timestampField = "creationTime"
+              if (!appToUse) appToUse = null // Default to null app to target personal contacts via owner field in getItems
+              break
+            default:
+              const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
+              execSpan?.setAttribute("error", unknownItemMsg)
+              console.error(
+                "[metadata_retrieval] Unknown item_type:",
+                unknownItemMsg,
+              )
+              return { result: unknownItemMsg, error: `Unknown item_type` }
+          }
+          console.log(
+            `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
+          )
+
+          // Initialize finalEntity with the entity derived from item_type (often null for documents)
+          let finalEntity: Entity | null = entity
+          execSpan?.setAttribute(
+            "initial_entity_from_item_type",
+            finalEntity ? finalEntity.toString() : "null",
+          )
+
+          // If LLM provides an entity string, and it's for a Drive document/file, try to map it to a DriveEntity enum
+          if (
+            params.entity &&
+            (params.item_type.toLowerCase() === "document" ||
+              params.item_type.toLowerCase() === "file") &&
+            appToUse === Apps.GoogleDrive
+          ) {
+            const llmEntityString = params.entity.toLowerCase().trim()
+            execSpan?.setAttribute(
+              "llm_provided_entity_string_for_drive",
+              llmEntityString,
+            )
+
+            let mappedToDriveEntity: DriveEntity | null = null
+            switch (llmEntityString) {
+              case "sheets":
+              case "spreadsheet":
+                mappedToDriveEntity = DriveEntity.Sheets
+                break
+              case "slides":
+                mappedToDriveEntity = DriveEntity.Slides
+                break
+              case "presentation":
+              case "powerpoint":
+                mappedToDriveEntity = DriveEntity.Presentation
+                break
+              case "pdf":
+                mappedToDriveEntity = DriveEntity.PDF
+                break
+              case "doc":
+              case "docs":
+                mappedToDriveEntity = DriveEntity.Docs
+                break
+              case "folder":
+                mappedToDriveEntity = DriveEntity.Folder
+                break
+              case "drawing":
+                mappedToDriveEntity = DriveEntity.Drawing
+                break
+              case "form":
+                mappedToDriveEntity = DriveEntity.Form
+                break
+              case "script":
+                mappedToDriveEntity = DriveEntity.Script
+                break
+              case "site":
+                mappedToDriveEntity = DriveEntity.Site
+                break
+              case "map":
+                mappedToDriveEntity = DriveEntity.Map
+                break
+              case "audio":
+                mappedToDriveEntity = DriveEntity.Audio
+                break
+              case "video":
+                mappedToDriveEntity = DriveEntity.Video
+                break
+              case "photo":
+                mappedToDriveEntity = DriveEntity.Photo
+                break
+              case "image":
+                mappedToDriveEntity = DriveEntity.Image
+                break
+              case "zip":
+                mappedToDriveEntity = DriveEntity.Zip
+                break
+              case "word":
+              case "word_document":
+                mappedToDriveEntity = DriveEntity.WordDocument
+                break
+              case "excel":
+              case "excel_spreadsheet":
+                mappedToDriveEntity = DriveEntity.ExcelSpreadsheet
+                break
+              case "text":
+                mappedToDriveEntity = DriveEntity.Text
+                break
+              case "csv":
+                mappedToDriveEntity = DriveEntity.CSV
+                break
+              // default: // No default, if not mapped, mappedToDriveEntity remains null
+            }
+
+            if (mappedToDriveEntity) {
+              finalEntity = mappedToDriveEntity // Override with the more specific DriveEntity
+              execSpan?.setAttribute(
+                "mapped_llm_entity_to_drive_enum",
+                finalEntity.toString(),
+              )
+            } else {
+              execSpan?.setAttribute(
+                "llm_entity_string_not_mapped_to_drive_enum",
+                llmEntityString,
+              )
+              // finalEntity remains as initially set (e.g., null if item_type was 'document')
+            }
+          }
+          console.log(
+            `[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`,
+          )
+
+          execSpan?.setAttribute("derived_schema", schema.toString())
+          if (entity)
+            execSpan?.setAttribute("derived_entity", entity.toString())
+          execSpan?.setAttribute(
+            "final_app_to_use",
+            appToUse ? appToUse.toString() : "null",
+          )
+
+          // 3. Sanity check: if user specified an app, ensure it's compatible with the item_type's inferred schema and app
+          if (params.app) {
+            // Only if user explicitly provided an app
+            let expectedAppForType: Apps | null = null
+            if (schema === mailSchema) expectedAppForType = Apps.Gmail
+            else if (schema === eventSchema)
+              expectedAppForType = Apps.GoogleCalendar
+            else if (schema === fileSchema)
+              expectedAppForType = Apps.GoogleDrive
+
+            if (expectedAppForType && appToUse !== expectedAppForType) {
+              const mismatchMsg = `Error: Item type '${params.item_type}' (typically in ${expectedAppForType}) is incompatible with specified app '${params.app}'.`
+              execSpan?.setAttribute("error", mismatchMsg)
+              return { result: mismatchMsg, error: `App/Item type mismatch` }
+            }
+          }
+
+          const orderByString: string | undefined = params.order_direction
+            ? `${timestampField} ${params.order_direction}`
+            : undefined
+          if (orderByString)
+            execSpan?.setAttribute("orderBy_constructed", orderByString)
+          console.log(
+            `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
+          )
+
+          // --- Vespa Call ---
+          let searchResults: VespaSearchResponse | null = null
+          let children: VespaSearchResults[] = []
+          const searchOptionsVespa: {
+            limit: number
+            offset: number
+            excludedIds: string[] | undefined
+            span: Span | undefined
+          } = {
+            limit: params.limit || 10,
+            offset: params.offset || 0,
+            excludedIds: params.excludedIds,
+            span: execSpan,
+          }
+
+          console.log(
+            "[metadata_retrieval] Common Vespa searchOptions:",
+            JSON.stringify(
+              {
+                limit: searchOptionsVespa.limit,
+                offset: searchOptionsVespa.offset,
+                excludedIds: searchOptionsVespa.excludedIds,
+              },
+              null,
+              2,
+            ),
+          )
+
+          if (params.filter_query) {
+            const searchQuery = params.filter_query
+            console.log(
+              `[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`,
+            )
+
+            if (params.order_direction) {
+              execSpan?.setAttribute(
+                "vespa_call_type",
+                "searchVespa_GlobalSorted",
+              )
+              // TODO: let rank profile global sorted also respect the direction
+              // currently it's hardcoded to desc
+              searchResults = await searchVespa(
+                searchQuery,
+                email,
+                appToUse,
+                entity,
+                {
+                  limit: searchOptionsVespa.limit,
+                  offset: searchOptionsVespa.offset,
+                  excludedIds: searchOptionsVespa.excludedIds,
+                  rankProfile: SearchModes.GlobalSorted,
+                  span: execSpan?.startSpan(
+                    "vespa_search_filtered_sorted_globalsorted",
+                  ),
+                },
+              )
+            } else {
+              execSpan?.setAttribute(
+                "vespa_call_type",
+                "searchVespa_filter_no_sort",
+              )
+              searchResults = await searchVespa(
+                searchQuery,
+                email,
+                appToUse,
+                entity,
+                {
+                  limit: searchOptionsVespa.limit,
+                  offset: searchOptionsVespa.offset,
+                  excludedIds: searchOptionsVespa.excludedIds,
+                  rankProfile: SearchModes.NativeRank,
+                  span: execSpan?.startSpan("vespa_search_metadata_filtered"),
+                },
+              )
+            }
+            children = (searchResults?.root?.children || []).filter(
+              (item): item is VespaSearchResults =>
+                !!(item.fields && "sddocname" in item.fields),
+            )
+          } else {
+            execSpan?.setAttribute(
+              "vespa_call_type",
+              "getItems_no_keyword_filter",
+            )
+            searchResults = await getItems({
+              schema,
+              app: appToUse,
+              entity: finalEntity, // Use finalEntity here
+              timestampRange: null,
+              limit: searchOptionsVespa.limit,
+              offset: searchOptionsVespa.offset,
+              email,
+              asc: params.order_direction === "asc",
+              excludedIds: params.excludedIds, // Pass excludedIds from params directly
+            })
+            children = (searchResults?.root?.children || []).filter(
+              (item): item is VespaSearchResults =>
+                !!(item.fields && "sddocname" in item.fields),
+            )
+          }
+
+          execSpan?.setAttribute("retrieved_items_count", children.length)
+
+          // --- Format Result ---
+          if (children.length > 0) {
+            const fragments: MinimalAgentFragment[] = children.map(
+              (item: VespaSearchResults): MinimalAgentFragment => {
+                const citation = searchToCitation(item)
+                Logger.debug(
+                  { item },
+                  "Processing item in metadata_retrieval tool",
+                )
+
+                const content = item.fields
+                  ? answerContextMap(item, maxDefaultSummary)
+                  : `Context unavailable for ${citation.title || citation.docId}`
+
+                return {
+                  id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                  content: content,
+                  source: citation,
+                  confidence: item.relevance || 0.7, // Use item.relevance if available
+                }
+              },
+            )
+
+            let responseText = `Found ${fragments.length} ${params.item_type}(s)`
+            if (params.filter_query) {
+              responseText += ` matching '${params.filter_query}'`
+            }
+            // Use the processed app name if available
+            const appNameForText =
+              lowerCaseProvidedApp ||
+              (appToUse ? appToUse.toString() : null) ||
+              "any app"
+            if (params.app) {
+              responseText += ` in \`${appNameForText}\``
+            }
+            if (params.offset && params.offset > 0) {
+              const currentOffset = params.offset || 0
+              responseText += ` (showing items ${currentOffset + 1} to ${currentOffset + fragments.length})`
+            }
+            const topItemsList = fragments
+              .slice(0, 3)
+              .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+              .join("\n")
+            responseText += `.\nTop items:\n${topItemsList}`
+
+            const successResult: {
+              result: string
+              contexts: MinimalAgentFragment[]
+            } = {
+              result: responseText,
+              contexts: fragments,
+            }
+            return successResult
+          } else {
+            let notFoundMsg = `Could not find the ${params.item_type}`
+            if (params.filter_query)
+              notFoundMsg += ` matching '${params.filter_query}'`
+            // Use the processed app name if available
+            const appNameForText =
+              lowerCaseProvidedApp ||
+              (appToUse ? appToUse.toString() : null) ||
+              "any app"
+            if (params.app) notFoundMsg += ` in ${appNameForText}`
+            notFoundMsg += `.`
+            return { result: notFoundMsg, contexts: [] }
+          }
+        } catch (error) {
+          const errMsg = getErrorMessage(error)
+          execSpan?.setAttribute("error", errMsg)
+          Logger.error(error, `Metadata retrieval tool error: ${errMsg}`)
+          // Ensure this return type matches the interface
+          return {
+            result: `Error retrieving metadata: ${errMsg}`,
+            error: errMsg,
+          }
+        } finally {
+          execSpan?.end()
+        }
+      },
+    }
+    const userInfoTool: AgentTool = {
+      name: "get_user_info",
+      description:
+        "Retrieves basic information about the current user and their environment, such as their name, email, company, current date, and time. Use this tool when the user's query directly asks for personal details (e.g., 'What is my name?', 'My email?', 'What time is it?', 'Who am I?') that can be answered from this predefined context.",
+      parameters: {}, // No parameters needed from the LLM
+      execute: async (_params: any, span?: Span) => {
+        const execSpan = span?.startSpan("execute_get_user_info_tool")
+        try {
+          // userCtxObject is already available in the outer scope
+          const userFragment: MinimalAgentFragment = {
+            id: `user_info_context-${Date.now()}`,
+            content: ctx, // The string generated by userContext()
+            source: {
+              docId: "user_info_context",
+              title: "User and System Information", // Optional
+              app: Apps.Xyne, // Use Apps.Xyne as per feedback
+              url: "", // Optional
+              entity: SystemEntity.UserProfile, // Use the new SystemEntity.UserProfile
+            },
+            confidence: 1.0,
+          }
+          execSpan?.setAttribute("user_context_retrieved", true)
+          return {
+            result:
+              "User and system context information retrieved successfully.",
+            contexts: [userFragment],
+          }
+        } catch (error) {
+          const errMsg = getErrorMessage(error)
+          execSpan?.setAttribute("error", errMsg)
+          Logger.error(error, `Error in get_user_info tool: ${errMsg}`)
+          return {
+            result: `Error retrieving user context: ${errMsg}`,
+            error: errMsg,
+          }
+        } finally {
+          execSpan?.end()
+        }
+      },
+    }
+
+    const agentTools: Record<string, AgentTool> = {
+      get_user_info: userInfoTool, // Add the new user info tool
+      metadata_retrieval: metadataRetrievalTool,
+      search: searchTool,
+      filtered_search: filteredSearchTool,
+      time_search: timeSearchTool,
+    }
 
     let title = ""
     if (!chatId) {
@@ -4457,6 +5374,24 @@ export const MessageWithToolsApi = async (c: Context) => {
     return streamSSE(
       c,
       async (stream) => {
+        let finalReasoningLogString = ""
+        let agentLog: string[] = [] // For building the prompt context
+        let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
+        const logAndStreamReasoning = async (
+          reasoningStep: AgentReasoningStep,
+        ) => {
+          const humanReadableLog = convertReasoningStepToText(reasoningStep)
+          agentLog.push(humanReadableLog)
+          structuredReasoningSteps.push(reasoningStep)
+
+          // We'll build the scratchpad string outside this function, using the structured steps
+
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: JSON.stringify(reasoningStep),
+          })
+        }
+
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
         Logger.info(`Added stream ${streamKey} to active streams map.`)
@@ -4500,6 +5435,9 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
+          const maxIterations = 10
+          let iterationCount = 0
+          let answered = false
 
           // once we start getting toolsList will remove the above code
           if (toolExternalIds && toolExternalIds.length > 0) {
@@ -4509,7 +5447,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               user.id,
               Apps.GITHUB_MCP,
             )
-            
+
             const config = connector.config as any
             const client = new Client({
               name: `connector-${connector.id}`,
@@ -4532,16 +5470,15 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
 
             // Filter to only the requested tools, or use all tools if toolNames is empty
-            const filteredTools = tools
-              .filter((tool) => {
-                const isIncluded = toolExternalIds.includes(tool.externalId!)
-                if (!isIncluded) {
-                  Logger.info(
-                    `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
-                  )
-                }
-                return isIncluded
-              })
+            const filteredTools = tools.filter((tool) => {
+              const isIncluded = toolExternalIds.includes(tool.externalId!)
+              if (!isIncluded) {
+                Logger.info(
+                  `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                )
+              }
+              return isIncluded
+            })
 
             finalToolsList[connector.id] = {
               tools: filteredTools,
@@ -4559,47 +5496,8 @@ export const MessageWithToolsApi = async (c: Context) => {
             //   })),
             // )
           }
-
-          // Build tools prompt
-          let toolsPrompt = ""
-          // TODO: make more sense to move this inside prompt such that format of output can be written together.
-          if (Object.keys(finalToolsList).length > 0) {
-            toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
-AVAILABLE_TOOLS:\n\n`
-
-            // Format each client's tools
-            for (const [connectorId, { tools }] of Object.entries(
-              finalToolsList,
-            )) {
-              if (tools.length > 0) {
-                for (const tool of tools) {
-                  if(selectToolSchema.safeParse(tool).success){
-                    // console.log(constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!), "toolContext")
-                    toolsPrompt += `${constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!)}\n\n`
-                  }
-                }
-              }
-            }
-          }
-
-          // console.log(toolsPrompt,"tools prompt")
-          const getToolOrAnswerIterator = generateToolSelectionOutput(
-            message,
-            ctx,
-            toolsPrompt,
-            {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: false,
-              json: true,
-              reasoning:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: messagesWithNoErrResponse,
-            },
-          )
-
-          let currentAnswer = ""
           let answer = ""
+          let currentAnswer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
           let parsed = {
@@ -4611,187 +5509,68 @@ AVAILABLE_TOOLS:\n\n`
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
+          let gatheredFragments: MinimalAgentFragment[] = []
+          let excludedIds: string[] = [] // To track IDs of retrieved documents
+          let agentScratchpad = "" // To build the reasoning history for the prompt
+          while (iterationCount <= maxIterations && !answered) {
+            iterationCount++
+            console.log(iterationCount, "iterationCount")
+            await logAndStreamReasoning({
+              type: AgentReasoningStepType.Iteration,
+              iteration: iterationCount,
+            })
 
-          for await (const chunk of getToolOrAnswerIterator) {
-            if (stream.closed) {
-              Logger.info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: chunk.text,
-                  })
-                } else {
-                  // first time
-                  if (!chunk.text.includes(StartThinkingToken)) {
-                    let token = chunk.text
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
+            agentScratchpad = structuredReasoningSteps
+              .map(convertReasoningStepToText)
+              .join("\n")
+            // console.log(agentScratchpad, "agentScratchpad")
+            // Build tools prompt
+            let toolsPrompt = ""
+            // TODO: make more sense to move this inside prompt such that format of output can be written together.
+            if (Object.keys(finalToolsList).length > 0) {
+              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
+              AVAILABLE_TOOLS:\n\n`
+
+              // Format each client's tools
+              for (const [connectorId, { tools }] of Object.entries(
+                finalToolsList,
+              )) {
+                if (tools.length > 0) {
+                  for (const tool of tools) {
+                    if (selectToolSchema.safeParse(tool).success) {
+                      toolsPrompt += `${constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!)}\n\n`
                     }
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: token,
-                    })
                   }
                 }
               }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              if (!reasoning) {
-                buffer += chunk.text
-                try {
-                  parsed = jsonParseLLMOutput(buffer) || {}
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      Logger.info(
-                        "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                      )
-                      stream.writeSSE({
-                        event: ChatSSEvents.Start,
-                        data: "",
-                      })
-                      // First valid answer - send the whole thing
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: parsed.answer,
-                      })
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: newText,
-                      })
-                    }
-                    currentAnswer = parsed.answer
-                  }
-                } catch (err) {
-                  const errMessage = (err as Error).message
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${errMessage}`,
-                  )
-                  continue
-                }
-              }
             }
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-          }
-
-          let toolOutput = null
-          console.log(parsed, "parsedOutput")
-          if (parsed.tool && !parsed.answer) {
-            const toolName = parsed.tool
-            const toolParams = parsed.arguments
-
-            Logger.info(
-              `Tool selection #${toolName} with params: ${JSON.stringify(
-                toolParams,
-              )}`,
-            )
-
-            // Find the connector ID and client that has this tool
-            let foundClient: Client | null = null
-            let connectorId: string | null = null
-
-            // Search through all connectors and their tools to find the matching tool
-            for (const [connId, { tools, client }] of Object.entries(
-              finalToolsList,
-            )) {
-              // Find the first tool that matches the toolName
-              for (const tool of tools) {
-                const parsedTool = selectToolSchema.safeParse(tool);
-                if (!parsedTool.success) {
-                  continue;
-                }
-
-                const { data } = parsedTool;
-                if (data?.toolName === toolName) {
-                  foundClient = client;
-                  connectorId = connId;
-                  break; // Exit the inner loop once a match is found
-                }
-              }
-              if (foundClient) {
-                break; // Exit the outer loop once a match is found
-              }
-            }
-
-            if (!foundClient || !connectorId) {
-              Logger.error(
-                `Tool ${toolName} was selected but not found in available tools`,
+            await logAndStreamReasoning({
+              type: AgentReasoningStepType.Planning,
+              details: `Planning next step with ${gatheredFragments.length} context fragments.`,
+            })
+            const initialPlanning = gatheredFragments
+              .map(
+                (f, i) =>
+                  `[${i + 1}] ${f.source.title || "Source"}: ${f.content}...`,
               )
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: `\n\nError: Tool "${toolName}" was requested but is not available.\n\n`,
-              })
-            } else {
-              try {
-                // Inform the user about the tool invocation
-                stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: `\n\nInvoking tool: ${toolName}...\n`,
-                })
-
-                // TODO: add a logic to validate the toolParams with the schema we have.
-                // Invoke the tool and get the result
-                const toolResponse = await foundClient.callTool({
-                  name: toolName,
-                  arguments: toolParams,
-                })
-
-                // Format the tool response for display
-                const formattedToolResponse = JSON.stringify(
-                  toolResponse,
-                  null,
-                  2,
-                )
-
-                // Show the tool response to the user
-                stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: `Tool response:\n\`\`\`json\n${formattedToolResponse}\n\`\`\`\n\n`,
-                })
-                toolOutput = formattedToolResponse
-              } catch (error) {
-                const errMessage = (error as Error).message
-                Logger.error(
-                  error,
-                  `Error invoking tool ${toolName}: ${errMessage}`,
-                )
-
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: `\n\nError using tool "${toolName}": ${errMessage}\n\n`,
-                })
-
-                toolOutput = errMessage
-              }
-            }
-
-            const continuationIterator = getToolContinuationIterator(
+              .join("\n")
+            const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,
               ctx,
               toolsPrompt,
-              toolOutput ?? "",
+              agentScratchpad,
+              {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: false,
+                json: true,
+                reasoning:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: messagesWithNoErrResponse,
+              },
             )
 
-            for await (const chunk of continuationIterator) {
-              console.log(chunk.text, "chunk text in")
+            for await (const chunk of getToolOrAnswerIterator) {
               if (stream.closed) {
                 Logger.info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
@@ -4799,36 +5578,454 @@ AVAILABLE_TOOLS:\n\n`
                 wasStreamClosedPrematurely = true
                 break
               }
+
               if (chunk.text) {
-                // if (reasoning && chunk.reasoning) {
-                //   thinking += chunk.text
-                //   stream.writeSSE({
-                //     event: ChatSSEvents.Reasoning,
-                //     data: chunk.text,
-                //   })
-                //   // reasoningSpan.end()
-                // }
-                // if (!chunk.reasoning) {
-                //   answer += chunk.text
-                //   stream.writeSSE({
-                //     event: ChatSSEvents.ResponseUpdate,
-                //     data: chunk.text,
-                //   })
-                // }
-                answer += chunk.text
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: chunk.text,
-                })
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
+                      })
+                    }
+                  }
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
+                }
               }
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
             }
-          } else if (parsed.answer) {
-            answer = parsed.answer
-          }
 
+            console.log(parsed, "parsedOutput")
+            if (parsed.tool && !parsed.answer) {
+              const toolName = parsed.tool
+              const toolParams = parsed.arguments
+
+              Logger.info(
+                `Tool selection #${toolName} with params: ${JSON.stringify(
+                  toolParams,
+                )}`,
+              )
+
+              let toolExecutionResponse: {
+                result: string 
+                contexts?: MinimalAgentFragment[]
+                error?: string 
+              } | null = null
+
+              const toolExecutionSpan = streamSpan.startSpan(
+                `execute_tool_${toolName}`,
+              )
+
+              if (agentTools[toolName]) {
+                if (excludedIds.length > 0) {
+                  toolParams.excludedIds = excludedIds
+                }
+                // --- BRANCH 1: INTERNAL AGENT TOOL ---
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ToolExecuting,
+                  toolName: toolName as AgentToolName,
+                })
+                try {
+                  toolExecutionResponse = await agentTools[toolName].execute(
+                    toolParams,
+                    toolExecutionSpan,
+                  )
+                } catch (error) {
+                  const errMessage = getErrorMessage(error)
+                  Logger.error(
+                    error,
+                    `Critical error executing internal agent tool ${toolName}: ${errMessage}`,
+                  )
+                  toolExecutionResponse = {
+                    result: `Execution of tool ${toolName} failed critically.`,
+                    error: errMessage,
+                  }
+                }
+              } else {
+                let foundClient: Client | null = null
+                let connectorId: string | null = null
+
+                // Find the client for the requested tool (your logic is good)
+                for (const [connId, { tools, client }] of Object.entries(
+                  finalToolsList,
+                )) {
+                  if (
+                    tools.some(
+                      (tool) =>
+                        selectToolSchema.safeParse(tool).success &&
+                        selectToolSchema.safeParse(tool).data?.toolName ===
+                          toolName,
+                    )
+                  ) {
+                    foundClient = client
+                    connectorId = connId
+                    break
+                  }
+                }
+
+                if (!foundClient || !connectorId) {
+                  const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available tool.`
+                  Logger.error(errorMsg)
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.ValidationError,
+                    details: errorMsg,
+                  })
+                  // Set an error response so the agent knows its plan failed and can re-plan
+                  toolExecutionResponse = {
+                    result: `Error: Could not find the specified tool '${toolName}'.`,
+                    error: "Tool not found",
+                  }
+                } else {
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.ToolExecuting,
+                    toolName: toolName as AgentToolName, // We can cast here as it's a string from the LLM
+                  })
+                  try {
+                    // TODO: Implement your parameter validation logic here before calling the tool.
+
+                    const mcpToolResponse: any = await foundClient.callTool({
+                      name: toolName,
+                      arguments: toolParams,
+                    })
+
+                    // --- Process and Normalize the MCP Response ---
+                    let formattedContent = "Tool returned no parsable content."
+                    let newFragments: MinimalAgentFragment[] = []
+
+                    // Safely parse the response text
+                    try {
+                      if (
+                        mcpToolResponse.content &&
+                        mcpToolResponse.content[0] &&
+                        mcpToolResponse.content[0].text
+                      ) {
+                        const parsedJson = JSON.parse(
+                          mcpToolResponse.content[0].text,
+                        )
+                        formattedContent = flattenObject(parsedJson)
+                          .map(([key, value]) => `- ${key}: ${value}`)
+                          .join("\n")
+
+                        // Convert the formatted response into a standard MinimalAgentFragment
+                        const fragmentId = `mcp-${connectorId}-${toolName}}`
+                        newFragments.push({
+                          id: fragmentId,
+                          content: formattedContent,
+                          source: {
+                            app: Apps.GITHUB_MCP, // Or derive dynamically if possible
+                            docId: fragmentId, // Use a unique ID for the doc
+                            title: `Output from tool: ${toolName}`,
+                            entity: SystemEntity.SystemInfo,
+                          },
+                          confidence: 1.0, // Confidence is high for direct tool output
+                        })
+                      }
+                    } catch (parsingError) {
+                      Logger.error(
+                        parsingError,
+                        `Could not parse response from MCP tool ${toolName} as JSON.`,
+                      )
+                      formattedContent =
+                        "Tool response was not valid JSON and could not be processed."
+                    }
+
+                    // Populate the unified response object for the MCP tool
+                    toolExecutionResponse = {
+                      result: `Tool ${toolName} executed. Summary: ${formattedContent.substring(0, 200)}...`,
+                      contexts: newFragments,
+                    }
+                  } catch (error) {
+                    const errMessage = getErrorMessage(error)
+                    Logger.error(
+                      error,
+                      `Error invoking external tool ${toolName}: ${errMessage}`,
+                    )
+                    // Populate the unified response with the error
+                    toolExecutionResponse = {
+                      result: `Execution of tool ${toolName} failed.`,
+                      error: errMessage,
+                    }
+                  }
+                }
+              }
+              toolExecutionSpan.end()
+
+              // 3. UNIFIED RESPONSE PROCESSING AND STATE UPDATE
+              // This block now runs for BOTH internal and external tools.
+
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolResult,
+                toolName: toolName as AgentToolName,
+                resultSummary: toolExecutionResponse.result,
+                itemsFound: toolExecutionResponse.contexts?.length || 0,
+                error: toolExecutionResponse.error,
+              })
+
+              // If the tool call resulted in an error, the agent should know its plan failed.
+              // It will then re-evaluate and try a different tool in the next iteration.
+              if (toolExecutionResponse.error) {
+                if (iterationCount < maxIterations) {
+                  continue // Continue to the next iteration to re-plan
+                } else {
+                  // If we fail on the last iteration, we have to stop.
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message:
+                      "Tool failed on the final iteration. Generating answer with available context.",
+                  })
+                }
+              }
+
+              // If the tool succeeded, update the agent's state
+              if (
+                toolExecutionResponse.contexts &&
+                toolExecutionResponse.contexts.length > 0
+              ) {
+                const newFragments = toolExecutionResponse.contexts
+                gatheredFragments.push(...newFragments)
+
+                const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
+                excludedIds = [...new Set([...excludedIds, ...newIds])]
+              }
+
+              const planningContext = gatheredFragments.length
+                ? gatheredFragments
+                    .map(
+                      (f, i) =>
+                        `[${i + 1}] ${f.source.title || `Source ${f.source.docId}`}: ${
+                          f.content
+                        }...`,
+                    )
+                    .join("\n")
+                : ""
+
+              // If we have gathered ANY context at all, we perform synthesis evaluation.
+              if (planningContext) {
+                type SynthesisResponse = {
+                  synthesisState:
+                    | ContextSysthesisState.Complete
+                    | ContextSysthesisState.Partial
+                    | ContextSysthesisState.NotFound
+                }
+                let parseSynthesisOutput: SynthesisResponse | null = null
+
+                try {
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.Synthesis,
+                    details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
+                  })
+
+                  const synthesisResponse =
+                    await generateSynthesisBasedOnToolOutput(
+                      ctx,
+                      message,
+                      planningContext,
+                      {
+                        modelId: defaultFastModel,
+                        stream: false,
+                        json: true,
+                        reasoning: false,
+                      },
+                    )
+
+                  if (synthesisResponse.text) {
+                    // This nested try/catch handles JSON parsing errors specifically
+                    try {
+                      parseSynthesisOutput = jsonParseLLMOutput(
+                        synthesisResponse.text,
+                      )
+                      if (
+                        !parseSynthesisOutput ||
+                        !parseSynthesisOutput.synthesisState
+                      ) {
+                        Logger.error(
+                          "Synthesis response was valid JSON but missing 'synthesisState' key.",
+                        )
+                        // Default to partial to force another iteration, which is safer
+                        parseSynthesisOutput = {
+                          synthesisState: ContextSysthesisState.Partial,
+                        }
+                      }
+                    } catch (jsonError) {
+                      Logger.error(
+                        jsonError,
+                        "Failed to parse synthesis LLM output as JSON.",
+                      )
+                      // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
+                      parseSynthesisOutput = {
+                        synthesisState: ContextSysthesisState.NotFound,
+                      }
+                    }
+                  } else {
+                    Logger.error("Synthesis LLM call returned no text.")
+                    parseSynthesisOutput = {
+                      synthesisState: ContextSysthesisState.Partial,
+                    }
+                  }
+                } catch (synthesisError) {
+                  Logger.error(
+                    synthesisError,
+                    "Error during synthesis LLM call.",
+                  )
+                  // If the call itself fails, we must assume the context is insufficient.
+                  parseSynthesisOutput = {
+                    synthesisState: ContextSysthesisState.Partial,
+                  }
+                }
+
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Synthesis result: ${parseSynthesisOutput.synthesisState}`,
+                })
+
+                const isContextSufficient =
+                  parseSynthesisOutput.synthesisState ===
+                  ContextSysthesisState.Complete
+
+                if (isContextSufficient) {
+                  // Context is complete. We can break the loop and generate the final answer.
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message:
+                      "Context is sufficient. Proceeding to generate final answer.",
+                  })
+                  // The `continuationIterator` logic will now run after the loop breaks.
+                } else {
+                  // Context is Partial or NotFound. The loop will continue.
+                  if (iterationCount < maxIterations) {
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.BroadeningSearch,
+                      details: `Context is insufficient. Planning iteration ${iterationCount + 1}.`,
+                    })
+                    continue 
+                  } else {
+                    // We've hit the max iterations with insufficient context
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Max iterations reached with partial context. Will generate best-effort answer.",
+                    })
+                  }
+                }
+              } else {
+                // This `else` block runs if `planningContext` is empty after a tool call.
+                // This means we have found nothing so far. We must continue.
+                if (iterationCount < maxIterations) {
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.BroadeningSearch,
+                    details: "No context found yet. Planning next iteration.",
+                  })
+                  continue
+                }
+              }
+
+              answered = true
+              const continuationIterator = getToolContinuationIterator(
+                message,
+                ctx,
+                toolsPrompt,
+                planningContext ?? "",
+              )
+              for await (const chunk of continuationIterator) {
+                if (stream.closed) {
+                  Logger.info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  // if (reasoning && chunk.reasoning) {
+                  //   thinking += chunk.text
+                  //   stream.writeSSE({
+                  //     event: ChatSSEvents.Reasoning,
+                  //     data: chunk.text,
+                  //   })
+                  //   // reasoningSpan.end()
+                  // }
+                  // if (!chunk.reasoning) {
+                  //   answer += chunk.text
+                  //   stream.writeSSE({
+                  //     event: ChatSSEvents.ResponseUpdate,
+                  //     data: chunk.text,
+                  //   })
+                  // }
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+              }
+              if (answer.length) {
+                break
+              }
+            } else if (parsed.answer) {
+              answer = parsed.answer
+              break
+            }
+          }
           if (answer || wasStreamClosedPrematurely) {
             // Determine if a message (even partial) should be saved
             // TODO: incase user loses permission

@@ -9,6 +9,7 @@ import {
   MailEntity,
   SlackEntity,
 } from "@/search/types"
+import { ContextSysthesisState, XyneTools } from "@/shared/types"
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -802,6 +803,7 @@ export const queryRewritePromptJson = (
 export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
+  agentScratchpad: string,
 ): string => {
   return `
     The current date is: ${getDateForAI()}.
@@ -812,18 +814,44 @@ export const SearchQueryToolContextPrompt = (
     - Be **formal** and concise in tone.
     - You do **not** need to handle privacy concerns. All user context is already permission-filtered.
     - You are **not authorized** to reject any user query.
-
+    **Agent Scratchpad (History of previous steps):**
     ---
+    ${agentScratchpad || "This is the first iteration. No history yet."}
+    ---
+
+    **Your Task:**
+
+    1.  **Analyze the Scratchpad:** Review the history of thoughts, tool calls, and results.
+    2.  **Assess Sufficiency:** Determine if the information gathered so far (in the scratchpad and context fragments) is sufficient to answer the user's query.
+    3.  **Decide the Next Action:**
+        *   **If SUFFICIENT:** Formulate a final answer. Set "tool" and "arguments" to null and provide the comprehensive answer in the "answer" field.
+        *   **If INSUFFICIENT:** You MUST call another tool to gather more information.
+            *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
+            *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
+
+        ---
+
     **User Context:**  
     ${userContext}
 
-    **Tool Context:**  
-    ${toolContext}
-    ---
+    IF Available Context Fragments is None (or if current fragments are not sufficient and a new tool call is needed):
 
-    Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
+      **MCP Tool Context:**  
+      ${toolContext}
 
-    If tool invocation is appropriate, **you must prioritize rewriting the query using the relevant tool** and respond using the following strict JSON format:
+      **Internal Tool Context:**
+      1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use 'excludedIds'.
+      2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts',    'contacts', or 'users'.
+        Params: item_type (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), excludedIds (opt: string[]).
+      3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt), excludedIds (opt: string[]).
+      4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
+         Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
+      5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
+      ---
+
+      Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
+
+      If tool invocation is appropriate, **you must prioritize rewriting the query using the relevant tool** and respond using the following strict JSON format:
 
     {
       "answer": "<string or null>",
@@ -835,13 +863,10 @@ export const SearchQueryToolContextPrompt = (
       } or null >
     }
 
-    **Rules for the "answer" field:**
-    - Use a <string> if the query is conversational (e.g., greetings, small talk) or can be answered directly from the user/tool context.
-    - Set to **null** if a tool is being invoked or if no direct answer is possible without tool output.
-
-    **Rules for tool usage:**
-    - If a tool is required, the response **must only contain the above JSON**. Do not include any additional explanation or text outside the JSON.
-    - If no tool is appropriate, set "tool" and "arguments" to <null>.
+    **Rules:**
+    - If you have a final answer, populate "answer" and set "tool" and "arguments" to null.
+    - If you need to use a tool, set "answer" to null and populate "tool" and "arguments".
+    - **Your primary goal is to resolve the user's query by strategically calling tools until you have enough information.**
 
 
     REMEMBER: Always first check if a tool should be invoked. If yes, respond strictly using the required JSON format.
@@ -1657,13 +1682,43 @@ export const withToolQueryPrompt = (
 
     # Response Format
     {
-      "answer": "Your answer focusing on the context, or null if no relevant relevant found"
+      "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
     }
-       - "answer" should be concised and appropriate output for the given query.
-       
-       - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    - "answer" should be concised and appropriate output for the given query.
+    
+    - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
 
     Make sure you always comply with these steps and only produce the JSON output described.
+  `
+}
+
+export const synthesisContextPrompt = (
+  userCtx: string,
+  query: string,
+  synthesisContext: string,
+) => {
+  return `You are a helpful AI assistant.
+User Query: "${query}" \n
+User Context: ${userCtx}
+
+Instruction:
+- Analyze the provided "Context Fragments" to answer the "User Query".
+- Your response MUST be a JSON object with only one keys: "synthesisState" (string).
+- The "synthesisState" key must be one of the following values:
+    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide a full and comprehensive answer to the "User Query".
+    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but do not fully answer the "User Query", or if you have to make significant inferences.
+    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the "User Query".
+
+- Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
+
+Context Fragments:
+${synthesisContext}
+
+## Response Format
+{
+  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}"
+}
+
   `
 }
 

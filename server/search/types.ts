@@ -49,6 +49,7 @@ export enum Apps {
 
   MCP = "mcp",
   GITHUB_MCP = "github_mcp",
+  Xyne = "xyne",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -170,7 +171,14 @@ export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
+export enum SystemEntity {
+  SystemInfo = "system_info",
+  UserProfile = "user_profile",
+}
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+
 export const entitySchema = z.union([
+  SystemEntitySchema,
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
@@ -181,6 +189,7 @@ export const entitySchema = z.union([
 ])
 
 export type Entity =
+  | SystemEntity
   | PeopleEntity
   | DriveEntity
   | NotionEntity
