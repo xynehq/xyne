@@ -683,6 +683,7 @@ export const HybridDefaultProfileForAgent = (
         case Apps.Slack:
           appQueries.push(buildSlackYQL())
           if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+          if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
           break
         case Apps.DataSource:
           // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
