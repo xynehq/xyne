@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import { getCodeString } from 'rehype-rewrite';
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -17,9 +18,14 @@ import {
   ChevronDown,
   ThumbsUp,
   ThumbsDown,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react"
-import { useEffect, useRef, useState, Fragment } from "react"
+import { useEffect, useRef, useState, Fragment, useCallback } from "react"
+import { TransformWrapper, TransformComponent, useControls } from "react-zoom-pan-pinch";
 import { useTheme } from "@/components/ThemeContext"
+import mermaid from "mermaid";
 import {
   ChatSSEvents,
   SelectPublicMessage,
@@ -1641,6 +1647,110 @@ const renderMarkdownLink = ({
   <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
 )
 
+const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36);
+const Code = ({ inline, children, className, ...props }: { inline?: boolean, children?: React.ReactNode, className?: string, node?: any }) => {
+  const demoid = useRef(`dome${randomid()}`);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const isMermaid = className && /^language-mermaid/.test(className.toLocaleLowerCase());
+  
+  let codeContent = '';
+  if (props.node && props.node.children && props.node.children.length > 0) {
+    // @ts-ignore
+    codeContent = getCodeString(props.node.children);
+  } else if (typeof children === 'string') {
+    codeContent = children;
+  } else if (Array.isArray(children) && children.length > 0 && typeof children[0] === 'string') {
+    // Fallback for cases where children might still be an array with a single string
+    codeContent = children[0];
+  }
+
+
+  const reRender = async () => {
+    if (container && isMermaid && typeof codeContent === 'string' && codeContent.trim() !== '') {
+      try {
+        const { svg } = await mermaid.render(demoid.current, codeContent);
+        container.innerHTML = svg;
+      } catch (error: any) {
+        console.error("Mermaid rendering error in Code component:", error);
+        container.innerHTML = `<pre>Mermaid Error: ${error.message || String(error)}</pre>`;
+      }
+    } else if (container && isMermaid && (typeof codeContent !== 'string' || codeContent.trim() === '')) {
+        container.innerHTML = "";
+    }
+  }
+
+  useEffect(() => {
+    // Ensure mermaid is initialized. This might be redundant if initialized globally, but safe.
+    // mermaid.initialize({ startOnLoad: false, theme: document.body.classList.contains('dark') ? 'dark' : 'default' });
+    reRender();
+  }, [container, isMermaid, codeContent]);
+
+  const refElement = useCallback((node: HTMLElement | null) => {
+    if (node !== null) {
+      setContainer(node);
+    }
+  }, []);
+
+  const MermaidControls = () => {
+    const { zoomIn, zoomOut, resetTransform } = useControls();
+    const buttonBaseClass = "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10";
+    const iconSize = 12;
+
+    return (
+      <div className="absolute top-2 left-2 flex space-x-1">
+        <button
+          onClick={() => zoomIn()}
+          className={`${buttonBaseClass} rounded-l-md`}
+          title="Zoom In"
+        >
+          <ZoomIn size={iconSize} />
+        </button>
+        <button
+          onClick={() => zoomOut()}
+          className={`${buttonBaseClass}`}
+          title="Zoom Out"
+        >
+          <ZoomOut size={iconSize} />
+        </button>
+        <button
+          onClick={() => resetTransform()}
+          className={`${buttonBaseClass} rounded-r-md`}
+          title="Reset View"
+        >
+          <RefreshCw size={iconSize} />
+        </button>
+      </div>
+    );
+  };
+
+  if (isMermaid) {
+    return (
+      <div className="relative w-full mb-6">
+        <TransformWrapper
+          initialScale={1}
+        minScale={0.25}
+        maxScale={8}
+        limitToBounds={false}
+        doubleClick={{ disabled: true }}
+      >
+        <TransformComponent
+          wrapperStyle={{ width: "100%", maxHeight: "800px", cursor: "grab" }}
+          contentStyle={{ width: "100%", display: "flex", justifyContent: "center" }}
+        >
+          <div style={{ display: 'inline-block' }}> {/* This div helps with centering and proper scaling */}
+            <code id={demoid.current} style={{ display: "none" }} />
+            {/* @ts-ignore */}
+            <code ref={refElement} data-name="mermaid" className={`mermaid ${className || ''}`} style={{ display: 'inline-block' }} />
+          </div>
+        </TransformComponent>
+        <MermaidControls />
+      </TransformWrapper>
+      </div>
+    );
+  }
+  return <code className={className}>{children}</code>;
+};
+
 export const ChatMessage = ({
   message,
   thinking,
@@ -1735,6 +1845,7 @@ export const ChatMessage = ({
                     }}
                     components={{
                       a: renderMarkdownLink,
+                      code: Code,
                     }}
                   />
                 </div>
@@ -1758,6 +1869,7 @@ export const ChatMessage = ({
                   }}
                   components={{
                     a: renderMarkdownLink,
+                    code: Code,
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto max-w-full my-2">
                         <table
