@@ -54,6 +54,7 @@ import {
   SyncJobStatus,
   DriveEntity,
   GooglePeopleEntity,
+  IngestionType,
 } from "@/shared/types"
 import {
   getAppSyncJobs,

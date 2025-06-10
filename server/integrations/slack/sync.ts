@@ -2,7 +2,7 @@ import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
 import type PgBoss from "pg-boss"
 import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import { db } from "@/db/client"
-import { Apps, AuthType, SyncJobStatus } from "@/shared/types"
+import { Apps, AuthType, IngestionType, SyncJobStatus } from "@/shared/types"
 import {
   connectors,
   type SelectConnector,
