@@ -28,9 +28,9 @@ function FileUploadIntegration() {
   const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
-  const [, setDataSourceFiles] = useState<any[]>([])
-  const [, setIsLoadingFiles] = useState(false)
-  const [, setFilesError] = useState<string | null>(null)
+  // const [, setDataSourceFiles] = useState<any[]>([]) // Removed
+  // const [, setIsLoadingFiles] = useState(false) // Removed
+  // const [, setFilesError] = useState<string | null>(null) // Removed
   const [refreshKey, setRefreshKey] = useState(0)
 
   const refreshFilesForActiveDataSource = () => {
@@ -60,45 +60,8 @@ function FileUploadIntegration() {
     fetchApiDataSources()
   }, [])
 
-  useEffect(() => {
-    if (activeDataSource && activeDataSource.trim() !== "") {
-      const fetchFilesForDataSource = async () => {
-        setIsLoadingFiles(true)
-        setFilesError(null)
-        try {
-          const response = await api.datasources[":dataSourceName"].files.$get({
-            param: { dataSourceName: activeDataSource },
-          })
-          if (response.ok) {
-            const filesData = await response.json()
-            setDataSourceFiles(filesData)
-          } else {
-            const errorText = await response.text()
-            console.error(
-              `Failed to fetch files for datasource ${activeDataSource}:`,
-              errorText,
-            )
-            setFilesError(`Failed to load files: ${response.statusText}`)
-            setDataSourceFiles([])
-          }
-        } catch (error) {
-          console.error(
-            `Error fetching files for datasource ${activeDataSource}:`,
-            error,
-          )
-          setFilesError("An unexpected error occurred while fetching files.")
-          setDataSourceFiles([])
-        } finally {
-          setIsLoadingFiles(false)
-        }
-      }
-      fetchFilesForDataSource()
-    } else {
-      setDataSourceFiles([])
-      setIsLoadingFiles(false)
-      setFilesError(null)
-    }
-  }, [activeDataSource, refreshKey])
+  // Removed redundant useEffect hook that was fetching files.
+  // FileAccordion now handles its own data fetching based on activeDataSourceName and refreshKey.
 
   const handleDatasourceCreated = async (name: string) => {
     if (!dataSources.includes(name)) {
