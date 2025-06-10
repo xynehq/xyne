@@ -321,5 +321,5 @@ export enum MessageFeedback {
 
 export enum IngestionType {
   fullIngestion = "full_ingestion",
-  partialIngestion = "partial_Ingestion",
+  partialIngestion = "partial_ingestion",
 }
