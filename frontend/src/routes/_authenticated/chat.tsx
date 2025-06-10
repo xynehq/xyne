@@ -19,6 +19,7 @@ import {
   ThumbsDown,
 } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import {
   ChatSSEvents,
   SelectPublicMessage,
@@ -27,7 +28,7 @@ import {
   // Apps,
   // DriveEntity,
 } from "shared/types"
-import AssistantLogo from "@/assets/assistant-logo.svg"
+import logo from "@/assets/logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -57,6 +58,7 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+import { parseHighlight } from "@/components/Highlight"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -207,7 +209,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           // Create a simple anchor tag string for links
           // Ensure it has similar styling to how it's created in ChatBox
           // The text of the link will be the URL itself
-          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800 cursor-pointer">${url}</a>`
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer">${url}</a>`
         }
         // Add a space only if the part is not the last one, or if the next part is text.
         // This avoids trailing spaces or double spaces between elements.
@@ -232,6 +234,7 @@ export const ChatPage = ({
   workspace,
   agentWhiteList,
 }: ChatPageProps) => {
+  const { theme } = useTheme()
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -1267,7 +1270,7 @@ export const ChatPage = ({
   }
 
   return (
-    <div className="h-full w-full flex flex-row bg-white">
+    <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -1275,38 +1278,40 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
               <input
                 ref={titleRef}
-                className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
+                className="flex-grow text-[#1C1D1F] dark:text-gray-100 bg-transparent text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap outline-none"
                 onInput={handleInput}
                 onKeyDown={handleKeyDown}
                 onBlur={handleBlur}
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+              <span className="flex-grow text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                 {chatTitle}
               </span>
             )}
             {chatTitle && (
               <Pencil
                 stroke="#4A4F59"
+                className="dark:stroke-gray-400 cursor-pointer"
                 size={18}
                 onClick={handleChatRename}
-                className="cursor-pointer"
               />
             )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[20px] cursor-pointer"
+              className="ml-[20px] cursor-pointer dark:stroke-gray-400"
+              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
+              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+            <Ellipsis stroke="#4A4F59" className="dark:stroke-gray-400 ml-[20px]" size={18} />
           </div>
         </div>
 
@@ -1444,10 +1449,10 @@ export const ChatPage = ({
                   onFeedback={handleFeedback}
                 />
               )}
-              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
+              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white dark:bg-[#1E1E1E]"></div>
             </div>
             {showRagTrace && chatId && selectedMessageId && (
-              <div className="fixed inset-0 z-50 bg-white overflow-auto">
+              <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
                 <RagTraceVirtualization
                   chatId={chatId}
                   messageId={selectedMessageId}
@@ -1499,7 +1504,7 @@ const MessageCitationList = ({
         {citations.map((citation: Citation, index: number) => (
           <li
             key={index}
-            className="border-[#E6EBF5] border-[1px] rounded-[10px] w-[196px] mr-[6px]"
+            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
           >
             <a
               href={citation.url}
@@ -1509,20 +1514,20 @@ const MessageCitationList = ({
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                 <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
-                    {citation.title}
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                    {citation.title ? parseHighlight(citation.title) : ""}
                   </p>
                   <div className="flex flex-col mt-[9px]">
                     <div className="flex items-center pb-[12px]">
                       {getIcon(citation.app, citation.entity)}
                       <span
                         style={{ fontWeight: 450 }}
-                        className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]"
+                        className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]"
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
                       <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px]"
+                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
                         style={{ fontFamily: "JetBrains Mono" }}
                       >
                         {index + 1}
@@ -1557,7 +1562,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
       {citations.map((citation: Citation, index: number) => (
         <li
           key={index}
-          className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[85%]"
+          className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%]"
         >
           <a
             href={citation.url}
@@ -1571,18 +1576,18 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] rounded-full text-[9px] mr-[8px]"
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
                 style={{ fontFamily: "JetBrains Mono" }}
               >
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
-                  {citation.title}
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                  {citation.title ? parseHighlight(citation.title) : ""}
                 </span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
                   {getIcon(citation.app, citation.entity)}
-                  <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
+                  <span className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]">
                     {getName(citation.app, citation.entity)}
                   </span>
                 </div>
@@ -1605,10 +1610,10 @@ const Sources = ({
   closeSources: () => void
 }) => {
   return showSources ? (
-    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] bg-white flex flex-col">
-      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5]">
+    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
+      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
         <span
-          className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
+          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
           style={{ fontFamily: "JetBrains Mono" }}
         >
           SOURCES
@@ -1616,7 +1621,7 @@ const Sources = ({
         <X
           stroke="#9EAEBE"
           size={14}
-          className="ml-auto cursor-pointer"
+          className="ml-auto cursor-pointer dark:stroke-gray-400"
           onClick={closeSources}
         />
       </div>
@@ -1633,7 +1638,7 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" />
+  <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
 )
 
 export const ChatMessage = ({
@@ -1673,6 +1678,7 @@ export const ChatMessage = ({
   feedbackStatus?: MessageFeedback | null
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
 
@@ -1696,7 +1702,7 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
         <div
@@ -1710,20 +1716,20 @@ export const ChatMessage = ({
           <div className="flex flex-row w-full">
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={AssistantLogo}
+              src={logo}
             />
             <div className="mt-[4px] markdown-content">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
+                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
-                      "data-color-mode": "light",
+                      "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: "#627384",
+                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1734,19 +1740,19 @@ export const ChatMessage = ({
                 </div>
               )}
               {message === "" && (!responseDone || isRetrying) ? (
-                <div className="flex-grow">
+                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
               ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: "#1C1D1F",
+                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}
@@ -1762,7 +1768,7 @@ export const ChatMessage = ({
                             width: "100%",
                             maxWidth: "100%",
                           }}
-                          className="min-w-full"
+                          className="min-w-full dark:bg-slate-800" // Table background for dark
                           {...props}
                         />
                       </div>
@@ -1775,6 +1781,7 @@ export const ChatMessage = ({
                           textAlign: "left",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:text-white"
                         {...props}
                       />
                     ),
@@ -1782,21 +1789,23 @@ export const ChatMessage = ({
                       <td
                         style={{
                           border: "none",
-                          borderTop: "1px solid #e5e7eb",
+                          borderTop: "1px solid #e5e7eb", // Will need dark:border-gray-700
                           padding: "4px 8px",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:border-gray-700 dark:text-white"
                         {...props}
                       />
                     ),
                     tr: ({ node, ...props }) => (
                       <tr
-                        style={{ backgroundColor: "#ffffff", border: "none" }}
+                        style={{ border: "none" }}
+                        className="bg-white dark:bg-[#1E1E1E]"
                         {...props}
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} {...props} />
+                      <h1 style={{ fontSize: "1.6em" }} className="dark:text-gray-100" {...props} />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
@@ -1812,6 +1821,34 @@ export const ChatMessage = ({
                     ),
                     h6: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "0.68em" }} {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        style={{
+                          listStyleType: "disc",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol
+                        style={{
+                          listStyleType: "decimal",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li
+                        style={{
+                          marginBottom: "0.25rem",
+                        }}
+                        {...props}
+                      />
                     ),
                   }}
                 />

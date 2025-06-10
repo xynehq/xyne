@@ -41,6 +41,7 @@ import {
   UserPlus,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -82,11 +83,11 @@ interface FetchedDataSource {
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
   return (
-    <div className="flex items-center justify-center bg-slate-100 text-slate-700 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200">
+    <div className="flex items-center justify-center bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200 dark:border-slate-500">
       {icon && <span className="mr-1 flex items-center">{icon}</span>}
       <span>{text}</span>
       <LucideX
-        className="ml-1.5 h-3.5 w-3.5 cursor-pointer hover:text-red-500"
+        className="ml-1.5 h-3.5 w-3.5 cursor-pointer hover:text-red-500 dark:hover:text-red-400"
         onClick={(e) => {
           e.stopPropagation()
           onRemove()
@@ -912,7 +913,7 @@ function AgentComponent() {
   }, [messages, currentResp?.resp])
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full bg-white">
+    <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink}
         role={user?.role}
@@ -920,12 +921,12 @@ function AgentComponent() {
       />
       <div className="flex flex-col md:flex-row flex-1 h-full md:ml-[60px]">
         <div
-          className={`p-4 md:py-4 md:px-8 bg-white overflow-y-auto h-full relative ${viewMode === "list" ? "w-full" : "w-full md:w-[50%] border-r border-gray-200"}`}
+          className={`p-4 md:py-4 md:px-8 bg-white dark:bg-[#1E1E1E] overflow-y-auto h-full relative ${viewMode === "list" ? "w-full" : "w-full md:w-[50%] border-r border-gray-200 dark:border-gray-700"}`}
         >
           {viewMode === "list" ? (
             <>
               <div className="flex justify-between items-center mb-8 w-full max-w-2xl mx-auto">
-                <h1 className="text-2xl font-semibold text-gray-700">
+                <h1 className="text-2xl font-semibold text-gray-700 dark:text-gray-100">
                   My Agents
                 </h1>
                 <Button
@@ -937,7 +938,7 @@ function AgentComponent() {
               </div>
               <div className="w-full max-w-3xl mx-auto">
                 {agents.length === 0 ? (
-                  <div className="text-center py-10 text-gray-500">
+                  <div className="text-center py-10 text-gray-500 dark:text-gray-400">
                     <p className="text-lg mb-2">No agents created yet.</p>
                     <p>Click "Create Agent" to get started.</p>
                   </div>
@@ -946,7 +947,7 @@ function AgentComponent() {
                     {agents.map((agent) => (
                       <div
                         key={agent.externalId}
-                        className="bg-white border border-gray-200 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow flex flex-col justify-between"
+                        className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow flex flex-col justify-between"
                       >
                         <div
                           className="cursor-pointer flex-grow"
@@ -959,26 +960,26 @@ function AgentComponent() {
                         >
                           <div className="flex justify-between items-start mb-3">
                             <h2
-                              className="text-xl font-semibold text-gray-800 truncate"
+                              className="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate"
                               title={agent.name}
                             >
                               {agent.name}
                             </h2>
                             {/* Edit and Delete buttons are outside the new clickable div to maintain their functionality */}
                           </div>
-                          <p className="text-xs text-gray-500 mb-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                             Model:{" "}
                             <span className="font-medium">{agent.model}</span>
                           </p>
-                          <p className="text-sm text-gray-600 h-20 overflow-hidden text-ellipsis mb-4">
+                          <p className="text-sm text-gray-600 dark:text-gray-300 h-20 overflow-hidden text-ellipsis mb-4">
                             {agent.description || (
-                              <span className="italic text-gray-400">
+                              <span className="italic text-gray-400 dark:text-gray-500">
                                 No description provided.
                               </span>
                             )}
                           </p>
                         </div>
-                        <div className="flex justify-end items-center mt-auto pt-4 border-t border-gray-100">
+                        <div className="flex justify-end items-center mt-auto pt-4 border-t border-gray-100 dark:border-slate-700">
                           <div className="flex space-x-2 flex-shrink-0">
                             <Button
                               variant="ghost"
@@ -987,7 +988,7 @@ function AgentComponent() {
                                 e.stopPropagation()
                                 handleEditAgent(agent)
                               }}
-                              className="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-slate-100"
+                              className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                             >
                               <Edit3 size={16} />
                             </Button>
@@ -998,12 +999,12 @@ function AgentComponent() {
                                 e.stopPropagation()
                                 handleDeleteAgent(agent.externalId)
                               }}
-                              className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              className="h-8 w-8 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30"
                             >
                               <Trash2 size={16} />
                             </Button>
                           </div>
-                          <p className="text-xs text-gray-400 text-right ml-auto">
+                          <p className="text-xs text-gray-400 dark:text-gray-500 text-right ml-auto">
                             Last updated:{" "}
                             {new Date(agent.updatedAt).toLocaleDateString()}
                           </p>
@@ -1020,7 +1021,7 @@ function AgentComponent() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="mr-2 text-gray-600 hover:bg-slate-100"
+                  className="mr-2 text-gray-600 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                   onClick={() => {
                     resetForm()
                     setViewMode("list")
@@ -1028,7 +1029,7 @@ function AgentComponent() {
                 >
                   <ArrowLeft size={20} />
                 </Button>
-                <h1 className="text-2xl font-semibold text-gray-700">
+                <h1 className="text-2xl font-semibold text-gray-700 dark:text-gray-100">
                   {editingAgent ? "EDIT AGENT" : "CREATE AGENT"}
                 </h1>
               </div>
@@ -1037,7 +1038,7 @@ function AgentComponent() {
                 <div className="w-full">
                   <Label
                     htmlFor="agentName"
-                    className="text-sm font-medium text-gray-700"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
                     Name
                   </Label>
@@ -1046,14 +1047,14 @@ function AgentComponent() {
                     placeholder="e.g., Report Generator"
                     value={agentName}
                     onChange={(e) => setAgentName(e.target.value)}
-                    className="mt-1 bg-white border border-gray-300 rounded-lg w-full text-base h-11 px-3"
+                    className="mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full text-base h-11 px-3 dark:text-gray-100"
                   />
                 </div>
 
                 <div className="w-full">
                   <Label
                     htmlFor="agentDescription"
-                    className="text-sm font-medium text-gray-700"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
                     Description
                   </Label>
@@ -1062,14 +1063,14 @@ function AgentComponent() {
                     placeholder="e.g., Helps with generating quarterly financial reports..."
                     value={agentDescription}
                     onChange={(e) => setAgentDescription(e.target.value)}
-                    className="mt-1 bg-white border border-gray-300 rounded-lg w-full h-24 p-3 text-base"
+                    className="mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full h-24 p-3 text-base dark:text-gray-100"
                   />
                 </div>
 
                 <div className="w-full">
                   <Label
                     htmlFor="agentPrompt"
-                    className="text-sm font-medium text-gray-700"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >
                     Prompt
                   </Label>
@@ -1078,20 +1079,20 @@ function AgentComponent() {
                     placeholder="e.g., You are a helpful assistant..."
                     value={agentPrompt}
                     onChange={(e) => setAgentPrompt(e.target.value)}
-                    className="mt-1 bg-white border border-gray-300 rounded-lg w-full h-36 p-3 text-base"
+                    className="mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full h-36 p-3 text-base dark:text-gray-100"
                   />
                 </div>
 
                 <div>
-                  <Label className="text-base font-medium text-gray-800">
+                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     App Integrations
                   </Label>
-                  <p className="text-xs text-gray-500 mt-1 mb-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
                     Select knowledge sources for your agent.
                   </p>
-                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 rounded-lg min-h-[48px] bg-white">
+                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
-                      <span className="text-gray-400 text-sm">
+                      <span className="text-gray-400 dark:text-gray-500 text-sm">
                         Add integrations..
                       </span>
                     )}
@@ -1113,13 +1114,13 @@ function AgentComponent() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="ml-auto p-1 h-7 w-7 text-slate-500 hover:text-slate-700"
+                          className="ml-auto p-1 h-7 w-7 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                         >
                           <PlusCircle size={20} />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
-                        className="w-72 md:w-80 max-h-80 overflow-y-auto"
+                        className="w-72 md:w-80 max-h-80 overflow-y-auto" /* Adapts via CSS vars */
                         align="start"
                       >
                         <div className="flex items-center justify-between px-2 py-1.5">
@@ -1131,20 +1132,20 @@ function AgentComponent() {
                               variant="ghost"
                               size="sm"
                               onClick={handleClearAllIntegrations}
-                              className="p-1 h-auto text-xs text-slate-500 hover:text-slate-700"
+                              className="p-1 h-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                             >
                               <RotateCcw size={14} className="mr-1" /> Clear all
                             </Button>
                           )}
                         </div>
-                        <DropdownMenuSeparator />
+                        <DropdownMenuSeparator /> {/* Adapts via CSS vars */}
                         {allAvailableIntegrations.map((integration) => (
                           <DropdownMenuItem
                             key={integration.id}
                             onSelect={() =>
                               toggleIntegrationSelection(integration.id)
                             }
-                            className="flex items-center justify-between cursor-pointer text-sm py-2 px-2 hover:bg-slate-50"
+                            className="flex items-center justify-between cursor-pointer text-sm py-2 px-2 hover:bg-slate-50 dark:hover:bg-slate-600"
                           >
                             <div className="flex items-center">
                               <span className="mr-2 flex items-center">
@@ -1153,7 +1154,7 @@ function AgentComponent() {
                               <span>{integration.name}</span>
                             </div>
                             {selectedIntegrations[integration.id] && (
-                              <Check className="h-4 w-4 text-slate-700" />
+                              <Check className="h-4 w-4 text-slate-700 dark:text-slate-200" />
                             )}
                           </DropdownMenuItem>
                         ))}
@@ -1163,33 +1164,33 @@ function AgentComponent() {
                 </div>
 
                 <div>
-                  <Label className="text-base font-medium text-gray-800">
+                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     Agent Users{" "}
                     {selectedUsers.length > 0 && (
-                      <span className="text-sm text-gray-500 ml-1">
+                      <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
                         ({selectedUsers.length})
                       </span>
                     )}
                   </Label>
                   <div className="mt-3">
                     <div className="relative w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
                       <Input
                         placeholder="Search users by name or email..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
+                        className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
                       />
                       {showSearchResults && (
-                        <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                        <Card className="absolute z-10 mt-1 shadow-lg w-full"> {/* Card adapts */}
                           <CardContent
-                            className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
+                            className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500"
                             ref={searchResultsRef}
                             style={{
                               scrollbarWidth: "thin",
                               WebkitOverflowScrolling: "touch",
-                              scrollbarColor: "#D1D5DB transparent",
+                              scrollbarColor: "var(--scrollbar-thumb) transparent", 
                               overflowY: "auto",
                               display: "block",
                             }}
@@ -1198,29 +1199,29 @@ function AgentComponent() {
                               filteredUsers.map((user, index) => (
                                 <div
                                   key={user.id}
-                                  className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
+                                  className={`flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
                                     index === selectedSearchIndex
-                                      ? "bg-gray-50"
+                                      ? "bg-gray-50 dark:bg-slate-600"
                                       : ""
                                   }`}
                                   onClick={() => handleSelectUser(user)}
                                 >
                                   <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                    <span className="text-sm text-gray-600 truncate">
+                                    <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
                                       {user.name}
                                     </span>
-                                    <span className="text-gray-500 flex-shrink-0">
+                                    <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
                                       -
                                     </span>
-                                    <span className="text-gray-500 truncate">
+                                    <span className="text-gray-500 dark:text-gray-400 truncate">
                                       {user.email}
                                     </span>
                                   </div>
-                                  <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  <UserPlus className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                                 </div>
                               ))
                             ) : (
-                              <div className="p-3 text-center text-gray-500">
+                              <div className="p-3 text-center text-gray-500 dark:text-gray-400">
                                 No users found matching "{searchQuery}"
                               </div>
                             )}
@@ -1233,23 +1234,23 @@ function AgentComponent() {
 
                 {/* Agent Users Section */}
                 <div>
-                  <Card className="mt-3">
+                  <Card className="mt-3"> {/* Card adapts */}
                     <CardContent className="p-4">
-                      <div className="space-y-1.5 h-[126px] overflow-y-auto">
+                      <div className="space-y-1.5 h-[126px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
                         {selectedUsers.length > 0 ? (
                           selectedUsers.map((user) => (
                             <div
                               key={user.id}
-                              className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg"
+                              className="flex items-center justify-between p-1.5 bg-gray-50 dark:bg-slate-600 rounded-lg"
                             >
                               <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                <span className="text-sm text-gray-600 truncate">
+                                <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
                                   {user.name}
                                 </span>
-                                <span className="text-gray-500 flex-shrink-0">
+                                <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
                                   -
                                 </span>
-                                <span className="text-gray-500 truncate">
+                                <span className="text-gray-500 dark:text-gray-400 truncate">
                                   {user.email}
                                 </span>
                               </div>
@@ -1257,15 +1258,15 @@ function AgentComponent() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleRemoveUser(user.id)}
-                                className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
+                                className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-500 h-6 w-6 p-0 flex-shrink-0"
                               >
                                 <LucideX className="h-3 w-3" />
                               </Button>
                             </div>
                           ))
                         ) : (
-                          <div className="text-center py-4 text-gray-500">
-                            <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                          <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                            <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                             <p>No users added yet</p>
                             <p className="text-sm">
                               Search and select users to add them to this agent
@@ -1279,7 +1280,7 @@ function AgentComponent() {
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button
                     onClick={handleSaveAgent}
-                    className="bg-slate-800 hover:bg-slate-700 text-white rounded-lg px-8 py-3 text-sm font-medium"
+                    className="bg-slate-800 dark:bg-blue-600 hover:bg-slate-700 dark:hover:bg-blue-500 text-white rounded-lg px-8 py-3 text-sm font-medium"
                   >
                     {editingAgent ? "Save Changes" : "Create Agent"}
                   </Button>
@@ -1290,9 +1291,9 @@ function AgentComponent() {
         </div>
 
         {viewMode !== "list" && (
-          <div className="w-full md:w-[50%] bg-gray-50 flex flex-col h-full">
-            <div className="p-4 md:px-8 md:py-6 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-700">
+          <div className="w-full md:w-[50%] bg-gray-50 dark:bg-[#1E1E1E] flex flex-col h-full">
+            <div className="p-4 md:px-8 md:py-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-100">
                 TEST AGENT
               </h2>
               {agents.length > 0 && (
@@ -1385,7 +1386,7 @@ function AgentComponent() {
               )}
             </div>
 
-            <div className="p-2 md:p-4 border-t border-gray-200 bg-gray-50 flex justify-center">
+            <div className="p-2 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E1E1E] flex justify-center">
               <ChatBox
                 query={query}
                 setQuery={setQuery}
@@ -1441,6 +1442,7 @@ const AgentChatMessage = ({
   citationMap?: Record<number, number>
   isStreaming?: boolean
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1473,37 +1475,38 @@ const AgentChatMessage = ({
 
   return (
     <div
-      className={`rounded-[16px] ${
+      className={`rounded-[16px] max-w-full ${ /* Added max-w-full for consistency */
         isUser
-          ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]"
-          : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"
+          ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words"
+          : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full" /* Added w-full for assistant */
       }`}
     >
       {isUser ? (
-        <div dangerouslySetInnerHTML={{ __html: message }} />
+        <div className="break-words overflow-wrap-anywhere" dangerouslySetInnerHTML={{ __html: message }} />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
         >
-          <div className="flex flex-row">
+          <div className="flex flex-row w-full"> {/* Added w-full */}
             <img
-              className={"mr-[20px] w-[32px] self-start"}
+              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
               alt="Agent"
             />
             <div className="mt-[4px] markdown-content w-full">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
+                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
-                      "data-color-mode": "light",
+                      "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: "#627384",
+                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
                       fontSize: "15px",
+                       maxWidth: "100%", overflowWrap: "break-word" 
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1512,33 +1515,34 @@ const AgentChatMessage = ({
                 </div>
               )}
               {message === "" && !thinking && isStreaming ? (
-                <div className="flex-grow text-[#1C1D1F]">
+                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
                   {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
                 </div>
               ) : (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: "#1C1D1F",
+                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
                     fontSize: "15px",
+                    maxWidth: "100%", overflowWrap: "break-word" 
                   }}
                   components={{
                     a: renderMarkdownLink,
                     table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-[720px] my-2">
+                      <div className="overflow-x-auto w-full my-2">
                         <table
                           style={{
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
-                            tableLayout: "fixed",
+                            tableLayout: "auto",
                             width: "100%",
                           }}
-                          className="min-w-full"
+                          className="min-w-full dark:bg-slate-800"
                           {...props}
                         />
                       </div>
@@ -1551,6 +1555,7 @@ const AgentChatMessage = ({
                           textAlign: "left",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:text-gray-200"
                         {...props}
                       />
                     ),
@@ -1562,12 +1567,14 @@ const AgentChatMessage = ({
                           padding: "4px 8px",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:border-gray-700 dark:text-gray-300"
                         {...props}
                       />
                     ),
                     tr: ({ node, ...props }) => (
                       <tr
                         style={{ backgroundColor: "#ffffff", border: "none" }}
+                        className="dark:bg-slate-800"
                         {...props}
                       />
                     ),
@@ -1578,6 +1585,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "0.67em 0",
                         }}
+                        className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1588,6 +1596,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "0.83em 0",
                         }}
+                         className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1598,6 +1607,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "1em 0",
                         }}
+                         className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1611,7 +1621,7 @@ const AgentChatMessage = ({
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
+                  stroke={`${isCopied ? (theme === 'dark' ? "#A0AEC0" : "#4F535C") : (theme === 'dark' ? "#6B7280" : "#B2C3D4")}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
                   onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}
@@ -1640,18 +1650,18 @@ const AgentChatMessage = ({
                         .map((citation: Citation, index: number) => (
                           <li
                             key={index}
-                            className="border-[#E6EBF5] border-[1px] rounded-[10px] w-[196px] mr-[6px]"
+                            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
                           >
                             <a
                               href={citation.url}
                               target="_blank"
                               rel="noopener noreferrer"
                               title={citation.title}
-                              className="block hover:bg-slate-50 transition-colors duration-150"
+                              className="block hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors duration-150"
                             >
                               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                                 <div className="flex flex-col w-full">
-                                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium text-[#1C1D1F]">
+                                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium text-[#1C1D1F] dark:text-gray-100">
                                     {citation.title}
                                   </p>
                                   <div className="flex flex-col mt-[9px]">
@@ -1663,12 +1673,12 @@ const AgentChatMessage = ({
                                       })}
                                       <span
                                         style={{ fontWeight: 450 }}
-                                        className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px] ml-1.5"
+                                        className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px] ml-1.5"
                                       >
                                         {getName(citation.app, citation.entity)}
                                       </span>
                                       <span
-                                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] text-[#4A4F59]"
+                                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] text-[#4A4F59]"
                                         style={{ fontFamily: "JetBrains Mono" }}
                                       >
                                         {index + 1}

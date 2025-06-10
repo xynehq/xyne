@@ -33,12 +33,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         <DialogTitle className="text-xl font-bold text-primary">
           {modalTitle}
         </DialogTitle>
-        <DialogDescription className="text-gray-600">
+        <DialogDescription className="text-gray-600 dark:text-gray-400">
           {modalMessage}
         </DialogDescription>
         <div className="flex justify-end gap-4">
           <DialogClose
-            className="px-4 py-2 bg-gray-300 text-black rounded-lg hover:bg-gray-400"
+            className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-black dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600"
             onClick={() => setShowModal({ open: false })}
           >
             Cancel

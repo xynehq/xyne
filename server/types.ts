@@ -367,3 +367,14 @@ export enum metricAccountType {
   slackUser = "slackUser",
   admin = "admin",
 }
+
+export const ingestMoreChannelSchema = z.object({
+  connectorId: z.number(),
+  channelsToIngest: z.array(z.string()),
+  startDate: z.string(),
+  endDate: z.string(),
+})
+
+export const startSlackIngestionSchema = z.object({
+  connectorId: z.number(),
+})
