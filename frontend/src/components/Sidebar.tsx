@@ -3,6 +3,7 @@ import { Bot, Plug, Plus, History, Sun, Moon } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
+import { useTheme } from "@/components/ThemeContext"
 import { UserRole } from "shared/types"
 import {
   Tooltip,
@@ -25,28 +26,9 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      const storedTheme = localStorage.getItem("theme")
-      if (storedTheme) {
-        return storedTheme === "dark"
-      }
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-    }
-    return false
-  })
+  const { theme, toggleTheme } = useTheme()
+  const isDarkMode = theme === 'dark'
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (isDarkMode) {
-        document.documentElement.classList.add("dark")
-        localStorage.setItem("theme", "dark")
-      } else {
-        document.documentElement.classList.remove("dark")
-        localStorage.setItem("theme", "light")
-      }
-    }
-  }, [isDarkMode])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -80,9 +62,7 @@ export const Sidebar = ({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showHistory])
 
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode)
-  }
+  // toggleDarkMode is now toggleTheme from context (no separate function needed here)
 
   return (
     <TooltipProvider>
@@ -166,7 +146,7 @@ export const Sidebar = ({
           </Link>
 
           <div
-            onClick={toggleDarkMode}
+            onClick={toggleTheme}
             className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]"
           >
             <Tooltip>

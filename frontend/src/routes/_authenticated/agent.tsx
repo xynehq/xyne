@@ -41,6 +41,7 @@ import {
   UserPlus,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -1460,6 +1461,7 @@ const AgentChatMessage = ({
   citationMap?: Record<number, number>
   isStreaming?: boolean
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1516,12 +1518,12 @@ const AgentChatMessage = ({
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
-                      "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                      "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#627384",
+                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
                       fontSize: "15px",
                        maxWidth: "100%", overflowWrap: "break-word" 
                     }}
@@ -1539,12 +1541,12 @@ const AgentChatMessage = ({
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: document.documentElement.classList.contains('dark') ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
                     fontSize: "15px",
                     maxWidth: "100%", overflowWrap: "break-word" 
                   }}
@@ -1638,7 +1640,7 @@ const AgentChatMessage = ({
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? (document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#4F535C") : (document.documentElement.classList.contains('dark') ? "#6B7280" : "#B2C3D4")}`}
+                  stroke={`${isCopied ? (theme === 'dark' ? "#A0AEC0" : "#4F535C") : (theme === 'dark' ? "#6B7280" : "#B2C3D4")}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
                   onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}

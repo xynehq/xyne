@@ -26,6 +26,8 @@ import {
   updateConnectorStatusSchema,
   serviceAccountIngestMoreSchema,
   deleteUserDataSchema,
+  ingestMoreChannelSchema,
+  startSlackIngestionSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -38,6 +40,8 @@ import {
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
   AdminDeleteUserData,
+  IngestMoreChannelApi,
+  StartSlackIngestionApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -257,6 +261,20 @@ export const AppRoutes = app
     "/oauth/create",
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    async (c, next) => {
+      console.log("i am ")
+      await next()
+    },
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
   )
   .post(
     "/apikey/create",
