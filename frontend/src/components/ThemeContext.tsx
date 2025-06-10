@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
+const THEME_PREFERENCE_EXPLICITLY_SET_KEY = 'theme-preference-explicitly-set';
+const THEME_KEY = 'theme';
+
 type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
@@ -12,7 +15,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
-      const storedTheme = localStorage.getItem('theme') as Theme | null;
+      const storedTheme = localStorage.getItem(THEME_KEY) as Theme | null;
       if (storedTheme) {
         return storedTheme;
       }
@@ -25,7 +28,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     if (typeof window !== 'undefined') {
       document.documentElement.classList.remove('light', 'dark');
       document.documentElement.classList.add(theme);
-      localStorage.setItem('theme', theme);
+      localStorage.setItem(THEME_KEY, theme);
     }
   }, [theme]);
 
@@ -37,13 +40,13 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     
     const handleSystemThemeChange = (e: MediaQueryListEvent) => {
       // Update only if no theme is explicitly set by the user
-      if (!localStorage.getItem('theme-preference-explicitly-set')) {
+      if (!localStorage.getItem(THEME_PREFERENCE_EXPLICITLY_SET_KEY)) {
         setTheme(e.matches ? 'dark' : 'light');
       }
     };
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'theme' && e.newValue) {
+      if (e.key === THEME_KEY && e.newValue) {
         setTheme(e.newValue as Theme);
       }
     };
@@ -62,7 +65,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       const newTheme = prevTheme === 'light' ? 'dark' : 'light';
       // Mark that the user has explicitly set a theme preference
       if (typeof window !== 'undefined') {
-        localStorage.setItem('theme-preference-explicitly-set', 'true');
+        localStorage.setItem(THEME_PREFERENCE_EXPLICITLY_SET_KEY, 'true');
       }
       return newTheme;
     });
