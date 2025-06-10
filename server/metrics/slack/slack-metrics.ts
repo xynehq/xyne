@@ -89,3 +89,36 @@ export const insertChannelMessagesErrorCount = new Counter({
 })
 
 metricRegister.registerMetric(insertChannelMessagesErrorCount)
+
+
+export const totalConversationsToBeInserted = new Counter({
+  name:"total_conversation_inserted_count",
+  help: "Count of total number of conversations inserted",
+  labelNames: ["team_id", "user_email"]
+})
+
+metricRegister.registerMetric(totalConversationsToBeInserted)
+
+export const totalChatToBeInsertedCount = new Counter({
+  name: "total_chat_to_be_inserted",
+  help:"Total number of chats to be inserted",
+  labelNames: ["conversation_id","user_email"]
+})
+
+metricRegister.registerMetric(totalChatToBeInsertedCount)
+
+export const totalConversationsSkipped = new Counter({
+  name:"total_conversation_skipped_count",
+  help: "Count of number of conversations that was skipped out of the total conversations extracted",
+  labelNames: ["team_id", "user_email", "status"]
+})
+
+metricRegister.registerMetric(totalConversationsSkipped)
+
+export const allConversationsInTotal = new Counter({
+  name:"total_convesations_extracted_count",
+  help: "Total Count of Conversations that the user is a part of",
+  labelNames: ["team_id", "user_email", "status"]
+})
+
+metricRegister.registerMetric(allConversationsInTotal)

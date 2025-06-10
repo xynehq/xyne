@@ -56,6 +56,7 @@ import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import { time } from "console"
 import {
+  allConversationsInTotal,
   ingestedMembersErrorTotalCount,
   ingestedMembersTotalCount,
   ingestedTeamErrorTotalCount,
@@ -67,6 +68,9 @@ import {
   insertConversationCount,
   insertConversationDuration,
   insertConversationErrorCount,
+  totalChatToBeInsertedCount,
+  totalConversationsSkipped,
+  totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
@@ -302,6 +306,7 @@ export async function insertChannelMessages(
     const response: ConversationsHistoryResponse =
       await safeConversationHistory(client, channelId, cursor, timestamp)
 
+     
     if (!response.ok) {
       throw new Error(
         `Error fetching messages for channel ${channelId}: ${response.error}`,
@@ -309,6 +314,7 @@ export async function insertChannelMessages(
     }
 
     if (response.messages) {
+       totalChatToBeInsertedCount.inc({conversation_id: channelId??"",user_email: email})
       for (const message of response.messages as (SlackMessage & {
         mentions: string[]
       })[]) {
@@ -372,7 +378,7 @@ export async function insertChannelMessages(
             insertChatMessagesCount.inc({
               conversation_id: channelId,
               status: OperationStatus.Success,
-              team_id: message.team,
+              team_id: message.team??"No Name Found",
             })
           } catch (error) {
             getUserLogger(email).error(error, `Error inserting chat message`)
@@ -461,7 +467,7 @@ export async function insertChannelMessages(
                 insertChatMessagesCount.inc({
                   conversation_id: channelId,
                   status: OperationStatus.Success,
-                  team_id: message.team,
+                  team_id: message.team??"No Name Found",
                 })
               } catch (error) {
                 getUserLogger(email).error(error, `Error inserting chat message`)
@@ -783,6 +789,8 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           conversation.is_member)
       )
     })
+    allConversationsInTotal.inc({team_id:team.id??team.name??"",user_email:data.email, status:OperationStatus.Success
+     }, conversations.length)
     for (const conv of conversations) {
       if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
     }
@@ -800,6 +808,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     getUserLogger(data.email).info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
+    totalConversationsSkipped.inc({team_id:team.id??team.name??"", user_email: data.email})
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
     teamMap.set(team.id!, team)
@@ -808,6 +817,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     tracker.setTotal(conversationsToInsert.length)
     let conversationIndex = 0
     // can be done concurrently, but can cause issues with ratelimits
+    totalConversationsToBeInserted.inc({team_id:team.id??team.name??"", user_email: data.email}, conversationsToInsert.length)
     for (const conversation of conversationsToInsert) {
       const memberIds = await getConversationUsers(user, client, conversation, data.email)
       const membersToFetch = memberIds.filter((m: string) => !memberMap.get(m))

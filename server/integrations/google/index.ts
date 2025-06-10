@@ -16,6 +16,7 @@ import {
 import { chunkDocument } from "@/chunks"
 import {
   MessageTypes,
+  OperationStatus,
   Subsystem,
   SyncCron,
   WorkerResponseTypes,
@@ -125,6 +126,7 @@ import {
   extractionDuration,
   fileExtractionErrorsTotal,
   ingestionErrorsTotal,
+  totalDriveFilesToBeIngested,
   totalDurationForFileExtraction,
   totalExtractedFiles,
   totalIngestedFiles,
@@ -800,10 +802,15 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       refresh_token: oauthTokens.refresh_token,
     })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
-    const [totalFiles, { messagesExcludingPromotions }] = await Promise.all([
+    const [totalFiles, { messagesTotal, messagesExcludingPromotions }] = await Promise.all([
       countDriveFiles(oauth2Client, userEmail),
       getGmailCounts(oauth2Client,  userEmail),
     ])
+
+    totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},totalFiles)
+    totalDriveFilesToBeIngested.inc({email: userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, messagesExcludingPromotions)
+    totalSkippedMails.inc({email: userEmail, status: OperationStatus.Success,account_type: AuthType.OAuth }, (messagesTotal - messagesExcludingPromotions))
+
     tracker.updateTotal(userEmail, {
       totalDrive: totalFiles,
       totalMail: messagesExcludingPromotions,
@@ -933,6 +940,7 @@ import {
   metadataFiles,
 } from "@/metrics/google/metadata_metrics"
 import type { Logger } from "pino"
+import { totalGmailToBeIngestedCount, totalSkippedMails } from "@/metrics/google/gmail-metrics"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -1114,6 +1122,9 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         
         const mailCountExcludingPromotions =
           gmailCounts.messagesExcludingPromotions
+
+        totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},driveFileCount)
+        totalDriveFilesToBeIngested.inc({email:userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, gmailCounts.messagesTotal)
 
         tracker.updateTotal(userEmail, {
           totalMail: mailCountExcludingPromotions,
