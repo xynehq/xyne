@@ -56,6 +56,7 @@ import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import { time } from "console"
 import {
+  allConversationsInTotal,
   ingestedMembersErrorTotalCount,
   ingestedMembersTotalCount,
   ingestedTeamErrorTotalCount,
@@ -67,6 +68,9 @@ import {
   insertConversationCount,
   insertConversationDuration,
   insertConversationErrorCount,
+  totalChatToBeInsertedCount,
+  totalConversationsSkipped,
+  totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
 import { start } from "repl"
 
@@ -365,6 +369,7 @@ export async function insertChannelMessages(
     }
 
     if (response.messages) {
+       totalChatToBeInsertedCount.inc({conversation_id: channelId??"",user_email: email}, response.messages?.length)
       for (const message of response.messages as (SlackMessage & {
         mentions: string[]
       })[]) {
@@ -836,6 +841,8 @@ export const handleSlackChannelIngestion = async (
         )
       }
     }
+     allConversationsInTotal.inc({team_id:team.id??team.name??"",user_email:data.email, status:OperationStatus.Success
+         }, conversations.length)
     for (const conv of conversations) {
       if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
     }
@@ -854,6 +861,7 @@ export const handleSlackChannelIngestion = async (
     Logger.info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
+    totalConversationsSkipped.inc({team_id:team.id??team.name??"", user_email: email},(conversations.length - conversationsToInsert.length) )
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
     teamMap.set(team.id!, team)
@@ -861,6 +869,7 @@ export const handleSlackChannelIngestion = async (
     tracker.setCurrent(0)
     tracker.setTotal(conversationsToInsert.length)
     let conversationIndex = 0
+    totalConversationsToBeInserted.inc({team_id:team.id??team.name??"", user_email: email}, conversationsToInsert.length)
     // can be done concurrently, but can cause issues with ratelimits
     for (const conversation of conversationsToInsert) {
       const memberIds = await getConversationUsers(user, client, conversation)
@@ -900,6 +909,7 @@ export const handleSlackChannelIngestion = async (
               enterprise_id: teamResp.team!.enterprise_id,
               domain: teamResp.team!.domain,
               status: OperationStatus.Failure,
+              email: email
             })
           }
         }
@@ -957,6 +967,7 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
           status: OperationStatus.Success,
+          email: email
         })
         tracker.updateUserStats(email, StatType.Slack_Conversation, 1)
       } catch (error) {
@@ -965,6 +976,7 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
           status: OperationStatus.Failure,
+          email: email
         })
       }
       try {
@@ -980,6 +992,7 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
           status: OperationStatus.Success,
+          email: email
         })
         conversationIndex++
         tracker.setCurrent(conversationIndex)
@@ -989,6 +1002,7 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
           status: OperationStatus.Failure,
+          email: email
         })
       }
     }
