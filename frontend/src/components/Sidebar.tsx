@@ -44,7 +44,7 @@ export const Sidebar = ({
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
   const { theme, toggleTheme } = useTheme()
-  const isDarkMode = theme === 'dark'
+  const isDarkMode = theme === "dark"
 
   const router = useRouter()
 
