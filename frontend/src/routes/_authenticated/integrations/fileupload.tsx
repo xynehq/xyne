@@ -28,9 +28,6 @@ function FileUploadIntegration() {
   const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
-  // const [, setDataSourceFiles] = useState<any[]>([]) // Removed
-  // const [, setIsLoadingFiles] = useState(false) // Removed
-  // const [, setFilesError] = useState<string | null>(null) // Removed
   const [refreshKey, setRefreshKey] = useState(0)
 
   const refreshFilesForActiveDataSource = () => {
@@ -59,9 +56,6 @@ function FileUploadIntegration() {
 
     fetchApiDataSources()
   }, [])
-
-  // Removed redundant useEffect hook that was fetching files.
-  // FileAccordion now handles its own data fetching based on activeDataSourceName and refreshKey.
 
   const handleDatasourceCreated = async (name: string) => {
     if (!dataSources.includes(name)) {
