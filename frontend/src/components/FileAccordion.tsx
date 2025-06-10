@@ -18,11 +18,13 @@ interface FileItem {
 interface FileAccordionProps {
   className?: string
   activeDataSourceName?: string | null
+  fileSchema?: string 
 }
 
 export default function FileAccordion({
   className = "",
   activeDataSourceName,
+  fileSchema = "datasource_file", 
 }: FileAccordionProps) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(false) // Start with false, set to true when fetching
@@ -42,27 +44,12 @@ export default function FileAccordion({
 
     try {
       const response = await api.search.document.delete.$post({
-        json: { docId, schema: "datasource_file" },
+        json: { docId, schema: fileSchema }, 
       })
 
       if (!response.ok) {
-        let errorResponseMessage = `Request failed with status ${response.status}`;
-        try {
-          const textResponse = await response.text();
-          errorResponseMessage = textResponse || errorResponseMessage;
-          
-          try {
-            const jsonData = JSON.parse(textResponse);
-            if (jsonData && (jsonData.message || (jsonData.error && jsonData.error.message))) {
-              errorResponseMessage = jsonData.message || jsonData.error.message;
-            }
-          } catch (e) {
-            console.debug("Error response body was not valid JSON, using raw text:", textResponse);
-          }
-        } catch (textParseError) {
-          console.error("Failed to read error response as text:", textParseError);
-        }
-        throw new Error(errorResponseMessage);
+      const errorText = await response.text()
+      throw new Error(errorText || `Request failed with status ${response.status}`)
       }
 
       setFiles((prevFiles) => prevFiles.filter((file) => file.docId !== docId))

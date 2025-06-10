@@ -25,6 +25,22 @@ import {
   type VespaSearchResponse,
   type VespaUser,
   type VespaSchema,
+  datasourceSchema,
+  type VespaDataSource,
+  fileSchema as sFile,
+  userSchema as sUser,
+  mailSchema as sMail,
+  eventSchema as sEvent,
+  userQuerySchema as sUserQuery,
+  mailAttachmentSchema as sMailAttachment,
+  chatContainerSchema as sChatContainer,
+  chatTeamSchema as sChatTeam,
+  chatMessageSchema as sChatMessage,
+  chatUserSchema as sChatUser,
+  chatAttachment as sChatAttachment,
+  datasourceSchema as sDatasource,
+  datasourceFileSchema as sDatasourceFile,
+  type VespaDataSourceFile,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -136,9 +152,25 @@ export const messageRetrySchema = z.object({
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 
+const validVespaSchemaValues = [
+  sFile,
+  sUser,
+  sMail,
+  sEvent,
+  sUserQuery,
+  sMailAttachment,
+  sChatContainer,
+  sChatTeam,
+  sChatMessage,
+  sChatUser,
+  sChatAttachment,
+  sDatasource,
+  sDatasourceFile,
+] as const;
+
 export const deleteDocumentSchema = z.object({
   docId: z.string().min(1),
-  schema: z.string().min(1),
+  schema: z.string().min(1), 
 })
 
 export const AutocompleteApi = async (c: Context) => {
@@ -394,18 +426,64 @@ export const AnswerApi = async (c: Context) => {
 
 export const DeleteDocumentApi = async (c: Context) => {
   try {
-    const { sub } = c.get(JwtPayloadKey)
-    // @ts-ignore
-    const { docId, schema } = c.req.valid("json")
+    const { sub } = c.get(JwtPayloadKey); 
+
+    const rawData = await c.req.json();
     
-    await DeleteDocument(docId, schema as VespaSchema)
+    const validatedData = deleteDocumentSchema.parse(rawData);
+    const { docId, schema: rawSchema } = validatedData;
+    const schema = rawSchema as VespaSchema; 
+
+    if (!(validVespaSchemaValues as readonly string[]).includes(schema)) {
+      Logger.warn(`Invalid schema provided for deletion: ${schema}`);
+      throw new HTTPException(400, { message: "Invalid schema provided." });
+    }
     
-    return c.json({ success: true })
+    if (schema === sDatasource || schema === sDatasourceFile) {
+      const document = await GetDocument(schema, docId); 
+
+      if (!document.fields) { 
+          Logger.error(`Document ${docId} in schema ${schema} lacks fields after successful GetDocument call.`);
+          throw new HTTPException(500, { message: "Internal error retrieving document details." });
+      }
+
+      if (schema === sDatasource) {
+        const dsDocumentFields = document.fields as VespaDataSource;
+        if (dsDocumentFields.createdBy !== sub) {
+          Logger.warn(`User ${sub} attempted to delete datasource ${docId} (schema: ${sDatasource}) created by ${dsDocumentFields.createdBy}. Access denied.`);
+          throw new HTTPException(403, { message: "You do not have permission to delete this datasource. Only the creator can delete it." });
+        }
+      } else if (schema === sDatasourceFile) {
+        const dsFileDocumentFields = document.fields as VespaDataSourceFile;
+        if (dsFileDocumentFields.uploadedBy !== sub) {
+          Logger.warn(`User ${sub} attempted to delete datasource file ${docId} (schema: ${sDatasourceFile}) uploaded by ${dsFileDocumentFields.uploadedBy}. Access denied.`);
+          throw new HTTPException(403, { message: "You do not have permission to delete this datasource file. Only the uploader can delete it." });
+        }
+      }
+    }
+
+    await DeleteDocument(docId, schema);
+
+    return c.json({ success: true });
   } catch (error) {
-    const errMsg = getErrorMessage(error)
-    Logger.error(error, `Delete Document Error: ${errMsg} ${(error as Error).stack}`)
+    if (error instanceof z.ZodError) {
+      const errorMessage = error.errors.map(err => `${err.path.join('.')}: ${err.message}`).join(', ');
+      Logger.warn(`Validation error in DeleteDocumentApi: ${errorMessage}`);
+      throw new HTTPException(400, { 
+        message: `Invalid request data: ${errorMessage}` 
+      });
+    }
+    
+    if (error instanceof HTTPException) {
+      const causeMessage = error.cause instanceof Error ? error.cause.message : String(error.cause);
+      Logger.warn(`HTTPException in DeleteDocumentApi: ${error.status} ${error.message}${error.cause ? ` - Cause: ${causeMessage}` : ''}`);
+      throw error; 
+    }
+    
+    const errMsg = getErrorMessage(error);
+    Logger.error(error, `Delete Document Error: ${errMsg} ${(error as Error).stack}`);
     throw new HTTPException(500, {
-      message: "Could not delete document",
-    })
+      message: "Could not delete document due to an internal server error.",
+    });
   }
 }
