@@ -589,7 +589,6 @@ export const ChatPage = ({
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
     }
-    console.log("toolExternalIds", toolExternalIds)
     if (toolExternalIds && toolExternalIds.length > 0) {
       toolExternalIds.forEach((toolId) => {
         url.searchParams.append("toolExternalIds", toolId)
@@ -598,7 +597,6 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    console.log("Using agentId:", agentIdToUse)
     if (agentIdToUse) {
       url.searchParams.append("agentId", agentIdToUse)
     }

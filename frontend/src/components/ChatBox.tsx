@@ -1157,7 +1157,6 @@ export const ChatBox = ({
         }
       }
     }
-    console.log("Sending message with tools:", toolIdsToSend)
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
