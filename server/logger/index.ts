@@ -1,5 +1,5 @@
 import { levels, pino, type Logger } from "pino"
-import { Subsystem } from "@/types"
+import { Subsystem, type loggerChildSchema } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
@@ -8,6 +8,9 @@ import {
   appResponse,
   requestResponseLatency,
 } from "@/metrics/app/app-metrics"
+import config from "@/config"
+
+const {JwtPayloadKey} = config;
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -91,27 +94,31 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
+    const { sub } = c.get(JwtPayloadKey) || {}
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
 
     const { method } = c.req
     const path = getPath(c.req.raw)
+    const isMetrics = path.includes("/metrics")
 
-    logger.info({
+    if(!isMetrics) {
+          logger.info({
       requestId: c_reqId,
       method,
       path,
       query: c.req.query("query") || c.req.query("prompt") || null,
       message: "Incoming request",
     })
-
+  }
     const start = Date.now()
 
     appRequest.inc(
       {
         app_endpoint: getPath(c.req.raw),
         app_request_process_status: "received",
+        email: sub
       },
       1,
     )
@@ -132,6 +139,16 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       },
       duration,
     )
-    logRequest(logger, c, c_reqId, start, c.res.status)
+    if(!isMetrics) {
+      logRequest(logger, c, c_reqId, start, c.res.status) 
+     }
+  }
+}
+
+export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
+  const baseLogger = getLogger(subsystem).child(child)
+
+  return (children:loggerChildSchema={}): Logger => {
+    return baseLogger.child(children)
   }
 }

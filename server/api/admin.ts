@@ -27,7 +27,7 @@ const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { getPath } from "hono/utils/url"
 import {
   AddServiceConnectionError,
@@ -46,12 +46,13 @@ import {
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
+const loggerWithChild = getLoggerWithChild(Subsystem.Api,{module: "admin"})
 
 export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-    Logger.error({ sub }, "No user found for sub in GetConnectors")
+    loggerWithChild({email: sub}).error({ sub }, "No user found for sub in GetConnectors")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -64,6 +65,7 @@ const getAuthorizationUrl = async (
   app: Apps,
   provider: SelectOAuthProvider,
 ): Promise<URL> => {
+   const { sub } = c.get(JwtPayloadKey)
   const { clientId, clientSecret, oauthScopes } = provider
   let url: URL
   const state = generateState()
@@ -75,7 +77,7 @@ const getAuthorizationUrl = async (
       clientSecret,
       `${config.host}/oauth/callback`,
     )
-    Logger.info(`code verifier  ${codeVerifier}`)
+    loggerWithChild({email: sub}).info(`code verifier  ${codeVerifier}`)
 
     // adding some data to state
     const newState = JSON.stringify({ app, random: state })
@@ -115,7 +117,10 @@ const getAuthorizationUrl = async (
 
 export const StartOAuth = async (c: Context) => {
   const path = getPath(c.req.raw)
-  Logger.info(
+
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  
+  loggerWithChild({email: sub}).info(
     {
       reqiestId: c.var.requestId,
       method: c.req.method,
@@ -123,13 +128,12 @@ export const StartOAuth = async (c: Context) => {
     },
     "Started Oauth",
   )
-  const { sub, workspaceId } = c.get(JwtPayloadKey)
   // @ts-ignore
   const { app }: OAuthStartQuery = c.req.valid("query")
-  Logger.info(`${sub} started ${app} OAuth`)
+  loggerWithChild({email: sub}).info(`${sub} started ${app} OAuth`)
   const userRes = await getUserByEmail(db, sub)
   if (!userRes || !userRes.length) {
-    Logger.error("Could not find user by email when starting OAuth")
+    loggerWithChild({email: sub}).error("Could not find user by email when starting OAuth")
     throw new NoUserFound({})
   }
   const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -190,8 +194,8 @@ export const CreateOAuthProvider = async (c: Context) => {
 }
 
 export const AddServiceConnection = async (c: Context) => {
-  Logger.info("AddServiceConnection")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({email:sub}).info("AddServiceConnection")
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -249,7 +253,7 @@ export const AddServiceConnection = async (c: Context) => {
       // Start ingestion in the background, but catch any errors it might throw later
       handleGoogleServiceAccountIngestion(SaasJobPayload).catch(
         (error: any) => {
-          Logger.error(
+           loggerWithChild({email:email}).error(
             error,
             `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
           )
@@ -267,7 +271,7 @@ export const AddServiceConnection = async (c: Context) => {
     })
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email:email}).error(
       error,
       `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
     )
