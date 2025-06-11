@@ -136,6 +136,11 @@ import { v4 as uuidv4 } from "uuid"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
+
+export const getUserLogger = (email:string) => {
+  return Logger.child({email: email})
+}
+
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 Logger.info("Gmail worker initialized")
 
@@ -3515,7 +3520,3 @@ export const ServiceAccountIngestMoreUsers = async (
   }
 }
 
-
-export const getUserLogger = (email:string) => {
-  return Logger.child({email: email})
-}

@@ -75,6 +75,11 @@ import {
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
+
+export const getUserLogger = (email:string) => {
+  return Logger.child({email: email})
+}
+
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
   let cursor: string | undefined = undefined
@@ -1048,7 +1053,3 @@ async function getAuthenticatedUserId(client: WebClient): Promise<string> {
   return authResponse.user_id
 }
 
-
-export const getUserLogger = (email:string) => {
-  return Logger.child({email: email})
-}

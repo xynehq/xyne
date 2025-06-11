@@ -31,6 +31,12 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+
+
+export const getUserLogger = (email:string) => {
+  return Logger.child({email: email})
+}
+
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
 // import { createJwtClient } from "@/integrations/google/utils"
@@ -572,7 +578,3 @@ const getBody = (payload: any): string => {
   return data
 }
 
-
-export const getUserLogger = (email:string) => {
-  return Logger.child({email: email})
-}
