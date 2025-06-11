@@ -12,9 +12,9 @@ vi.mock("@uiw/react-markdown-preview", () => ({
 }))
 
 // Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
+Object.defineProperty(window, "matchMedia", {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query) => ({
     matches: false, // Default to light mode for tests, or true for dark
     media: query,
     onchange: null,
@@ -24,7 +24,7 @@ Object.defineProperty(window, 'matchMedia', {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })),
-});
+})
 
 // Mock SVG assets
 vi.mock("@/assets/assistant-logo.svg", () => ({

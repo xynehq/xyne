@@ -64,6 +64,20 @@
       "when": 1748596968639,
       "tag": "0008_smiling_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1748932045600,
+      "tag": "0008_elite_nehzno",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1748932064229,
+      "tag": "0009_heavy_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

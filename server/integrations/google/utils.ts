@@ -279,7 +279,7 @@ export const getSheetsFromSpreadSheet = async (
   client: GoogleClient,
   spreadsheet: drive_v3.Schema$File,
   entity: DriveEntity,
-  email:string
+  email: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   try {
     const sheets = google.sheets({ version: "v4", auth: client })
@@ -287,7 +287,7 @@ export const getSheetsFromSpreadSheet = async (
       sheets,
       client,
       spreadsheet,
-      email
+      email,
     )
 
     return sheetsListFromOneSpreadsheet

@@ -394,7 +394,10 @@ export default function FileUpload({
               setDatasourceName(newName)
               if (
                 !isEditingExisting &&
-                existingDataSourceNames.some(existingName => existingName.toLowerCase() === newName.trim().toLowerCase())
+                existingDataSourceNames.some(
+                  (existingName) =>
+                    existingName.toLowerCase() === newName.trim().toLowerCase(),
+                )
               ) {
                 setDatasourceNameError(
                   "Datasource name already exists. Please choose a different name.",
@@ -443,7 +446,9 @@ export default function FileUpload({
                 </h3>
                 {isEditingExisting && (
                   <div className="text-center mt-2">
-                    <p className="text-gray-600 dark:text-gray-400">Upload More Text Files</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Upload More Text Files
+                    </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Only .txt files are supported
                     </p>
@@ -504,7 +509,8 @@ export default function FileUpload({
                 variant="outline"
                 className="flex items-center space-x-2 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600"
               >
-                <Folder className="w-4 h-4" /> {/* Icon color will inherit from text-gray-700 dark:text-gray-200 */}
+                <Folder className="w-4 h-4" />{" "}
+                {/* Icon color will inherit from text-gray-700 dark:text-gray-200 */}
                 <span>Select Folder</span>
               </Button>
             </div>

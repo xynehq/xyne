@@ -140,7 +140,9 @@ export default function FileAccordion({
   if (loading) {
     return (
       <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
-        <div className="text-slate-600 dark:text-slate-400">Loading files...</div>
+        <div className="text-slate-600 dark:text-slate-400">
+          Loading files...
+        </div>
       </div>
     )
   }

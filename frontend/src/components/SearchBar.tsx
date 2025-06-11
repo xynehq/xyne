@@ -62,14 +62,19 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
             <div className="relative w-full">
               <div
                 className={`flex w-full items-center ${
-                  hasSearched ? "bg-transparent dark:bg-transparent" : "bg-white dark:bg-[#1E1E1E]"
+                  hasSearched
+                    ? "bg-transparent dark:bg-transparent"
+                    : "bg-white dark:bg-[#1E1E1E]"
                 } ${
                   autocompleteResults.length > 0
                     ? "rounded-t-lg border-b-0"
                     : "rounded-[20px]"
                 }  border ${hasSearched ? "border-transparent dark:border-gray-700" : "border-[#D3DAE0] dark:border-gray-700"} h-[52px]`}
               >
-                <Search className="text-[#AEBAD3] dark:text-gray-500 ml-4 mr-2" size={18} />
+                <Search
+                  className="text-[#AEBAD3] dark:text-gray-500 ml-4 mr-2"
+                  size={18}
+                />
                 <input
                   ref={inputRef}
                   placeholder="Search anything across apps..."
@@ -79,7 +84,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     setAutocompleteQuery(e.target.value)
                   }}
                   className={`text-[#1C1D1F] dark:text-[#F1F3F4] flex-grow text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] dark:placeholder-gray-500 font-[450] leading-[24px] focus:outline-none ${
-                    hasSearched ? "bg-transparent dark:bg-transparent" : "bg-transparent dark:bg-transparent" 
+                    hasSearched
+                      ? "bg-transparent dark:bg-transparent"
+                      : "bg-transparent dark:bg-transparent"
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -108,7 +115,10 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     }}
                     className="flex mr-2 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-[20px] w-[32px] h-[32px] items-center justify-center"
                   >
-                    <ArrowRight className="text-white dark:text-slate-200" size={16} />
+                    <ArrowRight
+                      className="text-white dark:text-slate-200"
+                      size={16}
+                    />
                   </button>
                 ) : (
                   <X

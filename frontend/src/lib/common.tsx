@@ -1,4 +1,12 @@
-import { Folder, Users, Paperclip, FileText, CalendarDays } from "lucide-react" // Added FileText, CalendarDays
+import {
+  Folder,
+  Users,
+  Paperclip,
+  FileText,
+  CalendarDays,
+  PlugZap,
+  Github,
+} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -19,6 +27,7 @@ import {
   // NotionEntity,
   CalendarEntity,
   isMailAttachment,
+  ConnectorType,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -60,7 +69,13 @@ export const getIcon = (
       entity === GooglePeopleEntity.Contacts ||
       entity === GooglePeopleEntity.OtherContacts
     ) {
-      return <Users stroke="#464B53" size={12} className="mr-[10px] dark:stroke-[#F1F3F4]" />
+      return (
+        <Users
+          stroke="#464B53"
+          size={12}
+          className="mr-[10px] dark:stroke-[#F1F3F4]"
+        />
+      )
     } else if (entity === DriveEntity.WordDocument) {
       return <img className={classNameVal} src={Docx} />
     } else if (entity === DriveEntity.PDF) {
@@ -104,6 +119,13 @@ export const getIcon = (
   } else if (app === "event" || entity === EventEntity.Default) {
     // Added generic Event
     return <CalendarDays size={12} className={classNameVal} />
+  } else if (entity === ConnectorType.MCP) {
+    // Handle MCP connectors
+    if (app === "github_mcp") {
+      // Check if the app is specifically github_mcp
+      return <Github size={size?.w || 12} className={classNameVal} />
+    }
+    return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
   } else {
     // Fallback or handle unknown app/entity
     console.warn(`Invalid app ${app} and entity ${entity}`)

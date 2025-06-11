@@ -248,7 +248,9 @@ const HistoryModal = ({
       className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col select-none bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}
     >
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
-        <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">Chat History</p>
+        <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">
+          Chat History
+        </p>
         <button
           onClick={onClose}
           className="flex items-center justify-center bg-[#F0F5F7] dark:bg-slate-700 rounded-full w-[24px] h-[24px] mr-[14px] border-[0.5px] border-[#D7E0E9] dark:border-gray-700"
@@ -262,7 +264,9 @@ const HistoryModal = ({
         onScroll={handleScroll}
       >
         {error ? (
-          <p className="text-center dark:text-gray-300">Something went wrong...</p>
+          <p className="text-center dark:text-gray-300">
+            Something went wrong...
+          </p>
         ) : !chats.length && (isPending || isFetching) ? (
           <LoaderContent />
         ) : (
@@ -299,7 +303,10 @@ const HistoryModal = ({
                   )}
                   <div className="flex items-center">
                     {item.agentId && (
-                      <Bot size={16} className="mr-2 text-[#1C1D1F] dark:text-gray-300" />
+                      <Bot
+                        size={16}
+                        className="mr-2 text-[#1C1D1F] dark:text-gray-300"
+                      />
                     )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -337,8 +344,13 @@ const HistoryModal = ({
                             mutation.mutate(item?.externalId)
                           }}
                         >
-                          <Trash2 size={16} className="text-red-500 dark:text-red-400" />
-                          <span className="text-red-500 dark:text-red-400">Delete</span>
+                          <Trash2
+                            size={16}
+                            className="text-red-500 dark:text-red-400"
+                          />
+                          <span className="text-red-500 dark:text-red-400">
+                            Delete
+                          </span>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

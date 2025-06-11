@@ -126,7 +126,7 @@ export const handleGmailIngestion = async (
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
-            Logger.child({email:email}).error(
+            Logger.child({ email: email }).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -135,7 +135,7 @@ export const handleGmailIngestion = async (
                 mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                 status: "FAILED",
                 error_type: "ERROR_IN_GMAIL_INGESTION",
-                account_type: AuthType.OAuth
+                account_type: AuthType.OAuth,
               },
               1,
             )
@@ -156,7 +156,7 @@ export const handleGmailIngestion = async (
     }
   } while (nextPageToken)
 
-  Logger.child({email: email}).info(`Inserted ${totalMails} mails`)
+  Logger.child({ email: email }).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
@@ -349,7 +349,7 @@ export const parseMail = async (
                 status: "FAILED",
                 email: userEmail,
                 error_type: "ERROR_INSERTING_ATTACHMENT",
-                account_type: AuthType.OAuth
+                account_type: AuthType.OAuth,
               },
               1,
             )

@@ -110,6 +110,20 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
+  toolExternalIds: z.preprocess((val) => {
+    if (Array.isArray(val)) {
+      return val.filter(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      )
+    }
+    if (typeof val === "string") {
+      return val
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0)
+    }
+    return undefined
+  }, z.array(z.string()).optional()),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -118,6 +132,14 @@ export const messageSchema = z.object({
       return val.toLowerCase() === "true"
     }),
   agentId: z.string().optional(),
+  toolsList: z
+    .array(
+      z.object({
+        connectorId: z.string(),
+        tools: z.array(z.string()),
+      }),
+    )
+    .optional(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
@@ -318,7 +340,9 @@ export const AnswerApi = async (c: Context) => {
   const metadataContext = results.root.children
     .map((v, i) =>
       cleanContext(
-        `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        `Index ${i} \n ${answerMetadataContextMap(
+          v as z.infer<typeof VespaSearchResultsSchema>,
+        )}`,
       ),
     )
     .join("\n\n")
@@ -370,7 +394,10 @@ export const AnswerApi = async (c: Context) => {
       }
 
       Logger.info(
-        `costArr: ${costArr} \n Total Cost: ${costArr.reduce((prev, curr) => prev + curr, 0)}`,
+        `costArr: ${costArr} \n Total Cost: ${costArr.reduce(
+          (prev, curr) => prev + curr,
+          0,
+        )}`,
       )
     }
     await stream.writeSSE({
