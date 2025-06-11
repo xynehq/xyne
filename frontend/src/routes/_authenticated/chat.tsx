@@ -1699,32 +1699,123 @@ const Code = ({
     codeContent = children[0]
   }
 
-  const reRender = async () => {
-    if (
-      container &&
-      isMermaid &&
-      typeof codeContent === "string" &&
-      codeContent.trim() !== ""
-    ) {
-      try {
-        const { svg } = await mermaid.render(demoid.current, codeContent)
-        container.innerHTML = svg
-      } catch (error: any) {
-        console.error("Mermaid rendering error in Code component:", error)
-        container.innerHTML = `<pre>Mermaid Error: ${error.message || String(error)}</pre>`
-      }
-    } else if (
-      container &&
-      isMermaid &&
-      (typeof codeContent !== "string" || codeContent.trim() === "")
-    ) {
-      container.innerHTML = ""
+  // State for managing mermaid validation and rendering
+  const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
+  const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Function to validate if mermaid syntax looks complete
+  const isMermaidSyntaxValid = (code: string): boolean => {
+    if (!code || code.trim() === "") return false
+    
+    const trimmedCode = code.trim()
+    
+    // Basic checks for common mermaid diagram types
+    const mermaidPatterns = [
+      /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^sequenceDiagram\s*\n/i, 
+      /^classDiagram\s*\n/i,
+      /^stateDiagram\s*\n/i,
+      /^erDiagram\s*\n/i,
+      /^journey\s*\n/i,
+      /^gantt\s*\n/i,
+      /^pie\s*\n/i,
+      /^gitgraph\s*\n/i,
+      /^mindmap\s*\n/i,
+      /^timeline\s*\n/i,
+    ]
+    
+    // Check if it starts with a valid mermaid diagram type
+    const hasValidStart = mermaidPatterns.some(pattern => pattern.test(trimmedCode))
+    if (!hasValidStart) return false
+    
+    // For flowcharts, check for at least one node definition
+    if (/^(graph|flowchart)/i.test(trimmedCode)) {
+      // Look for node definitions (basic patterns)
+      const hasNodes = /\n\s*[A-Za-z0-9_]+(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|>[^<]*<|\([^)]*\))?/i.test(trimmedCode)
+      return hasNodes
     }
+    
+    // For sequence diagrams, check for at least one participant or message
+    if (/^sequenceDiagram/i.test(trimmedCode)) {
+      const hasContent = /\n\s*(participant|actor|[A-Za-z0-9_]+->>|[A-Za-z0-9_]+->)/i.test(trimmedCode)
+      return hasContent
+    }
+    
+    // For other diagram types, just check if there's content after the declaration
+    const lines = trimmedCode.split('\n').filter(line => line.trim() !== '')
+    return lines.length > 1
   }
 
+  // Debounced function to validate and render mermaid
+  const debouncedMermaidRender = useCallback(async (code: string) => {
+    if (!container || !isMermaid) return
+    
+    // Clear any existing timeout
+    if (mermaidRenderTimeoutRef.current) {
+      clearTimeout(mermaidRenderTimeoutRef.current)
+    }
+    
+    // If code is empty, clear the container
+    if (!code || code.trim() === "") {
+      container.innerHTML = ""
+      setLastValidMermaid("")
+      return
+    }
+    
+    // Check if syntax looks valid
+    if (!isMermaidSyntaxValid(code)) {
+      // If we have a previous valid render, keep showing it
+      if (lastValidMermaid) {
+        return
+      } else {
+        // Show loading state for incomplete syntax
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          <div>Mermaid Chart..</div>
+          <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
+        </div>`
+        return
+      }
+    }
+    
+    // Debounce the actual rendering to avoid too many rapid attempts
+    mermaidRenderTimeoutRef.current = setTimeout(async () => {
+      try {
+        const { svg } = await mermaid.render(demoid.current, code)
+        container.innerHTML = svg
+        setLastValidMermaid(code)
+      } catch (error: any) {
+        console.error("Mermaid rendering error in Code component:", error)
+        
+        // If we have a previous valid render and this is just a parsing error during streaming,
+        // keep the previous valid diagram
+        if (lastValidMermaid && error.message.includes("Parse error")) {
+          return // Keep showing the last valid diagram
+        }
+        
+        // Show error for genuinely broken syntax
+        const errorMsg = error.message || String(error)
+        container.innerHTML = `<div style="padding: 20px; border: 1px solid #f5c6cb; background: #f8d7da; color: #721c24; border-radius: 4px; font-family: monospace;">
+          <div style="font-weight: bold; margin-bottom: 8px;">Mermaid Syntax Error:</div>
+          <div style="font-size: 12px;">${errorMsg}</div>
+          <div style="margin-top: 12px; padding: 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; max-height: 100px; overflow-y: auto;">
+            <pre style="margin: 0; font-size: 11px; white-space: pre-wrap;">${code}</pre>
+          </div>
+        </div>`
+      }
+    }, 300)
+  }, [container, isMermaid, lastValidMermaid])
+
   useEffect(() => {
-    reRender()
-  }, [container, isMermaid, codeContent])
+    debouncedMermaidRender(codeContent)
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (mermaidRenderTimeoutRef.current) {
+        clearTimeout(mermaidRenderTimeoutRef.current)
+      }
+    }
+  }, [debouncedMermaidRender, codeContent])
 
   const refElement = useCallback((node: HTMLElement | null) => {
     if (node !== null) {
