@@ -185,6 +185,7 @@ function AgentComponent() {
   const [agentName, setAgentName] = useState("")
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
+  const [isPublic, setIsPublic] = useState(false)
 
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
@@ -437,6 +438,7 @@ function AgentComponent() {
     setAgentName("")
     setAgentDescription("")
     setAgentPrompt("")
+    setIsPublic(false)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
     setEditingAgent(null)
@@ -478,6 +480,7 @@ function AgentComponent() {
       setAgentName(editingAgent.name)
       setAgentDescription(editingAgent.description || "")
       setAgentPrompt(editingAgent.prompt || "")
+      setIsPublic(editingAgent.isPublic || false)
       setSelectedModel(editingAgent.model)
 
       const currentIntegrations: Record<string, boolean> = {}
@@ -487,7 +490,7 @@ function AgentComponent() {
       })
       setSelectedIntegrations(currentIntegrations)
 
-      // Load existing user permissions
+      // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
           const response = await api.agent[":agentExternalId"].permissions.$get(
@@ -507,8 +510,10 @@ function AgentComponent() {
         }
       }
 
-      if (users.length > 0) {
+      if (users.length > 0 && !editingAgent.isPublic) {
         loadAgentPermissions()
+      } else if (editingAgent.isPublic) {
+        setSelectedUsers([]) // Clear users for public agents
       }
     }
   }, [editingAgent, viewMode, allAvailableIntegrations, users])
@@ -568,8 +573,10 @@ function AgentComponent() {
       description: agentDescription,
       prompt: agentPrompt,
       model: selectedModel,
+      isPublic: isPublic,
       appIntegrations: enabledIntegrations,
-      userEmails: selectedUsers.map((user) => user.email),
+      // Only include userEmails for private agents
+      userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
     try {
@@ -1126,6 +1133,46 @@ function AgentComponent() {
                   />
                 </div>
 
+                <div className="w-full">
+                  <Label className="text-sm font-medium text-gray-700">
+                    Visibility
+                  </Label>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="private"
+                        name="visibility"
+                        checked={!isPublic}
+                        onChange={() => setIsPublic(false)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="private"
+                        className="text-sm text-gray-700 cursor-pointer"
+                      >
+                        Private (only shared users can access)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="public"
+                        name="visibility"
+                        checked={isPublic}
+                        onChange={() => setIsPublic(true)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="public"
+                        className="text-sm text-gray-700 cursor-pointer"
+                      >
+                        Public (all workspace members can access)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <Label className="text-base font-medium text-gray-800">
                     App Integrations
@@ -1206,120 +1253,125 @@ function AgentComponent() {
                   </div>
                 </div>
 
-                <div>
-                  <Label className="text-base font-medium text-gray-800">
-                    Agent Users{" "}
-                    {selectedUsers.length > 0 && (
-                      <span className="text-sm text-gray-500 ml-1">
-                        ({selectedUsers.length})
-                      </span>
-                    )}
-                  </Label>
-                  <div className="mt-3">
-                    <div className="relative w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search users by name or email..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
-                      />
-                      {showSearchResults && (
-                        <Card className="absolute z-10 mt-1 shadow-lg w-full">
-                          <CardContent
-                            className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
-                            ref={searchResultsRef}
-                            style={{
-                              scrollbarWidth: "thin",
-                              WebkitOverflowScrolling: "touch",
-                              scrollbarColor: "#D1D5DB transparent",
-                              overflowY: "auto",
-                              display: "block",
-                            }}
-                          >
-                            {filteredUsers.length > 0 ? (
-                              filteredUsers.map((user, index) => (
-                                <div
-                                  key={user.id}
-                                  className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
-                                    index === selectedSearchIndex
-                                      ? "bg-gray-50"
-                                      : ""
-                                  }`}
-                                  onClick={() => handleSelectUser(user)}
-                                >
-                                  <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                    <span className="text-sm text-gray-600 truncate">
-                                      {user.name}
-                                    </span>
-                                    <span className="text-gray-500 flex-shrink-0">
-                                      -
-                                    </span>
-                                    <span className="text-gray-500 truncate">
-                                      {user.email}
-                                    </span>
-                                  </div>
-                                  <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                </div>
-                              ))
-                            ) : (
-                              <div className="p-3 text-center text-gray-500">
-                                No users found matching "{searchQuery}"
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                {!isPublic && (
+                  <div>
+                    <Label className="text-base font-medium text-gray-800">
+                      Agent Users{" "}
+                      {selectedUsers.length > 0 && (
+                        <span className="text-sm text-gray-500 ml-1">
+                          ({selectedUsers.length})
+                        </span>
                       )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Agent Users Section */}
-                <div>
-                  <Card className="mt-3">
-                    <CardContent className="p-4">
-                      <div className="space-y-1.5 h-[126px] overflow-y-auto">
-                        {selectedUsers.length > 0 ? (
-                          selectedUsers.map((user) => (
-                            <div
-                              key={user.id}
-                              className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg"
+                    </Label>
+                    <div className="mt-3">
+                      <div className="relative w-full">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search users by name or email..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
+                        />
+                        {showSearchResults && (
+                          <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                            <CardContent
+                              className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
+                              ref={searchResultsRef}
+                              style={{
+                                scrollbarWidth: "thin",
+                                WebkitOverflowScrolling: "touch",
+                                scrollbarColor: "#D1D5DB transparent",
+                                overflowY: "auto",
+                                display: "block",
+                              }}
                             >
-                              <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                <span className="text-sm text-gray-600 truncate">
-                                  {user.name}
-                                </span>
-                                <span className="text-gray-500 flex-shrink-0">
-                                  -
-                                </span>
-                                <span className="text-gray-500 truncate">
-                                  {user.email}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveUser(user.id)}
-                                className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
-                              >
-                                <LucideX className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-4 text-gray-500">
-                            <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                            <p>No users added yet</p>
-                            <p className="text-sm">
-                              Search and select users to add them to this agent
-                            </p>
-                          </div>
+                              {filteredUsers.length > 0 ? (
+                                filteredUsers.map((user, index) => (
+                                  <div
+                                    key={user.id}
+                                    className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
+                                      index === selectedSearchIndex
+                                        ? "bg-gray-50"
+                                        : ""
+                                    }`}
+                                    onClick={() => handleSelectUser(user)}
+                                  >
+                                    <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                      <span className="text-sm text-gray-600 truncate">
+                                        {user.name}
+                                      </span>
+                                      <span className="text-gray-500 flex-shrink-0">
+                                        -
+                                      </span>
+                                      <span className="text-gray-500 truncate">
+                                        {user.email}
+                                      </span>
+                                    </div>
+                                    <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-gray-500">
+                                  No users found matching "{searchQuery}"
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Agent Users Section */}
+                {!isPublic && (
+                  <div>
+                    <Card className="mt-3">
+                      <CardContent className="p-4">
+                        <div className="space-y-1.5 h-[126px] overflow-y-auto">
+                          {selectedUsers.length > 0 ? (
+                            selectedUsers.map((user) => (
+                              <div
+                                key={user.id}
+                                className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg"
+                              >
+                                <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                  <span className="text-sm text-gray-600 truncate">
+                                    {user.name}
+                                  </span>
+                                  <span className="text-gray-500 flex-shrink-0">
+                                    -
+                                  </span>
+                                  <span className="text-gray-500 truncate">
+                                    {user.email}
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveUser(user.id)}
+                                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <LucideX className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                              <p>No users added yet</p>
+                              <p className="text-sm">
+                                Search and select users to add them to this
+                                agent
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button
                     onClick={handleSaveAgent}

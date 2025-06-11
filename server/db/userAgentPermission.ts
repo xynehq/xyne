@@ -44,6 +44,7 @@ export const checkUserAgentAccess = async (
 
 /**
  * Check if a user has access to an agent by external ID
+ * Returns permission if user has explicit access OR if agent is public
  */
 export const checkUserAgentAccessByExternalId = async (
   trx: TxnOrClient,
@@ -51,6 +52,7 @@ export const checkUserAgentAccessByExternalId = async (
   agentExternalId: string,
   workspaceId: number,
 ): Promise<SelectUserAgentPermission | null> => {
+  // First check for explicit permissions
   const permissionArr = await trx
     .select({
       id: userAgentPermissions.id,
@@ -71,15 +73,43 @@ export const checkUserAgentAccessByExternalId = async (
       ),
     )
 
-  if (!permissionArr || !permissionArr.length) {
-    return null
+  if (permissionArr && permissionArr.length > 0) {
+    return selectUserAgentPermissionSchema.parse(permissionArr[0])
   }
 
-  return selectUserAgentPermissionSchema.parse(permissionArr[0])
+  // If no explicit permission, check if agent is public
+  const publicAgentArr = await trx
+    .select({
+      id: agents.id,
+      isPublic: agents.isPublic,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.externalId, agentExternalId),
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.isPublic, true),
+        isNull(agents.deletedAt),
+      ),
+    )
+
+  if (publicAgentArr && publicAgentArr.length > 0) {
+    // Return a virtual permission for public access
+    return {
+      id: 0, // Virtual permission ID
+      userId,
+      agentId: publicAgentArr[0].id,
+      role: "viewer" as any, // Public users get viewer access
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+  }
+
+  return null
 }
 
 /**
- * Get all agents accessible to a user (owned + shared)
+ * Get all agents accessible to a user (owned + shared + public) - preferred method
  */
 export const getUserAccessibleAgents = async (
   trx: TxnOrClient,
@@ -89,32 +119,31 @@ export const getUserAccessibleAgents = async (
   offset: number = 0,
 ): Promise<SelectPublicAgent[]> => {
   const agentsArr = await trx
-    .select({
-      id: agents.id,
-      workspaceId: agents.workspaceId,
-      userId: agents.userId,
+    .selectDistinct({
       externalId: agents.externalId,
       name: agents.name,
       description: agents.description,
       prompt: agents.prompt,
       model: agents.model,
+      isPublic: agents.isPublic,
       appIntegrations: agents.appIntegrations,
       allowWebSearch: agents.allowWebSearch,
       uploadedFileNames: agents.uploadedFileNames,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
-      deletedAt: agents.deletedAt,
     })
     .from(agents)
-    .innerJoin(
-      userAgentPermissions,
-      eq(agents.id, userAgentPermissions.agentId),
-    )
+    .leftJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
     .where(
       and(
-        eq(userAgentPermissions.userId, userId),
         eq(agents.workspaceId, workspaceId),
         isNull(agents.deletedAt),
+        or(
+          // User has explicit permission to the agent
+          eq(userAgentPermissions.userId, userId),
+          // Agent is public (accessible to all workspace members)
+          eq(agents.isPublic, true),
+        ),
       ),
     )
     .orderBy(desc(agents.updatedAt))

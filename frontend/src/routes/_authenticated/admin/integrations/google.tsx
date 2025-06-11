@@ -1096,96 +1096,94 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                               Delete Users Data
                             </TabsTrigger>
                           </TabsList>
-                            <TabsContent
-                              value="ingest_more_user_admin"
-                              className="h-full"
-                            >
-                              <Card className="border-none shadow-none">
-                                <CardHeader className="px-0 pt-4">
-                                  <CardTitle className="text-lg">
-                                    Ingest Data for Additional Users
-                                  </CardTitle>
-                                  <CardDescription>
-                                    Add more users to the existing Google
-                                    Workspace Service Account integration. Enter
-                                    comma-separated emails and specify
-                                    services/date ranges.
-                                  </CardDescription>
-                                </CardHeader>
-                                <CardContent className="px-1 pb-0">
-                                  {(() => {
-                                    const googleSAConnector = data?.find(
-                                      (c: Connectors) =>
-                                        c.app === Apps.GoogleDrive &&
-                                        c.authType === AuthType.ServiceAccount,
-                                    )
-                                    const serviceAccountConnectorId =
-                                      googleSAConnector?.id
+                          <TabsContent
+                            value="ingest_more_user_admin"
+                            className="h-full"
+                          >
+                            <Card className="border-none shadow-none">
+                              <CardHeader className="px-0 pt-4">
+                                <CardTitle className="text-lg">
+                                  Ingest Data for Additional Users
+                                </CardTitle>
+                                <CardDescription>
+                                  Add more users to the existing Google
+                                  Workspace Service Account integration. Enter
+                                  comma-separated emails and specify
+                                  services/date ranges.
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="px-1 pb-0">
+                                {(() => {
+                                  const googleSAConnector = data?.find(
+                                    (c: Connectors) =>
+                                      c.app === Apps.GoogleDrive &&
+                                      c.authType === AuthType.ServiceAccount,
+                                  )
+                                  const serviceAccountConnectorId =
+                                    googleSAConnector?.id
 
-                                    if (!serviceAccountConnectorId) {
-                                      return (
-                                        <p className="text-sm text-destructive">
-                                          Google Workspace Service Account
-                                          integration not found or not
-                                          configured. Please set it up first in
-                                          the 'Service Account' tab.
-                                        </p>
-                                      )
-                                    }
+                                  if (!serviceAccountConnectorId) {
                                     return (
-                                      <>
-                                        <IngestMoreUsersForm
-                                          connectorId={
-                                            serviceAccountConnectorId
-                                          }
-                                          onSuccess={() => {
-                                            refetch()
-                                          }}
-                                          setIsIngestingMore={
-                                            setIsIngestingMoreAdminData
-                                          }
-                                        />
-                                        {isIngestingMoreAdminData && (
-                                          <div className="mt-4">
-                                            <CardDescription>
-                                              Ingesting additional users...
-                                            </CardDescription>
-                                          </div>
-                                        )}
-                                        {/* Remove this UserStatsTable from inside the accordion */}
-                                      </>
+                                      <p className="text-sm text-destructive">
+                                        Google Workspace Service Account
+                                        integration not found or not configured.
+                                        Please set it up first in the 'Service
+                                        Account' tab.
+                                      </p>
                                     )
-                                  })()}
-                                </CardContent>
-                              </Card>
-                            </TabsContent>
-                            <TabsContent
-                              value="delete_users_data"
-                              className="h-full"
-                            >
-                              <Card className="border-none shadow-none">
-                                <CardHeader className="px-0 pt-4">
-                                  <CardTitle className="text-lg">
-                                    Delete User Data
-                                  </CardTitle>
-                                  <CardDescription>
-                                    Remove a user's data from specified services
-                                    based on email and optional date range.
-                                  </CardDescription>
-                                </CardHeader>
-                                <CardContent className="px-1 pb-0">
-                                  <DeleteUserDataForm
-                                    onSuccess={() => {
-                                      toast({
-                                        title: "Data Deletion Processed",
-                                        description:
-                                          "Please check server logs for detailed status.",
-                                      })
-                                    }}
-                                  />
-                                </CardContent>
-                              </Card>
-                            </TabsContent>
+                                  }
+                                  return (
+                                    <>
+                                      <IngestMoreUsersForm
+                                        connectorId={serviceAccountConnectorId}
+                                        onSuccess={() => {
+                                          refetch()
+                                        }}
+                                        setIsIngestingMore={
+                                          setIsIngestingMoreAdminData
+                                        }
+                                      />
+                                      {isIngestingMoreAdminData && (
+                                        <div className="mt-4">
+                                          <CardDescription>
+                                            Ingesting additional users...
+                                          </CardDescription>
+                                        </div>
+                                      )}
+                                      {/* Remove this UserStatsTable from inside the accordion */}
+                                    </>
+                                  )
+                                })()}
+                              </CardContent>
+                            </Card>
+                          </TabsContent>
+                          <TabsContent
+                            value="delete_users_data"
+                            className="h-full"
+                          >
+                            <Card className="border-none shadow-none">
+                              <CardHeader className="px-0 pt-4">
+                                <CardTitle className="text-lg">
+                                  Delete User Data
+                                </CardTitle>
+                                <CardDescription>
+                                  Remove a user's data from specified services
+                                  based on email and optional date range.
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="px-1 pb-0">
+                                <DeleteUserDataForm
+                                  onSuccess={() => {
+                                    toast({
+                                      title: "Data Deletion Processed",
+                                      description:
+                                        "Please check server logs for detailed status.",
+                                    })
+                                  }}
+                                />
+                              </CardContent>
+                            </Card>
+                          </TabsContent>
                         </Tabs>
                       </AccordionContent>
                     </AccordionItem>

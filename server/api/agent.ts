@@ -34,6 +34,7 @@ export const createAgentSchema = z.object({
   description: z.string().optional(),
   prompt: z.string().optional(),
   model: z.string().min(1, "Model is required"),
+  isPublic: z.boolean().optional().default(false),
   appIntegrations: z.array(z.string()).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
   uploadedFileNames: z.array(z.string()).optional().default([]),
@@ -82,6 +83,7 @@ export const CreateAgentApi = async (c: Context) => {
       description: validatedBody.description,
       prompt: validatedBody.prompt,
       model: validatedBody.model,
+      isPublic: validatedBody.isPublic,
       appIntegrations: validatedBody.appIntegrations,
       allowWebSearch: validatedBody.allowWebSearch,
       uploadedFileNames: validatedBody.uploadedFileNames,
@@ -96,8 +98,12 @@ export const CreateAgentApi = async (c: Context) => {
         userAndWorkspace.workspace.id,
       )
 
-      // Sync user permissions if userEmails are provided
-      if (validatedBody.userEmails && validatedBody.userEmails.length > 0) {
+      // Only sync user permissions if agent is private
+      if (
+        !validatedBody.isPublic &&
+        validatedBody.userEmails &&
+        validatedBody.userEmails.length > 0
+      ) {
         await syncAgentUserPermissions(
           tx,
           agent.id,
@@ -177,14 +183,36 @@ export const UpdateAgentApi = async (c: Context) => {
         throw new Error("Agent not found or failed to update")
       }
 
-      // Sync user permissions if userEmails are provided
-      if (validatedBody.userEmails !== undefined) {
+      // Handle user permissions based on isPublic field
+      if (validatedBody.isPublic === true) {
+        // If switching to public, clear all non-owner permissions
+        await syncAgentUserPermissions(
+          tx,
+          agent.id,
+          [], // Empty array clears all non-owner permissions
+          userAndWorkspace.workspace.id,
+        )
+      } else if (
+        validatedBody.isPublic === false &&
+        validatedBody.userEmails !== undefined
+      ) {
+        // If switching to private or updating private agent, sync user permissions
         await syncAgentUserPermissions(
           tx,
           agent.id,
           validatedBody.userEmails,
           userAndWorkspace.workspace.id,
         )
+      } else if (validatedBody.userEmails !== undefined) {
+        // If userEmails are provided but isPublic not specified, check existing agent
+        if (!existingAgent.isPublic) {
+          await syncAgentUserPermissions(
+            tx,
+            agent.id,
+            validatedBody.userEmails,
+            userAndWorkspace.workspace.id,
+          )
+        }
       }
 
       return agent
