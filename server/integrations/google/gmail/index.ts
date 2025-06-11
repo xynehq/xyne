@@ -36,6 +36,7 @@ import {
 
 import { skipMailExistCheck } from "@/integrations/google/config"
 import type { Logger } from "pino"
+import { AuthType } from "@/shared/types"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -117,7 +118,7 @@ export const handleGmailIngestion = async (
                   mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                   status: "GMAIL_INGEST_SUCCESS",
                   email: email,
-                  account_type: "OAUTH_ACCOUNT",
+                  account_type: AuthType.OAuth,
                 },
                 1,
               )
@@ -134,7 +135,7 @@ export const handleGmailIngestion = async (
                 mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                 status: "FAILED",
                 error_type: "ERROR_IN_GMAIL_INGESTION",
-                account_type: "SERVICE_ACCOUNT"
+                account_type: AuthType.OAuth
               },
               1,
             )
@@ -329,7 +330,7 @@ export const parseMail = async (
               {
                 mime_type: mimeType,
                 status: "SUCCESS",
-                account_type: "OAUTH_ACCOUNT",
+                account_type: AuthType.OAuth,
                 email: userEmail,
               },
               1,
@@ -348,6 +349,7 @@ export const parseMail = async (
                 status: "FAILED",
                 email: userEmail,
                 error_type: "ERROR_INSERTING_ATTACHMENT",
+                account_type: AuthType.OAuth
               },
               1,
             )

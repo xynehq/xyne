@@ -1,5 +1,6 @@
 import {
   admin_directory_v1,
+  Auth,
   calendar_v3,
   docs_v1,
   drive_v3,
@@ -219,10 +220,10 @@ const initializeGmailWorker = () => {
       Logger.info(
         `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
       ) 
-      totalIngestedMails.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Success}, result.stats.messageCount)
-      totalAttachmentIngested.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Success}, result.stats.attachmentCount)
-      ingestionMailErrorsTotal.inc({email: result.email, account_type: "SERVICE_ACCOUNT", status:OperationStatus.Failure}, result.stats.failedMessageCount)
-      totalAttachmentError.inc({email:result.email,account_type: "SERVICE_ACCOUNT", status:OperationStatus.Failure}, result.stats.failedAttachmentCount)
+      totalIngestedMails.inc({email: result.email, account_type: AuthType.ServiceAccount, status:OperationStatus.Success}, result.stats.messageCount)
+      totalAttachmentIngested.inc({email: result.email, account_type: AuthType.ServiceAccount, status:OperationStatus.Success}, result.stats.attachmentCount)
+      ingestionMailErrorsTotal.inc({email: result.email, account_type: AuthType.ServiceAccount, status:OperationStatus.Failure}, result.stats.failedMessageCount)
+      totalAttachmentError.inc({email:result.email,account_type: AuthType.ServiceAccount, status:OperationStatus.Failure}, result.stats.failedAttachmentCount)
     }
   }
 
@@ -1699,15 +1700,16 @@ const insertFilesForUser = async (
           // do not update for Sheet as we will add the actual count later
 
           getUserLogger(userEmail!).info(`Mime type: `, doc.mimeType)
-          totalIngestedFiles.inc({
+
+          if (doc.mimeType !== DriveMime.Sheets) {
+            processedFiles += 1
+            tracker.updateUserStats(userEmail, StatType.Drive, 1)
+            totalIngestedFiles.inc({
             mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
             status: "SUCCESS",
             email: userEmail,
             file_type: fileType,
           })
-          if (doc.mimeType !== DriveMime.Sheets) {
-            processedFiles += 1
-            tracker.updateUserStats(userEmail, StatType.Drive, 1)
           }
           getUserLogger(userEmail).info(`Inserted file of type ${fileType} with ID: ${doc.docId} and Name: ${doc.title},`)
         } catch (error) {
@@ -1729,6 +1731,12 @@ const insertFilesForUser = async (
         }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
+       totalIngestedFiles.inc({
+            mime_type: "application/vnd.google-apps.spreadsheet",
+            status: "SUCCESS",
+            email: userEmail,
+            file_type: DriveEntity.Sheets,
+          }, sheetsObj.count)
 
       getUserLogger(userEmail!).info(`finished ${initialCount} files`)
       totalIngestionDuration()
@@ -2068,16 +2076,6 @@ const googleSheetsVespa = async (
       sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
       endSheetExtractionDuration()
-      totalExtractedFiles.inc(
-        {
-          mime_type:
-            spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
-          status: "SUCCESS",
-          email: userEmail,
-          file_type: DriveEntity.Sheets,
-        },
-        1,
-      )
       // if (count % 5 === 0) {
       //   sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
       // }
@@ -2110,6 +2108,15 @@ const googleSheetsVespa = async (
   //   await insertDocument(doc)
   //   updateUserStats(userEmail, StatType.Drive, 1)
   // }
+        totalExtractedFiles.inc(
+        {
+          mime_type:"application/vnd.google-apps.spreadsheet",
+          status: "SUCCESS",
+          email: userEmail,
+          file_type: DriveEntity.Sheets,
+        },
+        count,
+   )
   return { sheets: sheetsList, count }
 }
 
@@ -2785,15 +2792,6 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
-  metadataFiles.inc(
-    {
-      file_type: DriveEntity.Misc,
-      mime_type: "application/vnd.google-apps.file",
-      email: userEmail,
-    },
-    rest.length,
-  )
-
   return results
 }
 
@@ -3211,8 +3209,7 @@ export const ServiceAccountIngestMoreUsers = async (
           return null // Return null for skipped users
         }
 
-        const logger = Logger.child({email: userEmail})
-        logger.info(
+         getUserLogger(userEmail).info(
           `Started ingestion for additional user: ${userEmail} (jobId: ${jobId})`,
         )
 
@@ -3232,7 +3229,9 @@ export const ServiceAccountIngestMoreUsers = async (
           )
         }
 
+        totalDriveFilesToBeIngested.inc({email: userEmail, file_type:DriveEntity.Misc, status: OperationStatus.Success}, driveFileCount)
         let mailCountExcludingPromotions = 0
+        let totalMails= 0
         if (insertGmail) {
           try {
              getUserLogger(userEmail).info(
@@ -3246,17 +3245,21 @@ export const ServiceAccountIngestMoreUsers = async (
             )
             mailCountExcludingPromotions =
               gmailCounts.messagesExcludingPromotions
-            logger.info(
+              totalMails = gmailCounts.messagesTotal
+             getUserLogger(userEmail).info(
               `Gmail counts for ${userEmail} (jobId: ${jobId}): Total=${gmailCounts.messagesTotal}, Excluding Promotions=${mailCountExcludingPromotions}`,
             )
           } catch (error) {
-            logger.error(
+             getUserLogger(userEmail).error(
               error,
               `Failed to get Gmail counts for user ${userEmail} (jobId: ${jobId}): ${getErrorMessage(error)}`,
             )
           }
         }
 
+        totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},mailCountExcludingPromotions)
+        totalSkippedMails.inc({email: userEmail, status: OperationStatus.Success, account_type: AuthType.ServiceAccount}, (totalMails - mailCountExcludingPromotions))
+        
         tracker.updateTotal(userEmail, {
           totalMail: mailCountExcludingPromotions,
           totalDrive: driveFileCount,
