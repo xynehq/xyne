@@ -107,7 +107,8 @@ export const startStream = async (
   isReasoningActive: boolean = true,
   queryClient?: any,
   router?: any,
-  onTitleUpdate?: (title: string) => void
+  onTitleUpdate?: (title: string) => void,
+  agentIdFromChatParams?: string | null
 ): Promise<void> => {
   if (!messageToSend) {
     console.log("[SSEManager] Cannot start stream: no message provided")
@@ -155,6 +156,11 @@ export const startStream = async (
   if (isReasoningActive) {
     url.searchParams.append("isReasoningEnabled", "true")
   }
+  
+  const agentIdToUse = agentIdFromChatParams;
+  if (agentIdToUse) {
+    url.searchParams.append("agentId", agentIdToUse);
+  }
 
   console.log(`[SSEManager] SSE URL: ${url.toString()}`)
 
@@ -180,27 +186,27 @@ export const startStream = async (
   console.log(`[SSEManager] Created stream state for ${streamKey}`)
 
   // Setup event listeners
-  eventSource.addEventListener('open', () => {
+  streamState.es.addEventListener('open', () => {
     console.log(`[SSEManager] EventSource connection opened for ${streamKey}`)
   })
 
-  eventSource.addEventListener(ChatSSEvents.Start, () => {
+  streamState.es.addEventListener(ChatSSEvents.Start, () => {
     console.log(`[SSEManager] Stream started for ${streamKey}`)
   })
 
-  eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
     console.log(`[SSEManager] Response update for ${streamKey}: ${event.data.slice(0, 50)}...`)
     streamState.partial += event.data
     notifySubscribers(streamKey)
   })
 
-  eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
     console.log(`[SSEManager] Reasoning for ${streamKey}: ${event.data.slice(0, 50)}...`)
     streamState.thinking += event.data
     notifySubscribers(streamKey)
   })
 
-  eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
     console.log(`[SSEManager] Citations update for ${streamKey}`)
     const { contextChunks, citationMap } = JSON.parse(event.data)
     streamState.sources = contextChunks
@@ -208,7 +214,7 @@ export const startStream = async (
     notifySubscribers(streamKey)
   })
 
-  eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
     const { chatId: realId, messageId } = JSON.parse(event.data)
     console.log(`[SSEManager] ResponseMetadata for ${streamKey} - chatId: ${realId}, messageId: ${messageId}`)
     
@@ -222,7 +228,6 @@ export const startStream = async (
       console.log(`[SSEManager] New chat created, transferring stream from UUID key to real chatId: ${realId}`)
       // Transfer the active stream to the real chatId so it stays open through navigation
       activeStreams.set(realId, streamState)
-      notifySubscribers(realId);
       // Handle navigation for new chats - this will cause component remount with real chatId
       if (router && router.state.location.pathname === "/chat") {
         console.log(`[SSEManager] Navigating to new chat: /chat/${realId}`)
@@ -244,64 +249,55 @@ export const startStream = async (
           queryClient.removeQueries({ queryKey: ["chatHistory", null] })
         }
       }
-      
-      // Don't notify subscribers - the stream is closed and component will remount
       streamKey = realId
     }
     notifySubscribers(streamKey)
   })
 
-  eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
     console.log(`[SSEManager] Title update for ${streamKey}: ${event.data}`)
     if (onTitleUpdate) {
       onTitleUpdate(event.data)
     }
   })
 
-  eventSource.addEventListener(ChatSSEvents.End, () => {
+  streamState.es.addEventListener(ChatSSEvents.End, () => {
     console.log(`[SSEManager] Stream ended for ${streamKey}`)
     streamState.isStreaming = false
+    streamState.es.close()
     
     // Invalidate and refetch chat history using the final chatId
-    const finalChatId = streamState.chatId || streamKey
-    if (finalChatId && queryClient) {
-      console.log(`[SSEManager] Invalidating cache for chatId: ${finalChatId}`)
-      queryClient.invalidateQueries({ queryKey: ["chatHistory", finalChatId] })
+    if (streamKey && queryClient) {
+      console.log(`[SSEManager] Invalidating cache for chatId: ${streamKey}`)
+      queryClient.invalidateQueries({ queryKey: ["chatHistory", streamKey] })
     }
-    
-    notifySubscribers(finalChatId)
-    
-    // Don't remove the stream here - keep it for potential reconnection
-    // Only clean up the EventSource
-    eventSource.close()
+    notifySubscribers(streamKey)
   })
 
-  eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+  streamState.es.addEventListener(ChatSSEvents.Error, (event) => {
     console.error(`[SSEManager] Stream error for ${streamKey}:`, event.data)
     streamState.isStreaming = false
-    eventSource.close()
+    streamState.es.close()
     
     toast({
       title: "Error",
       description: event.data,
       variant: "destructive",
     })
-    const finalChatId = streamState.chatId || streamKey
-    notifySubscribers(finalChatId)
+    notifySubscribers(streamKey)
   })
 
-  eventSource.onerror = (error) => {
+  streamState.es.onerror = (error) => {
     console.error(`[SSEManager] EventSource error for ${streamKey}:`, error)
     streamState.isStreaming = false
+    streamState.es.close()
     
     toast({
       title: "Error",
       description: "Connection error. Please try again.",
       variant: "destructive",
     })
-    const finalChatId = streamState.chatId || streamKey
-    notifySubscribers(finalChatId)
-    eventSource.close()
+    notifySubscribers(streamKey)
   }
 }
 
@@ -316,17 +312,17 @@ export const stopStream = async (streamKey: string, queryClient?: any, setRetryI
   }
 
   console.log(`[SSEManager] Stopping stream for ${streamKey}`)
+
+    // Set retry streaming flag to false when stoping
+    if (setRetryIsStreaming) {
+      setRetryIsStreaming(false)
+    }
   
   stream.isStreaming = false
   stream.es.close()
   
-  // Set retry streaming flag to false when stopping
-  if (setRetryIsStreaming) {
-    setRetryIsStreaming(false)
-  }
-  
   // Send stop request to backend using the real chatId if available
-  const currentChatId = stream.chatId || streamKey  
+  const currentChatId = stream.chatId || streamKey
   if (currentChatId) {
     console.log(`[SSEManager] Sending stop request for chatId: ${currentChatId}`)
     try {
@@ -334,14 +330,12 @@ export const stopStream = async (streamKey: string, queryClient?: any, setRetryI
         json: { chatId: currentChatId },
       })
       
-      // Only invalidate cache for normal queries, not for retry streams
-      if (queryClient && !stream.isRetrying) {
+      // refetch chat history just like natural stream end
+      if (queryClient) {
         await new Promise(resolve => setTimeout(resolve, 500))
         // Force immediate refetch to ensure the stopped message appears as saved
         console.log(`[SSEManager] Force refetching chat history for persistence`)
         await queryClient.refetchQueries({ queryKey: ["chatHistory", currentChatId] })
-      } else if (stream.isRetrying) {
-        console.log(`[SSEManager] Skipping cache invalidation for retry stop`)
       }
     } catch (error) {
       console.error("Failed to send stop request:", error)
@@ -452,7 +446,8 @@ export const useChatStream = (
   const wrappedStartStream = useCallback(async (
     messageToSend: string,
     selectedSources: string[] = [],
-    isReasoningActive: boolean = true
+    isReasoningActive: boolean = true,
+    agentIdFromChatParams?: string | null
   ) => {
     const streamKey = currentStreamKey
     console.log(`[useChatStream] Starting stream with key: ${streamKey}`)
@@ -464,7 +459,8 @@ export const useChatStream = (
       isReasoningActive,
       queryClient,
       router,
-      onTitleUpdate
+      onTitleUpdate,
+      agentIdFromChatParams
     )
     
     // Force immediate update of local state after starting stream
@@ -493,7 +489,20 @@ export const useChatStream = (
     if (!messageId) return
 
     console.log(`[useChatStream] Retrying message: ${messageId}`)
-
+    let isError = false
+    let targetMessageId : string | null = null
+    
+    // STEP 0 – fetch latest chat history before retry
+    if (chatId) {
+      try {
+        await queryClient.fetchQuery({
+          queryKey: ["chatHistory", chatId],
+        })
+      } catch (err) {
+        console.error("Failed to fetch latest chat history before retry:", err)
+      }
+    }
+    
     // STEP 1 – mark old answer as streaming and clear its content
     if (chatId) {
       queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
@@ -501,13 +510,76 @@ export const useChatStream = (
         return {
           ...old,
           messages: old.messages.map((m: any) =>
-            m.externalId === messageId
-              ? { ...m, isRetrying: true, message: "" } // reset content, keep position
-              : m,
+            m.externalId === messageId && m.messageRole === "assistant" ? { ...m, isRetrying: true, message: "" } : m,
           ),
         }
       })
+
+      // Get fresh chatData after updating
+      const chatData = queryClient.getQueryData<any>(["chatHistory", chatId])
+      if (chatData && chatData.messages) {
+        const matched = chatData.messages.find((msg: any) => msg.externalId === messageId)
+
+        if (matched && matched.errorMessage && matched.errorMessage !== "") {
+          isError = true
+          const matchedIndex = chatData.messages.findIndex(
+            (msg: any) => msg.externalId === messageId
+          )
+          
+          // Deep clone matched and assign new unique externalId and other fields
+          targetMessageId = crypto.randomUUID()
+          const assistantMessage = {
+            ...JSON.parse(JSON.stringify(matched)),
+            chatExternalId: chatId, // Use the actual chatId, not streamKeyRef
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            externalId: targetMessageId, // unique key!
+            messageRole: "assistant",
+            message: "",
+            isRetrying: true,
+            sources: [],
+            thinking: "",
+            errorMessage: "",
+          }
+          
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            const insertIndex = matchedIndex + 1
+            const updatedMessages = [
+              ...old.messages.slice(0, insertIndex),
+              assistantMessage,
+              ...old.messages.slice(insertIndex),
+            ]
+
+            return {
+              ...old,
+              messages: updatedMessages,
+            }
+          })
+
+          // Remove the error response from the user message in the cache to update UI
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) => {
+                if (m.externalId === messageId && m.messageRole === "user") {
+                  // Clear the errorMessage to remove "something went wrong" from UI
+                  return { 
+                    ...m, 
+                    errorMessage: "" // Clear the error message
+                  }
+                }
+                return m
+              }),
+            }
+          })
+          console.log("Inserted new retry message with ID:", assistantMessage.externalId)
+        }
+      }
     }
+
+    
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
@@ -548,6 +620,7 @@ export const useChatStream = (
       streamState.subscribers.add(subscriberRef.current)
       subscriberRef.current()
     }
+    notifySubscribers(retryStreamKey)
 
     // STEP 2 – helper to update the cached message in-place
     const patchContent = (delta: string, isFinal = false) => {
@@ -557,7 +630,7 @@ export const useChatStream = (
         return {
           ...old,
           messages: old.messages.map((m: any) =>
-            m.externalId === messageId
+            (isError ? m.externalId === targetMessageId : m.externalId === messageId && m.messageRole === "assistant")
               ? {
                   ...m,
                   message: isFinal ? delta : (m.message || "") + delta,
