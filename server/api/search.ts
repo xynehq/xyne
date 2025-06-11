@@ -189,6 +189,19 @@ export const SearchApi = async (c: Context) => {
     : null
   const decodedQuery = decodeURIComponent(query)
 
+const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
+'gmail': Apps.Gmail,
+'drive': Apps.GoogleDrive,
+'googledrive': Apps.GoogleDrive,   
+'googlecalendar': Apps.GoogleCalendar,  
+'slack': Apps.Slack,
+'datasource': Apps.DataSource,
+'google-workspace': Apps.GoogleWorkspace,
+'googledocs': Apps.GoogleDrive,
+'googlesheets': Apps.GoogleDrive,
+'pdf': Apps.GoogleDrive
+};
+
   if (agentId) {
     const workspaceExternalId = workspaceId 
     Logger.info(
@@ -217,19 +230,6 @@ export const SearchApi = async (c: Context) => {
         const dynamicAllowedApps: Apps[] = [];
         const dynamicDataSourceIds: string[] = [];
 
-        const appMapping: Record<string, Apps> = {
-          'gmail': Apps.Gmail,
-          'drive': Apps.GoogleDrive,
-          'googledrive': Apps.GoogleDrive,   
-          'googlecalendar': Apps.GoogleCalendar,  
-          'slack': Apps.Slack,
-          'datasource': Apps.DataSource,
-          'google-workspace': Apps.GoogleWorkspace,
-          'googledocs': Apps.GoogleDrive,
-          'googlesheets': Apps.GoogleDrive,
-          'pdf': Apps.GoogleDrive
-        };
-
         if (Array.isArray(agent.appIntegrations)) {
           for (const integration of agent.appIntegrations) {
             if (typeof integration === 'string') {
@@ -244,7 +244,7 @@ export const SearchApi = async (c: Context) => {
                 continue;
               }
 
-              const mappedApp = appMapping[lowerIntegration];
+              const mappedApp = APP_INTEGRATION_MAPPING[lowerIntegration];
               if (mappedApp && !dynamicAllowedApps.includes(mappedApp)) {
                 dynamicAllowedApps.push(mappedApp);
               } else if (!mappedApp) {
