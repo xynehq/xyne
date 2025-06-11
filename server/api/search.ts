@@ -14,6 +14,7 @@ import {
   UpdateDocument,
   updateUserQueryHistory,
   SearchModes,
+  searchVespaAgent,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -54,6 +55,9 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
+import { getAgentByExternalId } from "@/db/agent"
+import { getWorkspaceByExternalId } from "@/db/workspace"
+import { Apps } from "@/shared/types"
 const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -161,7 +165,7 @@ export const AutocompleteApi = async (c: Context) => {
 }
 
 export const SearchApi = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey)
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   let userAlpha = await getUserPersonalizationAlpha(db, email)
 
@@ -175,6 +179,7 @@ export const SearchApi = async (c: Context) => {
     lastUpdated,
     isQueryTyped,
     debug,
+    agentId,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -183,6 +188,122 @@ export const SearchApi = async (c: Context) => {
     ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
     : null
   const decodedQuery = decodeURIComponent(query)
+
+  if (agentId) {
+    const workspaceExternalId = workspaceId 
+    Logger.info(
+      `Performing agent-specific search for agentId (external_id): ${agentId}, query: "${decodedQuery}", user: ${email}, workspaceExternalId: ${workspaceExternalId}`,
+    )
+
+    const workspace = await getWorkspaceByExternalId(db, workspaceExternalId)
+    if (!workspace) {
+      Logger.warn(
+        `Workspace not found for externalId: ${workspaceExternalId}. Falling back to global search.`,
+      )
+    } else {
+      const numericWorkspaceId = workspace.id
+      Logger.info(
+        `Workspace found: id=${numericWorkspaceId} for externalId=${workspaceExternalId}. Looking for agent.`,
+      )
+      // agentId from the frontend is the external_id
+      const agent = await getAgentByExternalId(db, agentId, numericWorkspaceId)
+
+      if (
+        agent &&
+        agent.appIntegrations &&
+        Array.isArray(agent.appIntegrations) &&
+        agent.appIntegrations.length > 0
+      ) {
+        const dynamicAllowedApps: Apps[] = [];
+        const dynamicDataSourceIds: string[] = [];
+
+        const appMapping: Record<string, Apps> = {
+          'gmail': Apps.Gmail,
+          'drive': Apps.GoogleDrive,
+          'googledrive': Apps.GoogleDrive,   
+          'googlecalendar': Apps.GoogleCalendar,  
+          'slack': Apps.Slack,
+          'datasource': Apps.DataSource,
+          'google-workspace': Apps.GoogleWorkspace,
+          'googledocs': Apps.GoogleDrive,
+          'googlesheets': Apps.GoogleDrive,
+          'pdf': Apps.GoogleDrive
+        };
+
+        if (Array.isArray(agent.appIntegrations)) {
+          for (const integration of agent.appIntegrations) {
+            if (typeof integration === 'string') {
+              const lowerIntegration = integration.toLowerCase();
+              
+              // Handle data source IDs
+              if (lowerIntegration.startsWith("ds-")) {
+                dynamicDataSourceIds.push(integration);
+                if (!dynamicAllowedApps.includes(Apps.DataSource)) {
+                  dynamicAllowedApps.push(Apps.DataSource);
+                }
+                continue;
+              }
+
+              const mappedApp = appMapping[lowerIntegration];
+              if (mappedApp && !dynamicAllowedApps.includes(mappedApp)) {
+                dynamicAllowedApps.push(mappedApp);
+              } else if (!mappedApp) {
+                Logger.warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
+              }
+            }
+          }
+        }
+
+        // Ensure we have at least one app if data sources are present
+        if (dynamicAllowedApps.length === 0 && dynamicDataSourceIds.length > 0) {
+          dynamicAllowedApps.push(Apps.DataSource);
+        }
+
+        Logger.info(
+          `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`
+        );
+
+        results = await searchVespaAgent(
+          decodedQuery,
+          email,
+          null,
+          entity,
+          dynamicAllowedApps.length > 0 ? dynamicAllowedApps : null,
+          {
+            alpha: userAlpha,
+            limit: page,
+            offset: offset,
+            requestDebug: debug,
+            dataSourceIds: dynamicDataSourceIds,
+            timestampRange: timestampRange, 
+          },
+        )
+        Logger.info(
+          `Vespa response for agent search ${agentId} (AllowedApps: ${dynamicAllowedApps.join(", ")}, DataSourceIDs: ${dynamicDataSourceIds.join(", ")}, Entity=${entity}), query "${decodedQuery}": ${JSON.stringify(results)}`,
+        )
+        try {
+          const newResults = VespaSearchResponseToSearchResult(results)
+          newResults.groupCount = {} // Agent search currently doesn't provide group counts
+          return c.json(newResults)
+        } catch (e) {
+          Logger.error(
+            e,
+            `Error processing/responding to agent search for agentId ${agentId}, query "${decodedQuery}". Results: ${JSON.stringify(results)}`,
+          )
+          throw new HTTPException(500, {
+            message: "Error processing agent search results",
+          })
+        }
+      } else {
+        Logger.warn(
+          `Agent ${agentId} not found in workspace ${numericWorkspaceId}, or appIntegrations is missing/empty. Falling back to global search. Agent details: ${JSON.stringify(agent)}`,
+        )
+      }
+    }
+  }
+  Logger.info(
+    `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
+  )
   if (gc) {
     const tasks: Array<any> = [
       groupVespaSearch(decodedQuery, email, config.page, timestampRange),
@@ -211,9 +332,9 @@ export const SearchApi = async (c: Context) => {
   }
 
   // TODO: deduplicate for google admin and contacts
-  const newResults = VespaSearchResponseToSearchResult(results)
-  newResults.groupCount = groupCount
-  return c.json(newResults)
+    const newResults = VespaSearchResponseToSearchResult(results)
+    newResults.groupCount = groupCount
+    return c.json(newResults)
 }
 
 export const AnswerApi = async (c: Context) => {

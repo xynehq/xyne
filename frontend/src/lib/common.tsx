@@ -99,6 +99,10 @@ export const getIcon = (
   } else if (app === "event" || entity === EventEntity.Default) {
     // Added generic Event
     return <CalendarDays size={12} className={classNameVal} />
+  } else if (app === Apps.DataSource && entity === "file") {
+    return <FileText size={size?.w || 12} className={classNameVal} />
+  } else if (app === "data-source" && entity === "file") {
+    return <FileText size={size?.w || 12} className={classNameVal} />
   } else {
     // Fallback or handle unknown app/entity
     console.warn(`Invalid app ${app} and entity ${entity}`)
