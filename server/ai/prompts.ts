@@ -862,7 +862,8 @@ export const SearchQueryToolContextPrompt = (
         *   **If INSUFFICIENT:** You MUST call another tool to gather more information.
             *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
             *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
-            
+    4.  **Handle Errors:** If the previous tool call resulted in an error, analyze the error message and adjust your approach. Choose a different tool     that is more appropriate for the query, or use the same tool with corrected arguments that address the specific error encountered.
+
     **CRITICAL RULES FOR ANSWER DETERMINATION:**
     
     **ONLY provide an answer if ALL of the following conditions are met:**

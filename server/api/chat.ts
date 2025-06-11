@@ -7185,7 +7185,19 @@ export const MessageWithToolsApi = async (c: Context) => {
                   })
                   try {
                     // TODO: Implement your parameter validation logic here before calling the tool.
-
+                    if ("perPage" in toolParams) {
+                      if (toolParams.perPage && toolParams.perPage > 10) {
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message: `Detected perPage ${toolParams.perPage} in arguments for tool ${toolName}`,
+                        })
+                        toolParams.perPage = 10 // Limit to 10 per page
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message: `Limited perPage for tool ${toolName} to 10`,
+                        })
+                      }
+                    }
                     const mcpToolResponse: any = await foundClient.callTool({
                       name: toolName,
                       arguments: toolParams,
@@ -7491,7 +7503,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             // 1. Create a unique list of sources to avoid duplicates in the final output.
             // We use a Map keyed by docId to ensure uniqueness.
             const uniqueSourceMap = new Map<string, Citation>()
-            gatheredFragments.forEach(fragment => {
+            gatheredFragments.forEach((fragment) => {
               if (fragment.source && fragment.source.docId) {
                 if (!uniqueSourceMap.has(fragment.source.docId)) {
                   uniqueSourceMap.set(fragment.source.docId, fragment.source)
@@ -7505,7 +7517,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             // We need to map that index to the index in our `finalSources` array.
             gatheredFragments.forEach((fragment, index) => {
               const finalIndex = finalSources.findIndex(
-                s => s.docId === fragment.source.docId,
+                (s) => s.docId === fragment.source.docId,
               )
               if (finalIndex !== -1) {
                 // The LLM sees `[citation:N]` where N is `index + 1`.
