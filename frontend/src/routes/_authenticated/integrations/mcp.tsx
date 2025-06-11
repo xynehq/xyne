@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_authenticated/integrations/mcp")({
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <MCPClient user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } = matches[matches.length - 1].context
+    return <MCPClient user={user} workspace={workspace} agentWhiteList={agentWhiteList} />
   },
 })

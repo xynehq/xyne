@@ -1414,6 +1414,7 @@ function AgentComponent() {
 
             <div className="p-2 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E1E1E] flex justify-center">
               <ChatBox
+                role={user?.role}
                 query={query}
                 setQuery={setQuery}
                 handleSend={handleSend}
