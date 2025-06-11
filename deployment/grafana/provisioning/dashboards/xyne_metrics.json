@@ -153,9 +153,39 @@
           "legendFormat": "__auto",
           "range": false,
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by(user_email) (max_over_time(total_chat_to_be_inserted[$__range]))",
+          "format": "table",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by(user_email) (max_over_time(total_convesations_extracted_count[$__range]))",
+          "format": "table",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "E"
         }
       ],
-      "title": "New panel",
+      "title": "Total Counts for Apps",
       "transformations": [
         {
           "id": "renameByRegex",
@@ -176,6 +206,20 @@
           "options": {
             "regex": "Value #C",
             "renamePattern": "count:ingestable_google_drive_files"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "Value #D",
+            "renamePattern": "count:ingestable_messages"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "Value #E",
+            "renamePattern": "count:ingestable_conversations"
           }
         }
       ],
