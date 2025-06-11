@@ -1292,7 +1292,7 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
@@ -1827,7 +1827,7 @@ const Code = ({
     // Transform wrapper configuration for different view modes
     const transformConfig = isFullscreen
       ? {
-          initialScale: 4,
+          initialScale: 2,
           minScale: 0.5,
           maxScale: 10,
           limitToBounds: true,
@@ -1838,8 +1838,8 @@ const Code = ({
           panning: { velocityDisabled: true },
         }
       : {
-          initialScale: 2,
-          minScale: 1,
+          initialScale: 1.5,
+          minScale: 0.5,
           maxScale: 7,
           limitToBounds: true,
           centerOnInit: true,
@@ -1851,7 +1851,7 @@ const Code = ({
 
     return (
       <div
-        className={`group relative mb-6 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden ${isFullscreen ? "" : "w-full"}`}
+        className={`group relative mb-6 overflow-hidden ${isFullscreen ? "" : "w-full"}`}
         style={isFullscreen ? containerStyle : undefined}
       >
         <TransformWrapper
@@ -1913,15 +1913,19 @@ const Code = ({
   // For regular code blocks, improve styling
   if (!inline) {
     return (
-      <div className="relative group mb-4">
+      <div className="relative group mb-4 w-full max-w-full">
         <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
           {className ? className.replace("language-", "") : "code"}
         </div>
-        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-full">
+        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto w-full max-w-full min-w-0">
           <code
-            className={`${className || ""} text-sm`}
+            className={`${className || ""} text-sm block w-full`}
             style={{
               fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+              whiteSpace: "pre",
+              overflowWrap: "break-word",
+              wordBreak: "break-all",
+              maxWidth: "100%",
             }}
           >
             {children}
@@ -1944,6 +1948,11 @@ const Code = ({
   return (
     <code
       className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+      style={{
+        overflowWrap: "break-word",
+        wordBreak: "break-all",
+        maxWidth: "100%",
+      }}
     >
       {children}
     </code>
@@ -2011,25 +2020,25 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
     >
       {isUser ? (
         <div
-          className="break-words overflow-wrap-anywhere"
+          className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
           dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
         />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row w-full">
+          <div className="flex flex-row w-full max-w-full min-w-0">
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={logo}
             />
-            <div className="mt-[4px] markdown-content">
+            <div className="mt-[4px] markdown-content w-full max-w-full min-w-0">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
@@ -2041,6 +2050,8 @@ export const ChatMessage = ({
                       color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
+                      wordBreak: "break-word",
+                      minWidth: 0,
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -2065,6 +2076,8 @@ export const ChatMessage = ({
                     color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
                   }}
                   components={{
                     a: renderMarkdownLink,
