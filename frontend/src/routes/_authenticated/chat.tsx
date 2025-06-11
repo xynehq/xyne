@@ -1,5 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
-import { getCodeString } from 'rehype-rewrite';
+import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -21,11 +21,19 @@ import {
   RefreshCw,
   ZoomIn,
   ZoomOut,
+  Plus,
+  Minus,
+  Maximize2,
+  Minimize2,
 } from "lucide-react"
 import { useEffect, useRef, useState, Fragment, useCallback } from "react"
-import { TransformWrapper, TransformComponent, useControls } from "react-zoom-pan-pinch";
+import {
+  TransformWrapper,
+  TransformComponent,
+  useControls,
+} from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
-import mermaid from "mermaid";
+import mermaid from "mermaid"
 import {
   ChatSSEvents,
   SelectPublicMessage,
@@ -1312,12 +1320,18 @@ export const ChatPage = ({
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
-              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="dark:stroke-gray-400 ml-[20px]" size={18} />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -1644,60 +1658,105 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
+  <a
+    {...linkProps}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 dark:text-blue-400 hover:underline"
+  />
 )
 
-const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36);
-const Code = ({ inline, children, className, ...props }: { inline?: boolean, children?: React.ReactNode, className?: string, node?: any }) => {
-  const demoid = useRef(`dome${randomid()}`);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  const isMermaid = className && /^language-mermaid/.test(className.toLocaleLowerCase());
-  
-  let codeContent = '';
+const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
+const Code = ({
+  inline,
+  children,
+  className,
+  ...props
+}: {
+  inline?: boolean
+  children?: React.ReactNode
+  className?: string
+  node?: any
+}) => {
+  const demoid = useRef(`dome${randomid()}`)
+  const [container, setContainer] = useState<HTMLElement | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [containerHeight, setContainerHeight] = useState(600)
+  const isMermaid =
+    className && /^language-mermaid/.test(className.toLocaleLowerCase())
+
+  let codeContent = ""
   if (props.node && props.node.children && props.node.children.length > 0) {
     // @ts-ignore
-    codeContent = getCodeString(props.node.children);
-  } else if (typeof children === 'string') {
-    codeContent = children;
-  } else if (Array.isArray(children) && children.length > 0 && typeof children[0] === 'string') {
+    codeContent = getCodeString(props.node.children)
+  } else if (typeof children === "string") {
+    codeContent = children
+  } else if (
+    Array.isArray(children) &&
+    children.length > 0 &&
+    typeof children[0] === "string"
+  ) {
     // Fallback for cases where children might still be an array with a single string
-    codeContent = children[0];
+    codeContent = children[0]
   }
 
-
   const reRender = async () => {
-    if (container && isMermaid && typeof codeContent === 'string' && codeContent.trim() !== '') {
+    if (
+      container &&
+      isMermaid &&
+      typeof codeContent === "string" &&
+      codeContent.trim() !== ""
+    ) {
       try {
-        const { svg } = await mermaid.render(demoid.current, codeContent);
-        container.innerHTML = svg;
+        const { svg } = await mermaid.render(demoid.current, codeContent)
+        container.innerHTML = svg
       } catch (error: any) {
-        console.error("Mermaid rendering error in Code component:", error);
-        container.innerHTML = `<pre>Mermaid Error: ${error.message || String(error)}</pre>`;
+        console.error("Mermaid rendering error in Code component:", error)
+        container.innerHTML = `<pre>Mermaid Error: ${error.message || String(error)}</pre>`
       }
-    } else if (container && isMermaid && (typeof codeContent !== 'string' || codeContent.trim() === '')) {
-        container.innerHTML = "";
+    } else if (
+      container &&
+      isMermaid &&
+      (typeof codeContent !== "string" || codeContent.trim() === "")
+    ) {
+      container.innerHTML = ""
     }
   }
 
   useEffect(() => {
-    // Ensure mermaid is initialized. This might be redundant if initialized globally, but safe.
-    // mermaid.initialize({ startOnLoad: false, theme: document.body.classList.contains('dark') ? 'dark' : 'default' });
-    reRender();
-  }, [container, isMermaid, codeContent]);
+    reRender()
+  }, [container, isMermaid, codeContent])
 
   const refElement = useCallback((node: HTMLElement | null) => {
     if (node !== null) {
-      setContainer(node);
+      setContainer(node)
     }
-  }, []);
+  }, [])
+
+  const handleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  const adjustHeight = (delta: number) => {
+    setContainerHeight((prev) => Math.max(200, Math.min(1200, prev + delta)))
+  }
 
   const MermaidControls = () => {
-    const { zoomIn, zoomOut, resetTransform } = useControls();
-    const buttonBaseClass = "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10";
-    const iconSize = 12;
+    const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+    const buttonBaseClass =
+      "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10 transition-colors"
+    const iconSize = 12
+
+    const handleResetAndCenter = () => {
+      resetTransform()
+      // Small delay to ensure reset is complete before centering
+      setTimeout(() => {
+        centerView()
+      }, 10)
+    }
 
     return (
-      <div className="absolute top-2 left-2 flex space-x-1">
+      <div className="absolute top-2 left-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <button
           onClick={() => zoomIn()}
           className={`${buttonBaseClass} rounded-l-md`}
@@ -1713,43 +1772,184 @@ const Code = ({ inline, children, className, ...props }: { inline?: boolean, chi
           <ZoomOut size={iconSize} />
         </button>
         <button
-          onClick={() => resetTransform()}
-          className={`${buttonBaseClass} rounded-r-md`}
+          onClick={handleResetAndCenter}
+          className={`${buttonBaseClass}`}
           title="Reset View"
         >
           <RefreshCw size={iconSize} />
         </button>
+        <button
+          onClick={() => adjustHeight(-100)}
+          className={`${buttonBaseClass}`}
+          title="Decrease Height"
+        >
+          <Minus size={iconSize} />
+        </button>
+        <button
+          onClick={() => adjustHeight(100)}
+          className={`${buttonBaseClass}`}
+          title="Increase Height"
+        >
+          <Plus size={iconSize} />
+        </button>
+        <button
+          onClick={handleFullscreen}
+          className={`${buttonBaseClass} rounded-r-md`}
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? (
+            <Minimize2 size={iconSize} />
+          ) : (
+            <Maximize2 size={iconSize} />
+          )}
+        </button>
       </div>
-    );
-  };
+    )
+  }
 
   if (isMermaid) {
+    const containerStyle = isFullscreen
+      ? {
+          position: "fixed" as const,
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(113, 109, 109, 0.95)",
+          zIndex: 9999,
+        }
+      : {
+          width: "100%",
+          height: `${containerHeight}px`,
+          minHeight: "200px",
+          maxHeight: "1200px",
+        }
+
+    // Transform wrapper configuration for different view modes
+    const transformConfig = isFullscreen
+      ? {
+          initialScale: 4,
+          minScale: 0.5,
+          maxScale: 10,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+      : {
+          initialScale: 2,
+          minScale: 1,
+          maxScale: 7,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+
     return (
-      <div className="relative w-full mb-6">
-        <TransformWrapper
-          initialScale={1}
-        minScale={0.25}
-        maxScale={8}
-        limitToBounds={false}
-        doubleClick={{ disabled: true }}
+      <div
+        className={`group relative mb-6 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden ${isFullscreen ? "" : "w-full"}`}
+        style={isFullscreen ? containerStyle : undefined}
       >
-        <TransformComponent
-          wrapperStyle={{ width: "100%", maxHeight: "800px", cursor: "grab" }}
-          contentStyle={{ width: "100%", display: "flex", justifyContent: "center" }}
+        <TransformWrapper
+          key={`mermaid-transform-${isFullscreen ? "fullscreen" : "normal"}`}
+          initialScale={transformConfig.initialScale}
+          minScale={transformConfig.minScale}
+          maxScale={transformConfig.maxScale}
+          limitToBounds={transformConfig.limitToBounds}
+          centerOnInit={transformConfig.centerOnInit}
+          centerZoomedOut={transformConfig.centerZoomedOut}
+          doubleClick={transformConfig.doubleClick}
+          wheel={transformConfig.wheel}
+          panning={transformConfig.panning}
         >
-          <div style={{ display: 'inline-block' }}> {/* This div helps with centering and proper scaling */}
-            <code id={demoid.current} style={{ display: "none" }} />
-            {/* @ts-ignore */}
-            <code ref={refElement} data-name="mermaid" className={`mermaid ${className || ''}`} style={{ display: 'inline-block' }} />
-          </div>
-        </TransformComponent>
-        <MermaidControls />
-      </TransformWrapper>
+          <TransformComponent
+            wrapperStyle={{
+              width: "100%",
+              height: isFullscreen ? "100vh" : `${containerHeight}px`,
+              cursor: "grab",
+              backgroundColor: isFullscreen ? "transparent" : "transparent",
+            }}
+            contentStyle={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "inline-block" }}>
+              <code id={demoid.current} style={{ display: "none" }} />
+              {/* @ts-ignore */}
+              <code
+                ref={refElement}
+                data-name="mermaid"
+                className={`mermaid ${className || ""}`}
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "transparent",
+                }}
+              />
+            </div>
+          </TransformComponent>
+          <MermaidControls />
+        </TransformWrapper>
+        {isFullscreen && (
+          <button
+            onClick={handleFullscreen}
+            className="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-2 rounded-full shadow-lg z-10 transition-colors"
+            title="Exit Fullscreen"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
-    );
+    )
   }
-  return <code className={className}>{children}</code>;
-};
+
+  // For regular code blocks, improve styling
+  if (!inline) {
+    return (
+      <div className="relative group mb-4">
+        <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
+          {className ? className.replace("language-", "") : "code"}
+        </div>
+        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-full">
+          <code
+            className={`${className || ""} text-sm`}
+            style={{
+              fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+            }}
+          >
+            {children}
+          </code>
+        </pre>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(String(children))
+            // You could add a toast notification here
+          }}
+          className="absolute top-8 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 p-1 rounded text-xs"
+          title="Copy code"
+        >
+          <Copy size={12} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <code
+      className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+    >
+      {children}
+    </code>
+  )
+}
 
 export const ChatMessage = ({
   message,
@@ -1839,7 +2039,7 @@ export const ChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1863,7 +2063,7 @@ export const ChatMessage = ({
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}
@@ -1917,7 +2117,11 @@ export const ChatMessage = ({
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} className="dark:text-gray-100" {...props} />
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
