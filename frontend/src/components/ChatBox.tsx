@@ -1690,30 +1690,30 @@ export const ChatBox = ({
             onOpenChange={setIsConnectorsMenuOpen}
           >
             <DropdownMenuTrigger asChild>
-              <button ref={connectorsDropdownTriggerRef} className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
+              <button ref={connectorsDropdownTriggerRef} className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-slate-300 cursor-pointer">
                 {selectedConnectorId && allConnectors.find(c => c.id === selectedConnectorId)
                   ? getIcon(
                       allConnectors.find(c => c.id === selectedConnectorId)!.app,
                       allConnectors.find(c => c.id === selectedConnectorId)!.type,
                       { w: 14, h: 14, mr: 0 }
                     )
-                  : <PlugZap size={14} className="text-[#464D53]" />
+                  : <PlugZap size={14} className="text-[#464D53] dark:text-slate-400" />
                 }
                 <span>
                   {selectedConnectorId
                     ? allConnectors.find(c => c.id === selectedConnectorId)?.displayName || "Connector"
                     : "Mcp"}
                 </span>
-                <ChevronDown size={16} className="ml-1 text-gray-500" />
+                <ChevronDown size={16} className="ml-1 text-gray-500 dark:text-slate-400" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-72 relative rounded-xl" // Increased width
+              className="w-72 relative rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700" // Increased width, added dark mode bg and border
               align="start"
               side="top"
             >
-              <DropdownMenuLabel className="p-2">Select a Connector</DropdownMenuLabel>
-              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="p-2 text-gray-700 dark:text-slate-300">Select a Connector</DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-gray-200 dark:bg-slate-700" />
               {allConnectors.length > 0 ? (
                 allConnectors.filter(c => c.type === ConnectorType.MCP).map((connector) => {
                   const isMCP = connector.type === ConnectorType.MCP;
@@ -1724,7 +1724,7 @@ export const ChatBox = ({
                       onSelect={(e) => e.preventDefault()} // Prevent closing on item click if it has a sub-menu
                       className="p-0" // Remove padding for full-width item
                     >
-                        <div className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-accent"
+                        <div className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700"
                           onClick={() => {
                             const isCurrentlySelected = selectedConnectorId === connector.id;
 
@@ -1760,18 +1760,18 @@ export const ChatBox = ({
                         >
                           <div className="flex items-center gap-2 flex-grow">
                             {getIcon(connector.app, connector.type, { w: 14, h: 14, mr: 0 })}
-                            <span className="truncate">{connector.displayName}</span>
+                            <span className="truncate text-gray-900 dark:text-slate-100">{connector.displayName}</span>
                           </div>
 
                           {/* Icons container - aligned to the right */}
                           <div className="flex items-center ml-auto">
                             {selectedConnectorId === connector.id && (
-                              <Check className={`h-4 w-4 text-green-500 flex-shrink-0 ${isMCP ? 'mr-1.5' : ''}`} />
+                              <Check className={`h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0 ${isMCP ? 'mr-1.5' : ''}`} />
                             )}
                             {isMCP && (
                               <PlusCircle
                                 size={18}
-                                className="text-blue-500 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
+                                className="text-blue-500 dark:text-blue-400 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
                                 onClick={async (e) => {
                                   e.stopPropagation(); // IMPORTANT: Prevent main item click handler
                                   
@@ -1868,7 +1868,7 @@ export const ChatBox = ({
                     );
                   })
               ) : (
-                <DropdownMenuItem disabled className="text-center text-gray-500">
+                <DropdownMenuItem disabled className="text-center text-gray-500 dark:text-slate-400">
                   No connectors available
                 </DropdownMenuItem>
               )}
@@ -1879,7 +1879,7 @@ export const ChatBox = ({
           {isToolSelectionModalOpen && selectedConnectorId && toolModalPosition && allConnectors.find(c => c.id === selectedConnectorId)?.type === ConnectorType.MCP && (
             <div
               ref={toolModalRef} 
-              className="absolute bg-white rounded-lg shadow-xl p-4 z-50 border border-gray-200"
+              className="absolute bg-white dark:bg-slate-800 rounded-lg shadow-xl p-4 z-50 border border-gray-200 dark:border-slate-700"
               style={{ 
                 top: `${toolModalPosition.top}px`, 
                 left: `${toolModalPosition.left}px`,
@@ -1890,10 +1890,10 @@ export const ChatBox = ({
             >
               <div className="flex flex-col h-full">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-md font-semibold">
+                  <h3 className="text-md font-semibold text-gray-900 dark:text-slate-100">
                     Tools for {allConnectors.find(c => c.id === selectedConnectorId)?.displayName}
                   </h3>
-                  <button onClick={() => setIsToolSelectionModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <button onClick={() => setIsToolSelectionModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -1907,7 +1907,7 @@ export const ChatBox = ({
                   className="mb-2 text-sm"
                 />
                 {isLoadingTools ? (
-                  <p className="text-sm text-gray-500 text-center py-4">Loading tools...</p>
+                  <p className="text-sm text-gray-500 dark:text-slate-400 text-center py-4">Loading tools...</p>
                 ) : (
                   <div className="overflow-y-auto" style={{ maxHeight: '180px' }}> {/* Explicit max-height for scrolling */}
                     {connectorTools.filter(tool => tool.toolName.toLowerCase().includes(toolSearchTerm.toLowerCase())).length > 0 ? (
@@ -1916,7 +1916,7 @@ export const ChatBox = ({
                         .map((tool) => (
                           <div
                             key={tool.id}
-                            className="flex items-center justify-between py-1.5 hover:bg-gray-50 rounded px-1 cursor-pointer"
+                            className="flex items-center justify-between py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 rounded px-1 cursor-pointer"
                             onClick={() => {
                               setSelectedConnectorTools(prev => {
                                 const newSelected = new Set(prev[selectedConnectorId!] || []);
@@ -1929,18 +1929,18 @@ export const ChatBox = ({
                               });
                             }}
                           >
-                            <span className="text-sm flex-grow mr-2 truncate" title={tool.description || tool.toolName}>
+                            <span className="text-sm flex-grow mr-2 truncate text-gray-800 dark:text-slate-200" title={tool.description || tool.toolName}>
                               {tool.toolName}
                             </span>
                             <div className="h-4 w-4 flex items-center justify-center">
                               {(selectedConnectorTools[selectedConnectorId!] || new Set()).has(tool.externalId) && (
-                                <Check className="h-4 w-4 text-green-500" />
+                                <Check className="h-4 w-4 text-green-500 dark:text-green-400" />
                               )}
                             </div>
                           </div>
                         ))
                     ) : (
-                      <p className="text-sm text-gray-500 text-center py-4">No tools found{toolSearchTerm ? ` for "${toolSearchTerm}"` : ''}.</p>
+                      <p className="text-sm text-gray-500 dark:text-slate-400 text-center py-4">No tools found{toolSearchTerm ? ` for "${toolSearchTerm}"` : ''}.</p>
                     )}
                   </div>
                 )}

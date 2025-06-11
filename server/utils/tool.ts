@@ -1,10 +1,7 @@
+import type { SelectTool } from "@/db/schema/McpConnectors"
+import { deleteToolById, getWorkspaceTools, upsertTool } from "@/db/tool"
 import type { TxnOrClient } from "@/types"
-import {
-  tools,
-  selectToolSchema,
-  type InsertTool,
-  type SelectTool,
-} from "@/db/schema"
+
 import { and, eq } from "drizzle-orm"
 import { z } from "zod"
 /**
