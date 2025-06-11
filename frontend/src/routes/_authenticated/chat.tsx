@@ -187,8 +187,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     thinking,
     sources,
     citationMap,
-    messageId: streamingMessageId,
     isStreaming,
+    messageId: streamInfoMessageId,
     startStream,
     stopStream,
     retryMessage,
@@ -201,15 +201,22 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   
-  // Create a current streaming response for compatibility with existing UI
-  const currentResp = isStreaming ? {
-    resp: partial,
-    thinking,
-    sources,
-    citationMap,
-    messageId: streamingMessageId,
-    chatId: chatId,
-  } : null
+  // Create a current streaming response for compatibility with existing UI,
+  // merging the real stream IDs once available
+  const currentResp = isStreaming
+    ? {
+        resp: partial,
+        thinking,
+        sources,
+        citationMap,
+        messageId: streamInfoMessageId,
+        chatId,
+      }
+    : null
+
+  useEffect(() => {
+    console.log('[Debug] currentResp:', currentResp);
+  }, [currentResp]);
 
   const [showRagTrace, setShowRagTrace] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
@@ -503,7 +510,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   };
 
   const handleRetry = async (messageId: string) => {
-    if (!messageId || isStreaming) return
+    console.log('[Debug] handleRetry called with messageId:', messageId)
+    console.log('[Debug] isStreaming:', isStreaming, 'hookMessageId:', messageId)
+    if (!messageId || isStreaming) {
+      console.log('[Debug] handleRetry early return - no messageId or isStreaming')
+      return
+    }
+    console.log('[Debug] Calling retryMessage with messageId:', messageId)
     await retryMessage(messageId, isReasoningActive)
   }
 
@@ -758,7 +771,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isStreaming={isStreaming}
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
-                  feedbackStatus={null} 
+                  feedbackStatus={null}
                   onFeedback={handleFeedback}
                   disableRetry={disableRetry}
                 />
