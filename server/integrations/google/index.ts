@@ -816,8 +816,8 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       getGmailCounts(oauth2Client,  userEmail),
     ])
 
-    totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},totalFiles)
-    totalDriveFilesToBeIngested.inc({email: userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, messagesExcludingPromotions)
+    totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},messagesExcludingPromotions)
+    totalDriveFilesToBeIngested.inc({email: userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, totalFiles)
     totalSkippedMails.inc({email: userEmail, status: OperationStatus.Success,account_type: AuthType.OAuth }, (messagesTotal - messagesExcludingPromotions))
 
     tracker.updateTotal(userEmail, {
@@ -1133,8 +1133,8 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         const mailCountExcludingPromotions =
           gmailCounts.messagesExcludingPromotions
 
-        totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},driveFileCount)
-        totalDriveFilesToBeIngested.inc({email:userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, gmailCounts.messagesTotal)
+        totalGmailToBeIngestedCount.inc({email: userEmail, account_type: AuthType.ServiceAccount, status:OperationStatus.Success},gmailCounts.messagesTotal)
+        totalDriveFilesToBeIngested.inc({email:userEmail, status:OperationStatus.Success, file_type: DriveEntity.Misc}, driveFileCount)
 
         tracker.updateTotal(userEmail, {
           totalMail: mailCountExcludingPromotions,
