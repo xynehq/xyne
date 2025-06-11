@@ -834,8 +834,9 @@ export const SearchQueryToolContextPrompt = (
 
       Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
 
-      If tool invocation is appropriate, **you must prioritize rewriting the query using the relevant tool** and respond using the following strict JSON format:
+      **CRITICAL: Your response must ONLY be valid JSON. Do not include any explanations, reasoning, or text before or after the JSON. No markdown formatting.**
 
+      **Response Format (JSON ONLY):**
     {
       "answer": "<string or null>",
       "tool": <"ACTUAL_TOOL_NAME" or null>,
@@ -877,11 +878,6 @@ export const SearchQueryToolContextPrompt = (
     - The retrieved information is outdated or doesn't match the timeframe requested
     - You cannot provide a complete and accurate answer based solely on the available context
     
-    **Examples of when to set "answer" to null:**
-    - User asks "What was discussed in the meeting with John yesterday?" but context only shows John's email from last week
-    - User asks for "Q3 sales figures" but context only has Q2 data
-    - User asks about "the Python project budget" but context mentions Python in a different context
-    - User asks for "my flight details to London" but context has flight details to Paris
     
     **Final Decision Logic:**
     - If you have a final answer that COMPLETELY and ACCURATELY addresses the user's query, populate "answer" and set "tool" and "arguments" to null.

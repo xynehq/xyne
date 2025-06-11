@@ -4239,6 +4239,17 @@ export const StopStreamingApi = async (c: Context) => {
     throw new HTTPException(500, { message: "Could not stop streaming." })
   }
 }
+function flattenObject(obj: any, parentKey = ""): [string, string][] {
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const fullKey = parentKey ? `${parentKey}.${key}` : key
+
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return flattenObject(value, fullKey)
+    } else {
+      return [[fullKey, JSON.stringify(value)]]
+    }
+  })
+}
 
 async function* getToolContinuationIterator(
   message: string,
@@ -4298,18 +4309,6 @@ async function* getToolContinuationIterator(
   }
 }
 
-function flattenObject(obj: any, parentKey = ""): [string, string][] {
-  return Object.entries(obj).flatMap(([key, value]) => {
-    const fullKey = parentKey ? `${parentKey}.${key}` : key
-
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      return flattenObject(value, fullKey)
-    } else {
-      return [[fullKey, JSON.stringify(value)]]
-    }
-  })
-}
-
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -4335,7 +4334,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       isReasoningEnabled,
     }: MessageReqType = body
     Logger.info(`getting mcp create with body: ${JSON.stringify(body)}`)
-    const userRequestsReasoning = isReasoningEnabled
+    // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
@@ -4426,7 +4425,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         case AgentReasoningStepType.LogMessage:
           return step.message + "\n"
         default:
-          return "Unknown reasoning step"  
+          return "Unknown reasoning step"
       }
     }
     interface MinimalAgentFragment {
@@ -5422,6 +5421,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               content: [{ text: m.message }],
             }))
 
+          console.log(messagesWithNoErrResponse)
           Logger.info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
@@ -5518,10 +5518,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               arguments: {} as any,
             }
             iterationCount++
-            await logAndStreamReasoning({
-              type: AgentReasoningStepType.Iteration,
-              iteration: iterationCount,
-            })
 
             let loopWarningPrompt = ""
             const evidenceSummary =
@@ -5553,7 +5549,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               `
             }
 
-            agentScratchpad = evidenceSummary + loopWarningPrompt
+            agentScratchpad =
+              evidenceSummary +
+              loopWarningPrompt +
+              structuredReasoningSteps
+                .map(convertReasoningStepToText)
+                .join("\n")
             let toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -5575,10 +5576,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
-            await logAndStreamReasoning({
-              type: AgentReasoningStepType.Planning,
-              details: `Planning next step with ${gatheredFragments.length} context fragments.`,
-            })
             const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,
               ctx,
@@ -5593,7 +5590,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 messages: messagesWithNoErrResponse,
               },
             )
-
             for await (const chunk of getToolOrAnswerIterator) {
               if (stream.closed) {
                 Logger.info(
@@ -5677,8 +5673,15 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
-            console.log(parsed, "parsedOutput")
             if (parsed.tool && !parsed.answer) {
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Planning,
+                details: `Planning next step with ${gatheredFragments.length} context fragments.`,
+              })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
               previousToolCalls.push({
@@ -5802,7 +5805,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                             title: `Output from tool: ${toolName}`,
                             entity: SystemEntity.SystemInfo,
                           },
-                          confidence: 1.0, // Confidence is high for direct tool output
+                          confidence: 1.0,
                         })
                       }
                     } catch (parsingError) {
@@ -5890,8 +5893,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                   synthesisState:
                     | ContextSysthesisState.Complete
                     | ContextSysthesisState.Partial
-                    | ContextSysthesisState.NotFound,
-                  answer: string | null,
+                    | ContextSysthesisState.NotFound
+                  answer: string | null
                 }
                 let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -5947,7 +5950,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     Logger.error("Synthesis LLM call returned no text.")
                     parseSynthesisOutput = {
                       synthesisState: ContextSysthesisState.Partial,
-                      answer: ""
+                      answer: "",
                     }
                   }
                 } catch (synthesisError) {
@@ -5962,7 +5965,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   // If the call itself fails, we must assume the context is insufficient.
                   parseSynthesisOutput = {
                     synthesisState: ContextSysthesisState.Partial,
-                    answer: parseSynthesisOutput?.answer || ""
+                    answer: parseSynthesisOutput?.answer || "",
                   }
                 }
 
@@ -6064,6 +6067,50 @@ export const MessageWithToolsApi = async (c: Context) => {
               break
             }
           }
+
+          let finalSources: Citation[] = []
+          let finalCitationMap: Record<number, number> = {}
+
+          // This check is important. Only process citations if the agent actually gathered some.
+          if (gatheredFragments.length > 0) {
+            // 1. Create a unique list of sources to avoid duplicates in the final output.
+            // We use a Map keyed by docId to ensure uniqueness.
+            const uniqueSourceMap = new Map<string, Citation>()
+            gatheredFragments.forEach(fragment => {
+              if (fragment.source && fragment.source.docId) {
+                if (!uniqueSourceMap.has(fragment.source.docId)) {
+                  uniqueSourceMap.set(fragment.source.docId, fragment.source)
+                }
+              }
+            })
+            finalSources = Array.from(uniqueSourceMap.values())
+
+            // 2. Create the map to translate from the context index to the final source index.
+            // The LLM was prompted with context `[1]`, `[2]`, etc., based on the `gatheredFragments` array order.
+            // We need to map that index to the index in our `finalSources` array.
+            gatheredFragments.forEach((fragment, index) => {
+              const finalIndex = finalSources.findIndex(
+                s => s.docId === fragment.source.docId,
+              )
+              if (finalIndex !== -1) {
+                // The LLM sees `[citation:N]` where N is `index + 1`.
+                // We map it to the `finalIndex` in our unique source list.
+                // The processMessage function expects 1-based indexing for the final citation.
+                finalCitationMap[index + 1] = finalIndex + 1
+              }
+            })
+
+            // 3. Stream the final, unique citations to the client.
+            // This allows the UI to prepare to display citation details.
+            await stream.writeSSE({
+              event: ChatSSEvents.CitationsUpdate,
+              data: JSON.stringify({
+                contextChunks: finalSources,
+                citationMap: {},
+              }),
+            })
+          }
+
           if (answer || wasStreamClosedPrematurely) {
             // Determine if a message (even partial) should be saved
             // TODO: incase user loses permission
@@ -6081,7 +6128,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               chatExternalId: chat.externalId,
               messageRole: MessageRole.Assistant,
               email: user.email,
-              sources: [],
+              sources: finalSources,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
               modelId:
