@@ -18,6 +18,7 @@ interface StreamState {
   isRetrying?: boolean
   subscribers: Set<() => void>
 }
+
 interface StreamInfo {
   partial: string
   thinking: string
@@ -179,6 +180,7 @@ export const startStream = async (
     messageId: undefined,
     chatId: chatId || undefined,
     isStreaming: true,
+    isRetrying: false,
     subscribers: new Set(),
   }
 
@@ -251,9 +253,7 @@ export const startStream = async (
       }
       streamKey = realId
     }
-    // Use a new variable instead of reassigning the parameter
-    const activeStreamKey = realId
-    notifySubscribers(activeStreamKey)
+    notifySubscribers(streamKey)
   })
 
   streamState.es.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
@@ -404,6 +404,15 @@ export const useChatStream = (
   
   // Generate a consistent stream key for this hook instance
   const streamKeyRef = useRef<string | null>(null)
+  const lastChatIdRef = useRef<string | null>(null)
+  
+  // Reset stream key when chatId changes (navigation between chats)
+  if (chatId !== lastChatIdRef.current) {
+    streamKeyRef.current = chatId ?? crypto.randomUUID()
+    lastChatIdRef.current = chatId
+  }
+  
+  // Ensure streamKeyRef always has a value
   if (!streamKeyRef.current) {
     streamKeyRef.current = chatId ?? crypto.randomUUID()
   }
@@ -413,16 +422,37 @@ export const useChatStream = (
   
   const [streamInfo, setStreamInfo] = useState<StreamInfo>(() => getStreamState(currentStreamKey))
   const subscriberRef = useRef<(() => void) | null>(null)
+  const currentStreamKeyRef = useRef<string>(currentStreamKey)
+
+  // Update current stream key ref when it changes
+  useEffect(() => {
+    currentStreamKeyRef.current = currentStreamKey
+  }, [currentStreamKey])
 
   // Subscribe to stream updates
   useEffect(() => {
     const streamKey = currentStreamKey
     console.log(`[useChatStream] Subscribing to stream ${streamKey}`)
     
-    // Create subscriber function
+    // Clean up previous subscriber if it exists and is for a different stream
+    if (subscriberRef.current) {
+      // Remove from all streams to prevent cross-contamination
+      activeStreams.forEach((stream, key) => {
+        if (subscriberRef.current) {
+          stream.subscribers.delete(subscriberRef.current)
+        }
+      })
+    }
+    
+    // Create subscriber function that checks if it's still the current stream
     const subscriber = () => {
-      console.log(`[useChatStream] Stream update received for ${streamKey}`)
-      setStreamInfo(getStreamState(streamKey))
+      // Only update if this subscriber is still for the current stream
+      if (currentStreamKeyRef.current === streamKey) {
+        console.log(`[useChatStream] Stream update received for ${streamKey}`)
+        setStreamInfo(getStreamState(streamKey))
+      } else {
+        console.log(`[useChatStream] Ignoring stale update for ${streamKey}, current is ${currentStreamKeyRef.current}`)
+      }
     }
     
     subscriberRef.current = subscriber
@@ -585,8 +615,6 @@ export const useChatStream = (
       }
     }
 
-    
-
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
     url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
@@ -621,8 +649,8 @@ export const useChatStream = (
 
     activeStreams.set(retryStreamKey, streamState)
 
-    // Subscribe UI updates for retry stream
-    if (subscriberRef.current) {
+    // Subscribe UI updates for retry stream only if this is the current chat
+    if (subscriberRef.current && retryStreamKey === currentStreamKeyRef.current) {
       streamState.subscribers.add(subscriberRef.current)
       subscriberRef.current()
     }
@@ -678,6 +706,7 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     })
 
@@ -692,6 +721,7 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     })
 
@@ -701,6 +731,7 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     }
   }, [currentStreamKey, queryClient, chatId, setRetryIsStreaming])
@@ -712,4 +743,4 @@ export const useChatStream = (
     retryMessage,
     onTitleUpdate,
   }
-} 
+}
