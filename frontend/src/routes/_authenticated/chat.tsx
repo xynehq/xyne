@@ -1687,7 +1687,6 @@ const Code = ({
 
   let codeContent = ""
   if (props.node && props.node.children && props.node.children.length > 0) {
-    // @ts-ignore
     codeContent = getCodeString(props.node.children)
   } else if (typeof children === "string") {
     codeContent = children
