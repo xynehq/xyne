@@ -573,7 +573,7 @@ export const ChatPage = ({
         .join("")
     }
 
-    const url = new URL(`/api/v1/message/create/mcp`, window.location.origin) // TODO: call only if any mcp clients are enable.
+    const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
