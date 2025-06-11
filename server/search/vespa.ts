@@ -385,6 +385,7 @@ export const HybridDefaultProfile = (
     or owner contains @email
     `
   }
+
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
@@ -492,7 +493,7 @@ export const HybridDefaultProfile = (
       case Apps.DataSource:
         break
       default:
-        handleAppsNotInYql(includedApp, includedApps)
+        appQueries.push(buildDefaultYQL())
         break
     }
   }
