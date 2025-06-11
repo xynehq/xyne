@@ -231,6 +231,7 @@ const Index = () => {
             {activeTab === "ask" && (
               <div className="w-full h-72">
                 <ChatBox
+                  role={user?.role}
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}

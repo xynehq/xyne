@@ -861,13 +861,34 @@ export const SearchQueryToolContextPrompt = (
             *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
             *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
             
-    **Rules:**
-    - If you have a final answer, populate "answer" and set "tool" and "arguments" to null.
-    - If you must use a tool to get more information, set "answer" to null, and populate "tool" and "arguments" with your new, non-repetitive plan.
-    - **Your primary goal is to resolve the user's query by strategically calling tools until you have enough information.**
+    **CRITICAL RULES FOR ANSWER DETERMINATION:**
+    
+    **ONLY provide an answer if ALL of the following conditions are met:**
+    1. **Direct Relevance:** The context must DIRECTLY address the specific question asked, not just contain tangentially related information
+    2. **Completeness:** The context must contain enough information to provide a comprehensive answer to the user's query
+    3. **Accuracy:** You can answer the question accurately based on the retrieved context without making assumptions or filling gaps
+    4. **Specificity Match:** If the user asks for specific details (dates, names, amounts, etc.), the context must contain those exact details
+    
+    **ALWAYS set "answer" to null if:**
+    - The context is only tangentially related to the query
+    - The context contains partial information that doesn't fully answer the question
+    - You would need to make assumptions or inferences beyond what's explicitly stated in the context
+    - The context is about a similar topic but doesn't address the specific question asked
+    - The retrieved information is outdated or doesn't match the timeframe requested
+    - You cannot provide a complete and accurate answer based solely on the available context
+    
+    **Examples of when to set "answer" to null:**
+    - User asks "What was discussed in the meeting with John yesterday?" but context only shows John's email from last week
+    - User asks for "Q3 sales figures" but context only has Q2 data
+    - User asks about "the Python project budget" but context mentions Python in a different context
+    - User asks for "my flight details to London" but context has flight details to Paris
+    
+    **Final Decision Logic:**
+    - If you have a final answer that COMPLETELY and ACCURATELY addresses the user's query, populate "answer" and set "tool" and "arguments" to null.
+    - If you must use a tool to get more information OR the current context is insufficient/irrelevant, set "answer" to null, and populate "tool" and "arguments" with your new, non-repetitive plan.
+    - **Your primary goal is to resolve the user's query by strategically calling tools until you have enough information that DIRECTLY and COMPLETELY answers their question.**
 
-
-    REMEMBER: Always first check the  Scratchpad if a tool have alreadt invoked select a different approprite tool. If yes, respond strictly using the required JSON format.
+    REMEMBER: Always first check the Scratchpad if a tool has already been invoked, select a different appropriate tool. Respond strictly using the required JSON format.
   `
 }
 

@@ -1411,6 +1411,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               </div>
             )}
             <ChatBox
+              role={user?.role}
               query={query}
               setQuery={setQuery}
               handleSend={handleSend} // handleSend function is passed here

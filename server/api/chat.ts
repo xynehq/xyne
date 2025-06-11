@@ -5504,6 +5504,13 @@ export const MessageWithToolsApi = async (c: Context) => {
           let agentScratchpad = "" // To build the reasoning history for the prompt
           const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
+            if (stream.closed) {
+              Logger.info(
+                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+              )
+              wasStreamClosedPrematurely = true
+              break
+            }
             let buffer = ""
             let parsed = {
               answer: "",
@@ -5511,7 +5518,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               arguments: {} as any,
             }
             iterationCount++
-            console.log(iterationCount, "iterationCount")
             await logAndStreamReasoning({
               type: AgentReasoningStepType.Iteration,
               iteration: iterationCount,
@@ -5901,7 +5907,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       message,
                       planningContext,
                       {
-                        modelId: defaultFastModel,
+                        modelId: defaultBestModel,
                         stream: false,
                         json: true,
                         reasoning: false,
@@ -5913,7 +5919,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                       parseSynthesisOutput = jsonParseLLMOutput(
                         synthesisResponse.text,
                       )
-                      console.log(parseSynthesisOutput, "parseSynthesisOutput")
                       if (
                         !parseSynthesisOutput ||
                         !parseSynthesisOutput.synthesisState

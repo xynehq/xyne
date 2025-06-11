@@ -22,7 +22,7 @@ import {
   PlusCircle, // For MCP connector tools
 } from "lucide-react";
 import Attach from "@/assets/attach.svg?react";
-import { Citation, Apps, ConnectorType, AuthType, ConnectorStatus } from "shared/types";
+import { Citation, Apps, ConnectorType, AuthType, ConnectorStatus, UserRole } from "shared/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +72,7 @@ interface SearchResult {
 }
 
 interface ChatBoxProps {
+  role: UserRole
   query: string;
   setQuery: (query: string) => void;
   handleSend: (messageToSend: string, selectedSources?: string[], toolExternalIds?: string[]) => void;
@@ -191,6 +192,7 @@ const setCaretPosition = (element: Node, position: number) => {
 };
 
 export const ChatBox = ({
+  role,
   query,
   setQuery,
   handleSend,
@@ -1612,9 +1614,8 @@ export const ChatBox = ({
               input.focus();
             }}
           />
-
           {/* Dropdown for All Connectors */}
-          <DropdownMenu
+         {role === UserRole.SuperAdmin && <DropdownMenu
             open={isConnectorsMenuOpen}
             onOpenChange={setIsConnectorsMenuOpen}
           >
@@ -1802,7 +1803,7 @@ export const ChatBox = ({
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
 
           {/* Tool Selection Modal / Popover */}
           {isToolSelectionModalOpen && selectedConnectorId && toolModalPosition && allConnectors.find(c => c.id === selectedConnectorId)?.type === ConnectorType.MCP && (
