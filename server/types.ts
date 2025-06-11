@@ -301,6 +301,7 @@ export enum WorkerResponseTypes {
   Stats = "Stats",
   HistoryId = "HistoryId",
   Error = "Error",
+  ProgressUpdate="ProgressUpdate"
 }
 
 export enum Subsystem {
