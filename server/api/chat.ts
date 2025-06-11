@@ -57,8 +57,6 @@ import {
   type SelectChat,
   type SelectMessage,
   selectMessageSchema,
-  selectToolSchema,
-  type SelectTool,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -148,6 +146,7 @@ import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
 import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 
 const {
   JwtPayloadKey,
