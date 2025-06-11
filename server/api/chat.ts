@@ -5660,13 +5660,47 @@ function flattenObject(obj: any, parentKey = ""): [string, string][] {
     }
   })
 }
+const checkAndYieldCitationsForAgent = function* (
+  textInput: string,
+  yieldedCitations: Set<number>,
+  results: MinimalAgentFragment[],
+  baseIndex: number = 0,
+) {
+  const text = splitGroupedCitationsWithSpaces(textInput)
+  let match
+  while ((match = textToCitationIndex.exec(text)) !== null) {
+    const citationIndex = parseInt(match[1], 10)
+    console.log(citationIndex, "citations index")
+    if (!yieldedCitations.has(citationIndex)) {
+      const item = results[citationIndex - 1]
+      if (item.source.docId) {
+        yield {
+          citation: {
+            index: citationIndex,
+            item: item.source,
+          },
+        }
+        yieldedCitations.add(citationIndex)
+      } else {
+        Logger.error(
+          "Found a citation index but could not find it in the search result ",
+          citationIndex,
+          results.length,
+        )
+      }
+    }
+  }
+}
 
 async function* getToolContinuationIterator(
   message: string,
   userCtx: string,
   toolsPrompt: string,
   toolOutput: string,
-) {
+  results: MinimalAgentFragment[],
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -5680,6 +5714,7 @@ async function* getToolContinuationIterator(
     toolOutput ?? "",
   )
 
+  const previousResultsLength = 0 // todo fix this
   let buffer = ""
   let currentAnswer = ""
   let parsed = { answer: "" }
@@ -5690,33 +5725,91 @@ async function* getToolContinuationIterator(
 
   for await (const chunk of continuationIterator) {
     if (chunk.text) {
+      // if (reasoning) {
+      //   if (thinking && !chunk.text.includes(EndThinkingToken)) {
+      //     thinking += chunk.text
+      //     yield* checkAndYieldCitationsForAgent(
+      //       thinking,
+      //       yieldedCitations,
+      //       results,
+      //       previousResultsLength,
+      //     )
+      //     yield { text: chunk.text, reasoning }
+      //   } else {
+      //     // first time
+      //     const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+      //     if (
+      //       startThinkingIndex !== -1 &&
+      //       chunk.text.trim().length > StartThinkingToken.length
+      //     ) {
+      //       let token = chunk.text.slice(
+      //         startThinkingIndex + StartThinkingToken.length,
+      //       )
+      //       if (chunk.text.includes(EndThinkingToken)) {
+      //         token = chunk.text.split(EndThinkingToken)[0]
+      //         thinking += token
+      //       } else {
+      //         thinking += token
+      //       }
+      //       yield* checkAndYieldCitationsForAgent(
+      //         thinking,
+      //         yieldedCitations,
+      //         results,
+      //         previousResultsLength,
+      //       )
+      //       yield { text: token, reasoning }
+      //     }
+      //   }
+      // }
+      // if (reasoning && chunk.text.includes(EndThinkingToken)) {
+      //   reasoning = false
+      //   chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+      // }
+      // if (!reasoning) {
       buffer += chunk.text
       try {
         parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
-
+        // If we have a null answer, break this inner loop and continue outer loop
+        // seen some cases with just "}"
         if (parsed.answer === null || parsed.answer === "}") {
           break
         }
 
+        // If we have an answer and it's different from what we've seen
         if (parsed.answer && currentAnswer !== parsed.answer) {
           if (currentAnswer === "") {
+            // First valid answer - send the whole thing
             yield { text: parsed.answer }
           } else {
+            // Subsequent chunks - send only the new part
             const newText = parsed.answer.slice(currentAnswer.length)
             yield { text: newText }
           }
+          yield* checkAndYieldCitationsForAgent(
+            parsed.answer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+          )
           currentAnswer = parsed.answer
         }
       } catch (e) {
-        // JSON parsing failed — continue accumulating
+        // If we can't parse the JSON yet, continue accumulating
         continue
       }
+      // }
     }
 
     if (chunk.cost) {
       yield { cost: chunk.cost }
     }
   }
+}
+interface MinimalAgentFragment {
+  id: string // Unique ID for the fragment
+  content: string
+  source: Citation
+  confidence: number
 }
 
 export const MessageWithToolsApi = async (c: Context) => {
@@ -5837,12 +5930,6 @@ export const MessageWithToolsApi = async (c: Context) => {
         default:
           return "Unknown reasoning step"
       }
-    }
-    interface MinimalAgentFragment {
-      id: string // Unique ID for the fragment
-      content: string
-      source: Citation
-      confidence: number
     }
     // Search Tool (existing)
     const searchTool: AgentTool = {
@@ -6910,6 +6997,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let currentAnswer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
+          let citationValues: Record<number, string> = {}
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -7450,6 +7538,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ctx,
                 toolsPrompt,
                 planningContext ?? "",
+                gatheredFragments,
               )
               for await (const chunk of continuationIterator) {
                 if (stream.closed) {
@@ -7481,6 +7570,22 @@ export const MessageWithToolsApi = async (c: Context) => {
                     data: chunk.text,
                   })
                 }
+                if (chunk.citation) {
+                  const { index, item } = chunk.citation
+                  citations.push(item)
+                  citationMap[index] = citations.length - 1
+                  Logger.info(
+                    `Found citations and sending it, current count: ${citations.length}`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                  citationValues[index] = item
+                }
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
@@ -7492,49 +7597,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               answer = parsed.answer
               break
             }
-          }
-
-          let finalSources: Citation[] = []
-          let finalCitationMap: Record<number, number> = {}
-
-          // This check is important. Only process citations if the agent actually gathered some.
-          if (gatheredFragments.length > 0) {
-            // 1. Create a unique list of sources to avoid duplicates in the final output.
-            // We use a Map keyed by docId to ensure uniqueness.
-            const uniqueSourceMap = new Map<string, Citation>()
-            gatheredFragments.forEach((fragment) => {
-              if (fragment.source && fragment.source.docId) {
-                if (!uniqueSourceMap.has(fragment.source.docId)) {
-                  uniqueSourceMap.set(fragment.source.docId, fragment.source)
-                }
-              }
-            })
-            finalSources = Array.from(uniqueSourceMap.values())
-
-            // 2. Create the map to translate from the context index to the final source index.
-            // The LLM was prompted with context `[1]`, `[2]`, etc., based on the `gatheredFragments` array order.
-            // We need to map that index to the index in our `finalSources` array.
-            gatheredFragments.forEach((fragment, index) => {
-              const finalIndex = finalSources.findIndex(
-                (s) => s.docId === fragment.source.docId,
-              )
-              if (finalIndex !== -1) {
-                // The LLM sees `[citation:N]` where N is `index + 1`.
-                // We map it to the `finalIndex` in our unique source list.
-                // The processMessage function expects 1-based indexing for the final citation.
-                finalCitationMap[index + 1] = finalIndex + 1
-              }
-            })
-
-            // 3. Stream the final, unique citations to the client.
-            // This allows the UI to prepare to display citation details.
-            await stream.writeSSE({
-              event: ChatSSEvents.CitationsUpdate,
-              data: JSON.stringify({
-                contextChunks: finalSources,
-                citationMap: {},
-              }),
-            })
           }
 
           if (answer || wasStreamClosedPrematurely) {
@@ -7554,7 +7616,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               chatExternalId: chat.externalId,
               messageRole: MessageRole.Assistant,
               email: user.email,
-              sources: finalSources,
+              sources: citations,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
               modelId:

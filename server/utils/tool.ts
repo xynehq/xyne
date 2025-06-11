@@ -5,7 +5,6 @@ import type { TxnOrClient } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { z } from "zod"
 
-
 //todo: refactor this file to use the new tool schema
 /**
  * Synchronize tools for a client with the database
