@@ -9,6 +9,7 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 const page = 8
 
 import { Sidebar } from "@/components/Sidebar"
+import { useTheme } from "@/components/ThemeContext"
 
 import { useEffect, useRef, useState } from "react"
 
@@ -54,7 +55,7 @@ export function SearchInfo({ info }: { info: string }) {
         <TooltipTrigger asChild>
           <Button
             variant="outline"
-            className="p-0 m-0 rounded-full h-[20px] w-[20px] text-xs text-gray-500"
+            className="p-0 m-0 rounded-full h-[20px] w-[20px] text-xs text-gray-500 dark:text-gray-400"
           >
             i
           </Button>
@@ -74,9 +75,11 @@ type SearchMeta = {
 interface IndexProps {
   user: PublicUser
   workspace: PublicWorkspace
+  agentWhiteList: boolean
 }
 
-export const Search = ({ user, workspace }: IndexProps) => {
+export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
+  const { theme } = useTheme()
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
@@ -438,8 +441,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
   // if filter is selected we should keep it's count to prevent showing button for pagination
 
   return (
-    <div className="h-full w-full flex">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+    <div className="h-full w-full flex dark:bg-[#1E1E1E]">
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
       <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
           ref={autocompleteRef}
@@ -462,7 +469,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         />
 
         <div className="flex flex-row ml-[186px] h-full">
-          <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5]">
+          <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5] dark:border-gray-700">
             {answer && answer.length > 0 && (
               <div className="flex mt-[24px]">
                 <img
@@ -477,28 +484,31 @@ export const Search = ({ user, workspace }: IndexProps) => {
                   >
                     <MarkdownPreview
                       source={answer}
+                      wrapperElement={{
+                        "data-color-mode": theme,
+                      }}
                       style={{
                         padding: 0,
-                        backgroundColor: "#ffffff",
-                        color: "#464B53",
+                        backgroundColor: theme === 'dark' ? "#1F2937" : "#ffffff",
+                        color: theme === 'dark' ? "#E5E7EB" : "#464B53",
                       }}
                     />
                     {/* Gradient overlay when not expanded */}
                     {!isExpanded && (
-                      <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+                      <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white dark:from-slate-800 to-transparent pointer-events-none"></div>
                     )}
                   </div>
 
                   {/* Toggle Buttons */}
                   <div className="flex flex-row mt-2">
                     <button
-                      className="pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                      className="pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] dark:text-gray-300 rounded-full flex items-center bg-[#F0F4F7] dark:bg-slate-700"
                       onClick={() => setIsExpanded(!isExpanded)}
                     >
                       {!isExpanded ? (
-                        <ChevronsUpDown size={16} stroke="#707F9F" />
+                        <ChevronsUpDown size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       ) : (
-                        <ChevronsDownUp size={16} stroke="#707F9F" />
+                        <ChevronsDownUp size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       )}
                       {isExpanded ? (
                         <span className="ml-2">Show less</span>
@@ -507,12 +517,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
                       )}
                     </button>
                     <button
-                      className="ml-3 pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                      className="ml-3 pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] dark:text-gray-300 rounded-full flex items-center bg-[#F0F4F7] dark:bg-slate-700"
                       onClick={() => {
                         // Your code here
                       }}
                     >
-                      <MessageSquareShare size={16} stroke="#707F9F" />
+                      <MessageSquareShare size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       <span className="ml-3">Turn into Chat</span>
                     </button>
                   </div>
@@ -522,10 +532,10 @@ export const Search = ({ user, workspace }: IndexProps) => {
             {/* Top-level Trace Info Display */}
             {showDebugInfo && traceData && (
               <details className="mt-4 mb-4 text-xs">
-                <summary className="text-gray-500 cursor-pointer">
+                <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
                   Vespa Trace
                 </summary>
-                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-gray-300 p-2 rounded overflow-auto max-h-96">
                   {" "}
                   {/* Increased max-height */}
                   {JSON.stringify(traceData, null, 2)}
@@ -593,8 +603,15 @@ export const Route = createFileRoute("/_authenticated/search")({
   // component: Index,
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <Search user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <Search
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   validateSearch: (search) => searchParams.parse(search),
   errorComponent: errorComponent,

@@ -119,6 +119,7 @@ class VespaClient {
     options: VespaConfigValues,
     limit: number,
     offset: number,
+    email: string,
   ): Promise<any[]> {
     const yqlQuery = `select * from sources ${schema} where true`
     const searchPayload = {
@@ -129,27 +130,32 @@ class VespaClient {
     }
 
     const response = await this.search<VespaSearchResponse>(searchPayload)
-    return (response.root?.children || []).map((doc) => doc.fields)
+    return (response.root?.children || []).map((doc) => {
+      // Use optional chaining and nullish coalescing to safely extract fields
+      const { matchfeatures, ...fieldsWithoutMatch } = doc.fields as any
+      return fieldsWithoutMatch
+    })
   }
 
   async getAllDocumentsParallel(
     schema: VespaSchema,
     options: VespaConfigValues,
     concurrency: number = 3,
+    email: string,
   ): Promise<any[]> {
     // First get document count
-    const countResponse = await this.getDocumentCount(schema, options)
+    const countResponse = await this.getDocumentCount(schema, options, email)
     const totalCount = countResponse?.root?.fields?.totalCount || 0
 
     if (totalCount === 0) return []
 
     // Calculate optimal batch size and create batch tasks
-    const batchSize = 500
+    const batchSize = 350
     const tasks = []
 
     for (let offset = 0; offset < totalCount; offset += batchSize) {
       tasks.push(() =>
-        this.fetchDocumentBatch(schema, options, batchSize, offset),
+        this.fetchDocumentBatch(schema, options, batchSize, offset, email),
       )
     }
 
@@ -255,7 +261,7 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        // Logger.info(`Document ${document.docId} inserted successfully`)
+        Logger.info(`Document ${document.docId} inserted successfully`)
       } else {
       }
     } catch (error) {
@@ -358,11 +364,15 @@ class VespaClient {
     }
   }
 
-  async getDocumentCount(schema: VespaSchema, options: VespaConfigValues) {
+  async getDocumentCount(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    email: string,
+  ) {
     try {
       // Encode the YQL query to ensure it's URL-safe
       const yql = encodeURIComponent(
-        `select * from sources ${schema} where true`,
+        `select * from sources ${schema} where uploadedBy contains '${email}'`,
       )
       // Construct the search URL with necessary query parameters
       const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${options.cluster}`
@@ -607,8 +617,8 @@ class VespaClient {
   async deleteDocument(
     options: VespaConfigValues & { docId: string },
   ): Promise<void> {
-    const { docId, namespace, schema } = options
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const { docId, namespace, schema } = options // Extract namespace and schema again
+    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}` // Revert to original URL construction
     try {
       const response = await this.fetchWithRetry(url, {
         method: "DELETE",

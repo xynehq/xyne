@@ -4,7 +4,7 @@ import {
   syncJobs,
   type InsertSyncJob,
   type SelectSyncJob,
-} from "./schema"
+} from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import { Apps, AuthType } from "@/shared/types"
 import { and, eq } from "drizzle-orm"
@@ -53,10 +53,14 @@ export const getAppSyncJobsByEmail = async (
   const jobs = await trx
     .select()
     .from(syncJobs)
-    .where(and(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)),eq(syncJobs.email, email)))
+    .where(
+      and(
+        and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)),
+        eq(syncJobs.email, email),
+      ),
+    )
   return z.array(selectSyncJobSchema).parse(jobs)
 }
-
 
 export const updateSyncJob = async (
   trx: TxnOrClient,

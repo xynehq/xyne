@@ -129,6 +129,7 @@ export const messageSchema = z.object({
       if (!val) return false;
       return val.toLowerCase() === "true";
     }),
+  agentId: z.string().optional(),
   toolsList: z.array(z.object({
     connectorId: z.string(),
     tools: z.array(z.string()),

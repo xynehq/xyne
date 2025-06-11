@@ -5,6 +5,7 @@ import {
   ingestionStateSchema,
   oauthProviders,
   selectConnectorSchema,
+  users,
   type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
@@ -27,7 +28,7 @@ import {
 import { IsGoogleApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
-import { syncJobs, syncHistory } from "./schema"
+import { syncJobs, syncHistory } from "@/db/schema"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -86,6 +87,7 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
   const res = await db
     .select({
       id: connectors.externalId,
+      cId: connectors.id,
       app: connectors.app,
       authType: connectors.authType,
       type: connectors.type,
@@ -281,6 +283,36 @@ export const getConnectorByExternalId = async (
     )
     throw new NoConnectorsFound({
       message: `Connector not found for external ID ${connectorId} and user ID ${userId}`,
+    })
+  }
+}
+
+export const getConnectorByAppAndEmailId = async (
+  trx: TxnOrClient,
+  app: Apps,
+  authType: AuthType,
+  emailId: string,
+): Promise<SelectConnector> => {
+  const res = await trx
+    .select()
+    .from(connectors)
+    .innerJoin(users, eq(connectors.userId, users.id))
+    .where(and(eq(connectors.app, app), eq(users.email, emailId)))
+    .limit(1)
+  // console.log(res[0].connectors)
+  if (res.length) {
+    const parsedRes = selectConnectorSchema.safeParse(res[0].connectors)
+    if (!parsedRes.success) {
+      Logger.error(`Failed to parse connector data for user:${emailId} `)
+      throw new NoConnectorsFound({
+        message: `Could not parse connector data for user: ${emailId}`,
+      })
+    }
+    return parsedRes.data
+  } else {
+    Logger.error(`Connector not found for emailID ${emailId} and app  ${app}`)
+    throw new NoConnectorsFound({
+      message: `Connector not found for emailID ${emailId} and app  ${app}`,
     })
   }
 }

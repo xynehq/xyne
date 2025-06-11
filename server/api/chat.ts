@@ -97,11 +97,14 @@ import {
   getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
+  searchVespaThroughAgent,
+  searchVespaAgent,
 } from "@/search/vespa"
 import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  datasourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -143,6 +146,9 @@ import {
 import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
+import { isCuid } from "@paralleldrive/cuid2"
+import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -465,6 +471,11 @@ const checkAndYieldCitations = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - baseIndex]
       if (item) {
+        // TODO: fix this properly, empty citations making streaming broke
+        if (item.fields.sddocname === datasourceFileSchema) {
+          // Removed transcriptSchema check
+          continue
+        }
         yield {
           citation: {
             index: citationIndex,
@@ -614,6 +625,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -630,6 +642,84 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("pageSize", pageSize)
   rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
+    try {
+      agentPromptData = JSON.parse(agentPrompt)
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+    }
+
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            // ds- is the prefix for datasource externalId
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            // Handle generic app names
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase(): // 'data-source'
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
+        }
+      }
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
 
   let message = input
 
@@ -698,14 +788,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   if (classification.filterQuery) {
     message = classification.filterQuery
   }
-  const latestResults = (
-    await searchVespa(message, email, null, null, {
-      limit: userSpecifiedCount,
+  let searchResults
+  if (!agentPrompt) {
+    searchResults = await searchVespa(message, email, null, null, {
+      limit: pageSize,
       alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
     })
-  ).root.children
+  } else {
+    searchResults = await searchVespaAgent(
+      message,
+      email,
+      null,
+      null,
+      agentAppEnums,
+      {
+        limit: pageSize,
+        alpha: userAlpha,
+        timestampRange,
+        span: initialSearchSpan,
+        dataSourceIds: agentSpecificDataSourceIds,
+      },
+    )
+  }
+
+  const latestResults = searchResults.root.children
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
     "result_ids",
@@ -731,11 +839,28 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      let results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        span: vespaSearchSpan,
-      })
+      let results
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          span: vespaSearchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            span: vespaSearchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -759,6 +884,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultFastModel, //defaultBestModel,
         stream: false,
+        agentPrompt,
       })
       const queries = queryResp.queries
       queryRewriteSpan?.setAttribute("query_count", queries.length)
@@ -772,17 +898,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         querySpan?.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
-        const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, {
-            limit: pageSize,
-            alpha: userAlpha,
-            timestampRange: {
-              from: new Date().getTime() - 4 * monthInMs,
-              to: new Date().getTime(),
-            },
-            span: latestSearchSpan,
-          })
-        )?.root?.children
+        const latestResults: VespaSearchResult[] =
+          (
+            await (!agentPrompt
+              ? searchVespa(query, email, null, null, {
+                  limit: pageSize,
+                  alpha: userAlpha,
+                  timestampRange,
+                  span: latestSearchSpan,
+                })
+              : (async () => {
+                  return searchVespaAgent(
+                    query,
+                    email,
+                    null,
+                    null,
+                    agentAppEnums,
+                    {
+                      limit: pageSize,
+                      alpha: userAlpha,
+                      timestampRange,
+                      span: latestSearchSpan,
+                      dataSourceIds: agentSpecificDataSourceIds,
+                    },
+                  )
+                })())
+          ).root.children || []
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -797,13 +938,40 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         latestSearchSpan?.end()
 
-        let results = await searchVespa(query, email, null, null, {
-          limit: pageSize,
-          alpha: userAlpha,
-          excludedIds: latestResults
-            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-            ?.filter((v) => !!v),
-        })
+        // let results = await searchVespa(query, email, null, null, {
+        //   limit: pageSize,
+        //   alpha: userAlpha,
+        //   excludedIds: latestResults
+        //     ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+        //     ?.filter((v) => !!v),
+        // })
+        let results
+        if (!agentPrompt) {
+          results = await searchVespa(query, email, null, null, {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+          })
+        } else {
+          results = await searchVespaAgent(
+            query,
+            email,
+            null,
+            null,
+            agentAppEnums,
+            {
+              limit: pageSize,
+              alpha: userAlpha,
+              excludedIds: latestResults
+                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+                ?.filter((v) => !!v),
+              dataSourceIds: agentSpecificDataSourceIds,
+            },
+          )
+        }
+
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
@@ -843,6 +1011,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             modelId: defaultBestModel,
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
+            agentPrompt,
           },
         )
 
@@ -874,13 +1043,31 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan(
         "vespa_search_with_excluded_ids",
       )
-      results = await searchVespa(message, email, null, null, {
-        limit: userSpecifiedCount,
-        offset: pageNumber * userSpecifiedCount,
-        alpha: userAlpha,
-        excludedIds: latestIds,
-        span: searchSpan,
-      })
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          offset: pageNumber * pageSize,
+          alpha: userAlpha,
+          excludedIds: latestIds,
+          span: searchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha: userAlpha,
+            excludedIds: latestIds,
+            span: searchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -902,12 +1089,30 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
-      results = await searchVespa(message, email, null, null, {
-        limit: userSpecifiedCount,
-        offset: pageNumber * userSpecifiedCount,
-        alpha: userAlpha,
-        span: searchSpan,
-      })
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          offset: pageNumber * pageSize,
+          alpha: userAlpha,
+          span: searchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha: userAlpha,
+            span: searchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
+
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -962,6 +1167,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
+      messages,
     })
 
     const answer = yield* processIterator(
@@ -1002,6 +1209,7 @@ async function* generateAnswerFromGivenContext(
   alpha: number = 0.5,
   fileIds: string[],
   userRequestsReasoning: boolean,
+  agentPrompt?: string,
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1092,6 +1300,7 @@ async function* generateAnswerFromGivenContext(
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
     },
     true,
   )
@@ -1363,6 +1572,7 @@ async function* generatePointQueryTimeExpansion(
   maxSummaryCount: number | undefined,
   userRequestsReasoning: boolean,
   eventRagSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1374,6 +1584,83 @@ async function* generatePointQueryTimeExpansion(
   rootSpan?.setAttribute("pageSize", pageSize)
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   rootSpan?.setAttribute("direction", classification.direction || "unknown")
+
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
+    try {
+      agentPromptData = JSON.parse(agentPrompt)
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+    }
+
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase():
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
+        }
+      }
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
@@ -1446,21 +1733,93 @@ async function* generatePointQueryTimeExpansion(
     // emailSearchSpan?.setAttribute(`promise.all[eventResults, results]-${iteration}`, true)
 
     const calenderSearchSpan = searchSpan?.startSpan("calender_search")
-    const [eventResults, results] = await Promise.all([
-      searchVespa(message, email, Apps.GoogleCalendar, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange: { from, to },
-        span: calenderSearchSpan,
-      }),
-      searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS"],
-        span: emailSearchSpan,
-      }),
-    ])
+    let results: VespaSearchResponse = {
+      root: {
+        id: "",
+        relevance: 0,
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: false,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0,
+        },
+        children: [],
+      },
+      trace: undefined,
+    }
+    let eventResults: VespaSearchResponse = {
+      root: {
+        id: "",
+        relevance: 0,
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: false,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0,
+        },
+        children: [],
+      },
+      trace: undefined,
+    }
+    if (!agentPrompt) {
+      ;[results, eventResults] = await Promise.all([
+        searchVespa(message, email, Apps.GoogleCalendar, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { from, to },
+          span: calenderSearchSpan,
+        }),
+        searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { to, from },
+          notInMailLabels: ["CATEGORY_PROMOTIONS"],
+          span: emailSearchSpan,
+        }),
+      ])
+    }
+
+    if (agentPrompt) {
+      if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
+        const [agentResults, agentEventResults] = await Promise.all([
+          searchVespaAgent(
+            message,
+            email,
+            Apps.GoogleCalendar,
+            null,
+            agentAppEnums,
+            {
+              limit: pageSize,
+              alpha: userAlpha,
+              timestampRange: { from, to },
+              span: calenderSearchSpan,
+              dataSourceIds: agentSpecificDataSourceIds,
+            },
+          ),
+          searchVespaAgent(message, email, null, null, agentAppEnums, {
+            limit: pageSize,
+            alpha: userAlpha,
+            timestampRange: { to, from },
+            notInMailLabels: ["CATEGORY_PROMOTIONS"],
+            span: emailSearchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          }),
+        ])
+        results.root.children = [
+          ...(results.root.children || []),
+          ...(agentResults.root.children || []),
+        ]
+        eventResults.root.children = [
+          ...(eventResults.root.children || []),
+          ...(agentEventResults.root.children || []),
+        ]
+      }
+    }
+
     emailSearchSpan?.setAttribute(
       "result_count",
       results?.root?.children?.length || 0,
@@ -1555,6 +1914,7 @@ async function* generatePointQueryTimeExpansion(
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
     })
 
     const answer = yield* processIterator(
@@ -1686,6 +2046,7 @@ async function* generateMetadataQueryAnswer(
   classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
+  agentPrompt?: string,
   maxIterations = 5,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1697,8 +2058,84 @@ async function* generateMetadataQueryAnswer(
   const isGenericItemFetch = classification.type === QueryType.GetItems
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
-  const isValidAppAndEntity =
-    isValidApp(app as Apps) && isValidEntity(entity as Entity)
+  const isValidAppOrEntity =
+    isValidApp(app as Apps) || isValidEntity(entity as any)
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
+    try {
+      agentPromptData = JSON.parse(agentPrompt)
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+    }
+
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase():
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
+        }
+      }
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
 
   // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
@@ -1735,7 +2172,7 @@ async function* generateMetadataQueryAnswer(
 
   // Determine search strategy based on conditions
   if (
-    !isValidAppAndEntity &&
+    !isValidAppOrEntity &&
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
@@ -1761,20 +2198,37 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
-      items =
-        (
-          await searchVespa(
-            classification.filterQuery,
-            email,
-            app as Apps,
-            entity as Entity,
-            {
-              ...searchOps,
-              offset: pageSize * iteration,
-              span: pageSpan,
-            },
-          )
-        ).root.children || []
+
+      let searchResults
+      if (!agentPrompt) {
+        searchResults = await searchVespa(
+          classification.filterQuery,
+          email,
+          app ?? null,
+          entity ?? null,
+          {
+            ...searchOps,
+            offset: pageSize * iteration,
+            span: pageSpan,
+          },
+        )
+      } else {
+        searchResults = await searchVespaAgent(
+          classification.filterQuery,
+          email,
+          app ?? null,
+          entity ?? null,
+          agentAppEnums,
+          {
+            ...searchOps,
+            offset: pageSize * iteration,
+            span: pageSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
+
+      items = searchResults.root.children || []
 
       Logger.info(
         `iteration-${iteration} retrieved documents length - ${items.length}`,
@@ -1835,7 +2289,7 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
-  } else if (isGenericItemFetch && isValidAppAndEntity) {
+  } else if (isGenericItemFetch && isValidAppOrEntity) {
     const userSpecifiedCountLimit = count
       ? Math.min(count, config.maxUserRequestCount)
       : 5
@@ -1847,18 +2301,34 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.GetItems}`)
 
-    items =
-      (
-        await getItems({
+    let searchResults
+    items = []
+    if (agentPrompt) {
+      if (agentAppEnums.find((x) => x == app)) {
+        searchResults = await getItems({
           email,
           schema,
-          app,
-          entity,
+          app: app ?? null,
+          entity: entity ?? null,
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
         })
-      ).root.children || []
+        items = searchResults!.root.children || []
+      }
+    }
+    else{
+      searchResults = await getItems({
+        email,
+        schema,
+        app: app ?? null,
+        entity: entity ?? null,
+        timestampRange,
+        limit: userSpecifiedCountLimit,
+        asc: sortDirection === "asc",
+      })
+      items = searchResults!.root.children || []
+    }
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -1893,7 +2363,7 @@ async function* generateMetadataQueryAnswer(
     return
   } else if (
     isFilteredItemSearch &&
-    isValidAppAndEntity &&
+    isValidAppOrEntity &&
     classification.filterQuery
   ) {
     // Specific metadata retrieval
@@ -1926,13 +2396,34 @@ async function* generateMetadataQueryAnswer(
         `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
       )
 
-      items =
-        (
-          await searchVespa(query, email, app as Apps, entity as any, {
+      let searchResults
+      if (!agentPrompt) {
+        searchResults = await searchVespa(
+          query,
+          email,
+          app ?? null,
+          entity ?? null,
+          {
             ...searchOptions,
             offset: pageSize * iteration,
-          })
-        ).root.children || []
+          },
+        )
+      } else {
+        searchResults = await searchVespaAgent(
+          query,
+          email,
+          app ?? null,
+          entity ?? null,
+          agentAppEnums,
+          {
+            ...searchOptions,
+            offset: pageSize * iteration,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
+
+      items = searchResults.root.children || []
 
       Logger.info(`Rank Profile : ${rankProfile}`)
 
@@ -2065,6 +2556,7 @@ export async function* UnderstandMessageAndAnswer(
   alpha: number,
   userRequestsReasoning: boolean,
   passedSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2105,6 +2597,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
+      agentPrompt,
     )
 
     let hasYieldedAnswer = false
@@ -2149,6 +2642,7 @@ export async function* UnderstandMessageAndAnswer(
       maxDefaultSummary,
       userRequestsReasoning,
       eventRagSpan,
+      agentPrompt,
     )
   } else {
     Logger.info("Iterative Rag : Query rewriting and time filtering")
@@ -2167,6 +2661,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       userRequestsReasoning,
       ragSpan,
+      agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
     )
   }
 }
@@ -2179,6 +2674,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   fileIds: string[],
   userRequestsReasoning: boolean,
   passedSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2199,6 +2695,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     alpha,
     fileIds,
     userRequestsReasoning,
+    agentPrompt,
     passedSpan,
   )
 }
@@ -2239,6 +2736,908 @@ const addErrMessageToMessage = async (
 
 const isMessageWithContext = (message: string) => {
   return message?.startsWith("[{") && message?.endsWith("}]")
+}
+
+export const AgentMessageApi = async (c: Context) => {
+  // we will use this in catch
+  // if the value exists then we send the error to the frontend via it
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("AgentMessageApi")
+
+  let stream: any
+  let chat: SelectChat
+  let assistantMessageId: string | null = null
+  let streamKey: string | null = null
+
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+
+    // @ts-ignore
+    const body = c.req.valid("query")
+    let {
+      message,
+      chatId,
+      modelId,
+      isReasoningEnabled,
+      agentId,
+    }: MessageReqType = body
+    // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId, // This workspaceId is the externalId from JWT
+      email,
+    )
+    const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
+
+    let agentPromptForLLM: string | undefined = undefined
+    let agentForDb: SelectAgent | null = null
+    if (agentId && isCuid(agentId)) {
+      // Use the numeric workspace.id for the database query
+      agentForDb = await getAgentByExternalId(db, agentId, workspace.id)
+      if (agentForDb) {
+        agentPromptForLLM = JSON.stringify(agentForDb)
+      }
+    }
+    const agentIdToStore = agentForDb ? agentForDb.externalId : null
+    const userRequestsReasoning = isReasoningEnabled
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
+    // Truncate table chats,connectors,nessages;
+    message = decodeURIComponent(message)
+    rootSpan.setAttribute("message", message)
+
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
+
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+
+    const chatCreationSpan = rootSpan.startSpan("chat_creation")
+
+    let title = ""
+    if (!chatId) {
+      const titleSpan = chatCreationSpan.startSpan("generate_title")
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+        titleSpan.setAttribute("cost", cost)
+      }
+      titleSpan.setAttribute("title", title)
+      titleSpan.end()
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+            agentId: agentIdToStore,
+          })
+
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds: fileIds,
+          })
+          return [chat, insertedMsg]
+        },
+      )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+      chatCreationSpan.end()
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
+          // we are updating the chat and getting it's value in one call itself
+
+          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let allMessages = await getChatMessages(tx, chatId)
+
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      Logger.info("Existing conversation, fetched previous messages")
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+      chatCreationSpan.end()
+    }
+    return streamSSE(
+      c,
+      async (stream) => {
+        streamKey = `${chat.externalId}` // Create the stream key
+        activeStreams.set(streamKey, stream) // Add stream to the map
+        Logger.info(`Added stream ${streamKey} to active streams map.`)
+        let wasStreamClosedPrematurely = false
+        const streamSpan = rootSpan.startSpan("stream_response")
+        streamSpan.setAttribute("chatId", chat.externalId)
+        try {
+          if (!chatId) {
+            const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+            titleUpdateSpan.end()
+          }
+
+          Logger.info("Chat stream started")
+          // we do not set the message Id as we don't have it
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+            }),
+          })
+
+          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+            Logger.info(
+              "User has selected some context with query, answering only based on that given context",
+            )
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let thinking = ""
+            let reasoning =
+              userRequestsReasoning &&
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.end()
+
+            const ragSpan = streamSpan.startSpan("rag_processing")
+
+            const understandSpan = ragSpan.startSpan("understand_message")
+
+            const iterator = UnderstandMessageAndAnswerForGivenContext(
+              email,
+              ctx,
+              message,
+              0.5,
+              fileIds,
+              userRequestsReasoning,
+              understandSpan,
+              agentPromptForLLM,
+            )
+            stream.writeSSE({
+              event: ChatSSEvents.Start,
+              data: "",
+            })
+
+            answer = ""
+            thinking = ""
+            reasoning = isReasoning && userRequestsReasoning
+            citations = []
+            citationMap = {}
+            let citationValues: Record<number, string> = {}
+            let count = 0
+            for await (const chunk of iterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
+                if (reasoning && chunk.reasoning) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                  // reasoningSpan.end()
+                }
+                if (!chunk.reasoning) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                Logger.info(
+                  `Found citations and sending it, current count: ${citations.length}`,
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+                citationValues[index] = item
+              }
+              count++
+            }
+            understandSpan.setAttribute("citation_count", citations.length)
+            understandSpan.setAttribute(
+              "citation_map",
+              JSON.stringify(citationMap),
+            )
+            understandSpan.setAttribute(
+              "citation_values",
+              JSON.stringify(citationValues),
+            )
+            understandSpan.end()
+            const answerSpan = ragSpan.startSpan("process_final_answer")
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
+            answerSpan.setAttribute("actual_answer", answer)
+            answerSpan.setAttribute("final_answer_length", answer.length)
+            answerSpan.end()
+            ragSpan.end()
+
+            if (answer || wasStreamClosedPrematurely) {
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking: thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(
+                `[AgentMessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              )
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: assistantMessageId,
+                }),
+              })
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
+
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Can you please make your query more specific?",
+              })
+              await addErrMessageToMessage(
+                lastMessage,
+                "Can you please make your query more specific?",
+              )
+
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+              errorSpan.end()
+            }
+
+            const endSpan = streamSpan.startSpan("send_end_event")
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+          } else {
+            const messagesWithNoErrResponse = messages
+              .slice(0, messages.length - 1)
+              .filter((msg) => !msg?.errorMessage)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              ) // filter out assistant messages with no content
+              .map((msg) => {
+                // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+                // then we should not give that exact stringified message as history
+                // We convert it into a AI friendly string only for giving it to LLM
+                const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
+                if (
+                  msg.messageRole === "user" &&
+                  fileIds &&
+                  fileIds.length > 0
+                ) {
+                  const originalMsg = msg.message
+                  const selectedContext = isContextSelected(originalMsg)
+                  msg.message = selectedContext
+                    ? buildUserQuery(selectedContext)
+                    : originalMsg
+                }
+                return {
+                  role: msg.messageRole as ConversationRole,
+                  content: [{ text: msg.message }],
+                }
+              })
+
+            Logger.info(
+              "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+            )
+            const searchOrAnswerIterator =
+              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: messagesWithNoErrResponse,
+                agentPrompt: agentPromptForLLM,
+              })
+
+            // TODO: for now if the answer is from the conversation itself we don't
+            // add any citations for it, we can refer to the original message for citations
+            // one more bug is now llm automatically copies the citation text sometimes without any reference
+            // leads to [NaN] in the answer
+            let currentAnswer = ""
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let queryFilters = {
+              app: "",
+              entity: "",
+              startTime: "",
+              endTime: "",
+              count: 0,
+              sortDirection: "",
+            }
+            let parsed = {
+              answer: "",
+              queryRewrite: "",
+              temporalDirection: null,
+              filter_query: "",
+              type: "",
+              filters: queryFilters,
+            }
+
+            let thinking = ""
+            let reasoning =
+              userRequestsReasoning &&
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            let buffer = ""
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            for await (const chunk of searchOrAnswerIterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
+                      })
+                    }
+                  }
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+            }
+
+            conversationSpan.setAttribute("answer_found", parsed.answer)
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            conversationSpan.end()
+
+            if (parsed.answer === null || parsed.answer === "") {
+              const ragSpan = streamSpan.startSpan("rag_processing")
+              if (parsed.queryRewrite) {
+                Logger.info(
+                  `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
+                )
+                message = parsed.queryRewrite
+                Logger.info(`Rewritten query: ${message}`)
+                ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+              } else {
+                Logger.info(
+                  "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+                )
+              }
+              const classification: TemporalClassifier & QueryRouterResponse = {
+                direction: parsed.temporalDirection,
+                type: parsed.type as QueryType,
+                filterQuery: parsed.filter_query,
+                filters: {
+                  ...parsed?.filters,
+                  app: parsed.filters?.app as Apps,
+                  entity: parsed.filters?.entity as any,
+                },
+              }
+
+              Logger.info(
+                `Classifying the query as:, ${JSON.stringify(classification)}`,
+              )
+              const understandSpan = ragSpan.startSpan("understand_message")
+              const iterator = UnderstandMessageAndAnswer(
+                email,
+                ctx,
+                message,
+                classification,
+                messagesWithNoErrResponse,
+                0.5,
+                userRequestsReasoning,
+                understandSpan,
+                agentPromptForLLM,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              answer = ""
+              thinking = ""
+              reasoning = isReasoning && userRequestsReasoning
+              citations = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+              for await (const chunk of iterator) {
+                if (stream.closed) {
+                  Logger.info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  if (reasoning && chunk.reasoning) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                    // reasoningSpan.end()
+                  }
+                  if (!chunk.reasoning) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.citation) {
+                  const { index, item } = chunk.citation
+                  citations.push(item)
+                  citationMap[index] = citations.length - 1
+                  Logger.info(
+                    `Found citations and sending it, current count: ${citations.length}`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                  citationValues[index] = item
+                }
+              }
+              understandSpan.setAttribute("citation_count", citations.length)
+              understandSpan.setAttribute(
+                "citation_map",
+                JSON.stringify(citationMap),
+              )
+              understandSpan.setAttribute(
+                "citation_values",
+                JSON.stringify(citationValues),
+              )
+              understandSpan.end()
+              const answerSpan = ragSpan.startSpan("process_final_answer")
+              answerSpan.setAttribute(
+                "final_answer",
+                processMessage(answer, citationMap),
+              )
+              answerSpan.setAttribute("actual_answer", answer)
+              answerSpan.setAttribute("final_answer_length", answer.length)
+              answerSpan.end()
+              ragSpan.end()
+            } else if (parsed.answer) {
+              answer = parsed.answer
+            }
+
+            if (answer || wasStreamClosedPrematurely) {
+              // Determine if a message (even partial) should be saved
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking: thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(
+                `[AgentMessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              )
+
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: assistantMessageId,
+                }),
+              })
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
+
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
+              })
+              await addErrMessageToMessage(
+                lastMessage,
+                "Oops, something went wrong. Please try rephrasing your question or ask something else.",
+              )
+
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+              errorSpan.end()
+            }
+
+            const endSpan = streamSpan.startSpan("send_end_event")
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+          }
+        } catch (error) {
+          const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
+          streamErrorSpan.addEvent("error", {
+            message: getErrorMessage(error),
+            stack: (error as Error).stack || "",
+          })
+          const errFomMap = handleError(error)
+          const allMessages = await getChatMessages(db, chat?.externalId)
+          const lastMessage = allMessages[allMessages.length - 1]
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: lastMessage.externalId,
+            }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: errFomMap,
+          })
+
+          // Add the error message to last user message
+          await addErrMessageToMessage(lastMessage, errFomMap)
+
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          Logger.error(
+            error,
+            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+          )
+          streamErrorSpan.end()
+          streamSpan.end()
+          rootSpan.end()
+        } finally {
+          // Ensure stream is removed from the map on completion or error
+          if (streamKey && activeStreams.has(streamKey)) {
+            activeStreams.delete(streamKey)
+            Logger.info(`Removed stream ${streamKey} from active streams map.`)
+          }
+        }
+      },
+      async (err, stream) => {
+        const streamErrorSpan = rootSpan.startSpan(
+          "handle_stream_callback_error",
+        )
+        streamErrorSpan.addEvent("error", {
+          message: getErrorMessage(err),
+          stack: (err as Error).stack || "",
+        })
+        const errFromMap = handleError(err)
+        // Use the stored assistant message ID if available when handling callback error
+        const allMessages = await getChatMessages(db, chat?.externalId)
+        const lastMessage = allMessages[allMessages.length - 1]
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        const errorChatId = chat?.externalId || "unknown"
+
+        if (errorChatId !== "unknown" && errorMsgId !== "unknown") {
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: errorChatId,
+              messageId: errorMsgId,
+            }),
+          })
+          // Try to get the last message again for error reporting
+          const allMessages = await getChatMessages(db, errorChatId)
+          if (allMessages.length > 0) {
+            const lastMessage = allMessages[allMessages.length - 1]
+            await addErrMessageToMessage(lastMessage, errFromMap)
+          }
+        }
+        await stream.writeSSE({
+          event: ChatSSEvents.Error,
+          data: errFromMap,
+        })
+        await addErrMessageToMessage(lastMessage, errFromMap)
+
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
+        // Ensure stream is removed from the map in the error callback too
+        if (streamKey && activeStreams.has(streamKey)) {
+          activeStreams.delete(streamKey)
+          Logger.info(
+            `Removed stream ${streamKey} from active streams map in error callback.`,
+          )
+        }
+        streamErrorSpan.end()
+        rootSpan.end()
+      },
+    )
+  } catch (error) {
+    const errorSpan = rootSpan.startSpan("handle_top_level_error")
+    errorSpan.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    const errMsg = getErrorMessage(error)
+    // TODO: add more errors like bedrock, this is only openai
+    const errFromMap = handleError(error)
+    // @ts-ignore
+    if (chat?.externalId) {
+      const allMessages = await getChatMessages(db, chat?.externalId)
+      // Add the error message to last user message
+      if (allMessages.length > 0) {
+        const lastMessage = allMessages[allMessages.length - 1]
+        // Use the stored assistant message ID if available for metadata
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+            messageId: errorMsgId,
+          }),
+        })
+        await addErrMessageToMessage(lastMessage, errFromMap)
+      }
+    }
+    if (error instanceof APIError) {
+      // quota error
+      if (error.status === 429) {
+        Logger.error(error, "You exceeded your current quota")
+        if (stream) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: errFromMap,
+          })
+        }
+      }
+    } else {
+      Logger.error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
+      throw new HTTPException(500, {
+        message: "Could not create message or Chat",
+      })
+    }
+    // Ensure stream is removed from the map in the top-level catch block
+    if (streamKey && activeStreams.has(streamKey)) {
+      activeStreams.delete(streamKey)
+      Logger.info(
+        `Removed stream ${streamKey} from active streams map in top-level catch.`,
+      )
+    }
+    errorSpan.end()
+    rootSpan.end()
+  }
 }
 
 function formatMessagesForLLM(
@@ -2317,7 +3716,18 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, isReasoningEnabled }: MessageReqType = body
+    let {
+      message,
+      chatId,
+      modelId,
+      isReasoningEnabled,
+      agentId,
+    }: MessageReqType = body
+    const agentPrompt = agentId && isCuid(agentId) ? agentId : ""
+
+    if (agentPrompt) {
+      return AgentMessageApi(c)
+    }
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
       throw new HTTPException(400, {
@@ -2381,6 +3791,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            agentId: agentPrompt,
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -2691,6 +4102,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: llmFormattedMessages,
+                agentPrompt: agentPrompt,
               })
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -2893,7 +4305,7 @@ export const MessageApi = async (c: Context) => {
                 } else if (
                   parsedMessage.data.queryRouterClassification &&
                   Object.keys(parsedMessage.data.queryRouterClassification)
-                    .length
+                    .length > 2
                 ) {
                   Logger.info(
                     `Reusing previous message classification for follow-up query ${JSON.stringify(
@@ -3016,7 +4428,7 @@ export const MessageApi = async (c: Context) => {
                   ...previousClassification,
                   isFollowUp,
                 }
-              } else if (classification) {
+              } else if (Object.keys(classification).length > 2) {
                 queryRouterClassification = classification
               }
 

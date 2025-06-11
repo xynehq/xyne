@@ -47,9 +47,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
 
     return (
       <div
-        className={`flex flex-col bg-white ${
+        className={`flex flex-col bg-white dark:bg-[#1E1E1E] ${
           hasSearched
-            ? "pt-[12px] border-b-[1px] border-b-[#D3DAE0] justify-center sticky top-0 z-10"
+            ? "pt-[12px] border-b-[1px] border-b-[#D3DAE0] dark:border-b-gray-700 justify-center sticky top-0 z-10"
             : ""
         }`}
       >
@@ -62,14 +62,14 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
             <div className="relative w-full">
               <div
                 className={`flex w-full items-center ${
-                  hasSearched ? "bg-[#F0F4F7]" : "bg-white"
+                  hasSearched ? "bg-transparent dark:bg-transparent" : "bg-white dark:bg-[#1E1E1E]"
                 } ${
                   autocompleteResults.length > 0
                     ? "rounded-t-lg border-b-0"
                     : "rounded-[20px]"
-                }  ${hasSearched ? "" : "border border-[#D3DAE0]"} h-[52px]`}
+                }  border ${hasSearched ? "border-transparent dark:border-gray-700" : "border-[#D3DAE0] dark:border-gray-700"} h-[52px]`}
               >
-                <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
+                <Search className="text-[#AEBAD3] dark:text-gray-500 ml-4 mr-2" size={18} />
                 <input
                   ref={inputRef}
                   placeholder="Search anything across apps..."
@@ -78,8 +78,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     setQuery(e.target.value)
                     setAutocompleteQuery(e.target.value)
                   }}
-                  className={`text-[#1C1D1F] flex-grow text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] leading-[24px] focus:outline-none ${
-                    hasSearched ? "bg-[#F0F4F7]" : ""
+                  className={`text-[#1C1D1F] dark:text-[#F1F3F4] flex-grow text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] dark:placeholder-gray-500 font-[450] leading-[24px] focus:outline-none ${
+                    hasSearched ? "bg-transparent dark:bg-transparent" : "bg-transparent dark:bg-transparent" 
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -106,13 +106,13 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                         navigateToSearch()
                       }
                     }}
-                    className="flex mr-2 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-[20px] w-[32px] h-[32px] items-center justify-center"
+                    className="flex mr-2 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-[20px] w-[32px] h-[32px] items-center justify-center"
                   >
-                    <ArrowRight className="text-white" size={16} />
+                    <ArrowRight className="text-white dark:text-slate-200" size={16} />
                   </button>
                 ) : (
                   <X
-                    className="text-[#ACB8D1] cursor-pointer mr-[16px]"
+                    className="text-[#ACB8D1] dark:text-gray-500 cursor-pointer mr-[16px]"
                     size={20}
                     onClick={(e) => {
                       setQuery("")
@@ -123,7 +123,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 {!!autocompleteResults?.length && (
                   <div
                     ref={autocompleteRef}
-                    className="absolute top-full w-full left-0 bg-white rounded-b-lg border border-t-0 border-[#AEBAD3]"
+                    className="absolute top-full w-full left-0 bg-white dark:bg-slate-800 rounded-b-lg border border-t-0 border-[#AEBAD3] dark:border-gray-700"
                   >
                     {autocompleteResults.map((result: any, index: number) => (
                       <AutocompleteElement

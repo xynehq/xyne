@@ -205,3 +205,4 @@ server/.venv/*
 *routeTree.gen*
 
 deployment/grafana/grafana-storage
+deployment/loki/*

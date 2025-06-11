@@ -89,6 +89,20 @@ services:
     networks:
       - xyne
     restart: always
+    
+  loki:
+    image: grafana/loki:3.4.1
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/mnt/config/loki-config.yaml
+      - ./loki:/tmp/loki
+    command: --config.file=/mnt/config/loki-config.yaml
+    restart: unless-stopped
+    networks:
+      - xyne
+
 networks:
   xyne:
     driver: bridge
@@ -96,4 +110,6 @@ volumes:
   vespa-data:
     driver: local
   grafana-storage:  
+    driver: local
+  loki_data:
     driver: local

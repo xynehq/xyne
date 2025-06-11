@@ -79,18 +79,18 @@ const formatEmailDisplay = (fromString: string) => {
     return (
       <a
         target="_blank"
-        className="text-[#2067F5]"
+        className="text-[#2067F5] dark:text-blue-400"
         rel="noopener noreferrer"
         href={linkHref}
       >
-        <p className="text-left text-sm text-[#464B53] leading-5">
+        <p className="text-left text-sm text-[#464B53] dark:text-slate-300 leading-5">
           {textToDisplay}
         </p>
       </a>
     )
   } else {
     return (
-      <p className="text-left text-sm text-[#464B53] leading-5">
+      <p className="text-left text-sm text-[#464B53] dark:text-slate-300 leading-5">
         {textToDisplay}
       </p>
     )
@@ -116,7 +116,7 @@ export const SearchResult = ({
             href={result.url ?? ""}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-blue-800 space-x-2"
+            className="flex items-center text-blue-800 dark:text-blue-400 space-x-2"
           >
             {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
             {result.title}
@@ -131,16 +131,16 @@ export const SearchResult = ({
           <div className="flex items-center">
             <a
               target="_blank"
-              className="text-[#2067F5]"
+              className="text-[#2067F5] dark:text-blue-400"
               rel="noopener noreferrer"
               href={`https://contacts.google.com/${result.ownerEmail}`}
             >
-              <p className="text-left text-sm text-[#464B53] leading-5">
+              <p className="text-left text-sm text-[#464B53] dark:text-slate-300 leading-5">
                 {result.owner}
               </p>
             </a>
-            <span className="text-[#999] mx-1.5">•</span>
-            <span className="text-sm text-gray-600 leading-5">
+            <span className="text-[#999] dark:text-gray-500 mx-1.5">•</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400 leading-5">
               {formatDisplayDate(result.updatedAt)}
             </span>
           </div>
@@ -156,10 +156,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
@@ -182,7 +182,7 @@ export const SearchResult = ({
             href={`https://contacts.google.com/${result.email}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5]"
+            className="flex items-center text-[#2067F5] dark:text-blue-400"
           >
             {/* TODO: if photoLink doesn't exist then show icon */}
             <img
@@ -196,10 +196,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
@@ -223,17 +223,17 @@ export const SearchResult = ({
             href={`https://mail.google.com/mail/u/0/#inbox/${result.docId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5]"
+            className="flex items-center text-[#2067F5] dark:text-blue-400"
           >
             {trimmedSubject(result.subject)}
           </a>
         </div>
         <div className="flex flex-row items-center mt-1 ml-[44px]">
-          <Mail className="mr-2 w-[16px] h-[16px] text-gray-500" />
+          <Mail className="mr-2 w-[16px] h-[16px] text-gray-500 dark:text-gray-400" />
           <div className="flex items-center">
             {formatEmailDisplay(result.from)}
-            <span className="text-[#999] mx-1.5">•</span>
-            <span className="text-sm text-gray-600 leading-5">
+            <span className="text-[#999] dark:text-gray-500 mx-1.5">•</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400 leading-5">
               {formatDisplayDate(result.timestamp)}
             </span>
           </div>
@@ -249,10 +249,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
@@ -276,7 +276,7 @@ export const SearchResult = ({
             href={result.url ?? ""}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5]"
+            className="flex items-center text-[#2067F5] dark:text-blue-400"
           >
             {result.name}
           </a>
@@ -285,14 +285,14 @@ export const SearchResult = ({
           {/* Placeholder for event owner/creator if available in the future */}
           {/* <img referrerPolicy="no-referrer" className="mr-2 w-[16px] h-[16px] rounded-full" src={""} /> */}
           {/* <div className="flex items-center"> */}
-          {/*   <p className="text-left text-sm text-[#464B53] leading-5">Event Creator</p> */}
-          {/*   <span className="text-[#999] mx-1.5">•</span> */}
+          {/*   <p className="text-left text-sm text-[#464B53] dark:text-slate-300 leading-5">Event Creator</p> */}
+          {/*   <span className="text-[#999] dark:text-gray-500 mx-1.5">•</span> */}
           {/* </div> */}
-          <span className="text-sm text-gray-600 leading-5">
+          <span className="text-sm text-gray-600 dark:text-gray-400 leading-5">
             {formatDisplayDate(result.updatedAt)}
           </span>
         </div>
-        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
+        <p className="text-left text-sm mt-1 text-[#464B53] dark:text-slate-300 line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
           {Array.isArray(result.chunks_summary) &&
             !!result.chunks_summary.length &&
             result.chunks_summary.map((summary, idx) => (
@@ -305,10 +305,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
@@ -332,7 +332,7 @@ export const SearchResult = ({
             href={`https://mail.google.com/mail/u/0/#inbox/${result.mailId}?projector=1&messagePartId=0.${result.partId}&disp=safe&zw`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5]"
+            className="flex items-center text-[#2067F5] dark:text-blue-400"
           >
             {result.filename}
           </a>
@@ -348,10 +348,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
@@ -374,7 +374,7 @@ export const SearchResult = ({
             href={`https://${result.domain}.slack.com/archives/${result.channelId}/p${result.createdAt}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-blue-800 space-x-2"
+            className="flex items-center text-blue-800 dark:text-blue-400 space-x-2"
           >
             {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
           </a>
@@ -387,11 +387,11 @@ export const SearchResult = ({
           ></img>
           <a
             target="_blank"
-            className="text-[#2067F5]"
+            className="text-[#2067F5] dark:text-blue-400"
             rel="noopener noreferrer"
             href={`https://${result.domain}.slack.com/team/${result.userId}`}
           >
-            <p className="text-left text-sm pt-1 text-[#464B53]">
+            <p className="text-left text-sm pt-1 text-[#464B53] dark:text-slate-300">
               {result.name}
             </p>
           </a>
@@ -402,10 +402,10 @@ export const SearchResult = ({
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
-            <summary className="text-gray-500 cursor-pointer">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
               {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,

@@ -65,7 +65,6 @@ import {
   insertUser,
   ifDocumentsExist,
   ifDocumentsExistInSchema,
-  fetchAllDocumentsFromSchema,
   ifDocumentsExistInChatContainer,
   GetDocument,
 } from "@/search/vespa"
@@ -368,7 +367,7 @@ export const handleSlackChanges = async (
 
         // Get all conversations
         const conversations = (
-          (await getAllConversations(client, true, new AbortController())) || []
+          (await getAllConversations(client, true, new AbortController(), email)) || []
         ).filter((conversation) => {
           return (
             conversation.is_mpim ||
@@ -440,6 +439,7 @@ export const handleSlackChanges = async (
                 user,
                 client,
                 channel,
+                email
               )
               Logger.info(
                 `Current members for channel ${channel.name || channel.id}: ${currentMemberIds.length}`,

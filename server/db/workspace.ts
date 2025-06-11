@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2"
-import { workspaces } from "./schema"
+import { workspaces } from "@/db/schema"
 import { db } from "./client"
 import { eq } from "drizzle-orm"
 import type { PgTransaction } from "drizzle-orm/pg-core"

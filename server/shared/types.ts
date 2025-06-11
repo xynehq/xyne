@@ -57,6 +57,7 @@ export type {
   PublicUser,
   SelectPublicChat,
   PublicWorkspace,
+  SelectPublicAgent,
   // @ts-ignore
 } from "@/db/schema"
 
@@ -448,3 +449,7 @@ export type AgentReasoningStep =
     TimeSearch = "time_search",
   }
   
+export enum IngestionType {
+  fullIngestion = "full_ingestion",
+  partialIngestion = "partial_ingestion",
+}

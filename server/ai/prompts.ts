@@ -423,8 +423,9 @@ If information is missing, unclear, or the query lacks context:
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
+
+The current date for your information is ${getDateForAI()}.
 
 You are an AI assistant with access to internal workspace data. You have access to the following types of data:
 
@@ -1246,7 +1247,8 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
+The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:

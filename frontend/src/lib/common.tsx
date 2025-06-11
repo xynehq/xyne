@@ -52,7 +52,7 @@ export const getIcon = (
     } else if (entity === DriveEntity.Folder) {
       return (
         <Folder
-          className="h-[17px] w-[17px] mr-2"
+          className="h-[17px] w-[17px] mr-2 dark:fill-[#F1F3F4]"
           fill="rgb(196, 199, 197)"
           stroke="none"
         />
@@ -61,7 +61,7 @@ export const getIcon = (
       entity === GooglePeopleEntity.Contacts ||
       entity === GooglePeopleEntity.OtherContacts
     ) {
-      return <Users stroke="#464B53" size={12} className="mr-[10px]" />
+      return <Users stroke="#464B53" size={12} className="mr-[10px] dark:stroke-[#F1F3F4]" />
     } else if (entity === DriveEntity.WordDocument) {
       return <img className={classNameVal} src={Docx} />
     } else if (entity === DriveEntity.PDF) {
@@ -78,14 +78,19 @@ export const getIcon = (
   } else if (app === Apps.Gmail) {
     // ...existing Gmail cases...
     if (isMailAttachment(entity as Entity)) {
-      return <Paperclip className={classNameVal} fill="rgb(196, 199, 197)" />
+      return (
+        <Paperclip
+          className={`${classNameVal} dark:fill-[#F1F3F4]`}
+          fill="rgb(196, 199, 197)"
+        />
+      )
     }
     return <img className={classNameVal} src={Gmail} />
-  // } else if (app === Apps.Notion) {
-  //   // ...existing Notion cases...
-  //   if (entity === NotionEntity.Page) {
-  //     return <img className={classNameVal} src={NotionPageSvg} />
-  //   }
+    // } else if (app === Apps.Notion) {
+    //   // ...existing Notion cases...
+    //   if (entity === NotionEntity.Page) {
+    //     return <img className={classNameVal} src={NotionPageSvg} />
+    //   }
   } else if (app === Apps.GoogleCalendar) {
     // ...existing GoogleCalendar cases...
     if (entity === CalendarEntity.Event) {
