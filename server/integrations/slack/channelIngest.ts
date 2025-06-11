@@ -49,7 +49,12 @@ import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
 import { count, eq } from "drizzle-orm"
 import { StatType, Tracker } from "@/integrations/tracker"
 import { sendWebsocketMessage } from "../metricStream"
-import { AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
+import {
+  AuthType,
+  ConnectorStatus,
+  SyncJobStatus,
+  IngestionType,
+} from "@/shared/types"
 import pLimit from "p-limit"
 import { IngestionState } from "../ingestionState"
 import { insertSyncJob } from "@/db/syncJob"
@@ -820,6 +825,7 @@ export const handleSlackChannelIngestion = async (
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
+          IngestionType: IngestionType.partialIngestion,
           progress: tracker.getProgress(),
           userStats: tracker.getOAuthProgress().userStats,
           startTime: tracker.getStartTime(),

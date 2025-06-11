@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType } from "shared/types"
+import { Apps, AuthType, IngestionType } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
@@ -31,7 +31,6 @@ import { useQuery } from "@tanstack/react-query"
 import { OAuthModal } from "@/oauth"
 import { ConnectorStatus } from "shared/types"
 import { OAuthIntegrationStatus } from "@/types"
-import { Progress } from "@/components/ui/progress"
 import {
   Table,
   TableBody,
@@ -473,9 +472,20 @@ export const Slack = ({
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(OAuthIntegrationStatus.Provider)
   const [slackProgress, setSlackProgress] = useState<number>(0)
-  const [slackUserStats, setSlackUserStats] = useState<{
+  const [, setSlackUserStats] = useState<{
     [email: string]: any
   }>({})
+  const [slackUserNormalIngestionStats, setSlackUserNormalIngestionStats] =
+    useState<{
+      [email: string]: any
+    }>({})
+  const [slackUserPartialIngestionStats, setSlackUserPartialIngestionStats] =
+    useState<{
+      [email: string]: any
+    }>({})
+  const [, setIngestionType] = useState<IngestionType>(
+    IngestionType.fullIngestion,
+  )
   const [isManualIngestionActive, setIsManualIngestionActive] = useState(false)
   const [isRegularIngestionActive, setIsRegularIngestionActive] =
     useState(false)
@@ -545,7 +555,44 @@ export const Slack = ({
         const dataMsg = JSON.parse(e.data)
         const statusJson = JSON.parse(dataMsg.message)
         setSlackProgress(statusJson.progress ?? 0)
-        setSlackUserStats(statusJson.userStats ?? {})
+        if (statusJson.IngestionType) {
+          if (statusJson.IngestionType === IngestionType.fullIngestion)
+            setSlackUserNormalIngestionStats((prevStats) => {
+              if (
+                statusJson.userStats &&
+                Object.keys(statusJson.userStats).length > 0
+              ) {
+                return statusJson.userStats
+              }
+              return Object.keys(prevStats).length > 0 ? prevStats : {}
+            })
+          else
+            setSlackUserPartialIngestionStats((prevStats) => {
+              if (
+                statusJson.userStats &&
+                Object.keys(statusJson.userStats).length > 0
+              ) {
+                return statusJson.userStats
+              }
+              return Object.keys(prevStats).length > 0 ? prevStats : {}
+            })
+        }
+        setSlackUserStats((prevStats) => {
+          // If new userStats are provided and are not empty, update the state.
+          if (
+            statusJson.userStats &&
+            Object.keys(statusJson.userStats).length > 0
+          ) {
+            return statusJson.userStats
+          }
+          // Otherwise, if new userStats are empty or missing,
+          // keep the previous stats if they already had data.
+          // If previous stats were also empty, then return an empty object.
+          return Object.keys(prevStats).length > 0 ? prevStats : {}
+        })
+        setIngestionType(
+          statusJson.IngestionType ?? IngestionType.fullIngestion,
+        )
       })
 
       socket?.addEventListener("close", (e) => {
@@ -668,20 +715,20 @@ export const Slack = ({
             />
           </Tabs>
 
-          {/* Show regular ingestion stats above the accordion */}
-          {Object.keys(slackUserStats).length > 0 && (
+          {Object.keys(slackUserNormalIngestionStats).length > 0 && (
             <div className="mt-4 w-full">
               <p className="mb-2 dark:text-gray-300">
-                Slack Integration Progress: {slackProgress}%
+                Slack Integration Progress
               </p>
-              <Progress value={slackProgress} className="w-[60%] mb-4" />
+              {/* <Progress value={slackProgress} className="w-[60%] mb-4" /> */}
               <SlackUserStatsTable
-                userStats={slackUserStats}
+                userStats={slackUserNormalIngestionStats}
                 type={AuthType.OAuth}
               />
             </div>
           )}
 
+          {/* Accordion for Manual Ingestion */}
           <Accordion type="single" collapsible className="w-full mt-4">
             <AccordionItem value="manual-ingestion">
               <AccordionTrigger>Manual Ingestion</AccordionTrigger>
@@ -695,7 +742,7 @@ export const Slack = ({
                     isManualIngestionActive={isManualIngestionActive}
                     setIsManualIngestionActive={setIsManualIngestionActive}
                     slackProgress={slackProgress}
-                    slackUserStats={slackUserStats}
+                    slackUserStats={slackUserPartialIngestionStats}
                   />
                 ) : (
                   <p>Please connect Slack OAuth to enable manual ingestion.</p>
@@ -704,20 +751,17 @@ export const Slack = ({
             </AccordionItem>
           </Accordion>
 
-          {/* Show manual ingestion stats below the accordion */}
-          {isManualIngestionActive &&
-            Object.keys(slackUserStats).length > 0 && (
-              <div className="mt-4 w-full">
-                <p className="mb-2">
-                  Manual Ingestion Progress: {slackProgress}%
-                </p>
-                <Progress value={slackProgress} className="w-[60%] mb-4" />
-                <SlackUserStatsTable
-                  userStats={slackUserStats}
-                  type={AuthType.OAuth}
-                />
-              </div>
-            )}
+          {/* Show manual ingestion stats - always show if there's data */}
+          {Object.keys(slackUserPartialIngestionStats).length > 0 && (
+            <div className="mt-4 w-full">
+              <p className="mb-2">Manual Ingestion Progress</p>
+              {/* <Progress value={slackProgress} className="w-[60%] mb-4" /> */}
+              <SlackUserStatsTable
+                userStats={slackUserPartialIngestionStats}
+                type={AuthType.OAuth}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
