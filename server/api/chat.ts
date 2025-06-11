@@ -4393,11 +4393,11 @@ export const MessageWithToolsApi = async (c: Context) => {
         case AgentReasoningStepType.AnalyzingQuery:
           return step.details
         case AgentReasoningStepType.Iteration:
-          return `### Iteration ${step.iteration}`
+          return `### Iteration ${step.iteration} \n`
         case AgentReasoningStepType.Planning:
-          return step.details // e.g., "Planning next step..."
+          return step.details + "\n" // e.g., "Planning next step..."
         case AgentReasoningStepType.ToolSelected:
-          return `Tool selected: ${step.toolName}`
+          return `Tool selected: ${step.toolName} \n`
         case AgentReasoningStepType.ToolParameters:
           const params = Object.entries(step.parameters)
             .map(
@@ -4405,28 +4405,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                 `• ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
             )
             .join("\n")
-          return `Parameters:\n${params}`
+          return `Parameters:\n${params} \n`
         case AgentReasoningStepType.ToolExecuting:
-          return `Executing tool: ${step.toolName}...`
+          return `Executing tool: ${step.toolName}...\n`
         case AgentReasoningStepType.ToolResult:
           let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
           if (step.itemsFound !== undefined) {
             resultText += ` (Found ${step.itemsFound} item(s))`
           }
           if (step.error) {
-            resultText += `\nError: ${step.error}`
+            resultText += `\nError: ${step.error}\n`
           }
-          return resultText
+          return resultText + "\n"
         case AgentReasoningStepType.Synthesis:
-          return step.details // e.g., "Synthesizing answer from X fragments..."
+          return step.details + "\n" // e.g., "Synthesizing answer from X fragments..."
         case AgentReasoningStepType.ValidationError:
-          return `Validation Error: ${step.details}`
+          return `Validation Error: ${step.details} \n`
         case AgentReasoningStepType.BroadeningSearch:
-          return `Broadening Search: ${step.details}`
+          return `Broadening Search: ${step.details}\n`
         case AgentReasoningStepType.LogMessage:
-          return step.message
+          return step.message + "\n"
         default:
-          return "Unknown reasoning step"
+          return "Unknown reasoning step"  
       }
     }
     interface MinimalAgentFragment {
@@ -5385,7 +5385,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           structuredReasoningSteps.push(reasoningStep)
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
-            data: JSON.stringify(reasoningStep),
+            data: convertReasoningStepToText(reasoningStep),
           })
         }
 
@@ -5496,20 +5496,20 @@ export const MessageWithToolsApi = async (c: Context) => {
           let currentAnswer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = {
-            answer: "",
-            tool: "",
-            arguments: {} as any,
-          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-          let buffer = ""
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
           const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
+            let buffer = ""
+            let parsed = {
+              answer: "",
+              tool: "",
+              arguments: {} as any,
+            }
             iterationCount++
             console.log(iterationCount, "iterationCount")
             await logAndStreamReasoning({
@@ -5517,13 +5517,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               iteration: iterationCount,
             })
 
-            const reasoningLog = structuredReasoningSteps
-              .map(convertReasoningStepToText)
-              .join("\n")
-
-            // 2. Build a summary of the evidence (what the agent has found).
-            // This is crucial for the LLM to assess if the context is sufficient
-            // and to get the docIds for the `excludedIds` parameter.
             let loopWarningPrompt = ""
             const evidenceSummary =
               gatheredFragments.length > 0
@@ -5817,7 +5810,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     // Populate the unified response object for the MCP tool
                     toolExecutionResponse = {
-                      result: `Tool ${toolName} executed. Summary: ${formattedContent.substring(0, 200)}...`,
+                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(0, 200)}...`,
                       contexts: newFragments,
                     }
                   } catch (error) {
@@ -5834,12 +5827,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                 }
               }
-              parsed = {
-                answer: "",
-                tool: "",
-                arguments: {} as any,
-              }
-              buffer = ""
               toolExecutionSpan.end()
 
               // 3. UNIFIED RESPONSE PROCESSING AND STATE UPDATE
@@ -5897,7 +5884,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                   synthesisState:
                     | ContextSysthesisState.Complete
                     | ContextSysthesisState.Partial
-                    | ContextSysthesisState.NotFound
+                    | ContextSysthesisState.NotFound,
+                  answer: string | null,
                 }
                 let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -5921,11 +5909,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     )
 
                   if (synthesisResponse.text) {
-                    // This nested try/catch handles JSON parsing errors specifically
                     try {
                       parseSynthesisOutput = jsonParseLLMOutput(
                         synthesisResponse.text,
                       )
+                      console.log(parseSynthesisOutput, "parseSynthesisOutput")
                       if (
                         !parseSynthesisOutput ||
                         !parseSynthesisOutput.synthesisState
@@ -5936,6 +5924,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         // Default to partial to force another iteration, which is safer
                         parseSynthesisOutput = {
                           synthesisState: ContextSysthesisState.Partial,
+                          answer: null,
                         }
                       }
                     } catch (jsonError) {
@@ -5946,12 +5935,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                       // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
                       parseSynthesisOutput = {
                         synthesisState: ContextSysthesisState.NotFound,
+                        answer: parseSynthesisOutput?.answer || "",
                       }
                     }
                   } else {
                     Logger.error("Synthesis LLM call returned no text.")
                     parseSynthesisOutput = {
                       synthesisState: ContextSysthesisState.Partial,
+                      answer: ""
                     }
                   }
                 } catch (synthesisError) {
@@ -5959,9 +5950,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                     synthesisError,
                     "Error during synthesis LLM call.",
                   )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
+                  })
                   // If the call itself fails, we must assume the context is insufficient.
                   parseSynthesisOutput = {
                     synthesisState: ContextSysthesisState.Partial,
+                    answer: parseSynthesisOutput?.answer || ""
                   }
                 }
 
@@ -5969,7 +5965,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                   type: AgentReasoningStepType.LogMessage,
                   message: `Synthesis result: ${parseSynthesisOutput.synthesisState}`,
                 })
-
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: ` Synthesis: ${parseSynthesisOutput.answer || "No Synthesis details"}`,
+                })
                 const isContextSufficient =
                   parseSynthesisOutput.synthesisState ===
                   ContextSysthesisState.Complete
@@ -6066,6 +6065,9 @@ export const MessageWithToolsApi = async (c: Context) => {
             // to one of the citations what do we do?
             // somehow hide that citation and change
             // the answer to reflect that
+            const reasoningLog = structuredReasoningSteps
+              .map(convertReasoningStepToText)
+              .join("\n")
 
             const msg = await insertMessage(db, {
               chatId: chat.id,
@@ -6076,7 +6078,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               email: user.email,
               sources: [],
               message: processMessage(answer, citationMap),
-              thinking: JSON.stringify(structuredReasoningSteps),
+              thinking: reasoningLog,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })

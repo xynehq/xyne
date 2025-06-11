@@ -1701,6 +1701,7 @@ User Context: ${userCtx}
 
 Instruction:
 - Analyze the provided "Context Fragments" to answer the "User Query".
+- The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that..
 - Your response MUST be a JSON object with only one keys: "synthesisState" (string).
 - The "synthesisState" key must be one of the following values:
     - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide a full and comprehensive answer to the "User Query".
@@ -1714,9 +1715,9 @@ ${synthesisContext}
 
 ## Response Format
 {
-  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}"
+  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
+  "answer": "Brief, synthesized answer based only on the context"
 }
-
   `
 }
 
