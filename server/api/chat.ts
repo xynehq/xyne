@@ -5435,7 +5435,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           const maxIterations = 10
           let iterationCount = 0
           let answered = false
-
+          
+          await logAndStreamReasoning({
+            type: AgentReasoningStepType.LogMessage,
+            message: `Analyzing your query..."`,
+          })
           // once we start getting toolsList will remove the above code
           if (toolExternalIds && toolExternalIds.length > 0) {
             // Fetch connector info and create client
@@ -5801,7 +5805,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           content: formattedContent,
                           source: {
                             app: Apps.GITHUB_MCP, // Or derive dynamically if possible
-                            docId: fragmentId, // Use a unique ID for the doc
+                            docId: "", // Use a unique ID for the doc
                             title: `Output from tool: ${toolName}`,
                             entity: SystemEntity.SystemInfo,
                           },
@@ -5888,7 +5892,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 : ""
 
               // If we have gathered ANY context at all, we perform synthesis evaluation.
-              if (planningContext) {
+              if (planningContext.length) {
                 type SynthesisResponse = {
                   synthesisState:
                     | ContextSysthesisState.Complete
