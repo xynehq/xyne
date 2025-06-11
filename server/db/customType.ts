@@ -18,11 +18,11 @@ export const encryptedText = (encryption: Encryption) => {
     fromDriver(value: unknown): string | null {
       // Return the encrypted value as is from the database.
       // Decryption should be handled explicitly by the application when needed.
-      if (typeof value === 'string') {
-        return value;
+      if (typeof value === "string") {
+        return value
       }
       // If value is null or not a string, return it as is (or handle as appropriate)
-      return value as string | null;
+      return value as string | null
     },
     /**
      * Transforms the value before storing it in the database.

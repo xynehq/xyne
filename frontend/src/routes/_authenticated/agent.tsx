@@ -215,7 +215,9 @@ function AgentComponent() {
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalTitle, setConfirmModalTitle] = useState("")
   const [confirmModalMessage, setConfirmModalMessage] = useState("")
-  const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    (() => Promise<void>) | null
+  >(null)
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -1202,14 +1204,17 @@ function AgentComponent() {
                         className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
                       />
                       {showSearchResults && (
-                        <Card className="absolute z-10 mt-1 shadow-lg w-full"> {/* Card adapts */}
+                        <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                          {" "}
+                          {/* Card adapts */}
                           <CardContent
                             className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500"
                             ref={searchResultsRef}
                             style={{
                               scrollbarWidth: "thin",
                               WebkitOverflowScrolling: "touch",
-                              scrollbarColor: "var(--scrollbar-thumb) transparent", 
+                              scrollbarColor:
+                                "var(--scrollbar-thumb) transparent",
                               overflowY: "auto",
                               display: "block",
                             }}
@@ -1253,7 +1258,9 @@ function AgentComponent() {
 
                 {/* Agent Users Section */}
                 <div>
-                  <Card className="mt-3"> {/* Card adapts */}
+                  <Card className="mt-3">
+                    {" "}
+                    {/* Card adapts */}
                     <CardContent className="p-4">
                       <div className="space-y-1.5 h-[126px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
                         {selectedUsers.length > 0 ? (
@@ -1494,19 +1501,25 @@ const AgentChatMessage = ({
 
   return (
     <div
-      className={`rounded-[16px] max-w-full ${ /* Added max-w-full for consistency */
+      className={`rounded-[16px] max-w-full ${
+        /* Added max-w-full for consistency */
         isUser
           ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words"
           : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full" /* Added w-full for assistant */
       }`}
     >
       {isUser ? (
-        <div className="break-words overflow-wrap-anywhere" dangerouslySetInnerHTML={{ __html: message }} />
+        <div
+          className="break-words overflow-wrap-anywhere"
+          dangerouslySetInnerHTML={{ __html: message }}
+        />
       ) : (
         <div
           className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
         >
-          <div className="flex flex-row w-full"> {/* Added w-full */}
+          <div className="flex flex-row w-full">
+            {" "}
+            {/* Added w-full */}
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
@@ -1523,9 +1536,10 @@ const AgentChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       fontSize: "15px",
-                       maxWidth: "100%", overflowWrap: "break-word" 
+                      maxWidth: "100%",
+                      overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1546,9 +1560,10 @@ const AgentChatMessage = ({
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     fontSize: "15px",
-                    maxWidth: "100%", overflowWrap: "break-word" 
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
                   }}
                   components={{
                     a: renderMarkdownLink,
@@ -1615,7 +1630,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "0.83em 0",
                         }}
-                         className="dark:text-gray-100"
+                        className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1626,7 +1641,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "1em 0",
                         }}
-                         className="dark:text-gray-100"
+                        className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1640,7 +1655,7 @@ const AgentChatMessage = ({
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? (theme === 'dark' ? "#A0AEC0" : "#4F535C") : (theme === 'dark' ? "#6B7280" : "#B2C3D4")}`}
+                  stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
                   onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}

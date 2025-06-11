@@ -109,12 +109,17 @@ const deleteUpdateStatsForGoogleSheets = async (
   docId: string,
   client: GoogleClient,
   stats: ChangeStats,
-  email:string
+  email: string,
 ) => {
   const spreadsheetId = docId
   const sheets = google.sheets({ version: "v4", auth: client })
   try {
-    const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!, client, email)
+    const spreadsheet = await getSpreadsheet(
+      sheets,
+      spreadsheetId!,
+      client,
+      email,
+    )
     if (spreadsheet) {
       const totalSheets = spreadsheet?.data?.sheets?.length!
 
@@ -317,7 +322,7 @@ export const handleGoogleDriveChange = async (
                 client,
                 file,
                 DriveEntity.Sheets,
-                email
+                email,
               )
               stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
             } else if (file.mimeType === DriveMime.Slides) {

@@ -1,19 +1,19 @@
-import { createFileRoute, useRouterState } from "@tanstack/react-router";
-import { useForm } from "@tanstack/react-form";
-import { useToast } from "@/hooks/use-toast";
-import { useNavigate } from "@tanstack/react-router";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { api } from "@/api";
-import { getErrorMessage } from "@/lib/utils";
-import { Apps, AuthType, ConnectorType } from "shared/types"; // Added ConnectorType
-import { PublicUser, PublicWorkspace } from "shared/types";
-import { Sidebar } from "@/components/Sidebar";
-import { IntegrationsSidebar } from "@/components/IntegrationsSidebar";
-import { RefreshCw, X, PlusCircle, Check, RotateCcw } from "lucide-react"; // Added PlusCircle, Check, RotateCcw
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState, useEffect, useRef } from "react"; // Added React hooks
+import { createFileRoute, useRouterState } from "@tanstack/react-router"
+import { useForm } from "@tanstack/react-form"
+import { useToast } from "@/hooks/use-toast"
+import { useNavigate } from "@tanstack/react-router"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { api } from "@/api"
+import { getErrorMessage } from "@/lib/utils"
+import { Apps, AuthType, ConnectorType } from "shared/types" // Added ConnectorType
+import { PublicUser, PublicWorkspace } from "shared/types"
+import { Sidebar } from "@/components/Sidebar"
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
+import { RefreshCw, X, PlusCircle, Check, RotateCcw } from "lucide-react" // Added PlusCircle, Check, RotateCcw
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useEffect, useRef } from "react" // Added React hooks
 
 import {
   Card,
@@ -21,7 +21,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -29,28 +29,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog"; // Added Dialog components
-import { useQuery } from "@tanstack/react-query";
-import { ConnectorStatus } from "shared/types";
+} from "@/components/ui/dialog" // Added Dialog components
+import { useQuery } from "@tanstack/react-query"
+import { ConnectorStatus } from "shared/types"
 
 // Interface for fetched tools (copied from ChatBox.tsx)
 interface FetchedTool {
-  id: number; // This is the tool's internal DB ID
-  workspaceId: number;
-  connectorId: number; // This is the connector's internal DB ID
-  toolName: string;
-  toolSchema: string;
-  description: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
+  id: number // This is the tool's internal DB ID
+  workspaceId: number
+  connectorId: number // This is the connector's internal DB ID
+  toolName: string
+  toolSchema: string
+  description: string | null
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 // Function to update connector status
@@ -63,15 +63,15 @@ export const updateConnectorStatus = async (
       connectorId,
       status,
     },
-  });
+  })
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not update connector status");
+    throw new Error("Could not update connector status")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
@@ -84,19 +84,19 @@ const submitMCPClient = async (
       apiKey: value.apiKey,
       name: value.name,
     },
-  });
+  })
   if (!response.ok) {
     if (response.status === 401) {
-      navigate({ to: "/auth" });
-      throw new Error("Unauthorized");
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
     }
-    const errorText = await response.text();
+    const errorText = await response.text()
     throw new Error(
       `Failed to add MCP connector: ${response.status} ${response.statusText} - ${errorText}`,
-    );
+    )
   }
-  return response.json();
-};
+  return response.json()
+}
 
 // Function to submit the MCP stdio connector details
 const submitMCPStdio = async (
@@ -110,19 +110,19 @@ const submitMCPStdio = async (
       name: value.name,
       appType: value.appType,
     },
-  });
+  })
   if (!response.ok) {
     if (response.status === 401) {
-      navigate({ to: "/auth" });
-      throw new Error("Unauthorized");
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
     }
-    const errorText = await response.text();
+    const errorText = await response.text()
     throw new Error(
       `Failed to add MCP stdio connector: ${response.status} ${response.statusText} - ${errorText}`,
-    );
+    )
   }
-  return response.json();
-};
+  return response.json()
+}
 
 // Delete MCP client connector
 const deleteMCPClient = async (connectorId: string) => {
@@ -130,59 +130,59 @@ const deleteMCPClient = async (connectorId: string) => {
     form: {
       connectorId,
     },
-  });
+  })
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not delete connector");
+    throw new Error("Could not delete connector")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 // Get all connectors
 export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get();
+  const res = await api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not get connectors");
+    throw new Error("Could not get connectors")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 // MCP Client Form Component
 export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const { toast } = useToast()
+  const navigate = useNavigate()
   const form = useForm<{ name: string; url: string; apiKey: string }>({
     defaultValues: { name: "", url: "", apiKey: "" },
     onSubmit: async ({ value }) => {
       try {
-        await submitMCPClient(value, navigate);
+        await submitMCPClient(value, navigate)
         toast({
           title: "MCP Client Connected",
           description: "MCP Client successfully connected. Updating status...",
-        });
+        })
         // Reset the form
-        form.reset();
-        onSuccess();
+        form.reset()
+        onSuccess()
       } catch (error) {
         toast({
           title: "Could not connect MCP Client",
           description: `Error: ${getErrorMessage(error)}`,
           variant: "destructive",
-        });
+        })
       }
     },
-  });
+  })
 
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
+        e.preventDefault()
+        form.handleSubmit()
       }}
       className="grid w-full items-center gap-1.5"
     >
@@ -266,51 +266,51 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         Add MCP Client
       </Button>
     </form>
-  );
-};
+  )
+}
 
 // MCP Stdio Form Component
 export const MCPStdioForm = ({ onSuccess }: { onSuccess: () => void }) => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const { toast } = useToast()
+  const navigate = useNavigate()
   const form = useForm<{
-    name: string;
-    command: string;
-    args: string;
-    appType: string;
+    name: string
+    command: string
+    args: string
+    appType: string
   }>({
     defaultValues: { name: "", command: "", args: "", appType: "" },
     onSubmit: async ({ value }) => {
       try {
-        await submitMCPStdio(value, navigate);
+        await submitMCPStdio(value, navigate)
         toast({
           title: "MCP Stdio Connected",
           description: "MCP Stdio successfully connected. Updating status...",
-        });
+        })
         // Reset the form
-        form.reset();
-        onSuccess();
+        form.reset()
+        onSuccess()
       } catch (error) {
         toast({
           title: "Could not connect MCP Stdio",
           description: `Error: ${getErrorMessage(error)}`,
           variant: "destructive",
-        });
+        })
       }
     },
-  });
+  })
 
   // App types for the dropdown
   const appTypes = [
     { value: "github", label: "GitHub" },
     { value: "custom", label: "Custom" },
-  ];
+  ]
 
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
+        e.preventDefault()
+        form.handleSubmit()
       }}
       className="grid w-full items-center gap-1.5"
     >
@@ -424,8 +424,8 @@ export const MCPStdioForm = ({ onSuccess }: { onSuccess: () => void }) => {
         Add MCP Stdio
       </Button>
     </form>
-  );
-};
+  )
+}
 
 // List of MCP clients with enhanced controls
 const MCPClientsList = ({
@@ -433,75 +433,110 @@ const MCPClientsList = ({
   onDelete,
   onRefresh,
 }: {
-  clients: any[];
-  onDelete: (id: string) => Promise<void>;
-  onRefresh: () => void;
+  clients: any[]
+  onDelete: (id: string) => Promise<void>
+  onRefresh: () => void
 }) => {
-  const { toast } = useToast();
-  const [isToolModalOpen, setIsToolModalOpen] = useState(false);
-  const [selectedClientForTools, setSelectedClientForTools] = useState<any | null>(null);
-  const [connectorTools, setConnectorTools] = useState<FetchedTool[]>([]);
-  const [isLoadingTools, setIsLoadingTools] = useState(false);
-  const [toolSearchTerm, setToolSearchTerm] = useState("");
+  const { toast } = useToast()
+  const [isToolModalOpen, setIsToolModalOpen] = useState(false)
+  const [selectedClientForTools, setSelectedClientForTools] = useState<
+    any | null
+  >(null)
+  const [connectorTools, setConnectorTools] = useState<FetchedTool[]>([])
+  const [isLoadingTools, setIsLoadingTools] = useState(false)
+  const [toolSearchTerm, setToolSearchTerm] = useState("")
   // Stores { connectorExternalId: Set<toolName> }
-  const [selectedTools, setSelectedTools] = useState<Record<string, Set<string>>>({});
-  const initialToolsStateRef = useRef<FetchedTool[]>([]);
+  const [selectedTools, setSelectedTools] = useState<
+    Record<string, Set<string>>
+  >({})
+  const initialToolsStateRef = useRef<FetchedTool[]>([])
 
   const handleManageTools = async (client: any) => {
-    if (client.type !== ConnectorType.MCP && client.app !== Apps.MCP && client.app !== Apps.GITHUB_MCP) { // Ensure it's an MCP connector
-        toast({ title: "Not an MCP Connector", description: "Tool management is only available for MCP connectors.", variant: "destructive" });
-        return;
+    if (
+      client.type !== ConnectorType.MCP &&
+      client.app !== Apps.MCP &&
+      client.app !== Apps.GITHUB_MCP
+    ) {
+      // Ensure it's an MCP connector
+      toast({
+        title: "Not an MCP Connector",
+        description: "Tool management is only available for MCP connectors.",
+        variant: "destructive",
+      })
+      return
     }
-    setSelectedClientForTools(client);
-    setIsLoadingTools(true);
-    setIsToolModalOpen(true);
-    setToolSearchTerm("");
+    setSelectedClientForTools(client)
+    setIsLoadingTools(true)
+    setIsToolModalOpen(true)
+    setToolSearchTerm("")
     try {
       // client.id is the externalId of the connector
-      const response = await api.admin.connector[client.id].tools.$get(undefined, { credentials: "include" });
-      const toolsData: FetchedTool[] | any = await response.json();
+      const response = await api.admin.connector[client.id].tools.$get(
+        undefined,
+        { credentials: "include" },
+      )
+      const toolsData: FetchedTool[] | any = await response.json()
 
       if (Array.isArray(toolsData)) {
-        setConnectorTools(toolsData);
-        initialToolsStateRef.current = JSON.parse(JSON.stringify(toolsData)); // Deep copy for initial state
+        setConnectorTools(toolsData)
+        initialToolsStateRef.current = JSON.parse(JSON.stringify(toolsData)) // Deep copy for initial state
 
         // Pre-populate selectedTools based on fetched enabled status
         const initiallyEnabledTools = new Set(
-          toolsData.filter(t => t.enabled).map(t => t.toolName)
-        );
-        setSelectedTools(prev => ({
+          toolsData.filter((t) => t.enabled).map((t) => t.toolName),
+        )
+        setSelectedTools((prev) => ({
           ...prev,
-          [client.id]: initiallyEnabledTools
-        }));
+          [client.id]: initiallyEnabledTools,
+        }))
       } else {
-        setConnectorTools([]);
-        initialToolsStateRef.current = [];
-        toast({ title: "Error", description: "Received invalid tool data.", variant: "destructive" });
+        setConnectorTools([])
+        initialToolsStateRef.current = []
+        toast({
+          title: "Error",
+          description: "Received invalid tool data.",
+          variant: "destructive",
+        })
       }
     } catch (error) {
-      console.error(`Error fetching tools for ${client.id}:`, error);
-      setConnectorTools([]);
-      initialToolsStateRef.current = [];
-      toast({ title: "Failed to fetch tools", description: getErrorMessage(error), variant: "destructive" });
-      setIsToolModalOpen(false); // Close modal on error
+      console.error(`Error fetching tools for ${client.id}:`, error)
+      setConnectorTools([])
+      initialToolsStateRef.current = []
+      toast({
+        title: "Failed to fetch tools",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      })
+      setIsToolModalOpen(false) // Close modal on error
     } finally {
-      setIsLoadingTools(false);
+      setIsLoadingTools(false)
     }
-  };
+  }
 
   // Effect to handle tool status updates when the modal closes
   useEffect(() => {
-    if (!isToolModalOpen && selectedClientForTools && initialToolsStateRef.current.length >= 0) { // Allow empty initial state if no tools
-      const toolsToUpdate: Array<{ toolId: number; enabled: boolean }> = [];
-      const currentSelectedToolNames = selectedTools[selectedClientForTools.id] || new Set();
+    if (
+      !isToolModalOpen &&
+      selectedClientForTools &&
+      initialToolsStateRef.current.length >= 0
+    ) {
+      // Allow empty initial state if no tools
+      const toolsToUpdate: Array<{ toolId: number; enabled: boolean }> = []
+      const currentSelectedToolNames =
+        selectedTools[selectedClientForTools.id] || new Set()
 
-      initialToolsStateRef.current.forEach(initialTool => {
-        const isCurrentlySelected = currentSelectedToolNames.has(initialTool.toolName);
+      initialToolsStateRef.current.forEach((initialTool) => {
+        const isCurrentlySelected = currentSelectedToolNames.has(
+          initialTool.toolName,
+        )
         if (initialTool.enabled !== isCurrentlySelected) {
-          toolsToUpdate.push({ toolId: initialTool.id, enabled: isCurrentlySelected });
+          toolsToUpdate.push({
+            toolId: initialTool.id,
+            enabled: isCurrentlySelected,
+          })
         }
-      });
-      
+      })
+
       // Check for tools that were not in the initial list but might have been added (not applicable here but good practice)
       // For this case, we only care about tools that were initially fetched.
 
@@ -510,37 +545,54 @@ const MCPClientsList = ({
           .$post({ json: { tools: toolsToUpdate } }, { credentials: "include" })
           .then(async (res: Response) => {
             if (res.ok) {
-              toast({ title: "Tools Updated", description: "Tool statuses updated successfully." });
-              onRefresh(); // Refresh the main list to reflect any status changes if necessary
+              toast({
+                title: "Tools Updated",
+                description: "Tool statuses updated successfully.",
+              })
+              onRefresh() // Refresh the main list to reflect any status changes if necessary
             } else {
-              const errorText = await res.text();
-              console.error("Failed to update tools. Server response:", errorText);
+              const errorText = await res.text()
+              console.error(
+                "Failed to update tools. Server response:",
+                errorText,
+              )
               try {
-                const errorData = JSON.parse(errorText);
-                toast({ title: "Failed to update tools", description: errorData.error || "Unknown error", variant: "destructive" });
+                const errorData = JSON.parse(errorText)
+                toast({
+                  title: "Failed to update tools",
+                  description: errorData.error || "Unknown error",
+                  variant: "destructive",
+                })
               } catch (e) {
-                toast({ title: "Failed to update tools", description: errorText, variant: "destructive" });
+                toast({
+                  title: "Failed to update tools",
+                  description: errorText,
+                  variant: "destructive",
+                })
               }
             }
           })
           .catch((error: any) => {
-            console.error("Error calling update tools API:", error);
-            toast({ title: "API Error", description: `Error updating tools: ${getErrorMessage(error)}`, variant: "destructive" });
-          });
+            console.error("Error calling update tools API:", error)
+            toast({
+              title: "API Error",
+              description: `Error updating tools: ${getErrorMessage(error)}`,
+              variant: "destructive",
+            })
+          })
       }
       // Reset states for next modal opening
-      initialToolsStateRef.current = [];
-      setSelectedClientForTools(null);
-      setConnectorTools([]);
+      initialToolsStateRef.current = []
+      setSelectedClientForTools(null)
+      setConnectorTools([])
       // Keep selectedTools as it might be useful if user reopens modal for same/other client
     }
-  }, [isToolModalOpen, selectedClientForTools, selectedTools, toast, onRefresh]);
-
+  }, [isToolModalOpen, selectedClientForTools, selectedTools, toast, onRefresh])
 
   if (clients.length === 0) {
     return (
       <p className="text-center text-gray-500 my-4">No MCP clients added yet</p>
-    );
+    )
   }
 
   return (
@@ -562,7 +614,11 @@ const MCPClientsList = ({
                 {client.config?.name || client.name || client.app || "Unnamed"}
               </TableCell>
               <TableCell>
-                {client.type === ConnectorType.MCP ? (client.authType === AuthType.ApiKey ? "API Key" : "Stdio") : client.authType}
+                {client.type === ConnectorType.MCP
+                  ? client.authType === AuthType.ApiKey
+                    ? "API Key"
+                    : "Stdio"
+                  : client.authType}
               </TableCell>
               <TableCell>
                 <span
@@ -580,7 +636,9 @@ const MCPClientsList = ({
                 </span>
               </TableCell>
               <TableCell>
-                {(client.type === ConnectorType.MCP || client.app === Apps.MCP || client.app === Apps.GITHUB_MCP) && (
+                {(client.type === ConnectorType.MCP ||
+                  client.app === Apps.MCP ||
+                  client.app === Apps.GITHUB_MCP) && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -598,18 +656,18 @@ const MCPClientsList = ({
                     size="icon"
                     onClick={async () => {
                       try {
-                        await onDelete(client.id);
+                        await onDelete(client.id)
                         toast({
                           title: "Client Removed",
                           description:
                             "MCP Client has been removed successfully",
-                        });
+                        })
                       } catch (error) {
                         toast({
                           title: "Removal Failed",
                           description: getErrorMessage(error),
                           variant: "destructive",
-                        });
+                        })
                       }
                     }}
                   >
@@ -624,25 +682,39 @@ const MCPClientsList = ({
 
       {/* Tool Selection Modal */}
       {selectedClientForTools && (
-        <Dialog open={isToolModalOpen} onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            // This will trigger the useEffect for saving
-            setIsToolModalOpen(false);
-          } else {
-            setIsToolModalOpen(true);
-          }
-        }}>
-          <DialogContent className="sm:max-w-[350px] flex flex-col max-h-[35vh] px-3 pt-3 pb-0"> {/* Adjusted overall padding to p-3, then to px-3 pt-3 pb-1 */}
-            <DialogHeader className="p-1 pt-0 flex flex-row justify-between items-center"> {/* Added flex for alignment */}
-              <DialogTitle className="text-lg">Manage Tools for {selectedClientForTools.config?.name || selectedClientForTools.name || selectedClientForTools.app}</DialogTitle>
+        <Dialog
+          open={isToolModalOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) {
+              // This will trigger the useEffect for saving
+              setIsToolModalOpen(false)
+            } else {
+              setIsToolModalOpen(true)
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[350px] flex flex-col max-h-[35vh] px-3 pt-3 pb-0">
+            {" "}
+            {/* Adjusted overall padding to p-3, then to px-3 pt-3 pb-1 */}
+            <DialogHeader className="p-1 pt-0 flex flex-row justify-between items-center">
+              {" "}
+              {/* Added flex for alignment */}
+              <DialogTitle className="text-lg">
+                Manage Tools for{" "}
+                {selectedClientForTools.config?.name ||
+                  selectedClientForTools.name ||
+                  selectedClientForTools.app}
+              </DialogTitle>
             </DialogHeader>
-            <div className="pt-0 pb-1"> {/* Reduced padding around search input */}
+            <div className="pt-0 pb-1">
+              {" "}
+              {/* Reduced padding around search input */}
               <Input
                 type="text"
                 placeholder="Search tools..."
                 value={toolSearchTerm}
                 onChange={(e) => setToolSearchTerm(e.target.value)}
-                className="mb-1" 
+                className="mb-1"
               />
             </div>
             {isLoadingTools ? (
@@ -650,31 +722,55 @@ const MCPClientsList = ({
                 <RefreshCw className="h-6 w-6 animate-spin text-primary" />
               </div>
             ) : (
-              <div className="overflow-y-auto flex-grow pr-2"> {/* Added pr-2 for scrollbar spacing */}
-                {connectorTools.filter(tool => tool.toolName.toLowerCase().includes(toolSearchTerm.toLowerCase())).length > 0 ? (
+              <div className="overflow-y-auto flex-grow pr-2">
+                {" "}
+                {/* Added pr-2 for scrollbar spacing */}
+                {connectorTools.filter((tool) =>
+                  tool.toolName
+                    .toLowerCase()
+                    .includes(toolSearchTerm.toLowerCase()),
+                ).length > 0 ? (
                   connectorTools
-                    .filter(tool => tool.toolName.toLowerCase().includes(toolSearchTerm.toLowerCase()))
+                    .filter((tool) =>
+                      tool.toolName
+                        .toLowerCase()
+                        .includes(toolSearchTerm.toLowerCase()),
+                    )
                     .map((tool) => (
                       <div
                         key={tool.id} // Use tool.id (internal DB id) as key
                         className="flex items-center justify-between py-2 px-1 hover:bg-muted rounded cursor-pointer"
                         onClick={() => {
-                          setSelectedTools(prev => {
-                            const newSelectedForClient = new Set(prev[selectedClientForTools!.id] || []);
+                          setSelectedTools((prev) => {
+                            const newSelectedForClient = new Set(
+                              prev[selectedClientForTools!.id] || [],
+                            )
                             if (newSelectedForClient.has(tool.toolName)) {
-                              newSelectedForClient.delete(tool.toolName);
+                              newSelectedForClient.delete(tool.toolName)
                             } else {
-                              newSelectedForClient.add(tool.toolName);
+                              newSelectedForClient.add(tool.toolName)
                             }
-                            return { ...prev, [selectedClientForTools!.id]: newSelectedForClient };
-                          });
+                            return {
+                              ...prev,
+                              [selectedClientForTools!.id]:
+                                newSelectedForClient,
+                            }
+                          })
                         }}
                       >
-                        <span className="text-sm flex-grow mr-2 truncate" title={tool.description || tool.toolName}>
+                        <span
+                          className="text-sm flex-grow mr-2 truncate"
+                          title={tool.description || tool.toolName}
+                        >
                           {tool.toolName}
                         </span>
-                        <div className="h-5 w-5 flex items-center justify-center"> {/* Simplified check icon display */}
-                          {(selectedTools[selectedClientForTools!.id] || new Set()).has(tool.toolName) && (
+                        <div className="h-5 w-5 flex items-center justify-center">
+                          {" "}
+                          {/* Simplified check icon display */}
+                          {(
+                            selectedTools[selectedClientForTools!.id] ||
+                            new Set()
+                          ).has(tool.toolName) && (
                             <Check className="h-4 w-4 text-green-500" />
                           )}
                         </div>
@@ -682,91 +778,102 @@ const MCPClientsList = ({
                     ))
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No tools found{toolSearchTerm ? ` for "${toolSearchTerm}"` : (connectorTools.length === 0 ? ' for this connector' : '')}.
+                    No tools found
+                    {toolSearchTerm
+                      ? ` for "${toolSearchTerm}"`
+                      : connectorTools.length === 0
+                        ? " for this connector"
+                        : ""}
+                    .
                   </p>
                 )}
               </div>
             )}
             <DialogFooter className="mt-auto pt-2 pb-1 flex justify-between items-center">
-              {selectedClientForTools && selectedTools[selectedClientForTools.id] && (
-                <span className="text-xs text-muted-foreground">
-                  ({selectedTools[selectedClientForTools.id]?.size || 0} selected)
-                </span>
-              )}
-              {selectedClientForTools && (selectedTools[selectedClientForTools.id]?.size || 0) > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => {
-                    if (selectedClientForTools) {
-                      setSelectedTools(prev => ({
-                        ...prev,
-                        [selectedClientForTools.id]: new Set(),
-                      }));
-                    }
-                  }}
-                  title="Clear all selected tools"
-                >
-                  <RotateCcw className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                </Button>
-              )}
+              {selectedClientForTools &&
+                selectedTools[selectedClientForTools.id] && (
+                  <span className="text-xs text-muted-foreground">
+                    ({selectedTools[selectedClientForTools.id]?.size || 0}{" "}
+                    selected)
+                  </span>
+                )}
+              {selectedClientForTools &&
+                (selectedTools[selectedClientForTools.id]?.size || 0) > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => {
+                      if (selectedClientForTools) {
+                        setSelectedTools((prev) => ({
+                          ...prev,
+                          [selectedClientForTools.id]: new Set(),
+                        }))
+                      }
+                    }}
+                    title="Clear all selected tools"
+                  >
+                    <RotateCcw className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                  </Button>
+                )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
     </div>
-  );
-};
+  )
+}
 
 // Main MCP component
 export const MCPClient = ({
   user,
   workspace,
+  agentWhiteList,
 }: {
-  user: PublicUser;
-  workspace: PublicWorkspace;
+  user: PublicUser
+  workspace: PublicWorkspace
+  agentWhiteList: boolean
 }) => {
-  const navigate = useNavigate();
+  const navigate = useNavigate()
 
   // Get all connectors
   const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        const res = await api.admin.connectors.all.$get();
+        const res = await api.admin.connectors.all.$get()
         if (!res.ok) {
           if (res.status === 401) {
-            throw new Error("Unauthorized");
+            throw new Error("Unauthorized")
           }
-          throw new Error("Could not get connectors");
+          throw new Error("Could not get connectors")
         }
-        return res.json();
+        return res.json()
       } catch (error) {
-        const message = getErrorMessage(error);
+        const message = getErrorMessage(error)
         if (message === "Unauthorized") {
-          navigate({ to: "/auth" });
-          return [];
+          navigate({ to: "/auth" })
+          return []
         }
-        throw error;
+        throw error
       }
     },
-  });
-  console.log("error occurred: ", error);
+  })
+  console.log("error occurred: ", error)
 
   // Filter MCP client connectors (both API Key and Stdio) // TODO: add more generic way to filter
   const mcpConnectors =
-    data?.filter((v) => v.app === Apps.MCP || v.app == Apps.GITHUB_MCP) || [];
+    data?.filter((v) => v.app === Apps.MCP || v.app == Apps.GITHUB_MCP) || []
 
   const handleDeleteClient = async (connectorId: string) => {
-    await deleteMCPClient(connectorId);
-    refetch();
-  };
+    await deleteMCPClient(connectorId)
+    refetch()
+  }
 
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
-      <IntegrationsSidebar role={user.role} />
+      <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
       <div className="w-full h-full py-8 px-4 overflow-y-auto flex flex-col items-center justify-center">
         <div className="flex flex-col items-center">
           <h1 className="text-2xl font-bold mb-6">MCP Client Connectors</h1>
@@ -812,14 +919,14 @@ export const MCPClient = ({
                   <TabsContent value="apikey">
                     <MCPClientForm
                       onSuccess={() => {
-                        refetch();
+                        refetch()
                       }}
                     />
                   </TabsContent>
                   <TabsContent value="stdio">
                     <MCPStdioForm
                       onSuccess={() => {
-                        refetch();
+                        refetch()
                       }}
                     />
                   </TabsContent>
@@ -877,19 +984,26 @@ export const MCPClient = ({
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
 export const Route = createFileRoute("/_authenticated/admin/integrations/mcp")({
   beforeLoad: async ({ params, context }) => {
-    return params;
+    return params
   },
   loader: async (params) => {
-    return params;
+    return params
   },
   component: () => {
-    const matches = useRouterState({ select: (s) => s.matches });
-    const { user, workspace } = matches[matches.length - 1].context;
-    return <MCPClient user={user} workspace={workspace} />;
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <MCPClient
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
-});
+})

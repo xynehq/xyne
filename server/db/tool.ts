@@ -4,7 +4,12 @@ import { and, eq } from "drizzle-orm"
 import { z } from "zod"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { selectToolSchema, tools, type InsertTool, type SelectTool } from "./schema/McpConnectors"
+import {
+  selectToolSchema,
+  tools,
+  type InsertTool,
+  type SelectTool,
+} from "./schema/McpConnectors"
 export { tools } // Re-export the 'tools' table schema object
 const Logger = getLogger(Subsystem.Db).child({ module: "tool" })
 

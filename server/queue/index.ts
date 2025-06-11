@@ -3,7 +3,12 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import { metricAccountType, metricNames, Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
+import {
+  metricAccountType,
+  metricNames,
+  Subsystem,
+  type SaaSJob,
+} from "@/types" // ConnectorType removed
 import { ConnectorType } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
 import config from "@/config"

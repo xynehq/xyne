@@ -6,7 +6,12 @@ import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { syncConnectorTools, deleteToolsByConnectorId, getToolsByConnectorId as dbGetToolsByConnectorId, tools as toolsTable } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
+import {
+  syncConnectorTools,
+  deleteToolsByConnectorId,
+  getToolsByConnectorId as dbGetToolsByConnectorId,
+  tools as toolsTable,
+} from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
 import { eq, and, inArray, sql } from "drizzle-orm"
 import {
   deleteConnector,
@@ -28,7 +33,7 @@ import {
   Subsystem,
   updateToolsStatusSchema, // Added for tool status updates
 } from "@/types"
-import { z } from "zod";
+import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
@@ -85,9 +90,15 @@ export const GetConnectorTools = async (c: Context) => {
   const user = users[0]
 
   // Fetch the connector by its externalId to get the internal numeric id
-  const connector = await getConnectorByExternalId(db, connectorExternalId, user.id)
+  const connector = await getConnectorByExternalId(
+    db,
+    connectorExternalId,
+    user.id,
+  )
   if (!connector) {
-    throw new HTTPException(404, { message: `Connector with ID ${connectorExternalId} not found.` })
+    throw new HTTPException(404, {
+      message: `Connector with ID ${connectorExternalId} not found.`,
+    })
   }
 
   // Ensure the connector is an MCP type before fetching tools
@@ -96,10 +107,13 @@ export const GetConnectorTools = async (c: Context) => {
     return c.json([])
   }
 
-  const tools = await dbGetToolsByConnectorId(db, user.workspaceId, connector.id)
+  const tools = await dbGetToolsByConnectorId(
+    db,
+    user.workspaceId,
+    connector.id,
+  )
   return c.json(tools)
 }
-
 
 const getAuthorizationUrl = async (
   c: Context,
@@ -760,16 +774,20 @@ export const UpdateToolsStatusApi = async (c: Context) => {
   }
   const user = users[0]
 
-  const retrievedWorkspace = await getWorkspaceByExternalId(db, workspaceExternalId)
+  const retrievedWorkspace = await getWorkspaceByExternalId(
+    db,
+    workspaceExternalId,
+  )
   if (!retrievedWorkspace) {
-    Logger.error({ workspaceExternalId }, "Workspace not found for external ID in UpdateToolsStatusApi")
+    Logger.error(
+      { workspaceExternalId },
+      "Workspace not found for external ID in UpdateToolsStatusApi",
+    )
     throw new HTTPException(404, { message: "Workspace not found." })
   }
   const internalWorkspaceId = retrievedWorkspace.id // This is the integer ID
   // @ts-ignore - Assuming validation middleware handles this
-  const payload = c.req.valid("json") as z.infer<
-    typeof updateToolsStatusSchema
-  >
+  const payload = c.req.valid("json") as z.infer<typeof updateToolsStatusSchema>
 
   if (!payload.tools || payload.tools.length === 0) {
     return c.json({ success: true, message: "No tools to update." })
@@ -798,7 +816,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
         // Optionally, you could collect these and report them back
       }
       // Ensure success is true only if result.length > 0
-      return { toolId: toolUpdate.toolId, success: result.length > 0 } 
+      return { toolId: toolUpdate.toolId, success: result.length > 0 }
     } catch (error) {
       Logger.error(
         error,
@@ -806,16 +824,27 @@ export const UpdateToolsStatusApi = async (c: Context) => {
           toolUpdate.toolId
         } in workspace ${internalWorkspaceId} (external: ${workspaceExternalId}): ${getErrorMessage(error)}`,
       )
-      return { toolId: toolUpdate.toolId, success: false, error: getErrorMessage(error) }
+      return {
+        toolId: toolUpdate.toolId,
+        success: false,
+        error: getErrorMessage(error),
+      }
     }
   })
 
   const results = await Promise.all(toolUpdates)
-  const failedUpdates = results.filter(r => !r.success);
+  const failedUpdates = results.filter((r) => !r.success)
 
   if (failedUpdates.length > 0) {
     Logger.error({ failedUpdates }, "Some tools failed to update.")
-    return c.json({ success: false, message: "Some tools failed to update.", failedUpdates }, 500)
+    return c.json(
+      {
+        success: false,
+        message: "Some tools failed to update.",
+        failedUpdates,
+      },
+      500,
+    )
   }
 
   return c.json({ success: true, message: "Tools updated successfully." })
@@ -915,7 +944,6 @@ export const AddStdioMCPConnector = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Error creating connection or enqueuing job",
-
     })
   }
 }

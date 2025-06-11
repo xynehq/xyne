@@ -32,9 +32,8 @@ import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 
-
-export const getUserLogger = (email:string) => {
-  return Logger.child({email: email})
+export const getUserLogger = (email: string) => {
+  return Logger.child({ email: email })
 }
 
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
@@ -77,8 +76,8 @@ export const createJwtClient = (
   })
 }
 
-  let failedAttachmentCount=0
-  let failedMessageCount=0
+let failedAttachmentCount = 0
+let failedMessageCount = 0
 
 // self.addEventListener('message', async (event) => {
 // })
@@ -156,24 +155,24 @@ const sendStatsUpdate = (
 }
 
 const sendCounterUpdate = (
-  email:string,
-  messageCount:number,
-  attachmentCount:number,
-  failedMessageCount:number,
-  failedAttachmentCount:number,
-  jobId:string
+  email: string,
+  messageCount: number,
+  attachmentCount: number,
+  failedMessageCount: number,
+  failedAttachmentCount: number,
+  jobId: string,
 ) => {
   postMessage({
-        type: WorkerResponseTypes.ProgressUpdate,
-        email,
-        jobId,
-        stats: {
-          messageCount,
-          attachmentCount,
-          failedMessageCount,
-          failedAttachmentCount
-        }
- })
+    type: WorkerResponseTypes.ProgressUpdate,
+    email,
+    jobId,
+    stats: {
+      messageCount,
+      attachmentCount,
+      failedMessageCount,
+      failedAttachmentCount,
+    },
+  })
 }
 
 export const handleGmailIngestion = async (
@@ -291,7 +290,7 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            failedMessageCount++;
+            failedMessageCount++
           } finally {
             // release from memory
             msgResp = null
@@ -328,7 +327,7 @@ export const handleGmailIngestion = async (
         insertedPdfAttachmentsInBatch,
         failedMessageCount,
         failedAttachmentCount,
-        jobId
+        jobId,
       )
       // clean up explicitly
       batchRequests = []
@@ -337,8 +336,8 @@ export const handleGmailIngestion = async (
     // clean up explicitly
   } while (nextPageToken)
 
-  failedAttachmentCount=0
-  failedMessageCount=0
+  failedAttachmentCount = 0
+  failedMessageCount = 0
   getUserLogger(email).info(`Inserted ${totalMails} mails`)
   return historyId
 }
@@ -502,7 +501,6 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
-
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -511,7 +509,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            failedAttachmentCount++;
+            failedAttachmentCount++
           }
         }
       }
@@ -577,4 +575,3 @@ const getBody = (payload: any): string => {
 
   return data
 }
-

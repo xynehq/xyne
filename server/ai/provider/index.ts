@@ -1067,7 +1067,7 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  if(isAgentPromptEmpty(params.agentPrompt))params.messages = []
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -1269,7 +1269,11 @@ export function generateToolSelectionOutput(
 
   let defaultReasoning = isReasoning
 
-  params.systemPrompt = SearchQueryToolContextPrompt(userContext, toolContext, initialPlanning)
+  params.systemPrompt = SearchQueryToolContextPrompt(
+    userContext,
+    toolContext,
+    initialPlanning,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1309,7 +1313,7 @@ export function generateSearchQueryOrAnswerFromConversation(
     )
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
-  } 
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1357,7 +1361,6 @@ export function generateAnswerBasedOnToolOutput(
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-
 export function generateSynthesisBasedOnToolOutput(
   userCtx: string,
   currentMessage: string,
@@ -1365,7 +1368,11 @@ export function generateSynthesisBasedOnToolOutput(
   params: ModelParams,
 ): Promise<ConverseResponse> {
   params.json = true
-  params.systemPrompt = synthesisContextPrompt(userCtx,currentMessage,gatheredFragments)
+  params.systemPrompt = synthesisContextPrompt(
+    userCtx,
+    currentMessage,
+    gatheredFragments,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,

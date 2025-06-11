@@ -336,7 +336,6 @@ export enum MessageFeedback {
   Dislike = "dislike",
 }
 
-
 export enum MessageMode {
   Ask = "ask",
   Agentic = "agentic",
@@ -363,10 +362,10 @@ export enum AgentReasoningStepType {
   LogMessage = "log_message", // For generic log messages from the agent
 }
 
-export enum ContextSysthesisState  {
-  Complete = "complete" ,
+export enum ContextSysthesisState {
+  Complete = "complete",
   Partial = "partial_information",
-  NotFound = "information_not_found"
+  NotFound = "information_not_found",
 }
 
 export interface AgentReasoningIteration {
@@ -440,15 +439,14 @@ export type AgentReasoningStep =
   | AgentReasoningAnalyzingQuery
   | AgentReasoningLogMessage
 
+export enum XyneTools {
+  GetUserInfo = "get_user_info",
+  MetadataRetrieval = "metadata_retrieval",
+  Search = "search",
+  FilteredSearch = "filtered_search",
+  TimeSearch = "time_search",
+}
 
-  export enum XyneTools {
-    GetUserInfo = "get_user_info",
-    MetadataRetrieval = "metadata_retrieval",
-    Search = "search",
-    FilteredSearch = "filtered_search",
-    TimeSearch = "time_search",
-  }
-  
 export enum IngestionType {
   fullIngestion = "full_ingestion",
   partialIngestion = "partial_ingestion",

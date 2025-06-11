@@ -323,7 +323,8 @@ export const AppRoutes = app
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
   )
-  .post( // Added route for updating tool statuses
+  .post(
+    // Added route for updating tool statuses
     "/tools/update_status",
     zValidator("json", updateToolsStatusSchema),
     UpdateToolsStatusApi,
@@ -541,7 +542,8 @@ init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
 
-const errorHandler = (error: Error) => { // Added Error type
+const errorHandler = (error: Error) => {
+  // Added Error type
   return new Response(`<pre>${error}\n${error.stack}</pre>`, {
     headers: {
       "Content-Type": "text/html",

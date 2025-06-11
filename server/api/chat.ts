@@ -2315,8 +2315,7 @@ async function* generateMetadataQueryAnswer(
         })
         items = searchResults!.root.children || []
       }
-    }
-    else{
+    } else {
       searchResults = await getItems({
         email,
         schema,
@@ -6846,7 +6845,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const maxIterations = 10
           let iterationCount = 0
           let answered = false
-          
+
           await logAndStreamReasoning({
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query..."`,

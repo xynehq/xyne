@@ -27,8 +27,7 @@ export const Sidebar = ({
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
   const { theme, toggleTheme } = useTheme()
-  const isDarkMode = theme === 'dark'
-
+  const isDarkMode = theme === "dark"
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,7 +91,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plus size={18} stroke="#384049" className="dark:stroke-[#F1F3F4]" />
+                <Plus
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="New" />
             </Tooltip>
@@ -104,7 +107,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <History size={18} stroke="#384049" className="dark:stroke-[#F1F3F4]" />
+                <History
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="History" />
             </Tooltip>
@@ -115,12 +122,18 @@ export const Sidebar = ({
             <Link
               to="/agent"
               className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
-                location.pathname.includes("/agent") ? "bg-[#D8DFE680] dark:bg-gray-700" : ""
+                location.pathname.includes("/agent")
+                  ? "bg-[#D8DFE680] dark:bg-gray-700"
+                  : ""
               }`}
             >
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Bot stroke="#384049" size={18} className="dark:stroke-[#F1F3F4]" />
+                  <Bot
+                    stroke="#384049"
+                    size={18}
+                    className="dark:stroke-[#F1F3F4]"
+                  />
                 </TooltipTrigger>
                 <Tip side="right" info="agent" />{" "}
                 {/* Placeholder: Update this tooltip info */}
@@ -139,7 +152,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plug stroke="#384049" size={18} className="dark:stroke-[#F1F3F4]" />
+                <Plug
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
             </Tooltip>
@@ -157,7 +174,10 @@ export const Sidebar = ({
                   <Moon size={18} stroke="#384049" />
                 )}
               </TooltipTrigger>
-              <Tip side="right" info={isDarkMode ? "Light Mode" : "Dark Mode"} />
+              <Tip
+                side="right"
+                info={isDarkMode ? "Light Mode" : "Dark Mode"}
+              />
             </Tooltip>
           </div>
         </div>

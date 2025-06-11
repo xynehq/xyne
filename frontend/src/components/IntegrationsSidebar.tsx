@@ -15,7 +15,9 @@ export const IntegrationsSidebar = ({
     <TooltipProvider>
       <div className="max-w-sm w-[300px] ml-[52px] h-full border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col select-none bg-white dark:bg-[#1E1E1E]">
         <div className="flex justify-between items-center ml-[18px] mt-[14px]">
-          <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">Integrations</p>
+          <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">
+            Integrations
+          </p>
         </div>
         <div className="flex-1 overflow-auto mt-[15px]">
           <ul>

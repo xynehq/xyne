@@ -1,6 +1,6 @@
-import MarkdownPreview from "@uiw/react-markdown-preview";
-import { api } from "@/api";
-import { Sidebar } from "@/components/Sidebar";
+import MarkdownPreview from "@uiw/react-markdown-preview"
+import { api } from "@/api"
+import { Sidebar } from "@/components/Sidebar"
 import {
   createFileRoute,
   useLoaderData,
@@ -40,11 +40,11 @@ import {
   useMutation,
   useInfiniteQuery,
   InfiniteData,
-} from "@tanstack/react-query";
-import { SelectPublicChat } from "shared/types";
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal";
-import { errorComponent } from "@/components/error";
-import { splitGroupedCitationsWithSpaces } from "@/lib/utils";
+} from "@tanstack/react-query"
+import { SelectPublicChat } from "shared/types"
+import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import { errorComponent } from "@/components/error"
+import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
@@ -63,13 +63,13 @@ import { parseHighlight } from "@/components/Highlight"
 export const THINKING_PLACEHOLDER = "Thinking"
 
 type CurrentResp = {
-  resp: string;
-  chatId?: string;
-  messageId?: string;
-  sources?: Citation[];
-  citationMap?: Record<number, number>;
-  thinking?: string;
-};
+  resp: string
+  chatId?: string
+  messageId?: string
+  sources?: Citation[]
+  citationMap?: Record<number, number>
+  thinking?: string
+}
 
 // Mapping from source ID to app/entity object
 // const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
@@ -93,7 +93,7 @@ interface ChatPageProps {
 type ParsedMessagePart =
   | { type: "text"; value: string }
   | {
-      type: "pill";
+      type: "pill"
       value: {
         docId: string
         url: string | null
@@ -104,21 +104,21 @@ type ParsedMessagePart =
         imgSrc?: string | null
       }
     }
-  | { type: "link"; value: string };
+  | { type: "link"; value: string }
 
 // Helper function to parse HTML message input
 const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
-  const container = document.createElement("div");
-  container.innerHTML = htmlString;
-  const parts: Array<ParsedMessagePart> = [];
+  const container = document.createElement("div")
+  container.innerHTML = htmlString
+  const parts: Array<ParsedMessagePart> = []
 
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       if (node.textContent) {
-        parts.push({ type: "text", value: node.textContent });
+        parts.push({ type: "text", value: node.textContent })
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement;
+      const el = node as HTMLElement
       if (
         el.tagName.toLowerCase() === "a" &&
         el.classList.contains("reference-pill") &&
@@ -142,7 +142,7 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
             entity: entity,
             imgSrc: imgSrc,
           },
-        });
+        })
       } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
         // Ensure this link is not also a reference pill that we've already processed
         if (
@@ -158,29 +158,29 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
         }
         // Do not walk children of a link we've already processed as a "link" part
       } else {
-        Array.from(el.childNodes).forEach(walk);
+        Array.from(el.childNodes).forEach(walk)
       }
     }
-  };
+  }
 
-  Array.from(container.childNodes).forEach(walk);
-  return parts;
-};
+  Array.from(container.childNodes).forEach(walk)
+  return parts
+}
 
 // Helper function to convert JSON message parts back to HTML using Pill component
 const jsonToHtmlMessage = (jsonString: string): string => {
   try {
-    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>;
+    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
     if (!Array.isArray(parts)) {
       // If not our specific JSON structure, treat as plain HTML/text string
-      return jsonString;
+      return jsonString
     }
 
     return parts
       .map((part, index) => {
-        let htmlPart = "";
+        let htmlPart = ""
         if (part.type === "text") {
-          htmlPart = part.value;
+          htmlPart = part.value
         } else if (
           part.type === "pill" &&
           part.value &&
@@ -203,9 +203,9 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
-          );
+          )
         } else if (part.type === "link" && typeof part.value === "string") {
-          const url = part.value;
+          const url = part.value
           // Create a simple anchor tag string for links
           // Ensure it has similar styling to how it's created in ChatBox
           // The text of the link will be the URL itself
@@ -216,18 +216,18 @@ const jsonToHtmlMessage = (jsonString: string): string => {
         if (htmlPart.length > 0 && index < parts.length - 1) {
           // Add space if current part is not empty and it's not the last part.
           // More sophisticated logic might be needed if consecutive non-text elements occur.
-          htmlPart += " ";
+          htmlPart += " "
         }
-        return htmlPart;
+        return htmlPart
       })
       .join("")
-      .trimEnd();
+      .trimEnd()
   } catch (error) {
-    return jsonString;
+    return jsonString
   }
-};
+}
 
-const REASONING_STATE_KEY = "isReasoningGlobalState";
+const REASONING_STATE_KEY = "isReasoningGlobalState"
 
 export const ChatPage = ({
   user,
@@ -239,58 +239,58 @@ export const ChatPage = ({
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
-  });
-  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true";
-  const isDebugMode = isGlobalDebugMode || chatParams.debug;
+  })
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
+  const isDebugMode = isGlobalDebugMode || chatParams.debug
 
-  const isWithChatId = !!(params as any).chatId;
+  const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
-  });
-  const queryClient = useQueryClient();
+  })
+  const queryClient = useQueryClient()
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
       search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-    });
+    })
   }
-  const hasHandledQueryParam = useRef(false);
+  const hasHandledQueryParam = useRef(false)
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
-  );
+  )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
-  );
+  )
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
-  );
-  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null);
-  const [showRagTrace, setShowRagTrace] = useState(false); // Added state
-  const [stopMsg, setStopMsg] = useState<boolean>(false);
+  )
+  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
+  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [stopMsg, setStopMsg] = useState<boolean>(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
-  ); // Added state
+  ) // Added state
 
-  const currentRespRef = useRef<CurrentResp | null>(null);
+  const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
-  );
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [userHasScrolled, setUserHasScrolled] = useState(false);
-  const [dots, setDots] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [showSources, setShowSources] = useState(false);
-  const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
-  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle);
-  const titleRef = useRef<HTMLInputElement | null>(null);
+  )
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const [dots, setDots] = useState("")
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [showSources, setShowSources] = useState(false)
+  const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
+  const titleRef = useRef<HTMLInputElement | null>(null)
   const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
     new Map(),
   ) // State for all citations
@@ -306,11 +306,8 @@ export const ChatPage = ({
   })
 
   useEffect(() => {
-    localStorage.setItem(
-      REASONING_STATE_KEY,
-      JSON.stringify(isReasoningActive),
-    );
-  }, [isReasoningActive]);
+    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
+  }, [isReasoningActive])
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -318,54 +315,54 @@ export const ChatPage = ({
     { chatId: string; newTitle: string }
   >({
     mutationFn: async ({ chatId, newTitle }) => {
-      return await renameChat(chatId, newTitle);
+      return await renameChat(chatId, newTitle)
     },
     onSuccess: ({ chatId, title }) => {
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
         ["all-chats"],
         (oldData) => {
-          if (!oldData) return oldData;
+          if (!oldData) return oldData
 
-          let chatToUpdate: SelectPublicChat | undefined;
+          let chatToUpdate: SelectPublicChat | undefined
           oldData.pages.forEach((page) => {
-            const found = page.find((c) => c.externalId === chatId);
-            if (found) chatToUpdate = found;
-          });
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
 
           if (!chatToUpdate) {
-            return oldData;
+            return oldData
           }
 
-          const updatedChat = { ...chatToUpdate, title };
+          const updatedChat = { ...chatToUpdate, title }
 
           const filteredPages = oldData.pages.map((page) =>
             page.filter((c) => c.externalId !== chatId),
-          );
+          )
 
           const newPages = [
             [updatedChat, ...filteredPages[0]],
             ...filteredPages.slice(1),
-          ];
+          ]
 
           return {
             ...oldData,
             pages: newPages,
-          };
+          }
         },
-      );
-      setChatTitle(editedTitle);
-      setIsEditing(false);
+      )
+      setChatTitle(editedTitle)
+      setIsEditing(false)
     },
     onError: (error: Error) => {
-      setIsEditing(false);
-      console.error("Failed to rename chat:", error);
+      setIsEditing(false)
+      console.error("Failed to rename chat:", error)
     },
-  });
+  })
 
   // Effect to aggregate citations from messages
   useEffect(() => {
-    const newCitations = new Map(allCitations);
-    let changed = false;
+    const newCitations = new Map(allCitations)
+    let changed = false
     messages.forEach((msg) => {
       if (msg.messageRole === "assistant" && msg.sources) {
         // Add explicit type for citation
@@ -376,23 +373,23 @@ export const ChatPage = ({
             citation.title &&
             !newCitations.has(citation.url)
           ) {
-            newCitations.set(citation.url, citation);
-            changed = true;
+            newCitations.set(citation.url, citation)
+            changed = true
           }
-        });
+        })
       }
-    });
+    })
     // Only update state if the map actually changed
     if (changed) {
-      setAllCitations(newCitations);
+      setAllCitations(newCitations)
     }
-  }, [messages, allCitations]); // Dependency array includes allCitations
+  }, [messages, allCitations]) // Dependency array includes allCitations
 
   useEffect(() => {
     if (inputRef.current) {
-      inputRef.current.focus();
+      inputRef.current.focus()
     }
-  }, []);
+  }, [])
 
   const { data: historyItems } = useInfiniteQuery<
     SelectPublicChat[],
@@ -405,44 +402,44 @@ export const ChatPage = ({
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage?.length < pageSize) {
-        return undefined;
+        return undefined
       }
-      return allPages?.length;
+      return allPages?.length
     },
     initialPageParam: 0,
-  });
+  })
   const currentChat = historyItems?.pages
     ?.flat()
-    .find((item) => item.externalId === chatId);
+    .find((item) => item.externalId === chatId)
 
   useEffect(() => {
     if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
-      setChatTitle(currentChat.title);
-      setEditedTitle(currentChat.title);
+      setChatTitle(currentChat.title)
+      setEditedTitle(currentChat.title)
     }
-  }, [currentChat?.title, isEditing, chatTitle]);
+  }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
     if (isStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
           if (prev.length >= 3) {
-            return "";
+            return ""
           } else {
-            return prev + ".";
+            return prev + "."
           }
-        });
-      }, 500);
+        })
+      }, 500)
 
-      return () => clearInterval(interval);
+      return () => clearInterval(interval)
     } else {
-      setDots("");
+      setDots("")
     }
-  }, [isStreaming]);
+  }, [isStreaming])
 
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
-      setMessages(isWithChatId ? data?.messages || [] : []);
+      setMessages(isWithChatId ? data?.messages || [] : [])
     }
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
@@ -462,45 +459,50 @@ export const ChatPage = ({
     }
 
     if (!isStreaming && !hasHandledQueryParam.current) {
-      setCurrentResp(null);
-      currentRespRef.current = null;
+      setCurrentResp(null)
+      currentRespRef.current = null
     }
-    inputRef.current?.focus();
-    setShowSources(false);
-    setCurrentCitations([]);
-    setCurrentMessageId(null);
+    inputRef.current?.focus()
+    setShowSources(false)
+    setCurrentCitations([])
+    setCurrentMessageId(null)
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
     data?.messages, // This will re-run when messages data changes
     isWithChatId,
     params,
-  ]);
+  ])
 
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
-      const messageToSend = decodeURIComponent(chatParams.q);
+      const messageToSend = decodeURIComponent(chatParams.q)
 
-      let sourcesArray: string[] = [];
+      let sourcesArray: string[] = []
       // Process chatParams.sources safely
-      const _sources = chatParams.sources as string | string[] | undefined;
+      const _sources = chatParams.sources as string | string[] | undefined
 
       if (Array.isArray(_sources)) {
-        sourcesArray = _sources.filter((s) => typeof s === "string");
+        sourcesArray = _sources.filter((s) => typeof s === "string")
       } else if (typeof _sources === "string") {
         sourcesArray = _sources
           .split(",")
           .map((s) => s.trim())
-          .filter((s) => s.length > 0);
+          .filter((s) => s.length > 0)
       }
 
       // Set reasoning state from URL param if present
       if (typeof chatParams.reasoning === "boolean") {
-        setIsReasoningActive(chatParams.reasoning);
+        setIsReasoningActive(chatParams.reasoning)
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(messageToSend, sourcesArray, chatParams.agentId, chatParams.toolExternalIds)
+      handleSend(
+        messageToSend,
+        sourcesArray,
+        chatParams.agentId,
+        chatParams.toolExternalIds,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -513,7 +515,7 @@ export const ChatPage = ({
           toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
-      });
+      })
     }
   }, [
     chatParams.q,
@@ -530,37 +532,37 @@ export const ChatPage = ({
     agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
     toolExternalIds?: string[],
   ) => {
-    if (!messageToSend || isStreaming) return;
+    if (!messageToSend || isStreaming) return
 
     // Reset userHasScrolled to false when a new message is sent.
     // This ensures that the view will scroll down automatically as the new message streams in,
     // unless the user manually scrolls up during the streaming.
-    setUserHasScrolled(false);
-    setQuery("");
+    setUserHasScrolled(false)
+    setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
       { messageRole: "user", message: messageToSend },
-    ]);
+    ])
 
-    setIsStreaming(true);
-    setCurrentResp({ resp: "", thinking: "" });
-    currentRespRef.current = { resp: "", sources: [], thinking: "" };
+    setIsStreaming(true)
+    setCurrentResp({ resp: "", thinking: "" })
+    currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
     // const appEntities = selectedSources
     //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
     //   .filter((item) => item !== undefined)
 
     // Always parse the message input to a structured format
-    const parsedMessageParts = parseMessageInput(messageToSend);
+    const parsedMessageParts = parseMessageInput(messageToSend)
 
     // Determine if the message contains any pills or links
     const hasRichContent = parsedMessageParts.some(
       (part) => part.type === "pill" || part.type === "link",
-    );
+    )
 
-    let finalMessagePayload: string;
+    let finalMessagePayload: string
     if (hasRichContent) {
-      finalMessagePayload = JSON.stringify(parsedMessageParts);
+      finalMessagePayload = JSON.stringify(parsedMessageParts)
     } else {
       // If only text parts, send the original plain text message
       // We extract the text content from parsedMessageParts to ensure it's just the text
@@ -568,15 +570,15 @@ export const ChatPage = ({
       finalMessagePayload = parsedMessageParts
         .filter((part) => part.type === "text")
         .map((part) => part.value)
-        .join("");
+        .join("")
     }
 
-    const url = new URL(`/api/v1/message/create/mcp`, window.location.origin); // TODO: call only if any mcp clients are enable.
+    const url = new URL(`/api/v1/message/create/mcp`, window.location.origin) // TODO: call only if any mcp clients are enable.
     if (chatId) {
-      url.searchParams.append("chatId", chatId);
+      url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "gpt-4o-mini");
-    url.searchParams.append("message", finalMessagePayload);
+    url.searchParams.append("modelId", "gpt-4o-mini")
+    url.searchParams.append("message", finalMessagePayload)
 
     // if (appEntities.length > 0) {
     //   url.searchParams.append(
@@ -585,13 +587,13 @@ export const ChatPage = ({
     //   )
     // }
     if (isReasoningActive) {
-      url.searchParams.append("isReasoningEnabled", "true");
+      url.searchParams.append("isReasoningEnabled", "true")
     }
-    console.log("toolExternalIds", toolExternalIds);
+    console.log("toolExternalIds", toolExternalIds)
     if (toolExternalIds && toolExternalIds.length > 0) {
-      toolExternalIds.forEach(toolId => {
-        url.searchParams.append("toolExternalIds", toolId);
-      });
+      toolExternalIds.forEach((toolId) => {
+        url.searchParams.append("toolExternalIds", toolId)
+      })
     }
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
@@ -604,36 +606,36 @@ export const ChatPage = ({
     eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
       withCredentials: true,
-    });
+    })
 
     // ... (rest of the eventSource listeners remain the same) ...
     eventSourceRef.current.addEventListener(
       ChatSSEvents.CitationsUpdate,
       (event) => {
         // Use ref
-        const { contextChunks, citationMap } = JSON.parse(event.data);
+        const { contextChunks, citationMap } = JSON.parse(event.data)
         if (currentRespRef.current) {
-          currentRespRef.current.sources = contextChunks;
-          currentRespRef.current.citationMap = citationMap;
+          currentRespRef.current.sources = contextChunks
+          currentRespRef.current.citationMap = citationMap
           // Add explicit type for prevResp
           setCurrentResp((prevResp: CurrentResp | null) => ({
             ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
             resp: prevResp?.resp || "",
             sources: contextChunks,
             citationMap,
-          }));
+          }))
         }
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
       setCurrentResp((prevResp: CurrentResp | null) => ({
         ...(prevResp || { resp: "", thinking: event.data || "" }),
         thinking: (prevResp?.thinking || "") + event.data,
-      }));
-    });
+      }))
+    })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {});
+    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -641,68 +643,68 @@ export const ChatPage = ({
         setCurrentResp((prevResp: CurrentResp | null) => {
           const updatedResp = prevResp
             ? { ...prevResp, resp: prevResp.resp + event.data }
-            : { resp: event.data, thinking: "", sources: [], citationMap: {} };
-          currentRespRef.current = updatedResp;
-          return updatedResp;
-        });
+            : { resp: event.data, thinking: "", sources: [], citationMap: {} }
+          currentRespRef.current = updatedResp
+          return updatedResp
+        })
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseMetadata,
       (event) => {
         // Use ref
-        const { chatId, messageId } = JSON.parse(event.data);
-        setChatId(chatId);
+        const { chatId, messageId } = JSON.parse(event.data)
+        setChatId(chatId)
         if (chatId) {
           setTimeout(() => {
             router.navigate({
               to: "/chat/$chatId",
               params: { chatId },
               search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-            });
-          }, 1000);
+            })
+          }, 1000)
 
           if (!stopMsg) {
-            setStopMsg(true);
+            setStopMsg(true)
           }
         }
         if (messageId) {
           if (currentRespRef.current) {
             setCurrentResp((resp: CurrentResp | null) => {
-              const updatedResp = resp || { resp: "", thinking: "" };
-              updatedResp.chatId = chatId;
-              updatedResp.messageId = messageId;
-              currentRespRef.current = updatedResp;
-              return updatedResp;
-            });
+              const updatedResp = resp || { resp: "", thinking: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
           } else {
             setMessages((prevMessages) => {
-              const lastMessage = prevMessages[prevMessages.length - 1];
+              const lastMessage = prevMessages[prevMessages.length - 1]
               if (lastMessage.messageRole === "assistant") {
                 return [
                   ...prevMessages.slice(0, -1),
                   { ...lastMessage, externalId: messageId },
-                ];
+                ]
               }
-              return prevMessages;
-            });
+              return prevMessages
+            })
           }
         }
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ChatTitleUpdate,
       (event) => {
         // Use ref
-        setChatTitle(event.data);
+        setChatTitle(event.data)
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
       // Use ref
-      const currentResp = currentRespRef.current;
+      const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
@@ -714,20 +716,20 @@ export const ChatPage = ({
             citationMap: currentResp.citationMap,
             thinking: currentResp.thinking,
           },
-        ]);
+        ])
       }
-      setCurrentResp(null);
-      currentRespRef.current = null;
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setStopMsg(false);
-      setIsStreaming(false);
-    });
+      setCurrentResp(null)
+      currentRespRef.current = null
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
+      setIsStreaming(false)
+    })
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
       // Use ref
-      console.error("Error with SSE:", event.data);
-      const currentResp = currentRespRef.current;
+      console.error("Error with SSE:", event.data)
+      const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
@@ -739,36 +741,36 @@ export const ChatPage = ({
             citationMap: currentResp.citationMap,
             thinking: currentResp.thinking,
           },
-        ]);
+        ])
       }
-      setCurrentResp(null);
-      currentRespRef.current = null;
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setStopMsg(false);
-      setIsStreaming(false);
-    });
+      setCurrentResp(null)
+      currentRespRef.current = null
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
+      setIsStreaming(false)
+    })
 
     eventSourceRef.current.onerror = (error) => {
       // Use ref
       // Check if the stop was intentional
       if (userStopped) {
-        setUserStopped(false); // Reset the flag
+        setUserStopped(false) // Reset the flag
         // Clean up state, similar to handleStop or End event
-        setCurrentResp(null);
-        currentRespRef.current = null;
-        setStopMsg(false);
-        setIsStreaming(false);
+        setCurrentResp(null)
+        currentRespRef.current = null
+        setStopMsg(false)
+        setIsStreaming(false)
         // Close again just in case, and clear ref
-        eventSourceRef.current?.close();
-        eventSourceRef.current = null;
+        eventSourceRef.current?.close()
+        eventSourceRef.current = null
         // Do NOT add an error message in this case
-        return;
+        return
       }
 
       // If it wasn't a user stop, proceed with error handling as before
-      console.error("Error with SSE:", error);
-      const currentResp = currentRespRef.current;
+      console.error("Error with SSE:", error)
+      const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
@@ -776,18 +778,18 @@ export const ChatPage = ({
             messageRole: "assistant",
             message: `Error occurred: please try again`,
           },
-        ]);
+        ])
       }
-      setCurrentResp(null);
-      currentRespRef.current = null;
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setStopMsg(false);
-      setIsStreaming(false);
-    };
+      setCurrentResp(null)
+      currentRespRef.current = null
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
+      setIsStreaming(false)
+    }
 
-    setQuery("");
-  };
+    setQuery("")
+  }
 
   const handleFeedback = async (
     messageId: string,
@@ -834,14 +836,14 @@ export const ChatPage = ({
   }
 
   const handleStop = async () => {
-    setUserStopped(true); // Indicate intentional stop before closing
+    setUserStopped(true) // Indicate intentional stop before closing
 
     if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null; // Clear the ref
+      eventSourceRef.current.close()
+      eventSourceRef.current = null // Clear the ref
     }
 
-    setIsStreaming(false);
+    setIsStreaming(false)
 
     // 4. Attempt to send stop request to backend if IDs are available
     if (chatId && isStreaming) {
@@ -851,15 +853,15 @@ export const ChatPage = ({
           json: {
             chatId: chatId,
           },
-        });
+        })
       } catch (error) {
-        console.error("Failed to send stop request to backend:", error);
+        console.error("Failed to send stop request to backend:", error)
         toast({
           title: "Error",
           description: "Could not stop streaming.",
           variant: "destructive",
           duration: 1000,
-        });
+        })
         // Backend stop failed, but client-side is already stopped
       }
     }
@@ -877,51 +879,51 @@ export const ChatPage = ({
           citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
           thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
         },
-      ]);
+      ])
     }
 
     // 6. Clear streaming-related state *after* backend request and message handling
-    setCurrentResp(null);
-    currentRespRef.current = null;
-    setStopMsg(false);
+    setCurrentResp(null)
+    currentRespRef.current = null
+    setStopMsg(false)
     // 7. Invalidate router state after a short delay to refetch loader data
     setTimeout(() => {
-      router.invalidate();
-    }, 1000); // Delay for 500ms
-  };
+      router.invalidate()
+    }, 1000) // Delay for 500ms
+  }
 
   const handleRetry = async (messageId: string) => {
-    if (!messageId || isStreaming) return;
+    if (!messageId || isStreaming) return
 
-    setIsStreaming(true);
+    setIsStreaming(true)
     const userMsgWithErr = messages.find(
       (msg) =>
         msg.externalId === messageId &&
         msg.messageRole === "user" &&
         msg.errorMessage,
-    );
+    )
     setMessages((prevMessages) => {
       if (userMsgWithErr) {
-        const updatedMessages = [...prevMessages];
+        const updatedMessages = [...prevMessages]
         const index = updatedMessages.findIndex(
           (msg) => msg.externalId === messageId && msg.messageRole === "user",
-        );
+        )
 
         if (index !== -1) {
           updatedMessages[index] = {
             ...updatedMessages[index],
             errorMessage: "",
-          };
+          }
           updatedMessages.splice(index + 1, 0, {
             messageRole: "assistant",
             message: "",
             isRetrying: true,
             thinking: "",
             sources: [],
-          });
+          })
         }
 
-        return updatedMessages;
+        return updatedMessages
       } else {
         return prevMessages.map((msg) => {
           if (msg.externalId === messageId && msg.messageRole === "assistant") {
@@ -931,21 +933,21 @@ export const ChatPage = ({
               isRetrying: true,
               sources: [],
               thinking: "",
-            };
+            }
           }
-          return msg;
-        });
+          return msg
+        })
       }
-    });
+    })
 
-    const url = new URL(`/api/v1/message/retry`, window.location.origin);
-    url.searchParams.append("messageId", encodeURIComponent(messageId));
-    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`);
-    setStopMsg(true); // Ensure stop message can be sent for retries
+    const url = new URL(`/api/v1/message/retry`, window.location.origin)
+    url.searchParams.append("messageId", encodeURIComponent(messageId))
+    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
+    setStopMsg(true) // Ensure stop message can be sent for retries
     eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
       withCredentials: true,
-    });
+    })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -955,20 +957,20 @@ export const ChatPage = ({
           setMessages((prevMessages) => {
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
-            );
+            )
 
             if (index === -1 || index + 1 >= prevMessages.length) {
-              return prevMessages;
+              return prevMessages
             }
 
-            const newMessages = [...prevMessages];
+            const newMessages = [...prevMessages]
             newMessages[index + 1] = {
               ...newMessages[index + 1],
               message: newMessages[index + 1].message + event.data,
-            };
+            }
 
-            return newMessages;
-          });
+            return newMessages
+          })
         } else {
           setMessages((prevMessages) =>
             prevMessages.map((msg) =>
@@ -976,10 +978,10 @@ export const ChatPage = ({
                 ? { ...msg, message: msg.message + event.data }
                 : msg,
             ),
-          );
+          )
         }
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
       // Use ref
@@ -987,20 +989,20 @@ export const ChatPage = ({
         setMessages((prevMessages) => {
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
-          );
+          )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages;
+            return prevMessages
           }
 
-          const newMessages = [...prevMessages];
+          const newMessages = [...prevMessages]
           newMessages[index + 1] = {
             ...newMessages[index + 1],
             thinking: (newMessages[index + 1].thinking || "") + event.data,
-          };
+          }
 
-          return newMessages;
-        });
+          return newMessages
+        })
       } else {
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
@@ -1008,9 +1010,9 @@ export const ChatPage = ({
               ? { ...msg, thinking: (msg.thinking || "") + event.data }
               : msg,
           ),
-        );
+        )
       }
-    });
+    })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseMetadata,
@@ -1018,68 +1020,68 @@ export const ChatPage = ({
         // Use ref
         const userMessage = messages.find(
           (msg) => msg.externalId === messageId && msg.messageRole === "user",
-        );
+        )
         if (userMessage) {
-          const { messageId: newMessageId } = JSON.parse(event.data);
+          const { messageId: newMessageId } = JSON.parse(event.data)
 
           if (newMessageId) {
             setMessages((prevMessages) => {
               const index = prevMessages.findIndex(
                 (msg) => msg.externalId === messageId,
-              );
+              )
 
               if (index === -1 || index + 1 >= prevMessages.length) {
-                return prevMessages;
+                return prevMessages
               }
 
-              const newMessages = [...prevMessages];
+              const newMessages = [...prevMessages]
               newMessages[index + 1] = {
                 ...newMessages[index + 1],
                 externalId: newMessageId,
-              };
-              return newMessages;
-            });
+              }
+              return newMessages
+            })
           }
         }
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.CitationsUpdate,
       (event) => {
         // Use ref
-        const { contextChunks, citationMap } = JSON.parse(event.data);
+        const { contextChunks, citationMap } = JSON.parse(event.data)
         setMessages((prevMessages) => {
           if (userMsgWithErr) {
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
-            );
+            )
 
             if (index === -1 || index + 1 >= prevMessages.length) {
-              return prevMessages;
+              return prevMessages
             }
 
-            const newMessages = [...prevMessages];
+            const newMessages = [...prevMessages]
 
             if (newMessages[index + 1].isRetrying) {
               newMessages[index + 1] = {
                 ...newMessages[index + 1],
                 sources: contextChunks,
                 citationMap,
-              };
+              }
             }
 
-            return newMessages;
+            return newMessages
           } else {
             return prevMessages.map((msg) =>
               msg.externalId === messageId && msg.isRetrying
                 ? { ...msg, sources: contextChunks, citationMap }
                 : msg,
-            );
+            )
           }
-        });
+        })
       },
-    );
+    )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
       // Use ref
@@ -1087,103 +1089,103 @@ export const ChatPage = ({
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
-          );
+          )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages;
+            return prevMessages
           }
 
-          const newMessages = [...prevMessages];
+          const newMessages = [...prevMessages]
 
           if (newMessages[index + 1].isRetrying) {
             newMessages[index + 1] = {
               ...newMessages[index + 1],
               isRetrying: false,
-            };
+            }
           }
 
-          return newMessages;
+          return newMessages
         } else {
           return prevMessages.map((msg) =>
             msg.externalId === messageId && msg.isRetrying
               ? { ...msg, isRetrying: false }
               : msg,
-          );
+          )
         }
-      });
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setIsStreaming(false);
-    });
+      })
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setIsStreaming(false)
+    })
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
       // Use ref
-      console.error("Retry Error with SSE:", event.data);
+      console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
-          );
+          )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages;
+            return prevMessages
           }
 
-          const newMessages = [...prevMessages];
+          const newMessages = [...prevMessages]
 
           if (newMessages[index + 1].isRetrying)
             newMessages[index + 1] = {
               ...newMessages[index + 1],
               isRetrying: false,
               message: event.data,
-            };
+            }
 
-          return newMessages;
+          return newMessages
         } else {
           return prevMessages.map((msg) =>
             msg.externalId === messageId && msg.isRetrying
               ? { ...msg, isRetrying: false, message: event.data }
               : msg,
-          );
+          )
         }
-      });
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setIsStreaming(false);
-    });
+      })
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setIsStreaming(false)
+    })
 
     eventSourceRef.current.onerror = (error) => {
       // Use ref
-      console.error("Retry SSE Error:", error);
+      console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
-          );
+          )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages;
+            return prevMessages
           }
 
-          const newMessages = [...prevMessages];
+          const newMessages = [...prevMessages]
 
           newMessages[index + 1] = {
             ...newMessages[index + 1],
             isRetrying: false,
-          };
+          }
 
-          return newMessages;
+          return newMessages
         } else {
           return prevMessages.map((msg) =>
             msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-          );
+          )
         }
-      });
-      eventSourceRef.current?.close(); // Use ref
-      eventSourceRef.current = null; // Clear ref
-      setIsStreaming(false);
-    };
-  };
+      })
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setIsStreaming(false)
+    }
+  }
 
   const handleBookmark = async () => {
     if (chatId) {
@@ -1192,38 +1194,38 @@ export const ChatPage = ({
           chatId: chatId,
           bookmark: !bookmark,
         },
-      });
-      setBookmark(!bookmark);
+      })
+      setBookmark(!bookmark)
     }
-  };
+  }
 
   const isScrolledToBottom = () => {
-    const container = messagesContainerRef.current;
-    if (!container) return true;
+    const container = messagesContainerRef.current
+    if (!container) return true
 
-    const threshold = 100;
+    const threshold = 100
     return (
       container.scrollHeight - container.scrollTop - container.clientHeight <
       threshold
-    );
-  };
+    )
+  }
 
   const handleScroll = () => {
-    const isAtBottom = isScrolledToBottom();
+    const isAtBottom = isScrolledToBottom()
     // Set userHasScrolled to true if the user scrolls up from the bottom.
     // This will prevent the automatic scrolling behavior while the user is manually scrolling.
-    setUserHasScrolled(!isAtBottom);
-  };
+    setUserHasScrolled(!isAtBottom)
+  }
 
   useEffect(() => {
-    const container = messagesContainerRef.current;
+    const container = messagesContainerRef.current
     // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
     // This prevents the view from jumping to the bottom if the user is trying to read previous messages
     // while a new message is streaming in.
-    if (!container || userHasScrolled) return;
+    if (!container || userHasScrolled) return
 
-    container.scrollTop = container.scrollHeight;
-  }, [messages, currentResp?.resp]);
+    container.scrollTop = container.scrollHeight
+  }, [messages, currentResp?.resp])
 
   if (data?.error) {
     return (
@@ -1231,55 +1233,55 @@ export const ChatPage = ({
         <Sidebar isAgentMode={agentWhiteList} />
         <div className="ml-[120px]">Error: Could not get data</div>
       </div>
-    );
+    )
   }
 
   const handleChatRename = async () => {
-    setIsEditing(true);
+    setIsEditing(true)
     setTimeout(() => {
       if (titleRef.current) {
-        titleRef.current.focus();
+        titleRef.current.focus()
       }
-    }, 0);
-    setEditedTitle(chatTitle);
-  };
+    }, 0)
+    setEditedTitle(chatTitle)
+  }
 
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      e.preventDefault();
+      e.preventDefault()
       if (editedTitle && editedTitle !== chatTitle) {
         renameChatMutation.mutate({
           chatId: chatId!,
           newTitle: editedTitle,
-        });
+        })
       }
     } else if (e.key === "Escape") {
-      e.preventDefault();
-      setEditedTitle(chatTitle);
-      setIsEditing(false);
+      e.preventDefault()
+      setEditedTitle(chatTitle)
+      setIsEditing(false)
       if (titleRef.current) {
-        titleRef.current.value = chatTitle!;
+        titleRef.current.value = chatTitle!
       }
     }
-  };
+  }
 
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEditedTitle(e.target.value);
-  };
+    setEditedTitle(e.target.value)
+  }
 
   const handleBlur = () => {
     if (editedTitle !== chatTitle) {
-      setEditedTitle(chatTitle);
-      if (titleRef.current) titleRef.current.value = chatTitle!;
+      setEditedTitle(chatTitle)
+      if (titleRef.current) titleRef.current.value = chatTitle!
     }
-    setIsEditing(false);
-  };
+    setIsEditing(false)
+  }
 
   const handleShowRagTrace = (messageId: string) => {
     if (chatId && messageId) {
-      window.open(`/trace/${chatId}/${messageId}`, "_blank");
+      window.open(`/trace/${chatId}/${messageId}`, "_blank")
     }
-  };
+  }
 
   return (
     <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
@@ -1318,12 +1320,18 @@ export const ChatPage = ({
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
-              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="dark:stroke-gray-400 ml-[20px]" size={18} />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -1338,9 +1346,9 @@ export const ChatPage = ({
             <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
               {messages.map((message, index) => {
                 const isSourcesVisible =
-                  showSources && currentMessageId === message.externalId;
+                  showSources && currentMessageId === message.externalId
                 const userMessageWithErr =
-                  message.messageRole === "user" && message?.errorMessage;
+                  message.messageRole === "user" && message?.errorMessage
 
                 return (
                   <Fragment key={message.externalId ?? index}>
@@ -1365,13 +1373,13 @@ export const ChatPage = ({
                           showSources &&
                           currentMessageId === message.externalId
                         ) {
-                          setShowSources(false);
-                          setCurrentCitations([]);
-                          setCurrentMessageId(null);
+                          setShowSources(false)
+                          setCurrentCitations([])
+                          setCurrentMessageId(null)
                         } else {
-                          setCurrentCitations(message?.sources || []);
-                          setShowSources(true);
-                          setCurrentMessageId(message.externalId);
+                          setCurrentCitations(message?.sources || [])
+                          setShowSources(true)
+                          setCurrentMessageId(message.externalId)
                         }
                       }}
                       sourcesVisible={isSourcesVisible}
@@ -1403,13 +1411,13 @@ export const ChatPage = ({
                             showSources &&
                             currentMessageId === message.externalId
                           ) {
-                            setShowSources(false);
-                            setCurrentCitations([]);
-                            setCurrentMessageId(null);
+                            setShowSources(false)
+                            setCurrentCitations([])
+                            setCurrentMessageId(null)
                           } else {
-                            setCurrentCitations(message?.sources || []);
-                            setShowSources(true);
-                            setCurrentMessageId(message.externalId);
+                            setCurrentCitations(message?.sources || [])
+                            setShowSources(true)
+                            setCurrentMessageId(message.externalId)
                           }
                         }}
                         sourcesVisible={isSourcesVisible}
@@ -1423,7 +1431,7 @@ export const ChatPage = ({
                       />
                     )}
                   </Fragment>
-                );
+                )
               })}
               {currentResp && (
                 <ChatMessage
@@ -1441,13 +1449,13 @@ export const ChatPage = ({
                       showSources &&
                       currentMessageId === currentResp.messageId
                     ) {
-                      setShowSources(false);
-                      setCurrentCitations([]);
-                      setCurrentMessageId(null);
+                      setShowSources(false)
+                      setCurrentCitations([])
+                      setCurrentMessageId(null)
                     } else {
-                      setCurrentCitations(currentResp.sources || []);
-                      setShowSources(true);
-                      setCurrentMessageId(currentResp.messageId || null);
+                      setCurrentCitations(currentResp.sources || [])
+                      setShowSources(true)
+                      setCurrentMessageId(currentResp.messageId || null)
                     }
                   }}
                   sourcesVisible={
@@ -1469,8 +1477,8 @@ export const ChatPage = ({
                   chatId={chatId}
                   messageId={selectedMessageId}
                   onClose={() => {
-                    setShowRagTrace(false);
-                    setSelectedMessageId(null);
+                    setShowRagTrace(false)
+                    setSelectedMessageId(null)
                   }}
                 />
               </div>
@@ -1493,23 +1501,23 @@ export const ChatPage = ({
             showSources={showSources}
             citations={currentCitations}
             closeSources={() => {
-              setShowSources(false);
-              setCurrentCitations([]);
-              setCurrentMessageId(null);
+              setShowSources(false)
+              setCurrentCitations([])
+              setCurrentMessageId(null)
             }}
           />
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
 const MessageCitationList = ({
   citations,
   onToggleSources,
 }: {
-  citations: Citation[];
-  onToggleSources: () => void;
+  citations: Citation[]
+  onToggleSources: () => void
 }) => {
   return (
     <TooltipProvider>
@@ -1566,8 +1574,8 @@ const MessageCitationList = ({
         )}
       </ul>
     </TooltipProvider>
-  );
-};
+  )
+}
 
 const CitationList = ({ citations }: { citations: Citation[] }) => {
   return (
@@ -1610,17 +1618,17 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
         </li>
       ))}
     </ul>
-  );
-};
+  )
+}
 
 const Sources = ({
   showSources,
   citations,
   closeSources,
 }: {
-  showSources: boolean;
-  citations: Citation[];
-  closeSources: () => void;
+  showSources: boolean
+  citations: Citation[]
+  closeSources: () => void
 }) => {
   return showSources ? (
     <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
@@ -1642,16 +1650,21 @@ const Sources = ({
         <CitationList citations={citations} />
       </div>
     </div>
-  ) : null;
-};
+  ) : null
+}
 
-export const textToCitationIndex = /\[(\d+)\]/g;
+export const textToCitationIndex = /\[(\d+)\]/g
 
 const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
+  <a
+    {...linkProps}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 dark:text-blue-400 hover:underline"
+  />
 )
 
 export const ChatMessage = ({
@@ -1696,23 +1709,23 @@ export const ChatMessage = ({
   const citationUrls = citations?.map((c: Citation) => c.url)
 
   const processMessage = (text: string) => {
-    text = splitGroupedCitationsWithSpaces(text);
+    text = splitGroupedCitationsWithSpaces(text)
 
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
-        const index = citationMap[num];
-        const url = citationUrls[index];
+        const index = citationMap[num]
+        const url = citationUrls[index]
         return typeof index === "number" && url
           ? `[[${index + 1}]](${url})`
-          : "";
-      });
+          : ""
+      })
     } else {
       return text.replace(textToCitationIndex, (match, num) => {
-        const url = citationUrls[num - 1];
-        return url ? `[[${num}]](${url})` : "";
-      });
+        const url = citationUrls[num - 1]
+        return url ? `[[${num}]](${url})` : ""
+      })
     }
-  };
+  }
   return (
     <div
       className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full"}`}
@@ -1742,7 +1755,7 @@ export const ChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1765,7 +1778,7 @@ export const ChatMessage = ({
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}
@@ -1818,7 +1831,11 @@ export const ChatMessage = ({
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} className="dark:text-gray-100" {...props} />
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
@@ -1957,8 +1974,8 @@ export const ChatMessage = ({
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
 const chatParams = z.object({
   q: z.string().optional(),
@@ -1972,15 +1989,15 @@ const chatParams = z.object({
     .string()
     .optional()
     .transform((val) => {
-      if (!val) return undefined;
+      if (!val) return undefined
       try {
-        const parsed = JSON.parse(val);
+        const parsed = JSON.parse(val)
         return Array.isArray(parsed) &&
           parsed.every((item) => typeof item === "string")
           ? parsed
-          : undefined;
+          : undefined
       } catch (e) {
-        return undefined; // Invalid JSON
+        return undefined // Invalid JSON
       }
     }),
   sources: z // Changed from sourceIds to sources, expects comma-separated string
@@ -1991,17 +2008,24 @@ const chatParams = z.object({
   toolExternalIds: z
     .string()
     .optional()
-    .transform((val) => (val ? val.split(",").map(id => id.trim()).filter(id => id.length > 0) : undefined)),
-});
+    .transform((val) =>
+      val
+        ? val
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined,
+    ),
+})
 
-type XyneChat = z.infer<typeof chatParams>;
+type XyneChat = z.infer<typeof chatParams>
 
 export const Route = createFileRoute("/_authenticated/chat")({
   beforeLoad: (params) => {
-    return params;
+    return params
   },
   loader: async (params) => {
-    return params;
+    return params
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
@@ -2016,4 +2040,4 @@ export const Route = createFileRoute("/_authenticated/chat")({
     )
   },
   errorComponent: errorComponent,
-});
+})
