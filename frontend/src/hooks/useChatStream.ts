@@ -36,7 +36,7 @@ const activeStreams = new Map<string, StreamState>()
 const parseMessageInput = (htmlString: string) => {
   const container = document.createElement("div")
   container.innerHTML = htmlString
-  const parts: Array<any> = []
+  const parts: Array<{ type: "text" | "pill" | "link"; value: any }> = []
 
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -139,8 +139,8 @@ export const startStream = async (
       .join("")
   }
 
-  // Determine if this is a new chat (streamKey is a UUID) or existing chat
-  const isNewChat = !streamKey.match(/^[a-z0-9]+$/) // Real chatIds are typically shorter alphanumeric
+  // Consider passing an explicit flag or using a more robust detection method
+  const isNewChat = streamKey.length === 36 && streamKey.includes('-') // UUID format detection
   const chatId = isNewChat ? null : streamKey
 
   // Construct URL
@@ -235,7 +235,7 @@ export const startStream = async (
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId: realId },
-            search: !isGlobalDebugMode ? {} : {},
+            search: isGlobalDebugMode ? { debug: true } : {},
             replace: true,
           })
       }
@@ -251,7 +251,9 @@ export const startStream = async (
       }
       streamKey = realId
     }
-    notifySubscribers(streamKey)
+    // Use a new variable instead of reassigning the parameter
+    const activeStreamKey = realId
+    notifySubscribers(activeStreamKey)
   })
 
   streamState.es.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
@@ -379,13 +381,17 @@ export const getStreamState = (streamKey: string): StreamInfo => {
 }
 
 // Periodic check for dead streams:
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   activeStreams.forEach((stream, key) => {
     if (stream.es.readyState === EventSource.CLOSED) {
       activeStreams.delete(key);
     }
   });
 }, 30000);
+
+export const cleanupStreams = () => {
+  clearInterval(cleanupInterval)
+}
 
 // React hook that subscribes to stream updates
 export const useChatStream = (
