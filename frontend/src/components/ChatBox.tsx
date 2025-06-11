@@ -74,6 +74,7 @@ interface ChatBoxProps {
     agentId?: string | null,
   ) => void // Expects agentId string
   isStreaming?: boolean
+  retryIsStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null // Current chat ID
   agentIdFromChatData?: string | null // New prop for agentId from chat data
@@ -194,6 +195,7 @@ export const ChatBox = ({
   setQuery,
   handleSend,
   isStreaming = false,
+  retryIsStreaming = false,
   allCitations,
   handleStop,
   chatId,
@@ -1606,7 +1608,7 @@ export const ChatBox = ({
               </div>
             )}
           </div>
-          {isStreaming && chatId ? (
+          {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}
               style={{ marginLeft: "auto" }}
@@ -1616,7 +1618,7 @@ export const ChatBox = ({
             </button>
           ) : (
             <button
-              disabled={isStreaming}
+              disabled={isStreaming || retryIsStreaming}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
               className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
