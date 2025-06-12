@@ -951,15 +951,14 @@ export const ChatPage = ({
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
     url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
     setStopMsg(true) // Ensure stop message can be sent for retries
     eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
       withCredentials: true,
     })
-
-    if (isAgenticMode) {
-      url.searchParams.append("agentic", "true")
-    }
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,

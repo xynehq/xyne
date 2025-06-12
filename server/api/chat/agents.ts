@@ -180,6 +180,7 @@ const {
   StartThinkingToken,
   EndThinkingToken,
   maxValidLinks,
+  maxUserRequestCount,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const checkAndYieldCitationsForAgent = function* (
@@ -1547,6 +1548,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             iterationCount++
 
             let loopWarningPrompt = ""
+            const reasoningHeader = `
+            --- AGENT REASONING SO FAR ---
+            Below is the step-by-step reasoning you've taken so far. Use this to inform your next action.
+            ${structuredReasoningSteps
+              .map(convertReasoningStepToText)
+              .join("\n")}
+            `
             const evidenceSummary =
               gatheredFragments.length > 0
                 ? `\n--- CURRENTLY GATHERED EVIDENCE (for final answer generation) ---\n` +
@@ -1565,11 +1573,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
-                   **CRITICAL WARNING:** You have already called some tools ${previousToolCalls.map((toolCall, idx) => `[Iteration-${idx}] Tool: ${toolCall.tool}, Args: ${JSON.stringify(toolCall.args)}`).join("\n")}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
+                   **Critique Past Actions:** You have already called some tools ${previousToolCalls.map((toolCall, idx) => `[Iteration-${idx}] Tool: ${toolCall.tool}, Args: ${JSON.stringify(toolCall.args)}`).join("\n")}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
                  You **MUST** change your strategy.
                   For example: 
-                    1.  Choose a **DIFFERENT TOOL** (e.g., use a broader 'search' instead of 'metadata_retrieval').
-                    2.  Use the **SAME TOOL** but with **DIFFERENT ARGUMENTS** (e.g., change keywords, remove filters, adjust the time range).
+                    1.  Choose a **DIFFERENT TOOL**.
+                    2.  Use the **SAME TOOL** but with **DIFFERENT ARGUMENTS**.
   
                   Do NOT make this call again. Formulate a new, distinct plan.
                    ---
@@ -1577,11 +1585,8 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
 
             agentScratchpad =
-              evidenceSummary +
-              loopWarningPrompt +
-              structuredReasoningSteps
-                .map(convertReasoningStepToText)
-                .join("\n")
+              evidenceSummary + loopWarningPrompt + reasoningHeader
+
             let toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -1735,11 +1740,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                 if (excludedIds.length > 0) {
                   toolParams.excludedIds = excludedIds
                 }
-                // --- BRANCH 1: INTERNAL AGENT TOOL ---
+                if ("limit" in toolParams) {
+                  if (
+                    toolParams.limit &&
+                    toolParams.limit > maxUserRequestCount
+                  ) {
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message: `Detected perPage ${toolParams.perPage} in arguments for tool ${toolName}`,
+                    })
+                    toolParams.limit = maxUserRequestCount
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message: `Limited perPage for tool ${toolName} to 10`,
+                    })
+                  }
+                }
+
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.ToolExecuting,
                   toolName: toolName as AgentToolName,
                 })
+
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
                     toolParams,
@@ -1877,9 +1899,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               toolExecutionSpan.end()
 
-              // 3. UNIFIED RESPONSE PROCESSING AND STATE UPDATE
-              // This block now runs for BOTH internal and external tools.
-
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.ToolResult,
                 toolName: toolName as AgentToolName,
@@ -1888,8 +1907,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 error: toolExecutionResponse.error,
               })
 
-              // If the tool call resulted in an error, the agent should know its plan failed.
-              // It will then re-evaluate and try a different tool in the next iteration.
               if (toolExecutionResponse.error) {
                 if (iterationCount < maxIterations) {
                   continue // Continue to the next iteration to re-plan
@@ -1903,7 +1920,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
-              // If the tool succeeded, update the agent's state
               if (
                 toolExecutionResponse.contexts &&
                 toolExecutionResponse.contexts.length > 0
@@ -1926,7 +1942,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                     .join("\n")
                 : ""
 
-              // If we have gathered ANY context at all, we perform synthesis evaluation.
               if (planningContext.length) {
                 type SynthesisResponse = {
                   synthesisState:
