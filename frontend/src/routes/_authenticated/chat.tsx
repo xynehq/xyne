@@ -159,7 +159,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
-
+const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
   workspace,
@@ -173,7 +173,9 @@ export const ChatPage = ({
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
-
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    Boolean(chatParams.agentic),
+  )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -186,7 +188,10 @@ export const ChatPage = ({
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+      search: {
+        ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+        ...(isAgenticMode ? { agentic: true } : {}),
+      },
     })
   }
   const hasHandledQueryParam = useRef(false)
@@ -270,7 +275,9 @@ export const ChatPage = ({
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
-
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
     Error,
@@ -454,7 +461,12 @@ export const ChatPage = ({
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(messageToSend, sourcesArray, chatParams.agentId)
+      handleSend(
+        messageToSend,
+        sourcesArray,
+        chatParams.agentId,
+        chatParams.toolExternalIds,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -464,6 +476,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
+          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
       })
@@ -473,6 +486,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
+    chatParams.toolExternalIds,
     router,
   ])
 
@@ -480,6 +494,7 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
+    toolExternalIds?: string[],
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -511,9 +526,8 @@ export const ChatPage = ({
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
     console.log("Using agentId:", agentIdToUse)
-
     console.log(`[ChatPage] Starting persistent stream with reasoning: ${isReasoningActive}`)
-    await startStream(messageToSend, selectedSources, isReasoningActive, agentIdToUse)
+    await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, toolExternalIds || [], agentIdToUse)
   }
 
   const handleFeedback = async (
@@ -567,8 +581,304 @@ export const ChatPage = ({
       console.log('[Debug] handleRetry early return - no messageId or isStreaming')
       return
     }
-    console.log('[Debug] Calling retryMessage with messageId:', messageId)
-    await retryMessage(messageId, isReasoningActive)
+    // if (!messageId || isStreaming) return
+
+    // setIsStreaming(true)
+    // const userMsgWithErr = messages.find(
+    //   (msg) =>
+    //     msg.externalId === messageId &&
+    //     msg.messageRole === "user" &&
+    //     msg.errorMessage,
+    // )
+    // setMessages((prevMessages) => {
+    //   if (userMsgWithErr) {
+    //     const updatedMessages = [...prevMessages]
+    //     const index = updatedMessages.findIndex(
+    //       (msg) => msg.externalId === messageId && msg.messageRole === "user",
+    //     )
+
+    //     if (index !== -1) {
+    //       updatedMessages[index] = {
+    //         ...updatedMessages[index],
+    //         errorMessage: "",
+    //       }
+    //       updatedMessages.splice(index + 1, 0, {
+    //         messageRole: "assistant",
+    //         message: "",
+    //         isRetrying: true,
+    //         thinking: "",
+    //         sources: [],
+    //       })
+    //     }
+
+    //     return updatedMessages
+    //   } else {
+    //     return prevMessages.map((msg) => {
+    //       if (msg.externalId === messageId && msg.messageRole === "assistant") {
+    //         return {
+    //           ...msg,
+    //           message: "",
+    //           isRetrying: true,
+    //           sources: [],
+    //           thinking: "",
+    //         }
+    //       }
+    //       return msg
+    //     })
+    //   }
+    // })
+
+    // const url = new URL(`/api/v1/message/retry`, window.location.origin)
+    // url.searchParams.append("messageId", encodeURIComponent(messageId))
+    // url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
+    // setStopMsg(true) // Ensure stop message can be sent for retries
+    // eventSourceRef.current = new EventSource(url.toString(), {
+    //   // Store EventSource
+    //   withCredentials: true,
+    // })
+
+    // if (isAgenticMode) {
+    //   url.searchParams.append("agentic", "true")
+    // }
+
+    // eventSourceRef.current.addEventListener(
+    //   ChatSSEvents.ResponseUpdate,
+    //   (event) => {
+    //     // Use ref
+    //     if (userMsgWithErr) {
+    //       setMessages((prevMessages) => {
+    //         const index = prevMessages.findIndex(
+    //           (msg) => msg.externalId === messageId,
+    //         )
+
+    //         if (index === -1 || index + 1 >= prevMessages.length) {
+    //           return prevMessages
+    //         }
+
+    //         const newMessages = [...prevMessages]
+    //         newMessages[index + 1] = {
+    //           ...newMessages[index + 1],
+    //           message: newMessages[index + 1].message + event.data,
+    //         }
+
+    //         return newMessages
+    //       })
+    //     } else {
+    //       setMessages((prevMessages) =>
+    //         prevMessages.map((msg) =>
+    //           msg.externalId === messageId && msg.isRetrying
+    //             ? { ...msg, message: msg.message + event.data }
+    //             : msg,
+    //         ),
+    //       )
+    //     }
+    //   },
+    // )
+
+    // eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+    //   // Use ref
+    //   if (userMsgWithErr) {
+    //     setMessages((prevMessages) => {
+    //       const index = prevMessages.findIndex(
+    //         (msg) => msg.externalId === messageId,
+    //       )
+
+    //       if (index === -1 || index + 1 >= prevMessages.length) {
+    //         return prevMessages
+    //       }
+
+    //       const newMessages = [...prevMessages]
+    //       newMessages[index + 1] = {
+    //         ...newMessages[index + 1],
+    //         thinking: (newMessages[index + 1].thinking || "") + event.data,
+    //       }
+
+    //       return newMessages
+    //     })
+    //   } else {
+    //     setMessages((prevMessages) =>
+    //       prevMessages.map((msg) =>
+    //         msg.externalId === messageId && msg.isRetrying
+    //           ? { ...msg, thinking: (msg.thinking || "") + event.data }
+    //           : msg,
+    //       ),
+    //     )
+    //   }
+    // })
+
+    // eventSourceRef.current.addEventListener(
+    //   ChatSSEvents.ResponseMetadata,
+    //   (event) => {
+    //     // Use ref
+    //     const userMessage = messages.find(
+    //       (msg) => msg.externalId === messageId && msg.messageRole === "user",
+    //     )
+    //     if (userMessage) {
+    //       const { messageId: newMessageId } = JSON.parse(event.data)
+
+    //       if (newMessageId) {
+    //         setMessages((prevMessages) => {
+    //           const index = prevMessages.findIndex(
+    //             (msg) => msg.externalId === messageId,
+    //           )
+
+    //           if (index === -1 || index + 1 >= prevMessages.length) {
+    //             return prevMessages
+    //           }
+
+    //           const newMessages = [...prevMessages]
+    //           newMessages[index + 1] = {
+    //             ...newMessages[index + 1],
+    //             externalId: newMessageId,
+    //           }
+    //           return newMessages
+    //         })
+    //       }
+    //     }
+    //   },
+    // )
+
+    // eventSourceRef.current.addEventListener(
+    //   ChatSSEvents.CitationsUpdate,
+    //   (event) => {
+    //     // Use ref
+    //     const { contextChunks, citationMap } = JSON.parse(event.data)
+    //     setMessages((prevMessages) => {
+    //       if (userMsgWithErr) {
+    //         const index = prevMessages.findIndex(
+    //           (msg) => msg.externalId === messageId,
+    //         )
+
+    //         if (index === -1 || index + 1 >= prevMessages.length) {
+    //           return prevMessages
+    //         }
+
+    //         const newMessages = [...prevMessages]
+
+    //         if (newMessages[index + 1].isRetrying) {
+    //           newMessages[index + 1] = {
+    //             ...newMessages[index + 1],
+    //             sources: contextChunks,
+    //             citationMap,
+    //           }
+    //         }
+
+    //         return newMessages
+    //       } else {
+    //         return prevMessages.map((msg) =>
+    //           msg.externalId === messageId && msg.isRetrying
+    //             ? { ...msg, sources: contextChunks, citationMap }
+    //             : msg,
+    //         )
+    //       }
+    //     })
+    //   },
+    // )
+
+    // eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+    //   // Use ref
+    //   setMessages((prevMessages) => {
+    //     if (userMsgWithErr) {
+    //       const index = prevMessages.findIndex(
+    //         (msg) => msg.externalId === messageId,
+    //       )
+
+    //       if (index === -1 || index + 1 >= prevMessages.length) {
+    //         return prevMessages
+    //       }
+
+    //       const newMessages = [...prevMessages]
+
+    //       if (newMessages[index + 1].isRetrying) {
+    //         newMessages[index + 1] = {
+    //           ...newMessages[index + 1],
+    //           isRetrying: false,
+    //         }
+    //       }
+
+    //       return newMessages
+    //     } else {
+    //       return prevMessages.map((msg) =>
+    //         msg.externalId === messageId && msg.isRetrying
+    //           ? { ...msg, isRetrying: false }
+    //           : msg,
+    //       )
+    //     }
+    //   })
+    //   eventSourceRef.current?.close() // Use ref
+    //   eventSourceRef.current = null // Clear ref
+    //   setIsStreaming(false)
+    // })
+
+    // eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+    //   // Use ref
+    //   console.error("Retry Error with SSE:", event.data)
+    //   setMessages((prevMessages) => {
+    //     if (userMsgWithErr) {
+    //       const index = prevMessages.findIndex(
+    //         (msg) => msg.externalId === messageId,
+    //       )
+
+    //       if (index === -1 || index + 1 >= prevMessages.length) {
+    //         return prevMessages
+    //       }
+
+    //       const newMessages = [...prevMessages]
+
+    //       if (newMessages[index + 1].isRetrying)
+    //         newMessages[index + 1] = {
+    //           ...newMessages[index + 1],
+    //           isRetrying: false,
+    //           message: event.data,
+    //         }
+
+    //       return newMessages
+    //     } else {
+    //       return prevMessages.map((msg) =>
+    //         msg.externalId === messageId && msg.isRetrying
+    //           ? { ...msg, isRetrying: false, message: event.data }
+    //           : msg,
+    //       )
+    //     }
+    //   })
+    //   eventSourceRef.current?.close() // Use ref
+    //   eventSourceRef.current = null // Clear ref
+    //   setIsStreaming(false)
+    // })
+
+    // eventSourceRef.current.onerror = (error) => {
+    //   // Use ref
+    //   console.error("Retry SSE Error:", error)
+    //   setMessages((prevMessages) => {
+    //     if (userMsgWithErr) {
+    //       const index = prevMessages.findIndex(
+    //         (msg) => msg.externalId === messageId,
+    //       )
+
+    //       if (index === -1 || index + 1 >= prevMessages.length) {
+    //         return prevMessages
+    //       }
+
+    //       const newMessages = [...prevMessages]
+
+    //       newMessages[index + 1] = {
+    //         ...newMessages[index + 1],
+    //         isRetrying: false,
+    //       }
+
+    //       return newMessages
+    //     } else {
+    //       return prevMessages.map((msg) =>
+    //         msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+    //       )
+    //     }
+    //   })
+    //   eventSourceRef.current?.close() // Use ref
+    //   eventSourceRef.current = null // Clear ref
+    //   setIsStreaming(false)
+    // }
+    // console.log('[Debug] Calling retryMessage with messageId:', messageId)
+    await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
   const handleBookmark = async () => {
@@ -671,7 +981,7 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
@@ -699,12 +1009,18 @@ export const ChatPage = ({
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
-              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="dark:stroke-gray-400 ml-[20px]" size={18} />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -858,6 +1174,7 @@ export const ChatPage = ({
               </div>
             )}
             <ChatBox
+              role={user?.role}
               query={query}
               setQuery={setQuery}
               handleSend={handleSend}
@@ -865,6 +1182,8 @@ export const ChatPage = ({
               isStreaming={isStreaming}
               retryIsStreaming={retryIsStreaming}
               allCitations={allCitations}
+              setIsAgenticMode={setIsAgenticMode}
+              isAgenticMode={isAgenticMode}
               chatId={chatId}
               agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
@@ -1033,7 +1352,12 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
+  <a
+    {...linkProps}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 dark:text-blue-400 hover:underline"
+  />
 )
 
 export const ChatMessage = ({
@@ -1126,7 +1450,7 @@ export const ChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1149,7 +1473,7 @@ export const ChatMessage = ({
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}
@@ -1202,7 +1526,11 @@ export const ChatMessage = ({
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} className="dark:text-gray-100" {...props} />
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
@@ -1350,7 +1678,12 @@ const chatParams = z.object({
     .optional()
     .default("false"),
   reasoning: z.boolean().optional(),
-  refs: z
+  agentic: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
+  refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
     .transform((val) => {
@@ -1370,6 +1703,17 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  toolExternalIds: z
+    .string()
+    .optional()
+    .transform((val) =>
+      val
+        ? val
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined,
+    ),
 })
 
 type XyneChat = z.infer<typeof chatParams>

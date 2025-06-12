@@ -106,6 +106,8 @@ export const startStream = async (
   messageToSend: string,
   selectedSources: string[] = [],
   isReasoningActive: boolean = true,
+  isAgenticMode: boolean = false,
+  toolExternalIds: string[] = [],
   queryClient?: any,
   router?: any,
   onTitleUpdate?: (title: string) => void,
@@ -134,6 +136,9 @@ export const startStream = async (
   if (hasRichContent) {
     finalMessagePayload = JSON.stringify(parsedMessageParts)
   } else {
+    // If only text parts, send the original plain text message
+    // We extract the text content from parsedMessageParts to ensure it's just the text
+    // and not potentially an empty array string if messageToSend was empty.
     finalMessagePayload = parsedMessageParts
       .filter((part) => part.type === "text")
       .map((part) => part.value)
@@ -145,19 +150,31 @@ export const startStream = async (
   const chatId = isNewChat ? null : streamKey
 
   // Construct URL
-  const url = new URL(`/api/v1/message/create`, window.location.origin)
+  const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
   if (chatId) {
     url.searchParams.append("chatId", chatId)
-    console.log(`[SSEManager] Using existing chatId: ${chatId}`)
-  } else {
-    console.log(`[SSEManager] Starting new chat with temporary key: ${streamKey}`)
+  }
+  if (isAgenticMode) {
+    url.searchParams.append("agentic", "true")
   }
   url.searchParams.append("modelId", "gpt-4o-mini")
   url.searchParams.append("message", finalMessagePayload)
+
+  // if (appEntities.length > 0) {
+  //   url.searchParams.append(
+  //     "stringifiedAppEntity",
+  //     JSON.stringify(appEntities),
+  //   )
+  // }
   if (isReasoningActive) {
     url.searchParams.append("isReasoningEnabled", "true")
   }
-  
+  if (toolExternalIds && toolExternalIds.length > 0) {
+    toolExternalIds.forEach((toolId) => {
+      url.searchParams.append("toolExternalIds", toolId)
+    })
+  }
+
   const agentIdToUse = agentIdFromChatParams;
   if (agentIdToUse) {
     url.searchParams.append("agentId", agentIdToUse);
@@ -315,14 +332,16 @@ export const stopStream = async (streamKey: string, queryClient?: any, setRetryI
 
   console.log(`[SSEManager] Stopping stream for ${streamKey}`)
 
-    // Set retry streaming flag to false when stoping
-    if (setRetryIsStreaming) {
-      setRetryIsStreaming(false)
-    }
+  // Set retry streaming flag to false when stoping
+  if (setRetryIsStreaming) {
+    setRetryIsStreaming(false)
+    stream.isRetrying = false
+  }
   
   stream.isStreaming = false
   stream.es.close()
-  
+  console.log("thinking", stream.thinking)
+  console.log("partial", stream.partial)
   // Send stop request to backend using the real chatId if available
   const currentChatId = stream.chatId || streamKey
   if (currentChatId) {
@@ -429,6 +448,13 @@ export const useChatStream = (
     currentStreamKeyRef.current = currentStreamKey
   }, [currentStreamKey])
 
+  useEffect(() => {
+    const stream = activeStreams.get(router.state.location.pathname.split("/").pop() || "")
+    if(setRetryIsStreaming) {
+      setRetryIsStreaming(stream?.isRetrying|| false)
+    }
+  }, [router.state.location.pathname])
+
   // Subscribe to stream updates
   useEffect(() => {
     const streamKey = currentStreamKey
@@ -483,6 +509,8 @@ export const useChatStream = (
     messageToSend: string,
     selectedSources: string[] = [],
     isReasoningActive: boolean = true,
+    isAgenticMode: boolean = false,
+    toolExternalIds: string[] = [],
     agentIdFromChatParams?: string | null
   ) => {
     const streamKey = currentStreamKey
@@ -493,6 +521,8 @@ export const useChatStream = (
       messageToSend,
       selectedSources,
       isReasoningActive,
+      isAgenticMode,
+      toolExternalIds,
       queryClient,
       router,
       onTitleUpdate,
@@ -520,7 +550,8 @@ export const useChatStream = (
 
   const retryMessage = useCallback(async (
     messageId: string,
-    isReasoningActive: boolean = true
+    isReasoningActive: boolean = false,
+    isAgenticMode: boolean = false,
   ) => {
     if (!messageId) return
 
@@ -546,7 +577,7 @@ export const useChatStream = (
         return {
           ...old,
           messages: old.messages.map((m: any) =>
-            m.externalId === messageId && m.messageRole === "assistant" ? { ...m, isRetrying: true, message: "" } : m,
+            (m.externalId === messageId && m.messageRole === "assistant") ? { ...m, isRetrying: true, message: "", thinking: "" } : m,
           ),
         }
       })
@@ -617,7 +648,12 @@ export const useChatStream = (
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
-    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
+    if (isReasoningActive) {
+      url.searchParams.append("isReasoningEnabled", "true")
+    }
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
 
     // For retry, we'll use a simpler approach since it's less common
     // and doesn't need the full persistent stream management
@@ -656,8 +692,8 @@ export const useChatStream = (
     }
     notifySubscribers(retryStreamKey)
 
-    // STEP 2 – helper to update the cached message in-place
-    const patchContent = (delta: string, isFinal = false) => {
+    // STEP 2 – helpers to update the cached message in-place
+    const patchResponseContent = (delta: string, isFinal = false) => {
       if (!chatId) return
       queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
         if (!old?.messages) return old
@@ -676,14 +712,33 @@ export const useChatStream = (
       })
     }
 
+    const patchReasoningContent = (delta: string) => {
+      if (!chatId) return
+      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+        if (!old?.messages) return old
+        return {
+          ...old,
+          messages: old.messages.map((m: any) =>
+            (isError ? m.externalId === targetMessageId : m.externalId === messageId && m.messageRole === "assistant")
+              ? {
+                  ...m,
+                  thinking: (m.thinking || "") + delta,
+                }
+              : m,
+          ),
+        }
+      })
+    }
+
     // Setup event listeners for retry
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       streamState.partial += event.data
-      patchContent(event.data) // incremental text
+      patchResponseContent(event.data)
     })
 
     eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
       streamState.thinking += event.data
+      patchReasoningContent(event.data)
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
@@ -698,7 +753,7 @@ export const useChatStream = (
     })
 
     eventSource.addEventListener(ChatSSEvents.End, () => {
-      patchContent(streamState.partial, true) // final text
+      patchResponseContent(streamState.partial)
       if (chatId) {
         queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
       }
@@ -706,6 +761,8 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      streamState.isRetrying = false
+      notifySubscribers(retryStreamKey)
       activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     })
@@ -721,6 +778,8 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      streamState.isRetrying = false
+      notifySubscribers(retryStreamKey)
       activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     })
@@ -731,9 +790,12 @@ export const useChatStream = (
       if (setRetryIsStreaming) {
         setRetryIsStreaming(false)
       }
+      streamState.isRetrying = false
+      notifySubscribers(retryStreamKey)
       activeStreams.delete(retryStreamKey) // Clean up retry stream
       eventSource.close()
     }
+
   }, [currentStreamKey, queryClient, chatId, setRetryIsStreaming])
 
   return {
