@@ -42,7 +42,7 @@ import {
 import { VespaSearchResultsSchema } from "@/search/types"
 import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
@@ -55,6 +55,7 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 const Logger = getLogger(Subsystem.Api)
+const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
   config
@@ -157,9 +158,10 @@ export const messageRetrySchema = z.object({
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 
 export const AutocompleteApi = async (c: Context) => {
+  let email = ""
   try {
     const { sub } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
@@ -172,7 +174,7 @@ export const AutocompleteApi = async (c: Context) => {
     return c.json(newResults)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Autocomplete Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -281,7 +283,7 @@ export const AnswerApi = async (c: Context) => {
 
   const tokenLimit = maxTokenBeforeMetadataCleanup
   let useMetadata = false
-  Logger.info(`User Asked: ${decodedQuery}`)
+  loggerWithChild({email: email}).info(`User Asked: ${decodedQuery}`)
   // if we don't use this, 3.4 seems like a good approx value
   if (
     llama3Tokenizer.encode(initialContext).length > tokenLimit ||
@@ -368,7 +370,7 @@ export const AnswerApi = async (c: Context) => {
   )
 
   return streamSSE(c, async (stream) => {
-    Logger.info("SSE stream started")
+    loggerWithChild({email: email}).info("SSE stream started")
     // Stream the initial context information
     await stream.writeSSE({
       data: ``,
@@ -393,7 +395,7 @@ export const AnswerApi = async (c: Context) => {
         }
       }
 
-      Logger.info(
+      loggerWithChild({email: email}).info(
         `costArr: ${costArr} \n Total Cost: ${costArr.reduce(
           (prev, curr) => prev + curr,
           0,
@@ -405,9 +407,9 @@ export const AnswerApi = async (c: Context) => {
       event: AnswerSSEvents.End,
     })
 
-    Logger.info("SSE stream ended")
+    loggerWithChild({email: email}).info("SSE stream ended")
     stream.onAbort(() => {
-      Logger.error("SSE stream aborted")
+      loggerWithChild({email: email}).error("SSE stream aborted")
     })
   })
 }

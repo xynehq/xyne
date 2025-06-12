@@ -85,7 +85,7 @@ export const GetConnectorTools = async (c: Context) => {
 
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-    Logger.error({ sub }, "No user found for sub in GetConnectorTools")
+     loggerWithChild({email:sub}).error({ sub }, "No user found for sub in GetConnectorTools")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -347,8 +347,8 @@ export const AddServiceConnection = async (c: Context) => {
 // slack is using bot token for the initial ingestion and sync
 // same service will be used for any api key based connector
 export const AddApiKeyConnector = async (c: Context) => {
-  Logger.info("ApiKeyConnector")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({email:sub}).info("ApiKeyConnector")
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -396,7 +396,7 @@ export const AddApiKeyConnector = async (c: Context) => {
         retryLimit: 0,
       })
 
-      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+      loggerWithChild({email: sub}).info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
       return c.json({
         success: true,
@@ -405,7 +405,7 @@ export const AddApiKeyConnector = async (c: Context) => {
       })
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      loggerWithChild({email:sub}).error(
         error,
         `${new AddServiceConnectionError({
           cause: error as Error,
@@ -456,7 +456,7 @@ export const DeleteConnector = async (c: Context) => {
   // Get connector details to check its type
   const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
-    Logger.warn(
+     loggerWithChild({email:sub}).warn(
       { connectorId, userId: user.id },
       "Connector not found for deletion",
     )
@@ -470,9 +470,9 @@ export const DeleteConnector = async (c: Context) => {
     try {
       // Delete all MCP tools associated with this connector
       await deleteToolsByConnectorId(db, user.workspaceId, connector.id)
-      console.log(`Deleted MCP tools for connector ${connectorId}`)
+       loggerWithChild({email:sub}).info(`Deleted MCP tools for connector ${connectorId}`)
     } catch (error) {
-      console.error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
+       loggerWithChild({email:sub}).error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
       throw new Error(`Failed to delete MCP tools: ${getErrorMessage(error)}`)
     }
   }
@@ -487,21 +487,22 @@ export const DeleteConnector = async (c: Context) => {
 }
 
 export const DeleteOauthConnector = async (c: Context) => {
+
+  const { sub } = c.get(JwtPayloadKey)
   const { connectorId: connectorExternalId }: { connectorId: string } =
     // @ts-ignore Ignore Hono validation type issue
     c.req.valid("form")
 
   if (!connectorExternalId) {
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       "connectorId (external) not provided in request for DeleteOauthConnector",
     )
     throw new HTTPException(400, { message: "Missing connectorId" })
   }
 
-  const { sub } = c.get(JwtPayloadKey)
   const userRes = await getUserByEmail(db, sub)
   if (!userRes || !userRes.length) {
-    Logger.error({ sub }, "No user found for sub in DeleteOauthConnector")
+     loggerWithChild({email:sub}).error({ sub }, "No user found for sub in DeleteOauthConnector")
     throw new NoUserFound({})
   }
   const [user] = userRes
@@ -513,7 +514,7 @@ export const DeleteOauthConnector = async (c: Context) => {
       user.id,
     )
     if (!connector) {
-      Logger.warn(
+       loggerWithChild({email:sub}).warn(
         { connectorExternalId, userId: user.id },
         "Connector not found for deletion",
       )
@@ -531,7 +532,7 @@ export const DeleteOauthConnector = async (c: Context) => {
       message: `OAuth connector ${connectorExternalId} and related data deleted successfully`,
     })
   } catch (error) {
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       { error, connectorExternalId, userId: user.id },
       "Error in DeleteOauthConnector API handler",
     )
@@ -604,7 +605,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       { email },
       "User not found for service account ingest more users.",
     )
@@ -613,7 +614,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const [userInstance] = userRes
   const userId = userInstance.id
 
-  Logger.info(
+   loggerWithChild({email:sub}).info(
     `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}. Date range: ${payload.startDate} to ${payload.endDate}. Services: Drive & Contacts=${payload.insertDriveAndContacts}, Gmail=${payload.insertGmail}, Calendar=${payload.insertCalendar}`,
   )
   try {
@@ -625,7 +626,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
       data: result,
     })
   } catch (error) {
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       error,
       `Failed to ingest more users for service account: ${getErrorMessage(
         error,
@@ -639,8 +640,8 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
 }
 
 export const AddApiKeyMCPConnector = async (c: Context) => {
-  Logger.info("ApiKeyMCPConnector")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({email:sub}).info("ApiKeyMCPConnector")
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -675,7 +676,7 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
         name: `connector-${connector.externalId}`,
         version: "0.1.0",
       })
-      Logger.info(`invoking client initialize for url: ${new URL(url)}`)
+      loggerWithChild({email:sub}).info(`invoking client initialize for url: ${new URL(url)}`)
       await client.connect(new SSEClientTransport(new URL(url)))
       status = ConnectorStatus.Connected
 
@@ -697,7 +698,7 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       )
     } catch (error) {
       status = ConnectorStatus.Failed
-      Logger.error(`error occurred while connecting to connector ${error}`)
+      loggerWithChild({email:sub}).error(`error occurred while connecting to connector ${error}`)
     }
     await updateConnector(db, connector.id, { status: status })
     return c.json({
@@ -707,7 +708,7 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
     })
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email:sub}).error(
       error,
       `${new AddServiceConnectionError({
         cause: error as Error,
@@ -723,7 +724,7 @@ export const AdminDeleteUserData = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey) // Get email (sub) of the admin performing the action
   const adminUserRes = await getUserByEmail(db, sub)
   if (!adminUserRes || !adminUserRes.length) {
-    Logger.error(
+    loggerWithChild({email:sub}).error(
       { adminEmail: sub },
       "Admin user not found for data deletion action.",
     )
@@ -741,14 +742,14 @@ export const AdminDeleteUserData = async (c: Context) => {
   // emailToClear is already validated by the Zod schema
   // No need for: if (!emailToClear || typeof emailToClear !== 'string') { ... }
 
-  Logger.info(
+  loggerWithChild({email:sub}).info(
     { adminEmail: sub, targetEmail: emailToClear, options },
     "Admin initiated user data deletion.",
   )
 
   try {
     const deletionResults = await clearUserDataInVespa(emailToClear, options)
-    Logger.info(
+    loggerWithChild({email:sub}).info(
       { adminEmail: sub, targetEmail: emailToClear, results: deletionResults },
       "User data deletion process completed.",
     )
@@ -759,7 +760,7 @@ export const AdminDeleteUserData = async (c: Context) => {
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email:sub}).error(
       error,
       `Failed to clear user data for ${emailToClear}: ${errorMessage}`,
     )
@@ -773,7 +774,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
   const { workspaceId: workspaceExternalId, sub } = c.get(JwtPayloadKey) // Renamed to workspaceExternalId for clarity
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-    Logger.error({ sub }, "No user found for sub in UpdateToolsStatusApi")
+    loggerWithChild({email:sub}).error({ sub }, "No user found for sub in UpdateToolsStatusApi")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -783,7 +784,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
     workspaceExternalId,
   )
   if (!retrievedWorkspace) {
-    Logger.error(
+    loggerWithChild({email:sub}).error(
       { workspaceExternalId },
       "Workspace not found for external ID in UpdateToolsStatusApi",
     )
@@ -814,7 +815,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
         .returning({ updatedId: toolsTable.id })
 
       if (result.length === 0) {
-        Logger.warn(
+        loggerWithChild({email:sub}).warn(
           `Tool with id ${toolUpdate.toolId} not found in workspace ${internalWorkspaceId} (external: ${workspaceExternalId}) or no change needed.`,
         )
         // Optionally, you could collect these and report them back
@@ -822,7 +823,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
       // Ensure success is true only if result.length > 0
       return { toolId: toolUpdate.toolId, success: result.length > 0 }
     } catch (error) {
-      Logger.error(
+      loggerWithChild({email:sub}).error(
         error,
         `Failed to update tool ${
           toolUpdate.toolId
@@ -840,7 +841,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
   const failedUpdates = results.filter((r) => !r.success)
 
   if (failedUpdates.length > 0) {
-    Logger.error({ failedUpdates }, "Some tools failed to update.")
+    loggerWithChild({email:sub}).error({ failedUpdates }, "Some tools failed to update.")
     return c.json(
       {
         success: false,
@@ -855,8 +856,9 @@ export const UpdateToolsStatusApi = async (c: Context) => {
 }
 
 export const AddStdioMCPConnector = async (c: Context) => {
-  Logger.info("StdioMCPConnector")
+  
   const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({email:sub}).info("StdioMCPConnector")
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -870,7 +872,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
   const name = form.name
   let app
   let status = ConnectorStatus.NotConnected
-  Logger.info(`called with req body ${form} ${form.appType}`)
+  loggerWithChild({email:sub}).info(`called with req body ${form} ${form.appType}`)
   switch (form.appType) {
     case "github":
       app = Apps.GITHUB_MCP
@@ -902,7 +904,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
         name: `connector-${connector.externalId}`,
         version: config.version,
       })
-      Logger.info(
+       loggerWithChild({email:sub}).info(
         `invoking stdio to ${config.command} with args: ${config.args.join(" ")}`, // Logging joined args for readability if needed
       )
       await client.connect(
@@ -930,7 +932,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
       )
     } catch (error) {
       status = ConnectorStatus.Failed
-      Logger.error(`error occurred while connecting to connector ${error}`)
+       loggerWithChild({email:sub}).error(`error occurred while connecting to connector ${error}`)
     }
     await updateConnector(db, connector.id, { status: status })
     return c.json({
@@ -940,7 +942,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
     })
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       error,
       `${new AddServiceConnectionError({
         cause: error as Error,
@@ -959,7 +961,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
   try {
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
-      Logger.error({ sub }, "No user found for sub in StartSlackIngestionApi")
+       loggerWithChild({email:sub}).error({ sub }, "No user found for sub in StartSlackIngestionApi")
       throw new NoUserFound({})
     }
     const [user] = userRes
@@ -977,7 +979,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
       authType: connector.authType as AuthType,
       email: sub,
     }).catch((error) => {
-      Logger.error(
+       loggerWithChild({email:sub}).error(
         error,
         `Background Slack ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
       )
@@ -988,7 +990,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
       message: "Regular Slack ingestion started.",
     })
   } catch (error: any) {
-    Logger.error(
+     loggerWithChild({email:sub}).error(
       error,
       `Error starting regular Slack ingestion: ${getErrorMessage(error)}`,
     )
@@ -1023,7 +1025,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
       message: "Successfully ingested the channels",
     })
   } catch (error) {
-    Logger.error(error, "Failed to ingest Slack channels")
+     loggerWithChild({email:sub}).error(error, "Failed to ingest Slack channels")
     return c.json({
       success: false,
       message: getErrorMessage(error),

@@ -154,7 +154,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
   const baseLogger = getLogger(subsystem).child(child)
 
-  return (children:loggerChildSchema={}): Logger => {
+  return (children:loggerChildSchema={email:"no_email_found"}): Logger => {
     return baseLogger.child(children)
   }
 }

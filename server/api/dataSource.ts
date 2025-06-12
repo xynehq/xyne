@@ -11,7 +11,7 @@ import {
 } from "@/search/vespa"
 import { handleDataSourceFileUpload } from "@/integrations/dataSource"
 import { type VespaDataSource, type VespaSearchResult } from "@/search/types"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { type SelectUser } from "@/db/schema"
 import { z } from "zod"
@@ -20,7 +20,8 @@ import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Api)
-const log = getLogger(Subsystem.Api).child({ module: "dataSourceService" })
+const log = getLogger(Subsystem.Api).child({  })
+const loggerWithChild  = getLoggerWithChild(Subsystem.Api, {module: "dataSourceService"})
 const DOWNLOADS_DIR_DATASOURCE = join(
   process.cwd(),
   "downloads",
@@ -80,7 +81,7 @@ export async function handleSingleFileUploadToDataSource(
     throw new Error("Valid file object is required for DataSource processing.")
   }
 
-  log.debug(
+  loggerWithChild({email: user.email}).debug(
     `Processing file for DataSource: "${dataSourceName}", operation: ${flag}, file: "${file.name}", user: ${user.email}`,
   )
 
@@ -92,7 +93,7 @@ export async function handleSingleFileUploadToDataSource(
 
   try {
     await Bun.write(filePath, file)
-    log.debug(`File temporarily saved for DataSource processing: ${filePath}`)
+    loggerWithChild({email: user.email}).debug(`File temporarily saved for DataSource processing: ${filePath}`)
 
     const now = Date.now()
 
@@ -102,12 +103,12 @@ export async function handleSingleFileUploadToDataSource(
         user.email,
       )
       if (existingDataSource) {
-        log.warn(
+        loggerWithChild({email: user.email}).warn(
           `Data source named "${dataSourceName}" already exists for user ${user.email}. Proceeding to add file to this existing data source.`,
         )
         dataSourceVespaId = existingDataSource.docId
       } else {
-        log.debug(
+        loggerWithChild({email: user.email}).debug(
           `Creating new DataSource "${dataSourceName}" for user ${user.email}`,
         )
         dataSourceVespaId = `ds-${createId()}`
@@ -119,7 +120,7 @@ export async function handleSingleFileUploadToDataSource(
           updatedAt: now, // 'now' is defined before this block in the original code
         }
         await insertDataSource(newDataSourceDoc)
-        log.debug(
+        loggerWithChild({email: user.email}).debug(
           `New DataSource "${dataSourceName}" created with ID: ${dataSourceVespaId}`,
         )
       }
@@ -130,14 +131,14 @@ export async function handleSingleFileUploadToDataSource(
         user.email,
       )
       if (!existingDataSource || !existingDataSource.docId) {
-        log.warn(
+        loggerWithChild({email: user.email}).warn(
           `Attempt to add file to non-existent DataSource: "${dataSourceName}" for user ${user.email}`,
         )
         throw new Error(
           `Data source named "${dataSourceName}" not found for adding files.`,
         )
       }
-      log.debug(
+      loggerWithChild({email: user.email}).debug(
         `Adding file to existing DataSource "${dataSourceName}": ${existingDataSource.docId} for user ${user.email}`,
       )
       dataSourceVespaId = existingDataSource.docId
@@ -165,7 +166,7 @@ export async function handleSingleFileUploadToDataSource(
       fileProcessingResult,
     }
   } catch (error) {
-    log.error("Error during DataSource file processing:", {
+    loggerWithChild({email: user.email}).error("Error during DataSource file processing:", {
       error,
       dataSourceName,
       fileName: file.name,
@@ -184,11 +185,11 @@ export async function handleSingleFileUploadToDataSource(
   } finally {
     try {
       await unlink(filePath)
-      log.debug(
+      loggerWithChild({email: user.email}).debug(
         `Cleaned up temporary file from DataSource processing: ${filePath}`,
       )
     } catch (cleanupError) {
-      log.error(
+      loggerWithChild({email: user.email}).error(
         cleanupError,
         `Error cleaning up temporary file from DataSource processing: ${filePath}`,
       )
@@ -218,7 +219,7 @@ export const ListDataSourcesApi = async (c: Context) => {
       ) || []
     return c.json(dataSources)
   } catch (error) {
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Error fetching datasources for user ${email} in ListDataSourcesApi`,
     )
@@ -235,9 +236,10 @@ export const ListDataSourcesApi = async (c: Context) => {
 export const ListDataSourceFilesApi = async (c: Context) => {
   const jwtPayload = c.var.jwtPayload
   const dataSourceName = c.req.param("dataSourceName")
+  const email = jwtPayload.sub;
 
   if (!dataSourceName) {
-    Logger.error(
+    loggerWithChild({email: email}).error(
       "dataSourceName path parameter is missing in ListDataSourceFilesApi",
     )
     return c.json(
@@ -258,7 +260,6 @@ export const ListDataSourceFilesApi = async (c: Context) => {
       401,
     )
   }
-  const email = jwtPayload.sub
 
   try {
     const vespaResponse = await getDataSourceFilesByName(dataSourceName, email)
@@ -268,7 +269,7 @@ export const ListDataSourceFilesApi = async (c: Context) => {
       ) || []
     return c.json(files)
   } catch (error) {
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Error fetching files for datasource "${dataSourceName}" for user ${email} in ListDataSourceFilesApi`,
     )

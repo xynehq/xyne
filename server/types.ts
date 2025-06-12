@@ -386,7 +386,7 @@ export type EntityType = DriveEntity|SlackEntity|MailEntity|MailAttachmentEntity
 export type OperationType = "ingestion" | "request" | "response" | "chat-create" | "chat-response" | "chat-response-error" | "search" | "search-response" | "ingest-more_user"
 
 export type loggerChildSchema = {
-  email?: string,
+  email: string,
   appType?: Apps,
   entityType?: EntityType,
   responseCode?:string,
