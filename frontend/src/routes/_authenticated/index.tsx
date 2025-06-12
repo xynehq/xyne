@@ -34,6 +34,15 @@ const Index = () => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
     return storedValue ? JSON.parse(storedValue) : true
   })
+  const AGENTIC_STATE = "agenticState"
+  const [isAgenticMode, setIsAgenticMode] = useState(() => {
+    const storedValue = localStorage.getItem(AGENTIC_STATE)
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
 
   useEffect(() => {
     localStorage.setItem(
@@ -133,6 +142,7 @@ const Index = () => {
         sources?: string
         agentId?: string
         toolExternalIds?: string[]
+        agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -147,6 +157,9 @@ const Index = () => {
       if (agentId) {
         // Use agentId directly
         searchParams.agentId = agentId
+      }
+      if (isAgenticMode) {
+        searchParams.agentic = true
       }
 
       if (toolExternalIds && toolExternalIds.length > 0) {
@@ -273,6 +286,8 @@ const Index = () => {
                   allCitations={new Map()} // Change this line
                   isReasoningActive={isReasoningActive}
                   setIsReasoningActive={setIsReasoningActive}
+                  isAgenticMode={isAgenticMode}
+                  setIsAgenticMode={setIsAgenticMode}
                 />
               </div>
             )}

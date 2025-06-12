@@ -80,12 +80,10 @@ import {
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
-  messageFeedbackSchema,
   MessageRetryApi,
-  MessageWithToolsApi,
   GetChatTraceApi,
   StopStreamingApi,
-} from "@/api/chat"
+} from "@/api/chat/chat"
 import { UserRole } from "@/shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -108,6 +106,7 @@ import {
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
+import { messageFeedbackSchema } from "@/api/chat/types"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -217,11 +216,6 @@ export const AppRoutes = app
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
-  .get(
-    "/message/create/mcp",
-    zValidator("query", messageSchema),
-    MessageWithToolsApi,
-  )
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),
