@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
+import React, {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react" // Ensure React is imported
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -7,6 +15,7 @@ import {
   Layers,
   Square,
   ChevronDown,
+  Infinity,
   Check,
   Link,
   Search,
@@ -79,6 +88,8 @@ interface ChatBoxProps {
   role: UserRole
   query: string
   setQuery: (query: string) => void
+  setIsAgenticMode: Dispatch<SetStateAction<boolean>>
+  isAgenticMode: boolean
   handleSend: (
     messageToSend: string,
     selectedSources?: string[],
@@ -213,6 +224,8 @@ export const ChatBox = ({
   agentIdFromChatData, // Destructure new prop
   isReasoningActive,
   setIsReasoningActive,
+  setIsAgenticMode,
+  isAgenticMode = false,
 }: ChatBoxProps) => {
   // Interface for fetched tools
   interface FetchedTool {
@@ -2280,6 +2293,24 @@ export const ChatBox = ({
                 </span>
               </div>
             )}
+          </div>
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsAgenticMode(!isAgenticMode)
+            }}
+            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
+          >
+            <Infinity
+              size={14}
+              strokeWidth={2.4}
+              className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+            />
+            <span
+              className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+            >
+              Agent
+            </span>
           </div>
           {isStreaming && chatId ? (
             <button
