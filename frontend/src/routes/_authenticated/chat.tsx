@@ -44,7 +44,7 @@ import {
 import { SelectPublicChat } from "shared/types"
 import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
-import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
+import { clearLocalChatId, addPendingChat, getTabId, getLocalChatId, splitGroupedCitationsWithSpaces, removePendingChat } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
@@ -242,6 +242,20 @@ export const ChatPage = ({
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
+  const tabId = chatParams.tabId
+  const localChatId = chatParams.localChatId
+
+  const didMount = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (didMount.current) {
+        clearLocalChatId()
+      } else {
+        didMount.current = true;
+      }
+    };
+  }, []);
 
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
@@ -573,10 +587,16 @@ export const ChatPage = ({
         .join("")
     }
 
-    const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
+    if (tabId && localChatId) {
+      addPendingChat({ tabId, localChatId, status: "pending" })
+    }
+
+    const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
+    url.searchParams.append("localChatId", localChatId)
+    url.searchParams.append("tabId", tabId)
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", finalMessagePayload)
 
@@ -633,8 +653,6 @@ export const ChatPage = ({
       }))
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
-
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
       (event) => {
@@ -652,19 +670,33 @@ export const ChatPage = ({
       ChatSSEvents.ResponseMetadata,
       (event) => {
         // Use ref
-        const { chatId, messageId } = JSON.parse(event.data)
-        setChatId(chatId)
+        const {
+          chatId,
+          messageId,
+          localChatId: responseLocalChatId,
+          tabId: responseTabId,
+        } = JSON.parse(event.data)
         if (chatId) {
-          setTimeout(() => {
-            router.navigate({
-              to: "/chat/$chatId",
-              params: { chatId },
-              search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-            })
-          }, 1000)
+          const currentTabId = getTabId()
+          const currentLocalChatId = getLocalChatId()
+          removePendingChat(responseTabId, responseLocalChatId)
+          if (
+            responseTabId === currentTabId &&
+            responseLocalChatId === currentLocalChatId
+          ) {
+            clearLocalChatId()
+            setChatId(chatId)
+            setTimeout(() => {
+              router.navigate({
+                to: "/chat/$chatId",
+                params: { chatId },
+                search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+              })
+            }, 1000)
 
-          if (!stopMsg) {
-            setStopMsg(true)
+            if (!stopMsg) {
+              setStopMsg(true)
+            }
           }
         }
         if (messageId) {
@@ -1977,6 +2009,8 @@ export const ChatMessage = ({
 
 const chatParams = z.object({
   q: z.string().optional(),
+  tabId: z.string(),
+  localChatId: z.string(),
   debug: z
     .string()
     .transform((val) => val === "true")

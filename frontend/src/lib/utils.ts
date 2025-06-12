@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { v4 as uuidv4 } from "uuid"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -76,4 +77,75 @@ export const splitGroupedCitationsWithSpaces = (text: string): string => {
       return numbers.map((num: string) => `[${num}]`).join(" ")
     },
   )
+}
+
+export const getTabId = (): string | null =>
+  sessionStorage.getItem("activeTabId")
+
+export const setTabId = (id: string) =>
+  sessionStorage.setItem("activeTabId", id)
+
+export const ensureTabId = (): string => {
+  let id = getTabId()
+  if (!id) {
+    id = uuidv4()
+    setTabId(id)
+  }
+  return id
+}
+
+export const getLocalChatId = (): string | null =>
+  sessionStorage.getItem("activeLocalChatId")
+
+export const setLocalChatId = (id: string) =>
+  sessionStorage.setItem("activeLocalChatId", id)
+
+export const ensureLocalChatId = (): string => {
+  let id = getLocalChatId()
+  if (!id) {
+    id = uuidv4()
+    setLocalChatId(id)
+  }
+  return id
+}
+
+export const clearLocalChatId = () => {
+  sessionStorage.removeItem("activeLocalChatId")
+}
+
+interface PendingChat {
+  tabId: string
+  localChatId: string
+  status: "pending" | "resolved"
+  chatId?: string
+}
+export const getPendingChats = (): PendingChat[] =>
+  JSON.parse(localStorage.getItem("pendingChats") || "[]")
+
+export const addPendingChat = (pending: PendingChat) => {
+  const chats = getPendingChats()
+  if (
+    !chats.some(
+      (c) => c.tabId === pending.tabId && c.localChatId === pending.localChatId,
+    )
+  ) {
+    localStorage.setItem("pendingChats", JSON.stringify([...chats, pending]))
+  }
+}
+
+export function removePendingChat(tabId: string, localChatId: string) {
+  const pendingChats = getPendingChats()
+  const updated = pendingChats.filter(
+    (c) => !(c.tabId === tabId && c.localChatId === localChatId),
+  )
+  localStorage.setItem("pendingChats", JSON.stringify(updated))
+}
+
+export const cleanupPendingChats = () => {
+  const activeTabId = sessionStorage.getItem("activeTabId")
+  const activeLocalChatId = sessionStorage.getItem("activeLocalChatId")
+  const filtered = getPendingChats().filter(
+    (c) => c.tabId === activeTabId && c.localChatId === activeLocalChatId,
+  )
+  localStorage.setItem("pendingChats", JSON.stringify(filtered))
 }
