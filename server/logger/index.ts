@@ -95,6 +95,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 
   return async (c: Context, next: Next) => {
     const { sub } = c.get(JwtPayloadKey) || {}
+    console.log(sub)
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
@@ -104,7 +105,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const isMetrics = path.includes("/metrics")
 
     if(!isMetrics) {
-          logger.info({
+      logger.info({
       requestId: c_reqId,
       method,
       path,
@@ -130,12 +131,14 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     appResponse.inc({
       app_endpoint: c.req.routePath,
       app_response_status: String(c.res.status),
+      email: sub
     })
 
     requestResponseLatency.observe(
       {
         app_endpoint: c.req.routePath,
         app_response_status: String(c.res.status),
+        email: sub
       },
       duration,
     )

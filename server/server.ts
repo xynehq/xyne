@@ -159,8 +159,6 @@ const AuthRedirect = async (c: Context, next: Next) => {
 
 const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
-app.use("*", honoMiddlewareLogger)
-
 export const WsApp = app.get(
   "/ws",
   upgradeWebSocket((c) => {
@@ -188,6 +186,7 @@ export const WsApp = app.get(
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
+  .use("*", honoMiddlewareLogger)
   .post(
     "/autocomplete",
     zValidator("json", autocompleteSchema),
