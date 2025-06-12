@@ -3,8 +3,10 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight as ChevronRightArrow,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { toast } from "@/hooks/use-toast"
 import { api } from "@/api"
 interface FileItem {
   docId?: string
@@ -16,17 +18,57 @@ interface FileItem {
 interface FileAccordionProps {
   className?: string
   activeDataSourceName?: string | null
+  fileSchema?: string 
 }
 
 export default function FileAccordion({
   className = "",
   activeDataSourceName,
+  fileSchema = "datasource_file", 
 }: FileAccordionProps) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(false) // Start with false, set to true when fetching
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const filesPerPage = 10
+
+  const handleDeleteFile = async (docId: string | undefined) => {
+    if (!docId) {
+      toast({
+        title: "Error",
+        description: "Cannot delete file: Document ID is missing.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await api.search.document.delete.$post({
+        json: { docId, schema: fileSchema }, 
+      })
+
+      if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || `Request failed with status ${response.status}`)
+      }
+
+      setFiles((prevFiles) => prevFiles.filter((file) => file.docId !== docId))
+      toast({
+        title: "Success",
+        description: "File deleted successfully.",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "An unexpected error occurred during deletion."
+      setError(`Failed to delete file: ${errorMessage}`) 
+      toast({
+        title: "Error",
+        description: `Failed to delete file: ${errorMessage}`,
+        variant: "destructive",
+      })
+      console.error("Error deleting file:", err)
+    }
+  }
 
   useEffect(() => {
     if (activeDataSourceName && activeDataSourceName.trim() !== "") {
@@ -210,6 +252,18 @@ export default function FileAccordion({
                         </p>
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation() 
+                        handleDeleteFile(file.docId)
+                      }}
+                      className="text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
+                      aria-label="Delete file"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))}
               </div>

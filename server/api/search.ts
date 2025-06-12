@@ -12,6 +12,7 @@ import {
   insert,
   GetDocument,
   UpdateDocument,
+  DeleteDocument,
   updateUserQueryHistory,
   SearchModes,
 } from "@/search/vespa"
@@ -23,6 +24,11 @@ import {
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
+  type VespaSchema,
+  type VespaDataSource,
+  datasourceSchema,
+  datasourceFileSchema,
+  type VespaDataSourceFile,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,

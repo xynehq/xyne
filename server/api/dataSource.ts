@@ -8,9 +8,16 @@ import {
   NAMESPACE,
   getDataSourceFilesByName,
   getDataSourcesByCreator,
+  GetDocument,
 } from "@/search/vespa"
 import { handleDataSourceFileUpload } from "@/integrations/dataSource"
-import { type VespaDataSource, type VespaSearchResult } from "@/search/types"
+import {
+  type VespaDataSource,
+  type VespaSearchResult,
+  type VespaDataSourceFile,
+  datasourceSchema,
+  datasourceFileSchema,
+} from "@/search/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { type SelectUser } from "@/db/schema"
@@ -18,8 +25,13 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
+import { DeleteDocument } from "@/search/vespa"
+import type { VespaSchema } from "@/search/types"
+import config from "@/config"
+import { getErrorMessage } from "@/utils"
 
 const Logger = getLogger(Subsystem.Api)
+const { JwtPayloadKey } = config
 const log = getLogger(Subsystem.Api).child({ module: "dataSourceService" })
 const DOWNLOADS_DIR_DATASOURCE = join(
   process.cwd(),
@@ -193,6 +205,84 @@ export async function handleSingleFileUploadToDataSource(
         `Error cleaning up temporary file from DataSource processing: ${filePath}`,
       )
     }
+  }
+}
+
+export const deleteDocumentSchema = z.object({
+  docId: z.string().min(1),
+  schema: z.string().min(1),
+})
+
+export const DeleteDocumentApi = async (c: Context) => {
+  try {
+    const { sub: userEmail } = c.get(JwtPayloadKey); 
+
+    const rawData = await c.req.json();
+    const validatedData = deleteDocumentSchema.parse(rawData);
+    const { docId, schema: rawSchema } = validatedData;
+    const schema = rawSchema as VespaSchema;
+
+      const documentData = await GetDocument(schema, docId);
+
+      if (!documentData || !("fields" in documentData) || !documentData.fields) {
+        Logger.warn(
+          `Document not found or fields missing for docId: ${docId}, schema: ${schema} during delete operation by ${userEmail}`,
+        );
+        throw new HTTPException(404, { message: "Document not found." });
+      }
+
+      const fields = documentData.fields as Record<string, any>;
+      let ownerEmail: string;
+
+      if (schema === datasourceSchema) {
+        ownerEmail = fields.createdBy as string;
+      } else { // schema === datasourceFileSchema
+        ownerEmail = fields.uploadedBy as string;
+      }
+
+      if (!ownerEmail) {
+        Logger.error(
+          `Ownership field (createdBy/uploadedBy) missing for document ${docId} of schema ${schema}. Cannot verify ownership for user ${userEmail}.`,
+        );
+        throw new HTTPException(500, {
+          message:
+            "Internal server error: Cannot verify document ownership due to missing data.",
+        });
+      }
+      if (ownerEmail !== userEmail) {
+        Logger.warn(
+          `User ${userEmail} attempt to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}. Access denied.`,
+        );
+        throw new HTTPException(403, {
+          message: "Forbidden: You do not have permission to delete this document.",
+        });
+      }
+      Logger.info(
+        `User ${userEmail} authorized to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+      );
+
+    await DeleteDocument(docId, schema);
+    return c.json({ success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessage = error.errors.map(err => `${err.path.join('.')}: ${err.message}`).join(', ');
+      Logger.warn(`Validation error in DeleteDocumentApi: ${errorMessage}`);
+      throw new HTTPException(400, {
+        message: `Invalid request data: ${errorMessage}`
+      });
+    }
+
+    if (error instanceof HTTPException) {
+      const causeMessage = error.cause instanceof Error ? error.cause.message : String(error.cause);
+      Logger.warn(`HTTPException in DeleteDocumentApi: ${error.status} ${error.message}${error.cause ? ` - Cause: ${causeMessage}` : ''}`);
+      throw error;
+    }
+
+    const errMsg = getErrorMessage(error);
+    Logger.error(error, `Delete Document Error: ${errMsg} ${(error as Error).stack}`);
+    throw new HTTPException(500, {
+      message: "Could not delete document due to an internal server error.",
+    });
   }
 }
 
