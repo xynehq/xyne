@@ -106,8 +106,7 @@ import {
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
-import { messageFeedbackSchema } from "./api/chat/types"
-import { MessageWithToolsApi } from "./api/chat/agents"
+import { messageFeedbackSchema } from "@/api/chat/types"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
