@@ -56,7 +56,10 @@ export const SearchFilters = ({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button className="bg-transparent hover:bg-gray-100 dark:bg-transparent dark:hover:bg-slate-700 text-[#7488A8] dark:text-slate-400 border-none shadow-none focus-visible:ring-0">
-          <Clock8 size={14} className="mr-[4px] text-[#7488A8] dark:text-slate-400" />
+          <Clock8
+            size={14}
+            className="mr-[4px] text-[#7488A8] dark:text-slate-400"
+          />
           {positionToText(position)}
         </Button>
       </DropdownMenuTrigger>

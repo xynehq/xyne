@@ -497,7 +497,12 @@ export const ChatPage = ({
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(messageToSend, sourcesArray, chatParams.agentId)
+      handleSend(
+        messageToSend,
+        sourcesArray,
+        chatParams.agentId,
+        chatParams.toolExternalIds,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -507,6 +512,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
+          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
       })
@@ -516,6 +522,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
+    chatParams.toolExternalIds,
     router,
   ])
 
@@ -523,6 +530,7 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
+    toolExternalIds?: string[],
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -565,7 +573,7 @@ export const ChatPage = ({
         .join("")
     }
 
-    const url = new URL(`/api/v1/message/create`, window.location.origin)
+    const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
@@ -581,10 +589,14 @@ export const ChatPage = ({
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
     }
+    if (toolExternalIds && toolExternalIds.length > 0) {
+      toolExternalIds.forEach((toolId) => {
+        url.searchParams.append("toolExternalIds", toolId)
+      })
+    }
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    console.log("Using agentId:", agentIdToUse)
     if (agentIdToUse) {
       url.searchParams.append("agentId", agentIdToUse)
     }
@@ -1306,12 +1318,18 @@ export const ChatPage = ({
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-              fill={bookmark ? (theme === 'dark' ? "#A0AEC0" : "#4A4F59") : "none"}
-              stroke={theme === 'dark' ? "#A0AEC0" : "#4A4F59"}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="dark:stroke-gray-400 ml-[20px]" size={18} />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -1464,6 +1482,7 @@ export const ChatPage = ({
               </div>
             )}
             <ChatBox
+              role={user?.role}
               query={query}
               setQuery={setQuery}
               handleSend={handleSend} // handleSend function is passed here
@@ -1638,7 +1657,12 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" />
+  <a
+    {...linkProps}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 dark:text-blue-400 hover:underline"
+  />
 )
 
 export const ChatMessage = ({
@@ -1729,7 +1753,7 @@ export const ChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === 'dark' ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
@@ -1752,7 +1776,7 @@ export const ChatMessage = ({
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: theme === 'dark' ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
                   }}
@@ -1805,7 +1829,11 @@ export const ChatMessage = ({
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} className="dark:text-gray-100" {...props} />
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
@@ -1975,6 +2003,17 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  toolExternalIds: z
+    .string()
+    .optional()
+    .transform((val) =>
+      val
+        ? val
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined,
+    ),
 })
 
 type XyneChat = z.infer<typeof chatParams>

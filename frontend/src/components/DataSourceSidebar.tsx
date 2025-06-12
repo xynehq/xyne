@@ -21,7 +21,9 @@ export function DataSourceSidebar({
   return (
     <div className="w-[263px] border-r border-[#D7E0E9] dark:border-gray-700 h-full bg-white dark:bg-[#1E1E1E] shadow-sm overflow-auto">
       <div className="flex justify-between items-center p-4">
-        <h3 className="font-medium text-gray-900 dark:text-gray-100">Data Sources</h3>
+        <h3 className="font-medium text-gray-900 dark:text-gray-100">
+          Data Sources
+        </h3>
         <Button
           onClick={onAddNewDataSource}
           variant="ghost"
