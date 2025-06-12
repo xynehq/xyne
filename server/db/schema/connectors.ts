@@ -13,8 +13,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { encryptedText } from "../customType"
 import { Encryption } from "@/utils/encryption"
-import { ConnectorType } from "@/types"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
 
@@ -99,7 +98,13 @@ export const connectors = pgTable(
       .default(sql`NOW()`),
   },
   (t) => ({
-    uniqueConnector: unique().on(t.workspaceId, t.userId, t.app, t.authType),
+    uniqueConnector: unique().on(
+      t.workspaceId,
+      t.userId,
+      t.app,
+      t.authType,
+      t.name,
+    ),
   }),
 )
 

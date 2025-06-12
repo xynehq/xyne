@@ -367,7 +367,7 @@ export default function TuningPage() {
   }
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       {" "}
       {/* Added wrapper div for layout */}
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />{" "}
@@ -376,8 +376,10 @@ export default function TuningPage() {
         {" "}
         {/* Added margin to content div */}
         <div className="flex flex-col gap-6">
-          <h1 className="text-2xl font-semibold">Tune Search Parameters</h1>
-          <p>
+          <h1 className="text-2xl font-semibold dark:text-gray-100">
+            Tune Search Parameters
+          </h1>
+          <p className="dark:text-gray-300">
             Configure and start an automated evaluation process to find the
             optimal alpha value for your search personalization. This process
             may take several minutes. You will receive updates on its progress
@@ -412,7 +414,9 @@ export default function TuningPage() {
           {/* Display existing datasets */}
           {datasets.length > 0 && (
             <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-4">Available Datasets</h2>
+              <h2 className="text-xl font-semibold mb-4 dark:text-gray-100">
+                Available Datasets
+              </h2>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -459,7 +463,7 @@ export default function TuningPage() {
                               <DialogDescription>
                                 This action cannot be undone. This will
                                 permanently delete the dataset file
-                                <code className="mx-1 font-mono bg-muted p-1 rounded">
+                                <code className="mx-1 font-mono bg-muted dark:bg-slate-700 p-1 rounded">
                                   {datasetInfo.filename}
                                 </code>
                                 .
@@ -489,7 +493,7 @@ export default function TuningPage() {
           )}
 
           {jobMessage && (
-            <div className="mt-6 p-4 border rounded bg-muted text-muted-foreground">
+            <div className="mt-6 p-4 border dark:border-slate-700 rounded bg-muted dark:bg-slate-800 text-muted-foreground dark:text-gray-300">
               <p>Status: {jobStatus}</p>
               <p className="mb-2">{jobMessage}</p>
               {jobId && <p>Job ID: {jobId}</p>}

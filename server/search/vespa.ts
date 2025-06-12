@@ -56,6 +56,7 @@ import { VespaSearchResponseToSearchResult } from "./mappers"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -373,6 +374,18 @@ export const HybridDefaultProfile = (
       )`
   }
 
+  const buildDefaultYQL = () => {
+    return `
+    (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+    )
+    and permissions contains @email 
+    or owner contains @email
+    `
+  }
+
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
@@ -453,7 +466,6 @@ export const HybridDefaultProfile = (
 
   // Start with all apps and filter out excluded ones
   const allApps = Object.values(Apps)
-
   const includedApps = allApps.filter(
     (appItem) => !excludedApps?.includes(appItem),
   )
@@ -481,7 +493,7 @@ export const HybridDefaultProfile = (
       case Apps.DataSource:
         break
       default:
-        handleAppsNotInYql(includedApp, includedApps)
+        appQueries.push(buildDefaultYQL())
         break
     }
   }
@@ -650,8 +662,7 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}}userInput(@query))
           or
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-        )
-        and uploadedBy contains @email 
+        ) 
         and ${dataSourceIdConditions}
       )`
   }
@@ -682,6 +693,8 @@ export const HybridDefaultProfileForAgent = (
         case Apps.Slack:
           appQueries.push(buildSlackYQL())
           if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+          if (!sources.includes(chatMessageSchema))
+            sources.push(chatMessageSchema)
           break
         case Apps.DataSource:
           // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
@@ -968,20 +981,22 @@ export const groupVespaSearch = async (
 ): Promise<AppEntityCounts> => {
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
+
   Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
@@ -1048,17 +1063,18 @@ export const searchVespa = async (
   // Check if Slack sync job exists for the user
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
@@ -1644,12 +1660,10 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
+  excludedIds?: string[]
   asc: boolean
-  // query: string
 }
 
-// TODO: this won't work for user schema
-//
 export const getItems = async (
   params: GetItemsParams,
 ): Promise<VespaSearchResponse> => {
@@ -1661,6 +1675,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
+    excludedIds, // Added excludedIds here
     asc,
   } = params
 
@@ -1678,7 +1693,7 @@ export const getItems = async (
   }
 
   // Permissions or owner condition based on schema
-  if(schema === datasourceFileSchema){
+  if (schema === datasourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
     conditions.push(`permissions contains @email`)
@@ -1707,19 +1722,29 @@ export const getItems = async (
   // Timestamp conditions
   if (timestampRange) {
     let timeConditions: string[] = []
+    let fieldForRange = timestampField // Use default field unless orderBy overrides
+
     if (timestampRange.from) {
       timeConditions.push(
-        `${timestampField} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${timestampField} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
       )
     }
     if (timeConditions.length > 0) {
       conditions.push(`(${timeConditions.join(" and ")})`)
     }
+  }
+
+  // Excluded IDs condition
+  if (excludedIds && excludedIds.length > 0) {
+    const exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+    conditions.push(`!(${exclusionCondition})`)
   }
 
   // Combine conditions
@@ -1739,15 +1764,21 @@ export const getItems = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
+    hits: limit,
+    offset: offset,
   }
 
   try {
-    return await vespa.getItems(searchPayload)
+    // Assuming vespa.getItems maps to a generic search in the client
+    return await vespa.search<VespaSearchResponse>(searchPayload)
   } catch (error) {
-    throw new ErrorPerformingSearch({
+    const searchError = new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
+      message: `getItems failed for schema ${schema}`,
     })
+    Logger.error(searchError, "Error in getItems function")
+    throw searchError
   }
 }
 
