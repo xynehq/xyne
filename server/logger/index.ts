@@ -72,6 +72,7 @@ const logRequest = (
   requestId: any,
   start: number,
   status: number,
+  sub: string
 ) => {
   const elapsed = time(start)
   const isError = status >= 400
@@ -82,6 +83,7 @@ const logRequest = (
     status,
     elapsed,
     ...(isError ? { error: c.res.body } : {}),
+    sub
   }
 
   if (isError) {
@@ -98,7 +100,6 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 
   return async (c: Context, next: Next) => {
     const { sub } = c.get(JwtPayloadKey) || {}
-    console.log(sub)
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
@@ -114,6 +115,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       path,
       query: c.req.query("query") || c.req.query("prompt") || null,
       message: "Incoming request",
+      email: sub
     })
   }
     const start = Date.now()
@@ -146,13 +148,13 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       duration,
     )
     if(!isMetrics) {
-      logRequest(logger, c, c_reqId, start, c.res.status) 
+      logRequest(logger, c, c_reqId, start, c.res.status, sub) 
      }
   }
 }
 
 export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
-  const baseLogger = getLogger(subsystem).child(child)
+  const baseLogger = child? getLogger(subsystem).child(child) : getLogger(subsystem)
 
   return (children:loggerChildSchema={email:"no_email_found"}): Logger => {
     return baseLogger.child(children)
