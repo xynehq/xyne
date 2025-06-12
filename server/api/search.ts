@@ -22,6 +22,7 @@ import { HTTPException } from "hono/http-exception"
 import {
   userQuerySchema,
   userSchema,
+  APP_INTEGRATION_MAPPING,
   type VespaSearchResponse,
   type VespaUser,
 } from "@/search/types"
@@ -188,19 +189,6 @@ export const SearchApi = async (c: Context) => {
     ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
     : null
   const decodedQuery = decodeURIComponent(query)
-
-const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
-'gmail': Apps.Gmail,
-'drive': Apps.GoogleDrive,
-'googledrive': Apps.GoogleDrive,   
-'googlecalendar': Apps.GoogleCalendar,  
-'slack': Apps.Slack,
-'datasource': Apps.DataSource,
-'google-workspace': Apps.GoogleWorkspace,
-'googledocs': Apps.GoogleDrive,
-'googlesheets': Apps.GoogleDrive,
-'pdf': Apps.GoogleDrive
-};
 
   if (agentId) {
     const workspaceExternalId = workspaceId 

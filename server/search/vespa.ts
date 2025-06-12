@@ -653,7 +653,6 @@ export const HybridDefaultProfileForAgent = (
         )
         and uploadedBy contains @email 
         and ${dataSourceIdConditions}
-        ${appOrEntityFilter} 
       )`
   }
 

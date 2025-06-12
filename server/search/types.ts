@@ -1091,3 +1091,16 @@ export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
 export type DataSourceFileResponse = z.infer<
   typeof DataSourceFileResponseSchema
 >
+
+export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
+  'gmail': Apps.Gmail,
+  'drive': Apps.GoogleDrive,
+  'googledrive': Apps.GoogleDrive,   
+  'googlecalendar': Apps.GoogleCalendar,  
+  'slack': Apps.Slack,
+  'datasource': Apps.DataSource,
+  'google-workspace': Apps.GoogleWorkspace,
+  'googledocs': Apps.GoogleDrive,
+  'googlesheets': Apps.GoogleDrive,
+  'pdf': Apps.GoogleDrive
+  };
