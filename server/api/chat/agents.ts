@@ -1752,7 +1752,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     toolParams.limit = maxUserRequestCount
                     await logAndStreamReasoning({
                       type: AgentReasoningStepType.LogMessage,
-                      message: `Limited perPage for tool ${toolName} to 10`,
+                      message: `Limited perPage for tool ${toolName} to ${maxUserRequestCount}`,
                     })
                   }
                 }
