@@ -228,7 +228,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
-
+const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
   workspace,
@@ -242,7 +242,9 @@ export const ChatPage = ({
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
-
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    Boolean(chatParams.agentic),
+  )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -254,7 +256,10 @@ export const ChatPage = ({
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+      search: {
+        ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+        ...(isAgenticMode ? { agentic: true } : {}),
+      },
     })
   }
   const hasHandledQueryParam = useRef(false)
@@ -308,7 +313,9 @@ export const ChatPage = ({
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
-
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
     Error,
@@ -576,6 +583,9 @@ export const ChatPage = ({
     const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
     if (chatId) {
       url.searchParams.append("chatId", chatId)
+    }
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", finalMessagePayload)
@@ -947,6 +957,10 @@ export const ChatPage = ({
       withCredentials: true,
     })
 
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
+
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
       (event) => {
@@ -1290,7 +1304,7 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
@@ -1489,6 +1503,8 @@ export const ChatPage = ({
               handleStop={handleStop}
               isStreaming={isStreaming}
               allCitations={allCitations}
+              setIsAgenticMode={setIsAgenticMode}
+              isAgenticMode={isAgenticMode}
               chatId={chatId}
               agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
@@ -1983,6 +1999,11 @@ const chatParams = z.object({
     .optional()
     .default("false"),
   reasoning: z.boolean().optional(),
+  agentic: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()

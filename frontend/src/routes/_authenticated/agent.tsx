@@ -238,7 +238,7 @@ function AgentComponent() {
   const [selectedUsers, setSelectedUsers] = useState<User[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
-
+  const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -1419,6 +1419,8 @@ function AgentComponent() {
                 setQuery={setQuery}
                 handleSend={handleSend}
                 handleStop={handleStop}
+                setIsAgenticMode={setIsAgenticMode}
+                isAgenticMode={isAgenticMode}
                 isStreaming={isStreaming}
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
