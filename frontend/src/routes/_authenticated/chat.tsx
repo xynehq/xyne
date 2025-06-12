@@ -2051,16 +2051,6 @@ const Code = ({
             {children}
           </code>
         </pre>
-        <button
-          onClick={() => {
-            navigator.clipboard.writeText(String(children))
-            // You could add a toast notification here
-          }}
-          className="absolute top-8 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 p-1 rounded text-xs"
-          title="Copy code"
-        >
-          <Copy size={12} />
-        </button>
       </div>
     )
   }
