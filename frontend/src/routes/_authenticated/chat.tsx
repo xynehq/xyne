@@ -236,10 +236,6 @@ export const ChatPage = ({
       }
     : null
 
-  useEffect(() => {
-    console.log('[Debug] currentResp:', currentResp);
-  }, [currentResp]);
-
   const [showRagTrace, setShowRagTrace] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
@@ -493,29 +489,23 @@ export const ChatPage = ({
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
-    agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
+    agentIdFromChatBox?: string | null,
     toolExternalIds?: string[],
   ) => {
     if (!messageToSend || isStreaming) return
-
-    console.log(`[ChatPage] handleSend called with chatId: ${chatId}, message: ${messageToSend.slice(0, 50)}...`)
     
     setUserHasScrolled(false)
     setQuery("")
     
     // Add user message optimistically to React Query cache
     const queryKey = chatId
-    console.log(`[ChatPage] Adding optimistic message to cache with key: ${queryKey}`)
     
     queryClient.setQueryData<any>(
       ["chatHistory", queryKey],
       (oldData: any) => {
-        console.log(`[ChatPage] Current cache data:`, oldData)
         if (!oldData) {
-          console.log(`[ChatPage] Creating new cache entry`)
           return { messages: [{ messageRole: "user", message: messageToSend }] }
         }
-        console.log(`[ChatPage] Adding to existing ${oldData.messages?.length || 0} messages`)
         return {
           ...oldData,
           messages: [...(oldData.messages || []), { messageRole: "user", message: messageToSend }],
@@ -525,8 +515,6 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    console.log("Using agentId:", agentIdToUse)
-    console.log(`[ChatPage] Starting persistent stream with reasoning: ${isReasoningActive}`)
     await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, toolExternalIds || [], agentIdToUse)
   }
 
@@ -575,12 +563,7 @@ export const ChatPage = ({
   }
 
   const handleRetry = async (messageId: string) => {
-    console.log('[Debug] handleRetry called with messageId:', messageId)
-    console.log('[Debug] isStreaming:', isStreaming, 'hookMessageId:', messageId)
-    if (!messageId || isStreaming) {
-      console.log('[Debug] handleRetry early return - no messageId or isStreaming')
-      return
-    }
+    if (!messageId || isStreaming) return
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
