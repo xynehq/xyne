@@ -473,23 +473,20 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1 || endBrace !== -1) {
-      if (startBrace !== -1) {
-        if (startBrace !== 0) {
-          text = text.substring(startBrace)
-        }
+    if (startBrace !== -1 && endBrace !== -1 && text.startsWith("{") && (text.includes(":") || text.includes('"'))) {
+      if (startBrace !== 0) {
+        text = text.substring(startBrace)
       }
-      if (endBrace !== -1) {
-        if (endBrace !== text.length - 1) {
-          text = text.substring(0, endBrace + 1)
-        }
+      if (endBrace !== text.length - 1) {
+        text = text.substring(0, endBrace + 1)
       }
     }
     if (startBrace === -1 && jsonKey && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        text = `{${jsonKey} "${text}"`
+        const escapedText = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")
+        text = `{${jsonKey} "${escapedText}"}`
       }
     }
 
@@ -555,6 +552,13 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       if (text === "}") {
         return {}
       }
+      
+      // If we have a jsonKey and text doesn't look like JSON, wrap it
+      if (jsonKey && !text.startsWith("{") && !text.includes(":")) {
+        const escapedText = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+        text = `{${jsonKey} "${escapedText}"}`
+      }
+      
       jsonVal = parse(text)
     } catch (parseError) {
       Logger.error(
