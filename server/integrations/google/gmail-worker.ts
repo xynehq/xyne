@@ -31,6 +31,11 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+
+export const getUserLogger = (email: string) => {
+  return Logger.child({ email: email })
+}
+
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
 // import { createJwtClient } from "@/integrations/google/utils"
@@ -41,12 +46,6 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
-import {
-  ingestionMailErrorsTotal,
-  totalAttachmentError,
-  totalAttachmentIngested,
-  totalIngestedMails,
-} from "@/metrics/google/gmail-metrics"
 
 import { skipMailExistCheck } from "@/integrations/google/config"
 
@@ -76,6 +75,9 @@ export const createJwtClient = (
     subject,
   })
 }
+
+let failedAttachmentCount = 0
+let failedMessageCount = 0
 
 // self.addEventListener('message', async (event) => {
 // })
@@ -152,6 +154,27 @@ const sendStatsUpdate = (
   })
 }
 
+const sendCounterUpdate = (
+  email: string,
+  messageCount: number,
+  attachmentCount: number,
+  failedMessageCount: number,
+  failedAttachmentCount: number,
+  jobId: string,
+) => {
+  postMessage({
+    type: WorkerResponseTypes.ProgressUpdate,
+    email,
+    jobId,
+    stats: {
+      messageCount,
+      attachmentCount,
+      failedMessageCount,
+      failedAttachmentCount,
+    },
+  })
+}
+
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
@@ -207,7 +230,7 @@ export const handleGmailIngestion = async (
   if (dateFilters.length > 0) {
     query = `${query} ${dateFilters.join(" AND ")}`
   }
-  Logger.info(`query: ${query}`)
+  getUserLogger(email).info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -261,30 +284,13 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
-
-              totalIngestedMails.inc(
-                {
-                  mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
-                  status: "GMAIL_INGEST_SUCCESS",
-                  email: email,
-                  account_type: "SERVICE_ACCOUNT",
-                },
-                1,
-              )
             }
           } catch (error) {
-            Logger.error(
+            getUserLogger(email).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc(
-              {
-                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
-                status: "FAILED",
-                error_type: "ERROR_IN_GMAIL_INGESTION",
-              },
-              1,
-            )
+            failedMessageCount++
           } finally {
             // release from memory
             msgResp = null
@@ -297,14 +303,14 @@ export const handleGmailIngestion = async (
 
       // Post stats based on successful operations in this batch
       // Always post Gmail count, even if it's zero for this batch, to confirm processing.
-      Logger.info(
+      getUserLogger(email).info(
         ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${insertedMessagesInBatch}, jobId: ${jobId}`,
       )
       sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
 
       // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        Logger.info(
+        getUserLogger(email).info(
           ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
         )
         sendStatsUpdate(
@@ -315,6 +321,14 @@ export const handleGmailIngestion = async (
         )
       }
 
+      sendCounterUpdate(
+        email,
+        insertedMessagesInBatch,
+        insertedPdfAttachmentsInBatch,
+        failedMessageCount,
+        failedAttachmentCount,
+        jobId,
+      )
       // clean up explicitly
       batchRequests = []
       messageBatch = []
@@ -322,7 +336,9 @@ export const handleGmailIngestion = async (
     // clean up explicitly
   } while (nextPageToken)
 
-  Logger.info(`Inserted ${totalMails} mails`)
+  failedAttachmentCount = 0
+  failedMessageCount = 0
+  getUserLogger(email).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
@@ -485,16 +501,6 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
-
-            totalAttachmentIngested.inc(
-              {
-                mime_type: mimeType,
-                status: "SUCCESS",
-                account_type: "OAUTH_ACCOUNT",
-                email: userEmail,
-              },
-              1,
-            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -503,15 +509,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc(
-              {
-                mime_type: mimeType,
-                status: "FAILED",
-                email: userEmail,
-                error_type: "ERROR_INSERTING_ATTACHMENT",
-              },
-              1,
-            )
+            failedAttachmentCount++
           }
         }
       }

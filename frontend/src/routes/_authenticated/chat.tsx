@@ -242,7 +242,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
-
+const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
   workspace,
@@ -256,7 +256,9 @@ export const ChatPage = ({
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
-
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    Boolean(chatParams.agentic),
+  )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -268,7 +270,10 @@ export const ChatPage = ({
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+      search: {
+        ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+        ...(isAgenticMode ? { agentic: true } : {}),
+      },
     })
   }
   const hasHandledQueryParam = useRef(false)
@@ -322,7 +327,9 @@ export const ChatPage = ({
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
-
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
     Error,
@@ -511,7 +518,12 @@ export const ChatPage = ({
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(messageToSend, sourcesArray, chatParams.agentId)
+      handleSend(
+        messageToSend,
+        sourcesArray,
+        chatParams.agentId,
+        chatParams.toolExternalIds,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -521,6 +533,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
+          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
       })
@@ -530,6 +543,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
+    chatParams.toolExternalIds,
     router,
   ])
 
@@ -537,6 +551,7 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
+    toolExternalIds?: string[],
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -579,9 +594,12 @@ export const ChatPage = ({
         .join("")
     }
 
-    const url = new URL(`/api/v1/message/create`, window.location.origin)
+    const url = new URL(`/api/v1/message/create`, window.location.origin) // TODO: call only if any mcp clients are enable.
     if (chatId) {
       url.searchParams.append("chatId", chatId)
+    }
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", finalMessagePayload)
@@ -595,10 +613,14 @@ export const ChatPage = ({
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
     }
+    if (toolExternalIds && toolExternalIds.length > 0) {
+      toolExternalIds.forEach((toolId) => {
+        url.searchParams.append("toolExternalIds", toolId)
+      })
+    }
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    console.log("Using agentId:", agentIdToUse)
     if (agentIdToUse) {
       url.searchParams.append("agentId", agentIdToUse)
     }
@@ -948,6 +970,10 @@ export const ChatPage = ({
       // Store EventSource
       withCredentials: true,
     })
+
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -1484,12 +1510,15 @@ export const ChatPage = ({
               </div>
             )}
             <ChatBox
+              role={user?.role}
               query={query}
               setQuery={setQuery}
               handleSend={handleSend} // handleSend function is passed here
               handleStop={handleStop}
               isStreaming={isStreaming}
               allCitations={allCitations}
+              setIsAgenticMode={setIsAgenticMode}
+              isAgenticMode={isAgenticMode}
               chatId={chatId}
               agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
@@ -2374,6 +2403,11 @@ const chatParams = z.object({
     .optional()
     .default("false"),
   reasoning: z.boolean().optional(),
+  agentic: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
@@ -2394,6 +2428,17 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  toolExternalIds: z
+    .string()
+    .optional()
+    .transform((val) =>
+      val
+        ? val
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined,
+    ),
 })
 
 type XyneChat = z.infer<typeof chatParams>

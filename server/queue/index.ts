@@ -4,12 +4,12 @@ import {
   syncGoogleWorkspace,
 } from "@/integrations/google"
 import {
-  ConnectorType,
   metricAccountType,
   metricNames,
   Subsystem,
   type SaaSJob,
-} from "@/types"
+} from "@/types" // ConnectorType removed
+import { ConnectorType } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
 import config from "@/config"
 import { Apps, AuthType } from "@/shared/types"

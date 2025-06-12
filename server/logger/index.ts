@@ -32,7 +32,10 @@ export const getLogger = (loggerType: Subsystem) => {
   return pino({
     name: loggerType,
     ...(isProduction
-      ? { formatters: { level: (label) => ({ level: label }) } }
+      ? {
+          timestamp: pino.stdTimeFunctions.isoTime,
+          formatters: { level: (label) => ({ level: label }) },
+        }
       : {
           transport: {
             target: "pino-pretty",

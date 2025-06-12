@@ -109,11 +109,17 @@ const deleteUpdateStatsForGoogleSheets = async (
   docId: string,
   client: GoogleClient,
   stats: ChangeStats,
+  email: string,
 ) => {
   const spreadsheetId = docId
   const sheets = google.sheets({ version: "v4", auth: client })
   try {
-    const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!, client)
+    const spreadsheet = await getSpreadsheet(
+      sheets,
+      spreadsheetId!,
+      client,
+      email,
+    )
     if (spreadsheet) {
       const totalSheets = spreadsheet?.data?.sheets?.length!
 
@@ -290,7 +296,7 @@ export const handleGoogleDriveChange = async (
             MimeMapForContent[file.mimeType] &&
             file.mimeType === DriveMime.Sheets
           ) {
-            await deleteUpdateStatsForGoogleSheets(docId, client, stats)
+            await deleteUpdateStatsForGoogleSheets(docId, client, stats, email)
           } else {
             doc = await getDocumentOrNull(fileSchema, docId)
             if (doc) {
@@ -316,10 +322,11 @@ export const handleGoogleDriveChange = async (
                 client,
                 file,
                 DriveEntity.Sheets,
+                email,
               )
               stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
             } else if (file.mimeType === DriveMime.Slides) {
-              vespaData = await getPresentationToBeIngested(file, client)
+              vespaData = await getPresentationToBeIngested(file, client, email)
               if (doc) {
                 stats.summary += `updated the content for ${docId}\n`
               } else {

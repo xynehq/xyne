@@ -9,11 +9,11 @@ import {
   type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
-} from "@/db/schema"
-import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
+} from "./schema"
+import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
 import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
@@ -93,6 +93,8 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       type: connectors.type,
       status: connectors.status,
       createdAt: connectors.createdAt,
+      config: connectors.config,
+      connectorId: connectors.id,
     })
     .from(connectors)
     .where(
@@ -102,6 +104,30 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       ),
     )
   return res
+}
+
+export const getConnectorByApp = async (
+  trx: TxnOrClient,
+  userId: number,
+  app: Apps,
+): Promise<SelectConnector> => {
+  const res = await db
+    .select()
+    .from(connectors)
+    .where(and(eq(connectors.app, app), eq(connectors.userId, userId)))
+    .limit(1)
+  if (res.length) {
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    if (!parsedRes.success) {
+      throw parsedRes.error
+    }
+    // TODO: maybe add a check if OAuth and expired token then throw error
+    return parsedRes.data
+  } else {
+    throw new NoConnectorsFound({
+      message: `Could not get the connector with id: ${userId}`,
+    })
+  }
 }
 
 // don't call this
