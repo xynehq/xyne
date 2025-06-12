@@ -32,7 +32,7 @@ const cleanDocs = (text: string): string => {
   return cleanedText
 }
 
-const parseHighlight = (text: string): ReactNode[] => {
+export const parseHighlight = (text: string): ReactNode[] => {
   // Split the text on <hi> and </hi>, including the tags in the result
   const parts: string[] = text.split(/(<hi>|<\/hi>)/)
 
@@ -175,7 +175,7 @@ function trimToHighlightHotspot(text: string): string {
 // Component that renders chunk summary with parsing
 const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => {
   return (
-    <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
+    <p className="text-left text-sm mt-1 text-[#464B53] dark:text-slate-300 text-ellipsis ml-[44px] line-clamp-3">
       {chunk_summary
         ? parseHighlight(trimToHighlightHotspot(chunk_summary))
         : " "}

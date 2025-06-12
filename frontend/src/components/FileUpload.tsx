@@ -366,10 +366,10 @@ export default function FileUpload({
       {/* Remove the header text for existing datasources */}
       {!isEditingExisting && (
         <div className="text-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-700">
+          <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">
             Upload Text Files
           </h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Only .txt files are supported
           </p>
         </div>
@@ -380,7 +380,7 @@ export default function FileUpload({
         <div className="mb-4">
           <label
             htmlFor="datasourceName"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Datasource Name <span className="text-red-500">*</span>
           </label>
@@ -394,7 +394,10 @@ export default function FileUpload({
               setDatasourceName(newName)
               if (
                 !isEditingExisting &&
-                existingDataSourceNames.some(existingName => existingName.toLowerCase() === newName.trim().toLowerCase())
+                existingDataSourceNames.some(
+                  (existingName) =>
+                    existingName.toLowerCase() === newName.trim().toLowerCase(),
+                )
               ) {
                 setDatasourceNameError(
                   "Datasource name already exists. Please choose a different name.",
@@ -418,7 +421,7 @@ export default function FileUpload({
         onDrop={handleDrop}
       >
         <div
-          className="border-2 border-dashed border-gray-200 rounded-lg p-8 w-full mx-auto h-72 min-h-72 cursor-pointer flex flex-col items-center justify-center transition-colors hover:border-gray-400 relative bg-gray-50"
+          className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-72 min-h-72 cursor-pointer flex flex-col items-center justify-center transition-colors hover:border-gray-400 dark:hover:border-gray-500 relative bg-gray-50 dark:bg-slate-800"
           onClick={handleFileSelect}
         >
           {selectedFiles.length > 0 && (
@@ -427,7 +430,7 @@ export default function FileUpload({
                 e.stopPropagation()
                 removeAllFiles()
               }}
-              className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 hover:bg-gray-900 text-white h-9 px-3"
+              className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 dark:bg-slate-600 hover:bg-gray-900 dark:hover:bg-slate-500 text-white dark:text-gray-200 h-9 px-3"
             >
               <Trash2 className="w-4 h-4" />
               <span>Clear All</span>
@@ -437,14 +440,16 @@ export default function FileUpload({
           <div className="flex flex-col items-center justify-center w-full h-full">
             {selectedFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full w-full">
-                <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-700 mb-2">
+                <Upload className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Drag-drop or click here to select
                 </h3>
                 {isEditingExisting && (
                   <div className="text-center mt-2">
-                    <p className="text-gray-600">Upload More Text Files</p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Upload More Text Files
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       Only .txt files are supported
                     </p>
                   </div>
@@ -458,30 +463,30 @@ export default function FileUpload({
                 >
                   {selectedFiles.map((selectedFile) => (
                     <div key={selectedFile.id} className="relative group">
-                      <div className="border border-gray-200 rounded-lg p-1.5 bg-white hover:bg-gray-50 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             removeFile(selectedFile.id)
                           }}
-                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black"
+                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
                           title="Remove file"
                         >
                           <X className="w-3 h-3" />
                         </button>
 
                         <div className="flex flex-col items-center justify-center w-full">
-                          <File className="w-6 h-6 text-gray-500" />
+                          <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
                           <div className="w-full text-center mt-1">
                             <p
-                              className="text-xs font-medium text-gray-700 truncate max-w-full px-1"
+                              className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-full px-1"
                               title={selectedFile.file.name}
                             >
                               {selectedFile.file.name.length > 16
                                 ? `${selectedFile.file.name.substring(0, 13)}...`
                                 : selectedFile.file.name}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
                               {Math.round(selectedFile.file.size / 1024)} KB
                             </p>
                           </div>
@@ -502,15 +507,16 @@ export default function FileUpload({
                   handleFolderSelect()
                 }}
                 variant="outline"
-                className="flex items-center space-x-2 text-gray-700 border-gray-300"
+                className="flex items-center space-x-2 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600"
               >
-                <Folder className="w-4 h-4" />
+                <Folder className="w-4 h-4" />{" "}
+                {/* Icon color will inherit from text-gray-700 dark:text-gray-200 */}
                 <span>Select Folder</span>
               </Button>
             </div>
 
             {selectedFiles.length > 0 && (
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 {selectedFiles.length} file
                 {selectedFiles.length !== 1 ? "s" : ""} selected
               </div>
@@ -529,8 +535,8 @@ export default function FileUpload({
               }
               className={`flex items-center space-x-2 mr-4 ${
                 !datasourceName.trim() || !!datasourceNameError // Also consider name error for styling
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-gray-800 hover:bg-gray-900"
+                  ? "bg-gray-400 text-gray-100 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed" // Disabled-like style
+                  : "bg-primary text-primary-foreground shadow hover:bg-primary/90" // Active style using primary button theme
               } h-9 px-4`}
             >
               {isUploading ? (

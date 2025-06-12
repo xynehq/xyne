@@ -140,7 +140,7 @@ function FileUploadIntegration() {
   }
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -165,18 +165,18 @@ function FileUploadIntegration() {
               <div>
                 <div className="mb-6 text-center">
                   <div className="flex items-center justify-center space-x-2">
-                    <h2 className="text-2xl font-semibold text-gray-800">
+                    <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">
                       {activeDataSource}
                     </h2>
                   </div>
-                  <p className="text-gray-600 mt-1">
+                  <p className="text-gray-600 dark:text-gray-300 mt-1">
                     Upload more files to this data source.
                   </p>
                 </div>
 
                 <div className="mb-8">
                   <div
-                    className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
+                    className="flex items-center justify-between p-4 border dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800"
                     onClick={() => setIsUploadMoreOpen(!isUploadMoreOpen)}
                     role="button"
                     tabIndex={0}
@@ -188,15 +188,15 @@ function FileUploadIntegration() {
                     aria-controls="upload-more-content"
                   >
                     <div className="flex items-center gap-3">
-                      <UploadCloud className="h-5 w-5 text-slate-600" />
-                      <span className="text-lg font-medium">
+                      <UploadCloud className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                      <span className="text-lg font-medium dark:text-gray-200">
                         Upload more files to this datasource
                       </span>
                     </div>
                     {isUploadMoreOpen ? (
-                      <ChevronUp className="h-5 w-5 text-slate-600" />
+                      <ChevronUp className="h-5 w-5 text-slate-600 dark:text-slate-400" />
                     ) : (
-                      <ChevronDown className="h-5 w-5 text-slate-600" />
+                      <ChevronDown className="h-5 w-5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
 
@@ -212,7 +212,7 @@ function FileUploadIntegration() {
                 </div>
 
                 <div className="mt-8 mb-8">
-                  <h3 className="text-lg font-medium mb-4">
+                  <h3 className="text-lg font-medium mb-4 dark:text-gray-200">
                     Files in {activeDataSource}
                   </h3>
                   <FileAccordion activeDataSourceName={activeDataSource} />
@@ -220,10 +220,10 @@ function FileUploadIntegration() {
               </div>
             ) : (
               <div className="text-center py-16">
-                <h2 className="text-xl font-medium text-gray-700 mb-2">
+                <h2 className="text-xl font-medium text-gray-700 dark:text-gray-200 mb-2">
                   Select a data source
                 </h2>
-                <p className="text-gray-500">
+                <p className="text-gray-500 dark:text-gray-400">
                   Choose a data source from the sidebar or create a new one
                 </p>
               </div>

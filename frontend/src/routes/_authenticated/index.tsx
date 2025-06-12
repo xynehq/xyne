@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Search as SearchIcon } from "lucide-react"
@@ -26,6 +27,7 @@ enum Tabs {
 }
 
 const Index = () => {
+  const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
@@ -122,6 +124,7 @@ const Index = () => {
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
+    toolExternalIds?: string[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -129,6 +132,7 @@ const Index = () => {
         reasoning?: boolean
         sources?: string
         agentId?: string
+        toolExternalIds?: string[]
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -139,10 +143,14 @@ const Index = () => {
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
-
+      // If agentId is provided, add it to the searchParams
       if (agentId) {
         // Use agentId directly
         searchParams.agentId = agentId
+      }
+
+      if (toolExternalIds && toolExternalIds.length > 0) {
+        searchParams.toolExternalIds = toolExternalIds
       }
 
       navigate({
@@ -170,27 +178,37 @@ const Index = () => {
 
   return (
     <TooltipProvider>
-      <div className="h-full w-full flex flex-row bg-white">
+      <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
         <Sidebar
           photoLink={user?.photoLink ?? ""}
           role={user?.role}
           isAgentMode={agentWhiteList}
         />
-        <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
-          <div className="flex flex-col min-h-36 w-full max-w-3xl">
+        <div className="flex flex-col flex-grow justify-center items-center ml-[52px] relative">
+          <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+            {" "}
+            {/* Ensure content is above the text logo */}
             <div className="flex mb-[14px] w-full justify-start">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     className={`flex items-center pr-[12px] rounded-[20px] ${
                       activeTab === Tabs.Ask
-                        ? "bg-[#EDF2F7] text-[#33383D]"
-                        : "text-[#728395]"
+                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                        : "text-[#728395] dark:text-gray-400"
                     }`}
                     onClick={() => setActiveTab(Tabs.Ask)}
                   >
                     <Sparkle
-                      stroke={activeTab === Tabs.Ask ? "#33383D" : "#728395"}
+                      stroke={
+                        activeTab === Tabs.Ask
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
                     />
                     Ask
@@ -201,16 +219,24 @@ const Index = () => {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    className={`flex items-center text-[#33383D] pr-[12px] rounded-[20px] ${
+                    className={`flex items-center pr-[12px] rounded-[20px] ${
                       activeTab === Tabs.Search
-                        ? "bg-[#EDF2F7] text-[#33383D]"
-                        : "text-[#728395]"
+                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                        : "text-[#728395] dark:text-gray-400"
                     }`}
                     onClick={() => setActiveTab(Tabs.Search)}
                   >
                     <SearchIcon
                       size={16}
-                      stroke={activeTab === Tabs.Search ? "#33383D" : "#728395"}
+                      stroke={
+                        activeTab === Tabs.Search
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
                     />
                     Search
@@ -240,6 +266,7 @@ const Index = () => {
             {activeTab === "ask" && (
               <div className="w-full h-72">
                 <ChatBox
+                  role={user?.role}
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
