@@ -1415,6 +1415,9 @@ function AgentComponent() {
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
                 setIsReasoningActive={setIsReasoningActive}
+                role={user?.role}
+                isAgenticMode={true}
+                setIsAgenticMode={() => {}}
               />
             </div>
           </div>

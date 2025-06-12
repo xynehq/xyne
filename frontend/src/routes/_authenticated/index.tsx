@@ -249,6 +249,9 @@ const Index = () => {
                   allCitations={new Map()} // Change this line
                   isReasoningActive={isReasoningActive}
                   setIsReasoningActive={setIsReasoningActive}
+                  role={user?.role} 
+                  isAgenticMode={agentWhiteList}
+                  setIsAgenticMode={() => {}} // Add a no-op function or actual state setter if needed
                 />
               </div>
             )}
