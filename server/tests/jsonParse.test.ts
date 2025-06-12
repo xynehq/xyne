@@ -114,6 +114,43 @@ describe("jsonParseLLMOutput", () => {
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer \\" })
   })
+  test("should handle text with quotes when using jsonKey", () => {
+    const text = 'This is a "quoted" text that should not break'
+    const result = jsonParseLLMOutput(text, '"answer":')
+    expect(result).toEqual({
+      answer: 'This is a "quoted" text that should not break',
+    })
+  })
+
+  test("should handle text with curly braces when using jsonKey", () => {
+    const text = "This text has {braces} in it"
+    const result = jsonParseLLMOutput(text, '"answer":')
+    expect(result).toEqual({
+      answer: "This text has {braces} in it",
+    })
+  })
+
+  test("should handle text with both quotes and braces when using jsonKey", () => {
+    const text = 'Answer is "hello {world}" and more text'
+    const result = jsonParseLLMOutput(text, '"answer":')
+    expect(result).toEqual({
+      answer: 'Answer is "hello {world}" and more text',
+    })
+  })
+
+  test("should handle markdown text with bullets and formatting when using jsonKey", () => {
+    const text = `Imagine you're a chef joining a high-end restaurant. Before you can cook, you need:
+- Access to the kitchen (repository access)
+- The right knives and tools (development setup)
+- Knowledge of where ingredients are stored (codebase structure)
+- Understanding of the kitchen's systems (build processes)
+**Setting up Euler PS is the same process** - preparing your development "kitchen" for payment orchestration work.
+### Prerequisites You'll Need:`
+    const result = jsonParseLLMOutput(text, '"answer":')
+    expect(result).toEqual({
+      answer: text,
+    })
+  })
 
   test("string not closed and multiline inside answer key", () => {
     const input = `{

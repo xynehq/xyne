@@ -3175,7 +3175,7 @@ export const AgentMessageApi = async (c: Context) => {
                 if (!reasoning) {
                   buffer += chunk.text
                   try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
+                    parsed = jsonParseLLMOutput(buffer,"answer:") || {}
                     if (parsed.answer && currentAnswer !== parsed.answer) {
                       if (currentAnswer === "") {
                         Logger.info(
