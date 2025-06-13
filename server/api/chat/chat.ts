@@ -149,7 +149,7 @@ import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { ragPipelineConfig, RagPipelineStages, type Citation } from "./types"
 import { activeStreams } from "./stream"
-import { AgentMessageApi, MessageWithToolsApi } from "./agents"
+import { AgentMessageApi, MessageWithToolsApi, CombinedAgentSlackApi } from "./agents" // Added CombinedAgentSlackApi
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -2638,15 +2638,28 @@ export const MessageApi = async (c: Context) => {
       isReasoningEnabled,
       agentId,
     }: MessageReqType = body
-    const agentPrompt = agentId && isCuid(agentId) ? agentId : ""
-    // TODO: allow agentic for agent as well
-    if (isAgentic && !agentPrompt) {
-      // Call the Agentic handler function here
+    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+
+    if (agentPromptValue) {
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+      const agentDetails = await getAgentByExternalId(db, agentPromptValue, userAndWorkspaceCheck.workspace.id)
+
+      if (isAgentic && agentDetails) {
+        Logger.info(`Routing to CombinedAgentSlackApi for agent ${agentPromptValue} with Slack integration.`)
+        // CombinedAgentSlackApi expects `agentId` in the body, which `c` provides.
+        return CombinedAgentSlackApi(c)
+      } else {
+        // Agent exists but no Slack, or agent not found, or agentId was invalid initially.
+        // AgentMessageApi handles the agentPrompt (which is agentId from request body).
+        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
+        return AgentMessageApi(c)
+      }
+    } else if (isAgentic) { // No valid agentId, but isAgentic is true
+      Logger.info(`Routing to MessageWithToolsApi as isAgentic is true and no agentId provided.`)
       return MessageWithToolsApi(c)
     }
-    if (agentPrompt) {
-      return AgentMessageApi(c)
-    }
+
+    // If none of the above, proceed with default RAG flow
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
       throw new HTTPException(400, {
@@ -2710,7 +2723,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            agentId: agentPrompt,
+            agentId: agentPromptValue,
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -3021,7 +3034,9 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: llmFormattedMessages,
-                agentPrompt: agentPrompt,
+                // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
+                                          // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
+                                          // For this non-agent RAG path, we don't pass an agent prompt.
               })
 
             // TODO: for now if the answer is from the conversation itself we don't

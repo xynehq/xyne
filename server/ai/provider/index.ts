@@ -559,7 +559,8 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       }
     } else {
       Logger.error(e, `No jsonKey provided and parsing failed for: ${originalText.trim()}`)
-      // throw e
+      // If all parsing attempts fail, return null or an empty object to avoid downstream errors with {}
+      return jsonVal || null; 
     }
   }
   return jsonVal
@@ -1262,16 +1263,31 @@ export function generateToolSelectionOutput(
   toolContext: string,
   initialPlanning: string,
   params: ModelParams,
+  agentContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
 
   let defaultReasoning = isReasoning
 
-  params.systemPrompt = SearchQueryToolContextPrompt(
-    userContext,
-    toolContext,
-    initialPlanning,
-  )
+  if (!isAgentPromptEmpty(agentContext)) {
+    const parsedAgentPrompt = parseAgentPrompt(agentContext)
+    // Prepend agent's custom prompt if it exists, otherwise use default
+    const defaultSystemPrompt = SearchQueryToolContextPrompt(
+      userContext,
+      toolContext,
+      initialPlanning,
+    )
+    params.systemPrompt = parsedAgentPrompt.prompt
+      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
+      : defaultSystemPrompt
+  } else {
+    // No agent context, use default
+    params.systemPrompt = SearchQueryToolContextPrompt(
+      userContext,
+      toolContext,
+      initialPlanning,
+    )
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1335,13 +1351,26 @@ export function generateAnswerBasedOnToolOutput(
   params: ModelParams,
   toolContext: string,
   toolOutput: string,
+  agentContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
-  params.systemPrompt = withToolQueryPrompt(
-    userContext,
-    toolContext,
-    toolOutput,
-  )
+  if (!isAgentPromptEmpty(agentContext)) {
+    const parsedAgentPrompt = parseAgentPrompt(agentContext)
+    const defaultSystemPrompt = withToolQueryPrompt(
+      userContext,
+      toolContext,
+      toolOutput,
+    )
+    params.systemPrompt = parsedAgentPrompt.prompt
+      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
+      : defaultSystemPrompt
+  } else {
+    params.systemPrompt = withToolQueryPrompt(
+      userContext,
+      toolContext,
+      toolOutput,
+    )
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1364,13 +1393,26 @@ export function generateSynthesisBasedOnToolOutput(
   currentMessage: string,
   gatheredFragments: string,
   params: ModelParams,
+  agentContext?: string,
 ): Promise<ConverseResponse> {
   params.json = true
-  params.systemPrompt = synthesisContextPrompt(
-    userCtx,
-    currentMessage,
-    gatheredFragments,
-  )
+  if (!isAgentPromptEmpty(agentContext)) {
+    const parsedAgentPrompt = parseAgentPrompt(agentContext)
+    const defaultSystemPrompt = synthesisContextPrompt(
+      userCtx,
+      currentMessage,
+      gatheredFragments,
+    )
+    params.systemPrompt = parsedAgentPrompt.prompt
+      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
+      : defaultSystemPrompt
+  } else {
+    params.systemPrompt = synthesisContextPrompt(
+      userCtx,
+      currentMessage,
+      gatheredFragments,
+    )
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
