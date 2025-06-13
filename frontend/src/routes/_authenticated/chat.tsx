@@ -49,6 +49,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { EnhancedReasoning } from "@/components/EnhancedReasoning"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
@@ -1125,26 +1126,13 @@ export const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={logo}
             />
-            <div className="mt-[4px] markdown-content">
+            <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
-                  <MarkdownPreview
-                    source={processMessage(thinking)}
-                    wrapperElement={{
-                      "data-color-mode": theme,
-                    }}
-                    style={{
-                      padding: 0,
-                      backgroundColor: "transparent",
-                      color: theme === "dark" ? "#A0AEC0" : "#627384",
-                      maxWidth: "100%",
-                      overflowWrap: "break-word",
-                    }}
-                    components={{
-                      a: renderMarkdownLink,
-                    }}
-                  />
-                </div>
+                <EnhancedReasoning
+                  content={thinking}
+                  isStreaming={!responseDone}
+                  className="mb-4"
+                />
               )}
               {message === "" && (!responseDone || isRetrying) ? (
                 <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
