@@ -464,7 +464,14 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   const originalText = text
   try {
     text = text.trim()
-    text = text.replace(/^```(json)?\s*/i, "")
+    
+    // Only remove code block markers if this looks like a JSON code block
+    // and we don't have a jsonKey (which means we're wrapping plain text)
+    if (!jsonKey && text.match(/^```(json)?\s*\{/i)) {
+      text = text.replace(/^```(json)?\s*/i, "")
+      text = text.replace(/\s*```$/i, "")
+    }
+    
     text = text.trim()
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -475,7 +482,11 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1 && endBrace !== -1 && text.startsWith("{") && (text.includes(":") || text.includes('"'))) {
+    // Only extract JSON structure if we have what looks like actual JSON
+    // Check if it contains proper JSON key-value structure with the jsonKey
+    if (startBrace !== -1 && endBrace !== -1 && text.startsWith("{") && 
+        (text.includes(":") || text.includes('"')) && 
+        jsonKey && text.includes(jsonKey)) {
       if (startBrace !== 0) {
         text = text.substring(startBrace)
       }
@@ -483,7 +494,8 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         text = text.substring(0, endBrace + 1)
       }
     }
-    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
+    // Handle case where we need to wrap plain text in JSON structure
+    else if ((startBrace === -1 || !text.includes(jsonKey || "")) && jsonKey && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
