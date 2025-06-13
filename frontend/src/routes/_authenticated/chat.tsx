@@ -68,8 +68,6 @@ mermaid.initialize({
   gitGraph: {
     useMaxWidth: true,
   },
-  // Set log level to suppress verbose error messages
-  logLevel: 'warn',
 })
 import {
   SelectPublicMessage,
@@ -1246,11 +1244,6 @@ const Code = ({
         setLastValidMermaid(sanitizedCode)
       } catch (error: any) {
         // Completely suppress all error details from users
-        console.warn("Mermaid rendering failed, handling gracefully:", {
-          error: error.message || String(error),
-          codeLength: code?.length || 0,
-          hasLastValid: !!lastValidMermaid
-        })
         
         // Always gracefully handle any mermaid errors by either:
         // 1. Keeping the last valid diagram if we have one
