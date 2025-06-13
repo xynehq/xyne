@@ -78,12 +78,13 @@ const logRequest = (
   const isError = status >= 400
   const isRedirect = status === 302
 
+  const email = sub ?? ""
   const logData = {
     requestId,
     status,
     elapsed,
     ...(isError ? { error: c.res.body } : {}),
-    sub
+    email
   }
 
   if (isError) {
@@ -99,7 +100,8 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
-    const { sub } = c.get(JwtPayloadKey) || {}
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub ?? ""
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
@@ -115,16 +117,20 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       path,
       query: c.req.query("query") || c.req.query("prompt") || null,
       message: "Incoming request",
-      email: sub
+      email
     })
   }
     const start = Date.now()
 
+    const offset = c.req.query('offset')?? ""
+    console.log(`Offset ${offset}`)
+
     appRequest.inc(
       {
-        app_endpoint: getPath(c.req.raw),
+        app_endpoint: getPath(c.req.raw).includes('/api/v1/proxy') ? '/api/v1/proxy' : getPath(c.req.raw),
         app_request_process_status: "received",
-        email: sub
+        email: sub,
+        offset: offset
       },
       1,
     )
@@ -143,7 +149,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       {
         app_endpoint: c.req.routePath,
         app_response_status: String(c.res.status),
-        email: sub
+        email:sub
       },
       duration,
     )
@@ -160,3 +166,4 @@ export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
     return baseLogger.child(children)
   }
 }
+

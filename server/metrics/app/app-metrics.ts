@@ -4,7 +4,7 @@ import { Counter, Summary } from "prom-client"
 export const appRequest = new Counter({
   name: "app_request_count",
   help: "Number of request sent to server",
-  labelNames: ["app_endpoint", "app_request_process_status", "email"],
+  labelNames: ["app_endpoint", "app_request_process_status", "email", "offset"],
 })
 metricRegister.registerMetric(appRequest)
 
@@ -23,3 +23,12 @@ export const requestResponseLatency = new Summary({
 })
 
 metricRegister.registerMetric(requestResponseLatency)
+
+
+export const likeDislikeCount = new Counter({
+  name:"like_dislike_count",
+  help: "Count of Number of Like and Dislikes",
+  labelNames:["email", "feedback"]
+})
+
+metricRegister.registerMetric(likeDislikeCount)

@@ -15,7 +15,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 1,
+  "id": 10,
   "links": [
     {
       "icon": "info",
@@ -59,6 +59,82 @@
           "color": {
             "mode": "thresholds"
           },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              },
+              {
+                "color": "#EAB839",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 11,
+        "x": 0,
+        "y": 1
+      },
+      "id": 48,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "12.0.1",
+      "targets": [
+        {
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "count(app_request_count) by (email)",
+          "format": "table",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Active Users Email",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P442C0F3243930FD5"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -77,9 +153,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
+        "h": 14,
+        "w": 7,
+        "x": 11,
         "y": 1
       },
       "id": 46,
@@ -102,7 +178,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "increase(app_request_count{app_endpoint=\"/api/v1/message/create\"}[$__range])",
+          "expr": "max_over_time(app_request_count{app_endpoint=\"/api/v1/message/create\"}[$__range])",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -119,41 +195,9 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -171,37 +215,40 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
+        "h": 14,
+        "w": 6,
+        "x": 18,
         "y": 1
       },
       "id": 47,
       "options": {
-        "legend": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
           "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
+        "showPercentChange": true,
+        "textMode": "auto",
+        "wideLayout": true
       },
       "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "increase(app_request_count{app_endpoint=\"/api/v1/search\"}[$__range])",
+          "expr": "increase(app_request_count{app_endpoint=\"/api/v1/search\", offset=\"0\"}[$__range])",
+          "hide": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Search Count",
-      "type": "timeseries"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -263,38 +310,13 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "{app_endpoint=\"/api/v1/message/create\", email=\"oindrila.b@xynehq.com\"}"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 13,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 15
       },
       "id": 21,
       "options": {
@@ -402,7 +424,7 @@
         "h": 13,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 15
       },
       "id": 20,
       "options": {
@@ -473,7 +495,7 @@
         "h": 10,
         "w": 10,
         "x": 0,
-        "y": 21
+        "y": 28
       },
       "id": 22,
       "options": {
@@ -582,7 +604,7 @@
         "h": 10,
         "w": 14,
         "x": 10,
-        "y": 21
+        "y": 28
       },
       "id": 23,
       "options": {
@@ -678,7 +700,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 38
       },
       "id": 19,
       "options": {
@@ -741,7 +763,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 48
       },
       "id": 36,
       "panels": [],
@@ -779,7 +801,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 42
+        "y": 49
       },
       "id": 44,
       "options": {
@@ -849,7 +871,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 42
+        "y": 49
       },
       "id": 45,
       "options": {
@@ -919,8 +941,12 @@
                 "color": "green"
               },
               {
-                "color": "red",
-                "value": 100
+                "color": "#EAB839",
+                "value": 39
+              },
+              {
+                "color": "#6ED0E0",
+                "value": 250
               }
             ]
           }
@@ -931,7 +957,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 60
       },
       "id": 39,
       "options": {
@@ -1099,7 +1125,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 69
       },
       "id": 18,
       "options": {
@@ -1223,7 +1249,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 78
       },
       "id": 16,
       "interval": "30",
@@ -1240,7 +1266,7 @@
           "showLegend": true
         },
         "orientation": "horizontal",
-        "showValue": "never",
+        "showValue": "always",
         "stacking": "none",
         "tooltip": {
           "hideZeros": false,
@@ -1248,7 +1274,7 @@
           "sort": "none"
         },
         "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 100
+        "xTickLabelSpacing": 200
       },
       "pluginVersion": "12.0.1",
       "targets": [
@@ -1418,7 +1444,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 88
       },
       "id": 17,
       "options": {
@@ -1592,7 +1618,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 93
+        "y": 100
       },
       "id": 35,
       "panels": [
@@ -2568,5 +2594,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 69
+  "version": 8
 }
