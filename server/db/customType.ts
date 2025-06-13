@@ -15,14 +15,11 @@ export const encryptedText = (encryption: Encryption) => {
      * @param value - The concatenated encrypted string from the database.
      * @returns The decrypted plain text.
      */
-    fromDriver(value: unknown): string | null {
-      // Return the encrypted value as is from the database.
-      // Decryption should be handled explicitly by the application when needed.
-      if (typeof value === "string") {
-        return value
+     fromDriver(value: unknown): string | null {
+      if (!value) {
+        return value as null
       }
-      // If value is null or not a string, return it as is (or handle as appropriate)
-      return value as string | null
+      return encryption.decrypt(value as string)
     },
     /**
      * Transforms the value before storing it in the database.
