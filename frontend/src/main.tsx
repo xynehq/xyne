@@ -8,8 +8,14 @@ import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { routeTree } from "@/routeTree.gen"
 import { ThemeProvider } from "@/components/ThemeContext"
 import { Toaster } from "@/components/ui/toaster"
+import { initMermaidErrorSuppression } from "@/utils/mermaidErrorSuppression"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+
+// Initialize mermaid error suppression as early as possible
+if (typeof window !== 'undefined') {
+  initMermaidErrorSuppression();
+}
 
 const queryClient = new QueryClient({})
 
