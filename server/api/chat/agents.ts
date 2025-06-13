@@ -2535,28 +2535,6 @@ export const CombinedAgentSlackApi = async (c: Context) => {
     }
     // let chat: SelectChat // already declared
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
-     interface AgentTool {
-      name: string
-      description: string
-      parameters: Record<
-        string,
-        {
-          type: string
-          description: string
-          required: boolean
-        }
-      >
-      execute: (
-        params: any,
-        span?: Span,
-        email?: string,
-        userCtx?: string,
-      ) => Promise<{
-        result: string // Human-readable summary of action/result
-        contexts?: MinimalAgentFragment[] // Data fragments found
-        error?: string // Error message if failed
-      }>
-    }
 
     const convertReasoningStepToText = (step: AgentReasoningStep): string => {
       switch (step.type) {
@@ -3631,7 +3609,8 @@ export const CombinedAgentSlackApi = async (c: Context) => {
       search: searchTool,
       filtered_search: filteredSearchTool,
       time_search: timeSearchTool,
-      get_slack_Threads: getSlackThreads
+      get_slack_threads: getSlackThreads,
+      get_related_slack_messages: getSlackRelatedMessages,
     }
 
     let title = ""
@@ -4036,7 +4015,8 @@ export const CombinedAgentSlackApi = async (c: Context) => {
                     toolParams,
                     toolExecutionSpan,
                     email,
-                    ctx
+                    ctx,
+                    agentPromptForLLM?? ""
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)

@@ -2077,7 +2077,7 @@ export const SearchVespaWithDocID = async (
   }
 }
 
-interface GetThreadItemsParams {
+export interface GetThreadItemsParams {
   entity?: Entity | null
   timestampRange?: { from: any; to: any } | null
   limit?: number
