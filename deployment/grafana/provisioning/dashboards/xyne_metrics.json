@@ -111,7 +111,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "count(app_request_count) by (email)",
+          "expr": "app_request_count",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -170,7 +170,7 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": true,
+        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
@@ -232,7 +232,7 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": true,
+        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
@@ -2586,11 +2586,18 @@
   "templating": {
     "list": [
       {
+        "allValue": ".*",
         "current": {
-          "text": "oindrila.b@xynehq.com",
-          "value": "oindrila.b@xynehq.com"
+          "text": [
+            "oindrila.b@xynehq.com"
+          ],
+          "value": [
+            "oindrila.b@xynehq.com"
+          ]
         },
         "definition": "label_values(google_drive_ingested_total,email)",
+        "includeAll": true,
+        "multi": true,
         "name": "email",
         "options": [],
         "query": {
