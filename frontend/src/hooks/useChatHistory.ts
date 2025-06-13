@@ -16,10 +16,8 @@ export const useChatHistory = (chatId: string | null) => {
   const query = useQuery<ChatHistoryData>({
     queryKey: ["chatHistory", chatId],
     queryFn: async () => {
-      console.log(`[useChatHistory] Fetching data for chatId: ${chatId}`)
       
       if (!chatId) {
-        console.log(`[useChatHistory] No chatId provided, returning empty messages`)
         return { messages: [] }
       }
 
@@ -33,7 +31,6 @@ export const useChatHistory = (chatId: string | null) => {
         }
         
         const data = await response.json()
-        console.log(`[useChatHistory] Fetched ${data.messages?.length || 0} messages for chatId: ${chatId}`)
         return data as ChatHistoryData
       } catch (error) {
         console.error("Error fetching chat history:", error)
@@ -47,16 +44,13 @@ export const useChatHistory = (chatId: string | null) => {
 
   // Helper function to add a message optimistically
   const addMessageOptimistically = (message: SelectPublicMessage) => {
-    console.log(`[useChatHistory] Adding message optimistically to chatId: ${chatId}`)
     
     queryClient.setQueryData<ChatHistoryData>(
       ["chatHistory", chatId],
       (oldData) => {
         if (!oldData) {
-          console.log(`[useChatHistory] Creating new chat history with first message`)
           return { messages: [message] }
         }
-        console.log(`[useChatHistory] Adding message to existing ${oldData.messages.length} messages`)
         return {
           ...oldData,
           messages: [...oldData.messages, message],

@@ -492,7 +492,7 @@ export const ChatPage = ({
     agentIdFromChatBox?: string | null,
     toolExternalIds?: string[],
   ) => {
-    if (!messageToSend || isStreaming) return
+    if (!messageToSend || isStreaming || retryIsStreaming) return
     
     setUserHasScrolled(false)
     setQuery("")

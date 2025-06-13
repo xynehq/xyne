@@ -33,10 +33,20 @@ interface StreamInfo {
 // Global map to store active streams - persists across component unmounts
 const activeStreams = new Map<string, StreamState>()
 
-// Helper function to parse HTML message input
+// Helper function to parse HTML message input safely
 const parseMessageInput = (htmlString: string) => {
-  const container = document.createElement("div")
-  container.innerHTML = htmlString
+  // Create a DOMParser instance for safer parsing
+  const parser = new DOMParser()
+  
+  // Parse the HTML string as XML to avoid script execution
+  const doc = parser.parseFromString(htmlString, 'text/html')
+  
+  // Check if parsing failed
+  if (doc.querySelector('parsererror')) {
+    // If parsing failed, treat as plain text
+    return [{ type: "text" as const, value: htmlString }]
+  }
+  
   const parts: Array<{ type: "text" | "pill" | "link"; value: any }> = []
 
   const walk = (node: Node) => {
@@ -46,8 +56,17 @@ const parseMessageInput = (htmlString: string) => {
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
+      
+      // Only process safe elements and ignore potentially dangerous ones
+      const tagName = el.tagName.toLowerCase()
+      
+      // Skip dangerous elements completely
+      if (['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'].includes(tagName)) {
+        return
+      }
+      
       if (
-        el.tagName.toLowerCase() === "a" &&
+        tagName === "a" &&
         el.classList.contains("reference-pill") &&
         (el.dataset.docId || el.dataset.referenceId)
       ) {
@@ -57,7 +76,11 @@ const parseMessageInput = (htmlString: string) => {
         let imgSrc: string | null = null
         const imgElement = el.querySelector("img")
         if (imgElement) {
-          imgSrc = imgElement.getAttribute("src")
+          // Validate image source to prevent javascript: URLs
+          const src = imgElement.getAttribute("src")
+          if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:image/') || src.startsWith('/'))) {
+            imgSrc = src
+          }
         }
         parts.push({
           type: "pill",
@@ -70,25 +93,35 @@ const parseMessageInput = (htmlString: string) => {
             imgSrc: imgSrc,
           },
         })
-      } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
-        if (
-          !(
-            el.classList.contains("reference-pill") &&
-            (el.dataset.docId || el.dataset.referenceId)
-          )
-        ) {
-          parts.push({
-            type: "link",
-            value: el.getAttribute("href") || "",
-          })
+      } else if (tagName === "a" && el.getAttribute("href")) {
+        const href = el.getAttribute("href")
+        // Validate href to prevent javascript: URLs and other dangerous protocols
+        if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('/') || href.startsWith('mailto:'))) {
+          if (
+            !(
+              el.classList.contains("reference-pill") &&
+              (el.dataset.docId || el.dataset.referenceId)
+            )
+          ) {
+            parts.push({
+              type: "link",
+              value: href,
+            })
+          } else {
+            Array.from(el.childNodes).forEach(walk)
+          }
         } else {
+          // Invalid href, process children as text
           Array.from(el.childNodes).forEach(walk)
         }
+      } else {
+        // For other elements, just process their children
+        Array.from(el.childNodes).forEach(walk)
       }
     }
   }
 
-  Array.from(container.childNodes).forEach(walk)
+  Array.from(doc.body.childNodes).forEach(walk)
   return parts
 }
 
@@ -337,19 +370,6 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     chatId: stream.chatId,
     isStreaming: stream.isStreaming,
   }
-}
-
-// Periodic check for dead streams:
-const cleanupInterval = setInterval(() => {
-  activeStreams.forEach((stream, key) => {
-    if (stream.es.readyState === EventSource.CLOSED) {
-      activeStreams.delete(key);
-    }
-  });
-}, 30000);
-
-export const cleanupStreams = () => {
-  clearInterval(cleanupInterval)
 }
 
 // React hook that subscribes to stream updates
