@@ -217,7 +217,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
-  email:string
+  email?:string
 ) => {
   if (!text) {
     return ""
