@@ -226,12 +226,38 @@ schema event {
 
         global-phase {
             expression {
-              (
-                (query(alpha) * vector_score) + 
-                ((1 - query(alpha)) *  combined_nativeRank)
-              ) * doc_recency
+                ((query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)) * doc_recency
             }
-            rerank-count: 1000
+            rerank-count:1000
+        }
+
+        match-features {
+          doc_recency
+          matchedFieldCount
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+
+    rank-profile norm_native_rank inherits initial {
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        global-phase {
+          expression {
+            (((combined_nativeRank) 
+            / 0.2)* (1 - query(alpha))
+            +
+            ((vector_score - 0.45) 
+            / 0.2) * query(alpha)) * doc_recency
+          }
+          rerank-count: 1000
         }
 
         match-features {

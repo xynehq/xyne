@@ -41,9 +41,9 @@ if (!USER_EMAIL_FOR_SEARCH) {
 }
 Logger.info(`Using email for search evaluation: ${USER_EMAIL_FOR_SEARCH}`)
 
-const NUM_SAMPLES = parseInt(process.env.NUM_SAMPLES || "100", 10) // Samples = Documents to test
-const QUERIES_PER_DOC = parseInt(process.env.QUERIES_PER_DOC || "1", 10) // LLM queries per document
-const MAX_RANK_TO_CHECK = parseInt(process.env.MAX_RANK_TO_CHECK || "100", 10)
+const NUM_SAMPLES = parseInt(process.env.NUM_SAMPLES || "200", 10) // Samples = Documents to test
+const QUERIES_PER_DOC = parseInt(process.env.QUERIES_PER_DOC || "4", 10) // LLM queries per document
+const MAX_RANK_TO_CHECK = parseInt(process.env.MAX_RANK_TO_CHECK || "200", 10)
 const HITS_PER_PAGE = 10
 const VESPA_NAMESPACE = "namespace" // TODO: Replace with your actual Vespa namespace
 const VESPA_CLUSTER_NAME = "my_content" // TODO: Replace with your actual cluster name

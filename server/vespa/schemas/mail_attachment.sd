@@ -149,10 +149,35 @@ schema mail_attachment {
 
     global-phase {
       expression {
-        0.8 * (
-          (query(alpha) * vector_score) + 
-          ((1 - query(alpha)) * combined_nativeRank)
-        ) * doc_recency
+          0.8 * ((query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)) * doc_recency
+      }
+      rerank-count:1000
+    }
+
+    match-features {
+      doc_recency
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
+      chunk_scores
+    }
+  }
+
+  rank-profile norm_native_rank inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        0.8 * (((combined_nativeRank) 
+              / 0.2)* (1 - query(alpha))
+              +
+              ((vector_score - 0.45) 
+              / 0.2) * query(alpha)) * doc_recency
       }
       rerank-count: 1000
     }
