@@ -544,7 +544,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     } catch (err) {
       Logger.error(`Initial parse failed - ${JSON.stringify(err)}`)
       // If first parse failed, continue to code block cleanup
-      throw new Error("Initial parse failed")
+      // throw new Error("Initial parse failed")
     }
   } catch (e) {
     try {
@@ -567,7 +567,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         parseError,
         `The ai response that triggered the json parse error ${text.trim()}`,
       )
-      throw parseError
+      // throw parseError
     }
   }
   return jsonVal
