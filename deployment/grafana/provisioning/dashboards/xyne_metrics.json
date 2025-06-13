@@ -178,7 +178,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max_over_time(app_request_count{app_endpoint=\"/api/v1/message/create\"}[$__range])",
+          "expr": "ceil(increase(app_request_count{app_endpoint=\"/api/v1/message/create\"}[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
