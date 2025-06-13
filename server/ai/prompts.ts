@@ -832,9 +832,12 @@ export const SearchQueryToolContextPrompt = (
         Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
      5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
 
-    **Slack Tools Context:** : execute these only when the user explicitly asks for Slack messages
-    1. ${XyneTools.GetSlackThreads}: Search Slack message threads across . 
-      Params:  filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc')..
+     **Slack Tool Context:**
+      1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
+         Params: filter_query (opt: keywords), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), excludedIds (opt: string[]).
+
+      2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
+   Params: channel_name (req: channel name), filter_query (opt: keywords), user_email (opt: user email), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), date_from (opt: YYYY-MM-DD), date_to (opt: YYYY-MM-DD), excludedIds (opt: string[]).
 
      ---
 

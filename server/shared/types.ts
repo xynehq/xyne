@@ -445,7 +445,8 @@ export enum XyneTools {
   Search = "search",
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
-  GetSlackThreads="get_slack_Threads"
+  getSlackRelatedMessages = "get_related_slack_messages",
+  getSlackThreads = "get_slack_threads",
 }
 
 export enum IngestionType {
