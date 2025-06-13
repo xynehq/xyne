@@ -499,7 +499,11 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        const escapedText = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")
+        const escapedText = text
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
         text = `{${jsonKey} "${escapedText}"}`
       }
     }
@@ -570,7 +574,10 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         // throw parseError
       }
     } else {
-      Logger.error(e, `No jsonKey provided and parsing failed for: ${originalText.trim()}`)
+      Logger.error(
+        e,
+        `No jsonKey provided and parsing failed for: ${originalText.trim()}`,
+      )
       // throw e
     }
   }
