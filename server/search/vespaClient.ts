@@ -15,13 +15,16 @@ import type {
   VespaChatContainer,
   Inserts,
 } from "@/search/types"
-import { chatMessageSchema } from "@/search/types"
+import {
+  chatContainerSchema,
+  chatMessageSchema,
+  chatUserSchema,
+} from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
-import { max } from "drizzle-orm"
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 type VespaConfigValues = {
@@ -1099,42 +1102,107 @@ class VespaClient {
       throw new Error(`Error fetching random document: ${errMessage}`)
     }
   }
-  async getDocumentsBythreadId (threadId:string[])
-   
-    : Promise<VespaSearchResponse> {
 
-      const yqlIds = threadId.map((id) => `threadId contains '${id}'`).join(" or ")
-      const yqlQuery = `select * from sources ${chatMessageSchema} where (${yqlIds})`
-      const url = `${this.vespaEndpoint}/search/`
-      try {
-        const payload = {
-          yql: yqlQuery,
-        }
-  
-  
-        const response = await this.fetchWithRetry(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        })
-
-        if (!response.ok) {
-          const errorText = response.statusText
-          throw new Error(
-            `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
-          )
-        }
-  
-        const result = await response.json()
-        return result
-      } catch (error) {
-        const errMessage = getErrorMessage(error)
-        throw new Error(`Error fetching documents with threadId: ${errMessage}`)
+  async getDocumentsBythreadId(
+    threadId: string[],
+  ): Promise<VespaSearchResponse> {
+    const yqlIds = threadId
+      .map((id) => `threadId contains '${id}'`)
+      .join(" or ")
+    const yqlQuery = `select * from sources ${chatMessageSchema} where (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
       }
-    }
 
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching documents with threadId: ${errMessage}`)
+    }
+  }
+
+  async getChatUserByEmail(email: string): Promise<string> {
+    const yqlQuery = `select docId from sources ${chatUserSchema} where email contains '${email}'`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching user with email ${email}: ${errMessage}`)
+    }
+  }
+
+  async getChatContainerIdByChannelName(channelName: string): Promise<string> {
+    const yqlQuery = `select docId from sources ${chatContainerSchema} where name contains '${channelName}'`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+      console.log(yqlQuery)
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(
+        `Error fetching channelId with channel name ${channelName}: ${errMessage}`,
+      )
+    }
+  }
 }
 
 export default VespaClient
