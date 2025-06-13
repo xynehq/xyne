@@ -111,7 +111,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "app_request_count",
+          "expr": "sum (app_request_count) by (email)",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,

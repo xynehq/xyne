@@ -379,7 +379,7 @@ export async function insertChannelMessages(
 
     if (response.messages) {
       totalChatToBeInsertedCount.inc(
-        { conversation_id: channelId ?? "", user_email: email },
+        { conversation_id: channelId ?? "", email: email },
         response.messages?.length,
       )
       for (const message of response.messages as (SlackMessage & {
@@ -860,7 +860,7 @@ export const handleSlackChannelIngestion = async (
     allConversationsInTotal.inc(
       {
         team_id: team.id ?? team.name ?? "",
-        user_email: email,
+        email: email,
         status: OperationStatus.Success,
       },
       conversations.length,
@@ -884,7 +884,7 @@ export const handleSlackChannelIngestion = async (
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
     totalConversationsSkipped.inc(
-      { team_id: team.id ?? team.name ?? "", user_email: email },
+      { team_id: team.id ?? team.name ?? "", email: email },
       conversations.length - conversationsToInsert.length,
     )
     const user = await getAuthenticatedUserId(client)
@@ -895,7 +895,7 @@ export const handleSlackChannelIngestion = async (
     tracker.setTotal(conversationsToInsert.length)
     let conversationIndex = 0
     totalConversationsToBeInserted.inc(
-      { team_id: team.id ?? team.name ?? "", user_email: email },
+      { team_id: team.id ?? team.name ?? "", email: email },
       conversationsToInsert.length,
     )
     // can be done concurrently, but can cause issues with ratelimits
