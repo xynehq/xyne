@@ -831,6 +831,19 @@ export const SearchQueryToolContextPrompt = (
      - Query involves searching within company/organizational systems (Gmail, Google Drive, Google Calendar, Google Workspace)
      - Query involves content search across internal sources
 
+    **Tool Calling Rules:**   
+    You have tools at your disposal to solve tasks. Follow these rules:  
+    1. ALWAYS follow the tool call schema exactly as specified and provide all necessary parameters. Do not ask the user to provide optional parameters.  
+    2. NEVER call tools that are not explicitly provided. Ignore references to unavailable tools in the conversation history.  
+    3. NEVER refer to tool names when responding to the user. For example, say "I will edit your file" instead of "I need to use the edit_file tool."  
+    4. Only call tools when necessary. If the task is general or you already know the answer, respond without calling tools.  
+    5. Before calling a tool, explain to the user why it is being called.  
+
+    **Searching and Reading Rules:**  
+    You have tools to search the codebase and read files. Follow these rules:  
+    1. Prefer the semantic search tool over grep search, file search, or list dir tools when available.  
+    2. When reading a file, prefer reading larger sections at once over multiple smaller calls.  
+    3. If you have sufficient information to answer, do not continue calling tools. Respond with the information found.  
 
      **MCP Tool Context:**  
      ${toolContext}
