@@ -323,7 +323,7 @@ export async function insertChannelMessages(
 
     if (response.messages) {
       totalChatToBeInsertedCount.inc(
-        { conversation_id: channelId ?? "", user_email: email },
+        { conversation_id: channelId ?? "", email: email },
         response.messages?.length,
       )
       for (const message of response.messages as (SlackMessage & {
@@ -815,7 +815,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     allConversationsInTotal.inc(
       {
         team_id: team.id ?? team.name ?? "",
-        user_email: data.email,
+        email: data.email,
         status: OperationStatus.Success,
       },
       conversations.length,
@@ -838,7 +838,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
     totalConversationsSkipped.inc(
-      { team_id: team.id ?? team.name ?? "", user_email: data.email },
+      { team_id: team.id ?? team.name ?? "", email: data.email },
       conversations.length - conversationsToInsert.length,
     )
     const user = await getAuthenticatedUserId(client)
@@ -850,7 +850,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     let conversationIndex = 0
     // can be done concurrently, but can cause issues with ratelimits
     totalConversationsToBeInserted.inc(
-      { team_id: team.id ?? team.name ?? "", user_email: data.email },
+      { team_id: team.id ?? team.name ?? "", email: data.email },
       conversationsToInsert.length,
     )
     for (const conversation of conversationsToInsert) {
