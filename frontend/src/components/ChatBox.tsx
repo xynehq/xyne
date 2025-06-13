@@ -721,10 +721,23 @@ export const ChatBox = ({
         limit: limit.toString(),
         offset: offset.toString(),
       }
+
+      if (persistedAgentId) {
+        params.agentId = persistedAgentId
+      }
+
       const response = await api.search.$get({
         query: params,
         credentials: "include",
       })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(
+          `API request failed with status ${response.status}: ${errorText}`,
+        )
+      }
+
       const data = await response.json()
       const fetchedTotalCount = data.count || 0
       setTotalCount(fetchedTotalCount)
