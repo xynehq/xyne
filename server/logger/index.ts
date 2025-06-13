@@ -100,15 +100,16 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
-    const { sub } = c.get(JwtPayloadKey)
-    const email = sub ?? ""
+  const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
+  const sub = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
+  const email = sub
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
 
     const { method } = c.req
     const path = getPath(c.req.raw)
-    const isMetrics = path.includes("/metrics")
+    const isMetrics = path.startsWith("/metrics")
 
     if(!isMetrics) {
       logger.info({
@@ -123,7 +124,6 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const start = Date.now()
 
     const offset = c.req.query('offset')?? ""
-    console.log(`Offset ${offset}`)
 
     appRequest.inc(
       {
@@ -162,7 +162,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
   const baseLogger = child? getLogger(subsystem).child(child) : getLogger(subsystem)
 
-  return (children:loggerChildSchema={email:"no_email_found"}): Logger => {
+  return (children:loggerChildSchema={email:"n/a"}): Logger => {
     return baseLogger.child(children)
   }
 }

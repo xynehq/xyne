@@ -18,8 +18,7 @@ import { HTTPException } from "hono/http-exception"
 import { getErrorMessage } from "@/utils"
 import { selectPublicAgentSchema } from "@/db/schema"
 
-const Logger = getLogger(Subsystem.AgentApi)
-const loggerWithChild = getLoggerWithChild(Subsystem.Api)
+const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
 const { JwtPayloadKey } = config
 
 // Schema for creating an agent
