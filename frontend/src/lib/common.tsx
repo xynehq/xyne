@@ -121,8 +121,6 @@ export const getIcon = (
     return <CalendarDays size={12} className={classNameVal} />
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
-  } else if (app === "data-source" && entity === "file") {
-    return <FileText size={size?.w || 12} className={classNameVal} />
   } else if (entity === ConnectorType.MCP) {
     // Handle MCP connectors
     if (app === "github_mcp") {

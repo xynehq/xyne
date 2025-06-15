@@ -288,9 +288,6 @@ export const SearchApi = async (c: Context) => {
             timestampRange: timestampRange, 
           },
         )
-        Logger.info(
-          `Vespa response for agent search ${agentId} (AllowedApps: ${dynamicAllowedApps.join(", ")}, DataSourceIDs: ${dynamicDataSourceIds.join(", ")}, Entity=${entity}), query "${decodedQuery}": ${JSON.stringify(results)}`,
-        )
         try {
           const newResults = VespaSearchResponseToSearchResult(results)
           newResults.groupCount = {} // Agent search currently doesn't provide group counts

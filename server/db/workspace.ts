@@ -90,20 +90,3 @@ export const createWorkspace = async (
     .returning()
 }
 
-export const getWorkspaceByExternalId = async (
-  trx: TxnOrClient,
-  externalId: string,
-) => {
-  const res = await trx
-    .select()
-    .from(workspaces)
-    .where(eq(workspaces.externalId, externalId))
-    .limit(1)
-  if (res.length) {
-    return res[0]
-  }
-  // Optionally, throw an error or return null if not found,
-  // depending on how it should be handled.
-  // For now, returning null if not found.
-  return null
-}
