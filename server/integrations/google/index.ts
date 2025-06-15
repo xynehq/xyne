@@ -1055,8 +1055,8 @@ const handleGmailIngestionForServiceAccount = async (
           ),
         )
       }
-    }, 300000)
-
+    }, 216000000)
+    // 60hrs timeout
     pendingRequests.set(msgId, {
       userEmail,
       jobId, // Store jobId with the pending request
