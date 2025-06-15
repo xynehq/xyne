@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -17,9 +18,99 @@ import {
   ChevronDown,
   ThumbsUp,
   ThumbsDown,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+  Plus,
+  Minus,
+  Maximize2,
+  Minimize2,
 } from "lucide-react"
-import { useEffect, useRef, useState, Fragment } from "react"
+import { useEffect, useRef, useState, Fragment, useCallback } from "react"
+import {
+  TransformWrapper,
+  TransformComponent,
+  useControls,
+} from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
+import mermaid from "mermaid"
+
+// Initialize mermaid with secure configuration and error suppression
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'strict',
+  fontFamily: 'monospace',
+  logLevel: 'fatal', // Suppress all mermaid logging
+  suppressErrorRendering: true, // Prevent error rendering if supported
+  flowchart: {
+    useMaxWidth: true,
+  },
+  sequence: {
+    useMaxWidth: true,
+  },
+  gantt: {
+    useMaxWidth: true,
+  },
+  journey: {
+    useMaxWidth: true,
+  },
+  class: {
+    useMaxWidth: true,
+  },
+  state: {
+    useMaxWidth: true,
+  },
+  er: {
+    useMaxWidth: true,
+  },
+  pie: {
+    useMaxWidth: true,
+  },
+  gitGraph: {
+    useMaxWidth: true,
+  },
+})
+
+// Override mermaid's render function to prevent error display
+const originalMermaidRender = mermaid.render;
+if (originalMermaidRender) {
+  mermaid.render = async function(id: string, text: string, svgContainingElement?: Element) {
+    try {
+      const result = await originalMermaidRender.call(this, id, text, svgContainingElement);
+      
+      // Check if the result contains error text and replace it
+      if (result.svg && 
+          (result.svg.includes('Syntax error in text') || 
+           result.svg.includes('parse error') ||
+           result.svg.includes('mermaid version'))) {
+        // Return a safe fallback SVG
+        return {
+          svg: `<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+            <rect width="400" height="200" fill="#f8f9fa" stroke="#e9ecef" stroke-width="1"/>
+            <text x="200" y="90" text-anchor="middle" font-family="monospace" font-size="16" fill="#666">📊 Mermaid Diagram</text>
+            <text x="200" y="120" text-anchor="middle" font-family="monospace" font-size="12" fill="#999">Processing diagram content...</text>
+          </svg>`,
+          bindFunctions: result.bindFunctions,
+          diagramType: result.diagramType
+        };
+      }
+      
+      return result;
+    } catch (error) {
+      // Return a safe fallback SVG instead of showing error
+      return {
+        svg: `<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+          <rect width="400" height="200" fill="#f8f9fa" stroke="#e9ecef" stroke-width="1"/>
+          <text x="200" y="90" text-anchor="middle" font-family="monospace" font-size="16" fill="#666">📊 Mermaid Diagram</text>
+          <text x="200" y="120" text-anchor="middle" font-family="monospace" font-size="12" fill="#999">Processing diagram content...</text>
+        </svg>`,
+        bindFunctions: undefined,
+        diagramType: 'unknown'
+      };
+    }
+  };
+}
 import {
   SelectPublicMessage,
   Citation,
@@ -1046,6 +1137,409 @@ const renderMarkdownLink = ({
   />
 )
 
+const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
+const Code = ({
+  inline,
+  children,
+  className,
+  ...props
+}: {
+  inline?: boolean
+  children?: React.ReactNode
+  className?: string
+  node?: any
+}) => {
+  const demoid = useRef(`dome${randomid()}`)
+  const [container, setContainer] = useState<HTMLElement | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [containerHeight, setContainerHeight] = useState(600)
+  const isMermaid =
+    className && /^language-mermaid/.test(className.toLocaleLowerCase())
+
+  let codeContent = ""
+  if (props.node && props.node.children && props.node.children.length > 0) {
+    codeContent = getCodeString(props.node.children)
+  } else if (typeof children === "string") {
+    codeContent = children
+  } else if (
+    Array.isArray(children) &&
+    children.length > 0 &&
+    typeof children[0] === "string"
+  ) {
+    // Fallback for cases where children might still be an array with a single string
+    codeContent = children[0]
+  }
+
+  // State for managing mermaid validation and rendering
+  const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
+  const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Function to validate if mermaid syntax looks complete
+  const isMermaidSyntaxValid = (code: string): boolean => {
+    if (!code || code.trim() === "") return false
+    
+    const trimmedCode = code.trim()
+    
+    // Basic checks for common mermaid diagram types
+    const mermaidPatterns = [
+      /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^sequenceDiagram\s*\n/i, 
+      /^classDiagram\s*\n/i,
+      /^stateDiagram\s*\n/i,
+      /^erDiagram\s*\n/i,
+      /^journey\s*\n/i,
+      /^gantt\s*\n/i,
+      /^pie\s*\n/i,
+      /^gitgraph\s*\n/i,
+      /^mindmap\s*\n/i,
+      /^timeline\s*\n/i,
+    ]
+    
+    // Check if it starts with a valid mermaid diagram type
+    const hasValidStart = mermaidPatterns.some(pattern => pattern.test(trimmedCode))
+    if (!hasValidStart) return false
+    
+    // For flowcharts, check for at least one node definition
+    if (/^(graph|flowchart)/i.test(trimmedCode)) {
+      // Look for node definitions (basic patterns)
+      const hasNodes = /\n\s*[A-Za-z0-9_]+(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|>[^<]*<|\([^)]*\))?/i.test(trimmedCode)
+      return hasNodes
+    }
+    
+    // For sequence diagrams, check for at least one participant or message
+    if (/^sequenceDiagram/i.test(trimmedCode)) {
+      const hasContent = /\n\s*(participant|actor|[A-Za-z0-9_]+->>|[A-Za-z0-9_]+->)/i.test(trimmedCode)
+      return hasContent
+    }
+    
+    // For other diagram types, just check if there's content after the declaration
+    const lines = trimmedCode.split('\n').filter(line => line.trim() !== '')
+    return lines.length > 1
+  }
+
+  // Debounced function to validate and render mermaid
+  const debouncedMermaidRender = useCallback(async (code: string) => {
+    if (!container || !isMermaid) return
+    
+    // Clear any existing timeout
+    if (mermaidRenderTimeoutRef.current) {
+      clearTimeout(mermaidRenderTimeoutRef.current)
+    }
+    
+    // If code is empty, clear the container
+    if (!code || code.trim() === "") {
+      container.innerHTML = ""
+      setLastValidMermaid("")
+      return
+    }
+    
+    // Check if syntax looks valid
+    if (!isMermaidSyntaxValid(code)) {
+      // If we have a previous valid render, keep showing it
+      if (lastValidMermaid) {
+        return
+      } else {
+        // Show loading state for incomplete syntax
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          <div>Mermaid Chart..</div>
+          <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
+        </div>`
+        return
+      }
+    }
+    
+    // Debounce the actual rendering to avoid too many rapid attempts
+    mermaidRenderTimeoutRef.current = setTimeout(async () => {
+      try {
+        // Additional safety: validate the code before rendering
+        if (!code || code.trim().length === 0) {
+          container.innerHTML = ""
+          setLastValidMermaid("")
+          return
+        }
+
+        // Sanitize the code to prevent potential issues
+        const sanitizedCode = code
+          .replace(/javascript:/gi, '') // Remove javascript: protocols
+          .replace(/data:/gi, '') // Remove data: protocols  
+          .replace(/<script[^>]*>.*?<\/script>/gis, '') // Remove script tags
+          .trim()
+
+        if (!sanitizedCode) {
+          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+            <div>📊 Mermaid Diagram</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #999;">Invalid diagram content</div>
+          </div>`
+          return
+        }
+
+        // Render with additional error boundary
+        const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+        
+        // Validate that we got valid SVG
+        if (!svg || !svg.includes('<svg')) {
+          throw new Error('Invalid SVG generated')
+        }
+        
+        container.innerHTML = svg
+        setLastValidMermaid(sanitizedCode)
+      } catch (error: any) {
+        // Completely suppress all error details from users
+        
+        // Always gracefully handle any mermaid errors by either:
+        // 1. Keeping the last valid diagram if we have one
+        // 2. Showing a loading/placeholder state if no valid diagram exists
+        // 3. Never showing syntax error messages to users
+        
+        if (lastValidMermaid) {
+          // Keep showing the last valid diagram - don't change anything
+          return
+        } else {
+          // Show a generic processing state instead of error details
+          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+            <div>📊 Mermaid Diagram</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
+          </div>`
+        }
+      }
+    }, 300)
+  }, [container, isMermaid, lastValidMermaid])
+
+  useEffect(() => {
+    debouncedMermaidRender(codeContent)
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (mermaidRenderTimeoutRef.current) {
+        clearTimeout(mermaidRenderTimeoutRef.current)
+      }
+    }
+  }, [debouncedMermaidRender, codeContent])
+
+  const refElement = useCallback((node: HTMLElement | null) => {
+    if (node !== null) {
+      setContainer(node)
+    }
+  }, [])
+
+  const handleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  const adjustHeight = (delta: number) => {
+    setContainerHeight((prev) => Math.max(200, Math.min(1200, prev + delta)))
+  }
+
+  const MermaidControls = () => {
+    const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+    const buttonBaseClass =
+      "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10 transition-colors"
+    const iconSize = 12
+
+    const handleResetAndCenter = () => {
+      resetTransform()
+      // Small delay to ensure reset is complete before centering
+      setTimeout(() => {
+        centerView()
+      }, 10)
+    }
+
+    return (
+      <div className="absolute top-2 left-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <button
+          onClick={() => zoomIn()}
+          className={`${buttonBaseClass} rounded-l-md`}
+          title="Zoom In"
+        >
+          <ZoomIn size={iconSize} />
+        </button>
+        <button
+          onClick={() => zoomOut()}
+          className={`${buttonBaseClass}`}
+          title="Zoom Out"
+        >
+          <ZoomOut size={iconSize} />
+        </button>
+        <button
+          onClick={handleResetAndCenter}
+          className={`${buttonBaseClass}`}
+          title="Reset View"
+        >
+          <RefreshCw size={iconSize} />
+        </button>
+        <button
+          onClick={() => adjustHeight(-100)}
+          className={`${buttonBaseClass}`}
+          title="Decrease Height"
+        >
+          <Minus size={iconSize} />
+        </button>
+        <button
+          onClick={() => adjustHeight(100)}
+          className={`${buttonBaseClass}`}
+          title="Increase Height"
+        >
+          <Plus size={iconSize} />
+        </button>
+        <button
+          onClick={handleFullscreen}
+          className={`${buttonBaseClass} rounded-r-md`}
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? (
+            <Minimize2 size={iconSize} />
+          ) : (
+            <Maximize2 size={iconSize} />
+          )}
+        </button>
+      </div>
+    )
+  }
+
+  if (isMermaid) {
+    const containerStyle = isFullscreen
+      ? {
+          position: "fixed" as const,
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(113, 109, 109, 0.95)",
+          zIndex: 9999,
+        }
+      : {
+          width: "100%",
+          height: `${containerHeight}px`,
+          minHeight: "200px",
+          maxHeight: "1200px",
+        }
+
+    // Transform wrapper configuration for different view modes
+    const transformConfig = isFullscreen
+      ? {
+          initialScale: 2,
+          minScale: 0.5,
+          maxScale: 10,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+      : {
+          initialScale: 1.5,
+          minScale: 0.5,
+          maxScale: 7,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+
+    return (
+      <div
+        className={`group relative mb-6 overflow-hidden ${isFullscreen ? "" : "w-full"}`}
+        style={isFullscreen ? containerStyle : undefined}
+      >
+        <TransformWrapper
+          key={`mermaid-transform-${isFullscreen ? "fullscreen" : "normal"}`}
+          initialScale={transformConfig.initialScale}
+          minScale={transformConfig.minScale}
+          maxScale={transformConfig.maxScale}
+          limitToBounds={transformConfig.limitToBounds}
+          centerOnInit={transformConfig.centerOnInit}
+          centerZoomedOut={transformConfig.centerZoomedOut}
+          doubleClick={transformConfig.doubleClick}
+          wheel={transformConfig.wheel}
+          panning={transformConfig.panning}
+        >
+          <TransformComponent
+            wrapperStyle={{
+              width: "100%",
+              height: isFullscreen ? "100vh" : `${containerHeight}px`,
+              cursor: "grab",
+              backgroundColor: isFullscreen ? "transparent" : "transparent",
+            }}
+            contentStyle={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "inline-block" }}>
+              <code id={demoid.current} style={{ display: "none" }} />
+              {/* @ts-ignore */}
+              <code
+                ref={refElement}
+                data-name="mermaid"
+                className={`mermaid ${className || ""}`}
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "transparent",
+                }}
+              />
+            </div>
+          </TransformComponent>
+          <MermaidControls />
+        </TransformWrapper>
+        {isFullscreen && (
+          <button
+            onClick={handleFullscreen}
+            className="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-2 rounded-full shadow-lg z-10 transition-colors"
+            title="Exit Fullscreen"
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // For regular code blocks, improve styling
+  if (!inline) {
+    return (
+      <div className="relative group mb-4 w-full max-w-full">
+        <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
+          {className ? className.replace("language-", "") : "code"}
+        </div>
+        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto w-full max-w-full min-w-0">
+          <code
+            className={`${className || ""} text-sm block w-full`}
+            style={{
+              fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+              whiteSpace: "pre",
+              overflowWrap: "break-word",
+              wordBreak: "break-all",
+              maxWidth: "100%",
+            }}
+          >
+            {children}
+          </code>
+        </pre>
+      </div>
+    )
+  }
+
+  return (
+    <code
+      className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+      style={{
+        overflowWrap: "break-word",
+        wordBreak: "break-all",
+        maxWidth: "100%",
+      }}
+    >
+      {children}
+    </code>
+  )
+}
+
 export const ChatMessage = ({
   message,
   thinking,
@@ -1109,25 +1603,25 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
     >
       {isUser ? (
         <div
-          className="break-words overflow-wrap-anywhere"
+          className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
           dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
         />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row w-full">
+          <div className="flex flex-row w-full max-w-full min-w-0">
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={logo}
             />
-            <div className="mt-[4px] markdown-content">
+            <div className="mt-[4px] markdown-content w-full max-w-full min-w-0">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
@@ -1139,9 +1633,12 @@ export const ChatMessage = ({
                       color: theme === "dark" ? "#A0AEC0" : "#627384",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
+                      wordBreak: "break-word",
+                      minWidth: 0,
                     }}
                     components={{
                       a: renderMarkdownLink,
+                      code: Code,
                     }}
                   />
                 </div>
@@ -1162,9 +1659,12 @@ export const ChatMessage = ({
                     color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
                   }}
                   components={{
                     a: renderMarkdownLink,
+                    code: Code,
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto max-w-full my-2">
                         <table

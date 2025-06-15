@@ -32,10 +32,12 @@
     "clsx": "^2.1.1",
     "hono": "^4.6.15",
     "lucide-react": "^0.475.0",
+    "mermaid": "^11.6.0",
     "notion-md-crawler": "^1.0.0",
     "react-json-view": "^1.21.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-zoom-pan-pinch": "^3.7.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "3.23.8"
