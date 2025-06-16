@@ -42,7 +42,7 @@ import {
 import type { Channel } from "@slack/web-api/dist/types/response/ConversationsListResponse"
 import type PgBoss from "pg-boss"
 import { db } from "@/db/client"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import type { Member } from "@slack/web-api/dist/types/response/UsersListResponse"
 import type { Team } from "@slack/web-api/dist/types/response/TeamInfoResponse"
 import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
@@ -80,10 +80,7 @@ import {
 import { start } from "repl"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
-
-export const getUserLogger = (email: string) => {
-  return Logger.child({ email: email })
-}
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations,{ module: "slack" } )
 
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
@@ -661,7 +658,7 @@ export async function getConversationUsers(
   conversation: Channel,
   email: string,
 ): Promise<string[]> {
-  getUserLogger(email).info("fetching users from conversation")
+  loggerWithChild({email: email}).info("fetching users from conversation")
 
   if (conversation.is_im) {
     if (!conversation.user) {
@@ -691,7 +688,7 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    getUserLogger(email).error("Error fetching channel users:", error)
+    loggerWithChild({email: email}).error("Error fetching channel users:", error)
     return []
   }
 }
@@ -846,12 +843,12 @@ export const handleSlackChannelIngestion = async (
         if (response.ok && response.channel) {
           conversations.push(response.channel as Channel)
         } else {
-          getUserLogger(email).warn(
+          loggerWithChild({email: email}).warn(
             `Failed to retrieve information for channel ${channelId}: ${response.error}`,
           )
         }
       } catch (error) {
-        getUserLogger(email).error(
+        loggerWithChild({email: email}).error(
           `Exception while fetching info for channel ${channelId}:`,
           error,
         )
@@ -880,7 +877,7 @@ export const handleSlackChannelIngestion = async (
     //       !existenceMap[conversation.id!].exists) ||
     //     !existenceMap[conversation.id!],
     // )
-    getUserLogger(email).info(
+    loggerWithChild({email: email}).info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
     totalConversationsSkipped.inc(
@@ -953,7 +950,7 @@ export const handleSlackChannelIngestion = async (
             status: OperationStatus.Success,
           })
         } catch (error) {
-          getUserLogger(email).error(
+          loggerWithChild({email: email}).error(
             `Error inserting member ${member.id}: ${error}`,
           )
           ingestedMembersErrorTotalCount.inc({
@@ -1006,7 +1003,7 @@ export const handleSlackChannelIngestion = async (
         })
         tracker.updateUserStats(email, StatType.Slack_Conversation, 1)
       } catch (error) {
-        getUserLogger(email).error("Error inserting Channel Messages")
+        loggerWithChild({email: email}).error("Error inserting Channel Messages")
         insertChannelMessagesErrorCount.inc({
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
@@ -1032,7 +1029,7 @@ export const handleSlackChannelIngestion = async (
         conversationIndex++
         tracker.setCurrent(conversationIndex)
       } catch (error) {
-        getUserLogger(email).error(`Error inserting Conversation`)
+        loggerWithChild({email: email}).error(`Error inserting Conversation`)
         insertConversationErrorCount.inc({
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
@@ -1055,7 +1052,7 @@ export const handleSlackChannelIngestion = async (
         .where(eq(connectors.id, connector.id))
     })
   } catch (error) {
-    getUserLogger(email).error(error)
+    loggerWithChild({email: email}).error(error)
   }
 }
 
