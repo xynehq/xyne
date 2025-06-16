@@ -44,7 +44,7 @@ import {
 import { VespaSearchResultsSchema } from "@/search/types"
 import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
@@ -59,7 +59,7 @@ import {
 import { getAgentByExternalId } from "@/db/agent"
 import { getWorkspaceByExternalId } from "@/db/workspace"
 import { Apps } from "@/shared/types"
-const loggerWithChild = getLoggerWithChild(Subsystem.Api)
+const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
   config
@@ -164,10 +164,9 @@ export const messageRetrySchema = z.object({
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 
 export const AutocompleteApi = async (c: Context) => {
-  let email = ""
   try {
     const { sub } = c.get(JwtPayloadKey)
-    email = sub
+    const email = sub
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
@@ -180,7 +179,7 @@ export const AutocompleteApi = async (c: Context) => {
     return c.json(newResults)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    Logger.error(
       error,
       `Autocomplete Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -217,18 +216,18 @@ export const SearchApi = async (c: Context) => {
 
   if (agentId) {
     const workspaceExternalId = workspaceId 
-    loggerWithChild({email: email}).info(
+    Logger.info(
       `Performing agent-specific search for agentId (external_id): ${agentId}, query: "${decodedQuery}", user: ${email}, workspaceExternalId: ${workspaceExternalId}`,
     )
 
     const workspace = await getWorkspaceByExternalId(db, workspaceExternalId)
     if (!workspace) {
-      loggerWithChild({email: email}).warn(
+      Logger.warn(
         `Workspace not found for externalId: ${workspaceExternalId}. Falling back to global search.`,
       )
     } else {
       const numericWorkspaceId = workspace.id
-      loggerWithChild({email: email}).info(
+      Logger.info(
         `Workspace found: id=${numericWorkspaceId} for externalId=${workspaceExternalId}. Looking for agent.`,
       )
       // agentId from the frontend is the external_id
@@ -261,7 +260,7 @@ export const SearchApi = async (c: Context) => {
               if (mappedApp && !dynamicAllowedApps.includes(mappedApp)) {
                 dynamicAllowedApps.push(mappedApp);
               } else if (!mappedApp) {
-                loggerWithChild({email: email}).warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
+                Logger.warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
               }
             }
           }
@@ -272,7 +271,7 @@ export const SearchApi = async (c: Context) => {
           dynamicAllowedApps.push(Apps.DataSource);
         }
 
-        loggerWithChild({email: email}).info(
+        Logger.info(
           `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`
         );
 
@@ -296,7 +295,7 @@ export const SearchApi = async (c: Context) => {
           newResults.groupCount = {} // Agent search currently doesn't provide group counts
           return c.json(newResults)
         } catch (e) {
-          loggerWithChild({email: email}).error(
+          Logger.error(
             e,
             `Error processing/responding to agent search for agentId ${agentId}, query "${decodedQuery}". Results: ${JSON.stringify(results)}`,
           )
@@ -305,13 +304,13 @@ export const SearchApi = async (c: Context) => {
           })
         }
       } else {
-        loggerWithChild({email: email}).warn(
+        Logger.warn(
           `Agent ${agentId} not found in workspace ${numericWorkspaceId}, or appIntegrations is missing/empty. Falling back to global search. Agent details: ${JSON.stringify(agent)}`,
         )
       }
     }
   }
-  loggerWithChild({email: email}).info(
+  Logger.info(
     `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
   )
   if (gc) {
@@ -390,7 +389,7 @@ export const AnswerApi = async (c: Context) => {
 
   const tokenLimit = maxTokenBeforeMetadataCleanup
   let useMetadata = false
-  loggerWithChild({email: email}).info(`User Asked: ${decodedQuery}`)
+  Logger.info(`User Asked: ${decodedQuery}`)
   // if we don't use this, 3.4 seems like a good approx value
   if (
     llama3Tokenizer.encode(initialContext).length > tokenLimit ||
@@ -477,7 +476,7 @@ export const AnswerApi = async (c: Context) => {
   )
 
   return streamSSE(c, async (stream) => {
-    loggerWithChild({email: email}).info("SSE stream started")
+    Logger.info("SSE stream started")
     // Stream the initial context information
     await stream.writeSSE({
       data: ``,
@@ -502,7 +501,7 @@ export const AnswerApi = async (c: Context) => {
         }
       }
 
-      loggerWithChild({email: email}).info(
+      Logger.info(
         `costArr: ${costArr} \n Total Cost: ${costArr.reduce(
           (prev, curr) => prev + curr,
           0,
@@ -514,9 +513,9 @@ export const AnswerApi = async (c: Context) => {
       event: AnswerSSEvents.End,
     })
 
-    loggerWithChild({email: email}).info("SSE stream ended")
+    Logger.info("SSE stream ended")
     stream.onAbort(() => {
-      loggerWithChild({email: email}).error("SSE stream aborted")
+      Logger.error("SSE stream aborted")
     })
   })
 }

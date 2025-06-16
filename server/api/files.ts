@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
   type DataSourceUploadResult,
@@ -20,7 +20,6 @@ import { unlink } from "node:fs/promises"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
-const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
 
 const DOWNLOADS_DIR = join(process.cwd(), "downloads")
 await mkdir(DOWNLOADS_DIR, { recursive: true })
@@ -34,13 +33,11 @@ const isTxtFile = (file: File) => {
 }
 
 export const handleFileUpload = async (c: Context) => {
-  let email = ""
   try {
     const { sub } = c.get(JwtPayloadKey)
-    email = sub
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
-      loggerWithChild({email: email}).error({ sub }, "No user found in file upload")
+      Logger.error({ sub }, "No user found in file upload")
       throw new NoUserFound({})
     }
     const [user] = userRes
@@ -87,7 +84,7 @@ export const handleFileUpload = async (c: Context) => {
       })
     }
 
-    loggerWithChild({email: email}).info(
+    Logger.info(
       { fileCount: files.length, email: user.email },
       "Processing uploaded files for DataSource",
     )
@@ -105,7 +102,7 @@ export const handleFileUpload = async (c: Context) => {
             user.email,
           )
           if (fileExists) {
-            loggerWithChild({email: email}).warn(
+            Logger.warn(
               `File "${file.name}" already exists in DataSource ID "${dataSourceId}" for user ${user.email}. Skipping.`,
             )
             erroredFiles.push({
@@ -116,7 +113,7 @@ export const handleFileUpload = async (c: Context) => {
           }
         }
 
-        loggerWithChild({email: email}).info(
+        Logger.info(
           `Processing file "${file.name}" for DataSource for user ${user.email}`,
         )
         const result = await handleSingleFileUploadToDataSource({
@@ -130,7 +127,7 @@ export const handleFileUpload = async (c: Context) => {
           ...result,
         })
         successfullyProcessedFiles.push(file.name)
-        loggerWithChild({email: email}).info(
+        Logger.info(
           `File "${file.name}" processed successfully for DataSource. Result: ${result.message}`,
         )
       } catch (error) {
@@ -138,7 +135,7 @@ export const handleFileUpload = async (c: Context) => {
           error instanceof Error
             ? error.message
             : "Unknown error during DataSource processing"
-        loggerWithChild({email: email}).error(
+        Logger.error(
           error,
           `Error processing file "${file.name}" for DataSource`,
         )
@@ -173,7 +170,7 @@ export const handleFileUpload = async (c: Context) => {
       dataSourceResults: dataSourceProcessingResults,
     })
   } catch (error) {
-    loggerWithChild({email: email}).error(error, "Error in file upload handler")
+    Logger.error(error, "Error in file upload handler")
     throw error
   }
 }

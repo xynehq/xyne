@@ -5,7 +5,7 @@ import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
 import { NoUserFound, OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { getLogger } from "@/logger"
 import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
 import { Google, Slack } from "arctic"
@@ -22,7 +22,6 @@ import { globalAbortControllers } from "@/integrations/abortManager"
 import { getErrorMessage } from "@/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
-const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "oauth" })
 
 interface OAuthCallbackQuery {
   state: string
@@ -39,10 +38,9 @@ interface SlackOAuthResp {
 }
 
 export const OAuthCallback = async (c: Context) => {
-  let email=""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
-    email = sub
+    const email = sub
     const { state, code } = c.req.query()
     if (!state) {
       throw new HTTPException(500)
@@ -66,7 +64,7 @@ export const OAuthCallback = async (c: Context) => {
 
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
-      loggerWithChild({email: email}).error("Could not find user in OAuth Callback")
+      Logger.error("Could not find user in OAuth Callback")
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -131,7 +129,7 @@ export const OAuthCallback = async (c: Context) => {
     if (IsGoogleApp(app)) {
       // Start ingestion in the background, but catch any errors it might throw later
       handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
-        loggerWithChild({email: email}).error(
+        Logger.error(
           error,
           `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
         )
@@ -161,7 +159,7 @@ export const OAuthCallback = async (c: Context) => {
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         expireInHours: JobExpiryHours,
       })
-      loggerWithChild({email: email}).info(`Job ${jobId} enqueued for connection ${connector.id}`)
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
     }
 
     // Commit the transaction if everything is successful
@@ -170,7 +168,7 @@ export const OAuthCallback = async (c: Context) => {
     }
     return c.redirect(`${config.host}/oauth/success`)
   } catch (error) {
-    loggerWithChild({email: email}).error(
+    Logger.error(
       error,
       `${new OAuthCallbackError({ cause: error as Error })} \n ${(error as Error).stack}`,
     )

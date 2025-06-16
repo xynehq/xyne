@@ -69,7 +69,6 @@ import {
   getTextFromEventDescription,
   getUniqueEmails,
   insertContact,
-  loggerWithChild,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
@@ -450,8 +449,8 @@ export const handleGoogleOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
+  Logger.info("handleGoogleOAuthChanges")
   const data = job.data
-  loggerWithChild({email: data.email??""}).info("handleGoogleOAuthChanges")
   const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
   for (const syncJob of syncJobs) {
     let stats = newStats()
@@ -490,7 +489,7 @@ export const handleGoogleOAuthChanges = async (
         newStartPageToken &&
         newStartPageToken !== config.driveToken
       ) {
-        loggerWithChild({email: data.email??""}).info(`total changes:  ${changes.length}`)
+        Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
           try {
             let changeStats = await handleGoogleDriveChange(
@@ -501,7 +500,7 @@ export const handleGoogleOAuthChanges = async (
             stats = mergeStats(stats, changeStats)
             changesExist = true
           } catch (err) {
-            loggerWithChild({email: data.email??""}).error(
+            Logger.error(
               err,
               `Error syncing drive change, but continuing sync engine execution.`,
             )
@@ -543,7 +542,7 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          loggerWithChild({email: data.email??""}).error(
+          Logger.error(
             err,
             `Error syncing contacts, but continuing sync engine execution.`,
           )
@@ -588,7 +587,7 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          loggerWithChild({email: data.email??""}).error(
+          Logger.error(
             err,
             `Error syncing other contacts, but continuing sync engine execution.`,
           )
@@ -632,15 +631,15 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        loggerWithChild({email: data.email??""}).info(
+        Logger.info(
           `Changes successfully synced for Drive: ${JSON.stringify(stats)}`,
         )
       } else {
-        loggerWithChild({email: data.email??""}).info(`No changes to sync`)
+        Logger.info(`No changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      loggerWithChild({email: data.email??""}).error(
+      Logger.error(
         error,
         `Could not successfully complete sync for Google Drive, but continuing sync engine execution.: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
@@ -722,7 +721,7 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        loggerWithChild({email: data.email??""}).info(
+        Logger.info(
           `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
         )
       } else {
@@ -730,7 +729,7 @@ export const handleGoogleOAuthChanges = async (
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      loggerWithChild({email: data.email??""}).error(
+      Logger.error(
         error,
         `Could not successfully complete Oauth sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
@@ -817,15 +816,15 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        loggerWithChild({email: data.email??""}).info(
+        Logger.info(
           `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
         )
       } else {
-        loggerWithChild({email: data.email??""}).info(`No Google Calendar Event changes to sync`)
+        Logger.info(`No Google Calendar Event changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      loggerWithChild({email: data.email??""}).error(
+      Logger.error(
         error,
         `Could not successfully complete Oauth sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )

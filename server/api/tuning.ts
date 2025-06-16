@@ -11,7 +11,7 @@ import * as fs from "fs/promises" // Import promises version of fs
 import * as path from "path" // Import path module
 import { z } from "zod" // Import z
 import { zValidator } from "@hono/zod-validator" // Import zValidator
-import { getLogger, getLoggerWithChild } from "@/logger" // Import logger
+import { getLogger } from "@/logger" // Import logger
 import { Subsystem } from "@/types" // Import Subsystem type
 import config from "@/config" // Import config
 import { getProviderByModel } from "@/ai/provider" // Restore provider getter
@@ -44,10 +44,7 @@ export const tuningWsConnections = new Map<
   WSContext<ServerWebSocket<any>>
 >()
 
-const { JwtPayloadKey } = config
-
 const Logger = getLogger(Subsystem.Tuning)
-const loggerWithChild = getLoggerWithChild(Subsystem.Tuning)
 const { upgradeWebSocket } = createBunWebSocket<ServerWebSocket<undefined>>()
 
 const EVAL_DATASETS_BASE_DIR = path.join(
@@ -205,10 +202,10 @@ export const evaluateSchema = z.object({
 // --- Helper Functions Adapted from Script ---
 
 // Fetch random document from Vespa (adapted for API context)
-async function getRandomDocumentApi(userEmail:string): Promise<Document | null> {
+async function getRandomDocumentApi(): Promise<Document | null> {
   const schemas = Object.keys(schemaFieldMap)
   const targetSchema = schemas[Math.floor(Math.random() * schemas.length)]
-  loggerWithChild({email: userEmail}).debug(`Fetching random document from schema: ${targetSchema}...`)
+  Logger.debug(`Fetching random document from schema: ${targetSchema}...`)
 
   try {
     // Assuming GetRandomDocument is globally available or correctly imported
@@ -219,7 +216,7 @@ async function getRandomDocumentApi(userEmail:string): Promise<Document | null> 
     )
 
     if (!doc || !doc.id || !doc.fields) {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { responseData: doc, schema: targetSchema },
         "Received invalid data structure from GetRandomDocument",
       )
@@ -232,7 +229,7 @@ async function getRandomDocumentApi(userEmail:string): Promise<Document | null> 
     const fieldMapping = schemaFieldMap[sddocname]
 
     if (!fieldMapping) {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { vespaId, inferredSchema: sddocname },
         "Cannot process document: Schema not found in schemaFieldMap",
       )
@@ -251,7 +248,7 @@ async function getRandomDocumentApi(userEmail:string): Promise<Document | null> 
       typeof titleFromFields !== "string" ||
       titleFromFields.trim() === ""
     ) {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         {
           vespaId,
           sddocname,
@@ -271,7 +268,7 @@ async function getRandomDocumentApi(userEmail:string): Promise<Document | null> 
       fields: { ...(doc.fields as VespaFields), sddocname },
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       {
         error: error instanceof Error ? error.message : String(error),
         schema: targetSchema,
@@ -286,7 +283,6 @@ async function getRandomDocumentApi(userEmail:string): Promise<Document | null> 
 async function generateSearchQueriesApi(
   doc: Document,
   llmProvider: OllamaProvider, // Accept OllamaProvider instance
-  userEmail: string
 ): Promise<{
   queries: string[]
   sourceDocContext?: EvaluationDatasetItem["sourceDocContext"] | null
@@ -295,7 +291,7 @@ async function generateSearchQueriesApi(
   const sddocname = fields.sddocname
 
   if (!sddocname || !schemaFieldMap[sddocname]) {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       { docId: doc.id, sddocname },
       "Cannot generate query: Unknown schema",
     )
@@ -306,7 +302,7 @@ async function generateSearchQueriesApi(
   const title = fields[titleField] as string | undefined
 
   if (!title || title.trim() === "") {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       { docId: doc.id, sddocname, titleField },
       `Cannot generate query: Missing or empty title field ('${titleField}')`,
     )
@@ -345,7 +341,7 @@ async function generateSearchQueriesApi(
 
   if (!chunks_summary.length && sddocname !== "user" && sddocname !== "event") {
     // Allow user/event docs without chunks
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       { docId: doc.id, sddocname },
       "No usable content/chunks found for query generation. Skipping.",
     )
@@ -386,7 +382,7 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
     })
 
     if (!response || !response.text || response.text.trim() === "") {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { docId: doc.id },
         "Received empty response from LLM for query generation.",
       )
@@ -417,14 +413,14 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
       generatedQueries = parsedJson.filter((q) => q.trim().length > 0)
 
       if (generatedQueries.length === 0) {
-        loggerWithChild({email: userEmail}).warn(
+        Logger.warn(
           { docId: doc.id, rawResponse: response.text },
           "LLM generated no valid query strings.",
         )
         return { queries: [], sourceDocContext: null }
       }
       if (generatedQueries.length !== QUERIES_PER_DOC_API) {
-        loggerWithChild({email: userEmail}).warn(
+        Logger.warn(
           {
             docId: doc.id,
             expected: QUERIES_PER_DOC_API,
@@ -434,7 +430,7 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
         )
       }
     } catch (parseError: any) {
-      loggerWithChild({email: userEmail}).error(
+      Logger.error(
         {
           docId: doc.id,
           error: parseError.message,
@@ -455,7 +451,7 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
     }
     return { queries: generatedQueries, sourceDocContext }
   } catch (error: any) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       { docId: doc.id, model, error: error.message || String(error) },
       "Failed to generate queries using LLM",
     )
@@ -468,11 +464,10 @@ async function verifyGeneratedQueriesApi(
   sourceDocContext: EvaluationDatasetItem["sourceDocContext"],
   generatedQueries: string[],
   llmProvider: OllamaProvider, // Accept OllamaProvider instance
-  userEmail:string
 ): Promise<LLMVerificationResult> {
   const { title, schema, topNChunks } = sourceDocContext
   const queriesString = generatedQueries.map((q) => `"${q}"`).join(", ")
-  loggerWithChild({email: userEmail}).debug(
+  Logger.debug(
     { docId: sourceDocContext.docId, queries: generatedQueries },
     "Verifying generated queries...",
   )
@@ -520,14 +515,14 @@ async function verifyGeneratedQueriesApi(
       )
         throw new Error("Parsed JSON structure invalid.")
 
-      loggerWithChild({email: userEmail}).debug(
+      Logger.debug(
         { docId: sourceDocContext.docId, assessment: parsedJson.assessment },
         "LLM verification successful.",
       )
       return parsedJson as LLMVerificationResult
     } catch (error: any) {
       lastError = error
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { docId: sourceDocContext.docId, attempt, error: error?.message },
         `LLM verification attempt ${attempt} failed. Retrying...`,
       )
@@ -536,7 +531,7 @@ async function verifyGeneratedQueriesApi(
       )
     }
   }
-  loggerWithChild({email: userEmail}).error(
+  Logger.error(
     { docId: sourceDocContext.docId, error: lastError?.message },
     `LLM verification failed after ${MAX_VERIFICATION_RETRIES_API} attempts.`,
   )
@@ -552,9 +547,8 @@ async function processSingleSampleApi(
   totalSamples: number,
   queryGenProvider: OllamaProvider, // Accept OllamaProvider instance
   sendProgress: (message: string) => void, // Keep signature, but we won't call it
-  userEmail: string
 ): Promise<EvaluationDatasetItem | null> {
-  loggerWithChild({email: userEmail}).debug(`--- Starting Sample ${sampleIndex + 1}/${totalSamples} ---`)
+  Logger.debug(`--- Starting Sample ${sampleIndex + 1}/${totalSamples} ---`)
   // sendProgress(`Fetching document ${sampleIndex + 1}/${totalSamples}...`) // Suppressed
 
   let doc: Document | null = null
@@ -563,9 +557,9 @@ async function processSingleSampleApi(
     fetchAttempt <= MAX_FETCH_RETRIES_PER_SAMPLE_API;
     fetchAttempt++
   ) {
-    doc = await getRandomDocumentApi(userEmail)
+    doc = await getRandomDocumentApi()
     if (doc) {
-      loggerWithChild({email: userEmail}).debug(
+      Logger.debug(
         `[Sample ${sampleIndex + 1}] Found candidate document (ID: ${doc.id})`,
       )
       break
@@ -573,7 +567,7 @@ async function processSingleSampleApi(
     await new Promise((resolve) => setTimeout(resolve, DELAY_MS_API))
   }
   if (!doc) {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       `[Sample ${sampleIndex + 1}] Failed to fetch document. Skipping sample.`,
     )
     // sendProgress(`Failed to fetch document ${sampleIndex + 1}. Skipping.`) // Suppressed
@@ -592,10 +586,10 @@ async function processSingleSampleApi(
     genAttempt <= MAX_LLM_RETRIES_PER_DOC_API;
     genAttempt++
   ) {
-    generatedResult = await generateSearchQueriesApi(doc, queryGenProvider, userEmail) // Pass provider
+    generatedResult = await generateSearchQueriesApi(doc, queryGenProvider) // Pass provider
     if (generatedResult.queries.length > 0 && generatedResult.sourceDocContext)
       break // Allow fewer than requested
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       `[Sample ${sampleIndex + 1}] Query Gen Attempt ${genAttempt} failed for Doc ID ${doc.id}. Retrying...`,
     )
     await new Promise((resolve) =>
@@ -606,7 +600,7 @@ async function processSingleSampleApi(
     !generatedResult.sourceDocContext ||
     generatedResult.queries.length === 0
   ) {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       `[Sample ${sampleIndex + 1}] Failed to generate queries for Doc ID ${doc.id}. Skipping sample.`,
     )
     // sendProgress(
@@ -620,10 +614,9 @@ async function processSingleSampleApi(
     generatedResult.sourceDocContext,
     generatedResult.queries,
     queryGenProvider,
-    userEmail
   )
   if (verificationResult.assessment !== "GOOD_QUERIES") {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       { docId: doc.id, assessment: verificationResult.assessment },
       `[Sample ${sampleIndex + 1}] Queries failed verification. Skipping sample.`,
     )
@@ -633,7 +626,7 @@ async function processSingleSampleApi(
     return null
   }
 
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `[Sample ${sampleIndex + 1}] Generated queries VERIFIED as GOOD for Doc ID ${doc.id}.`,
   )
   // sendProgress(`Verified queries for document ${sampleIndex + 1}.`) // Suppressed
@@ -657,7 +650,7 @@ const generateDataset_OLD = async (
   userEmail: string,
   jobId: string,
 ): Promise<any> => {
-  loggerWithChild({email: userEmail}).info(`Generating dataset for job ${jobId} and user ${userEmail}...`)
+  Logger.info(`Generating dataset for job ${jobId} and user ${userEmail}...`)
   // Simulate dataset generation
   await new Promise((resolve) => setTimeout(resolve, 3000))
   const dummyDataset = {
@@ -665,7 +658,7 @@ const generateDataset_OLD = async (
     jobId: jobId,
     data: [{ query: "test", results: ["doc1", "doc2"] }],
   }
-  loggerWithChild({email: userEmail}).info(`Dataset generated for job ${jobId}.`)
+  Logger.info(`Dataset generated for job ${jobId}.`)
   return dummyDataset
 }
 
@@ -677,7 +670,7 @@ async function generateDataset(
   numSamplesParam?: number, // Added optional parameter
 ): Promise<EvaluationDatasetItem[]> {
   const numSamplesToGenerate = numSamplesParam ?? NUM_SAMPLES_API // Use param or default
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Starting real dataset generation for job ${jobId}, user ${userEmail}. Samples requested: ${numSamplesToGenerate} (Param: ${numSamplesParam}, Default: ${NUM_SAMPLES_API}). Tuning Model: ${TUNING_OLLAMA_MODEL_NAME}`,
   )
   // Initial progress message
@@ -693,7 +686,7 @@ async function generateDataset(
 
   // --- Instantiate independent Ollama provider ---
   if (!TUNING_OLLAMA_MODEL_NAME) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       "Error: Tuning Ollama model name is not configured (TUNING_LLM_MODEL env var needed).",
     )
     sendProgress("Error: LLM Model not configured.")
@@ -706,12 +699,12 @@ async function generateDataset(
     const ollamaClient = new Ollama()
     // Instantiate our provider wrapper with the base client
     queryGenProvider = new OllamaProvider(ollamaClient)
-    loggerWithChild({email: userEmail}).info(
+    Logger.info(
       { model: TUNING_OLLAMA_MODEL_NAME },
       "Instantiated independent OllamaProvider for tuning.",
     )
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error,
       "Failed to instantiate independent OllamaProvider for tuning.",
       { model: TUNING_OLLAMA_MODEL_NAME },
@@ -755,7 +748,6 @@ async function generateDataset(
           numSamplesToGenerate, // Pass correct total
           queryGenProvider,
           (msg) => {}, // Suppress individual sample progress messages from processSingleSampleApi
-          userEmail
         )
           .then((result) => {
             if (result) {
@@ -768,7 +760,7 @@ async function generateDataset(
           .catch((err) => {
             // Also count errors from processSingleSampleApi itself as failed
             failedCount++
-            loggerWithChild({email: userEmail}).error(
+            Logger.error(
               err,
               `Error in processSingleSampleApi for sample ${i + 1}`,
             )
@@ -808,7 +800,7 @@ async function generateDataset(
 
   const finalSuccessCount = dataset.length
 
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Dataset generation finished for job ${jobId}. Success: ${finalSuccessCount}, Failed: ${finalFailureCount + failedCount} (Total Requested: ${numSamplesToGenerate})`,
   )
   // Final completion message (different from progress)
@@ -822,7 +814,7 @@ async function generateDataset(
   )
 
   if (dataset.length === 0) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       `Job ${jobId}: No dataset entries could be generated successfully.`,
     )
     throw new Error("Failed to generate any valid dataset entries.")
@@ -839,11 +831,11 @@ const optimizeAlpha_OLD = async (
   jobId: string,
   sendProgress: (message: string) => void,
 ): Promise<number> => {
-  loggerWithChild({email: userEmail}).info(`Optimizing alpha for job ${jobId} and user ${userEmail}...`)
+  Logger.info(`Optimizing alpha for job ${jobId} and user ${userEmail}...`)
   sendProgress("Optimizing alpha (placeholder)...")
   await new Promise((resolve) => setTimeout(resolve, 2000))
   const optimizedAlpha = Math.random()
-  loggerWithChild({email: userEmail}).info(`Alpha optimized: ${optimizedAlpha} for job ${jobId}.`)
+  Logger.info(`Alpha optimized: ${optimizedAlpha} for job ${jobId}.`)
   sendProgress(
     `Alpha optimization complete (placeholder). Found alpha: ${optimizedAlpha.toFixed(4)}`,
   )
@@ -905,7 +897,7 @@ async function optimizeAlpha(
 
   for (const alpha of alphaValues) {
     // Log internally which alpha is being processed
-    loggerWithChild({email: userEmail}).debug({ jobId, alpha }, `Starting evaluation for alpha ${alpha}`)
+    Logger.debug({ jobId, alpha }, `Starting evaluation for alpha ${alpha}`)
 
     const tasks = dataset.flatMap((item) =>
       item.queries.map((query) =>
@@ -928,7 +920,7 @@ async function optimizeAlpha(
             })
             .catch((err) => {
               overallCompletedEvaluations++ // Also count errors here so progress reaches 100%
-              loggerWithChild({email: userEmail}).error(
+              Logger.error(
                 err,
                 `Error finding rank for query '${query}' during alpha optimization`,
               )
@@ -950,7 +942,7 @@ async function optimizeAlpha(
       resultsForAlpha,
       resultsForAlpha.length,
     ) // Renamed for clarity
-    loggerWithChild({email: userEmail}).info(
+    Logger.info(
       {
         jobId,
         alpha: alpha,
@@ -980,7 +972,7 @@ async function optimizeAlpha(
     if (isBetter) {
       bestMetrics = currentMetrics // Store the whole metrics object
       bestAlpha = alpha // Assign the float alpha directly
-      loggerWithChild({email: userEmail}).info(
+      Logger.info(
         {
           jobId,
           bestAlpha: bestAlpha,
@@ -1047,7 +1039,7 @@ async function optimizeAlpha(
       workspaceId,
       personalizationData,
     )
-    loggerWithChild({email: userEmail}).info(
+    Logger.info(
       {
         jobId,
         userId,
@@ -1065,7 +1057,7 @@ async function optimizeAlpha(
       }),
     )
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       { error, jobId, userEmail, bestAlpha },
       `Failed to save optimized alpha to database: ${getErrorMessage(error)}`,
     )
@@ -1124,7 +1116,7 @@ const initAndRunEvaluationJob = async (
   params: { numSamples?: number },
 ) => {
   const numSamplesToUse = params.numSamples ?? NUM_SAMPLES_API // Determine actual samples used (default 100)
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Evaluation job ${jobId} for user ${userEmail} in workspace ${workspaceId} started. Params: ${JSON.stringify(params)}, Samples Used: ${numSamplesToUse}`,
   )
   const ws = tuningWsConnections.get(jobId) // Initial get
@@ -1135,7 +1127,7 @@ const initAndRunEvaluationJob = async (
     if (currentWs) {
       currentWs.send(JSON.stringify({ event: "tuning:progress", message }))
     } else {
-      loggerWithChild({email: userEmail}).debug(
+      Logger.debug(
         `No tuning WebSocket connection found for job ID ${jobId} to send progress: ${message}`,
       )
     }
@@ -1182,12 +1174,12 @@ const initAndRunEvaluationJob = async (
     if (finalWs) {
       finalWs.send(JSON.stringify(completionMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on completion.`,
       )
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error,
       `Error during evaluation job ${jobId} for user ${userEmail}`,
     )
@@ -1202,7 +1194,7 @@ const initAndRunEvaluationJob = async (
     if (errorWs) {
       errorWs.send(JSON.stringify(errorMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on error.`,
       )
     }
@@ -1216,7 +1208,7 @@ const runTuningWithDataset = async (
   workspaceId: string,
   datasetFilePath: string,
 ) => {
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Tuning job ${jobId} for user ${userEmail} in workspace ${workspaceId} started using dataset ${datasetFilePath}.`,
   )
   const ws = tuningWsConnections.get(jobId) // Initial get
@@ -1226,7 +1218,7 @@ const runTuningWithDataset = async (
     if (currentWs) {
       currentWs.send(JSON.stringify({ event: "tuning:progress", message }))
     } else {
-      loggerWithChild({email: userEmail}).debug(
+      Logger.debug(
         `No tuning WebSocket connection found for job ID ${jobId} to send progress: ${message}`,
       )
     }
@@ -1258,12 +1250,12 @@ const runTuningWithDataset = async (
     if (finalWs) {
       finalWs.send(JSON.stringify(completionMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on completion.`,
       )
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error,
       `Error during tuning job ${jobId} for user ${userEmail} with dataset ${datasetFilePath}`,
     )
@@ -1278,7 +1270,7 @@ const runTuningWithDataset = async (
     if (errorWs) {
       errorWs.send(JSON.stringify(errorMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on error.`,
       )
     }
@@ -1295,7 +1287,7 @@ async function findDocumentRankApi(
   alpha: number, // Alpha value for hybrid search
   userEmail: string, // User email for permission check
 ): Promise<number | null> {
-  loggerWithChild({email: userEmail}).debug(
+  Logger.debug(
     { docIdToFind, vespaIdToFind, query, alpha, userEmail },
     "findDocumentRankApi called",
   )
@@ -1332,7 +1324,7 @@ async function findDocumentRankApi(
 
         if (hitVespaId && hitVespaId === vespaIdToFind) {
           rank = currentRank
-          loggerWithChild({email: userEmail}).trace(
+          Logger.trace(
             `---> Match found at rank ${rank}! Vespa ID: ${vespaIdToFind}, Query: ${query.substring(0, 30)}...`,
           )
           break // Exit inner loop
@@ -1358,7 +1350,7 @@ async function findDocumentRankApi(
       else if (totalCount === 0 && offset > 0) break
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       {
         error: error instanceof Error ? error.message : String(error),
         query,
@@ -1490,19 +1482,19 @@ export const EvaluateHandler = async (c: Context<{ Variables: Variables }>) => {
         )
       }
       numSamples = validation.data.numSamples
-      loggerWithChild({email: userEmail}).info(
+      Logger.info(
         { userEmail, numSamples },
         "Received evaluate request with parameters",
       )
     } else {
-      loggerWithChild({email: userEmail}).info(
+      Logger.info(
         { userEmail },
         "Received evaluate request with empty/invalid body, using defaults.",
       )
     }
   } catch (e) {
     // Catch any unexpected errors during parsing
-    loggerWithChild({email: userEmail}).error(e, "Error parsing evaluate request body, using defaults.", {
+    Logger.error(e, "Error parsing evaluate request body, using defaults.", {
       userEmail,
     })
   }
@@ -1511,7 +1503,7 @@ export const EvaluateHandler = async (c: Context<{ Variables: Variables }>) => {
   const jobId = `tuning-job-${Date.now()}`
   // --- Pass parameters to the job runner ---
   initAndRunEvaluationJob(jobId, userEmail, workspaceId, { numSamples })
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Started evaluation job ${jobId} for user ${userEmail} in workspace ${workspaceId}`,
   )
   return c.json({ jobId })
@@ -1569,7 +1561,7 @@ export const ListDatasetsHandler = async (
     return c.json({ datasets })
   } catch (error: any) {
     if (error.code === "ENOENT") return c.json({ datasets: [] }) // No directory means no datasets
-    loggerWithChild({email: userEmail}).error(error, `Error listing datasets for user ${userEmail}`)
+    Logger.error(error, `Error listing datasets for user ${userEmail}`)
     return c.json({ error: "Failed to list datasets" }, 500)
   }
 }
@@ -1599,7 +1591,7 @@ export const TuneDatasetHandler = async (
   } catch (error: any) {
     if (error.code === "ENOENT")
       return c.json({ error: "Dataset file not found" }, 404)
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error,
       `Error accessing dataset file ${datasetFilePath} for user ${userEmail}`,
     )
@@ -1608,7 +1600,7 @@ export const TuneDatasetHandler = async (
 
   const jobId = `tuning-dataset-job-${Date.now()}`
   runTuningWithDataset(jobId, userEmail, workspaceId, datasetFilePath)
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Started tuning job ${jobId} for user ${userEmail} in workspace ${workspaceId} with dataset ${datasetFilename}`,
   )
   return c.json({ jobId })
@@ -1621,7 +1613,7 @@ async function runEvaluationWithDataset(
   workspaceId: number,
   datasetFilePath: string,
 ) {
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Evaluation job ${jobId} for user ${userEmail} (ws ${workspaceId}) started using dataset ${datasetFilePath}.`,
   )
   const ws = tuningWsConnections.get(jobId)
@@ -1631,7 +1623,7 @@ async function runEvaluationWithDataset(
     if (currentWs) {
       currentWs.send(JSON.stringify({ event: "tuning:progress", message }))
     } else {
-      loggerWithChild({email: userEmail}).debug(
+      Logger.debug(
         `No tuning WebSocket connection found for job ID ${jobId} to send progress: ${message}`,
       )
     }
@@ -1666,25 +1658,25 @@ async function runEvaluationWithDataset(
           personalization.parameters?.[SearchModes.NativeRank]
         if (nativeRankParams?.alpha !== undefined) {
           alphaToUse = nativeRankParams.alpha
-          loggerWithChild({email: userEmail}).info(
+          Logger.info(
             { jobId, userEmail, alpha: alphaToUse },
             "Using stored alpha for evaluation.",
           ) // Log email
         } else {
-          loggerWithChild({email: userEmail}).info(
+          Logger.info(
             { jobId, userEmail },
             "No stored alpha found, using default for evaluation.",
           ) // Log email
         }
       } else {
-        loggerWithChild({email: userEmail}).warn(
+        Logger.warn(
           { jobId, userEmail },
           "User personalization settings not found, using default alpha for evaluation.",
         ) // Log email
       }
     } catch (err) {
       // Use Logger.warn for non-critical failure to get personalization
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { error: err, jobId, userEmail }, // Correct warn signature
         `Failed to get user personalization, using default alpha ${alphaToUse}. Error: ${getErrorMessage(err)}`,
       )
@@ -1725,7 +1717,7 @@ async function runEvaluationWithDataset(
                   llmModel: item.llmModel,
                 }
               } catch (rankError) {
-                loggerWithChild({email: userEmail}).error(
+                Logger.error(
                   rankError, // Error object first
                   "Error during findDocumentRankApi", // Then the message
                   {
@@ -1765,7 +1757,7 @@ async function runEvaluationWithDataset(
       }),
     )
     const metrics = calculateMetricsApi(finalResults, totalQueries)
-    loggerWithChild({email: userEmail}).info({ jobId, metrics }, "Dataset evaluation metrics calculated.")
+    Logger.info({ jobId, metrics }, "Dataset evaluation metrics calculated.")
 
     // 5. Send Completion Message
     const completionMessage = {
@@ -1778,12 +1770,12 @@ async function runEvaluationWithDataset(
     if (finalWs) {
       finalWs.send(JSON.stringify(completionMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on completion.`,
       )
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error, // Error object first
       `Error during dataset evaluation job ${jobId}`, // Message second
       {
@@ -1812,7 +1804,7 @@ async function runEvaluationWithDataset(
     if (errorWs) {
       errorWs.send(JSON.stringify(errorMessage))
     } else {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         `No tuning WebSocket connection found for job ID ${jobId} on error.`,
       )
     }
@@ -1845,7 +1837,7 @@ export const EvaluateDatasetHandler = async (
     }
   } catch (err) {
     // Correct Logger.error call signature
-    loggerWithChild({email: userEmail}).error(err, `Failed to get user/workspace ID for evaluation.`, {
+    Logger.error(err, `Failed to get user/workspace ID for evaluation.`, {
       userEmail,
     })
     return c.json({ error: "Failed to verify user workspace" }, 500)
@@ -1877,13 +1869,13 @@ export const EvaluateDatasetHandler = async (
     await fs.access(datasetFilePath)
   } catch (error: any) {
     if (error.code === "ENOENT") {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { datasetFilePath, userEmail },
         "Dataset file not found for evaluation request",
       ) // Correct warn signature
       return c.json({ error: "Dataset file not found" }, 404)
     }
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       error, // Error first
       `Error accessing dataset file for user ${userEmail}`, // Message second
       { datasetFilePath }, // Metadata third
@@ -1894,7 +1886,7 @@ export const EvaluateDatasetHandler = async (
   const jobId = `eval-dataset-job-${Date.now()}`
   // Fire-and-forget the evaluation job
   runEvaluationWithDataset(jobId, userEmail, workspaceId, datasetFilePath)
-  loggerWithChild({email: userEmail}).info(
+  Logger.info(
     `Started dataset evaluation job ${jobId} for user ${userEmail} with dataset ${datasetFilename}`,
   )
   return c.json({ jobId })
@@ -1922,7 +1914,7 @@ export const DeleteDatasetHandler = async (
     filename.includes("..") ||
     filename.includes("/")
   ) {
-    loggerWithChild({email: userEmail}).warn(
+    Logger.warn(
       { userEmail, filename },
       "Attempted to delete invalid or potentially malicious filename.",
     )
@@ -1936,7 +1928,7 @@ export const DeleteDatasetHandler = async (
   const resolvedPath = path.resolve(filePath)
   const resolvedUserDir = path.resolve(userDir)
   if (!resolvedPath.startsWith(resolvedUserDir + path.sep)) {
-    loggerWithChild({email: userEmail}).error(
+    Logger.error(
       { userEmail, filename, filePath, resolvedPath, resolvedUserDir },
       "Path traversal attempt detected during dataset deletion.",
     )
@@ -1946,20 +1938,20 @@ export const DeleteDatasetHandler = async (
 
   try {
     await fs.unlink(filePath)
-    loggerWithChild({email: userEmail}).info({ userEmail, filename }, "Successfully deleted dataset file.")
+    Logger.info({ userEmail, filename }, "Successfully deleted dataset file.")
     return c.json(
       { message: `Dataset '${filename}' deleted successfully.` },
       200,
     )
   } catch (error: any) {
     if (error.code === "ENOENT") {
-      loggerWithChild({email: userEmail}).warn(
+      Logger.warn(
         { userEmail, filename },
         "Attempted to delete non-existent dataset file.",
       )
       return c.json({ error: "Dataset file not found" }, 404)
     } else {
-      loggerWithChild({email: userEmail}).error(error, `Error deleting dataset file for user ${userEmail}`, {
+      Logger.error(error, `Error deleting dataset file for user ${userEmail}`, {
         filename,
       })
       return c.json({ error: "Failed to delete dataset file" }, 500)
@@ -1973,16 +1965,14 @@ const tuningWsCallback = (
   c: Context<{ Variables: Variables }>,
 ): WSEvents<ServerWebSocket<any>> => {
   const jobId = c.req.param("jobId")
-  const jwtPayload = c.get("jwtPayload") 
-  const email = jwtPayload?.email;
   return {
     onOpen: (evt: Event, ws: WSContext<ServerWebSocket<any>>) => {
       if (!jobId) {
-        loggerWithChild({email: email}).error("WebSocket opened without jobId!")
+        Logger.error("WebSocket opened without jobId!")
         ws.close(1008, "Missing jobId")
         return
       }
-      loggerWithChild({email: email}).info(`WebSocket opened for tuning job: ${jobId}`)
+      Logger.info(`WebSocket opened for tuning job: ${jobId}`)
       tuningWsConnections.set(jobId, ws)
       ws.send(
         JSON.stringify({
@@ -1992,7 +1982,7 @@ const tuningWsCallback = (
       )
     },
     onMessage: (evt: MessageEvent, ws: WSContext<ServerWebSocket<any>>) => {
-      loggerWithChild({email: email}).info(`Message from tuning client ${jobId}: ${evt.data}`)
+      Logger.info(`Message from tuning client ${jobId}: ${evt.data}`)
     },
     onClose: (evt: CloseEvent, ws: WSContext<ServerWebSocket<any>>) => {
       const closedJobId =
@@ -2000,12 +1990,12 @@ const tuningWsCallback = (
           ([key, value]) => value === ws,
         )?.[0] || jobId
       if (closedJobId) {
-        loggerWithChild({email: email}).info(
+        Logger.info(
           `WebSocket closed for tuning job: ${closedJobId} (Code: ${evt.code}, Reason: ${evt.reason})`,
         )
         tuningWsConnections.delete(closedJobId)
       } else {
-        loggerWithChild({email: email}).warn(`WebSocket closed but could not determine jobId.`)
+        Logger.warn(`WebSocket closed but could not determine jobId.`)
       }
     },
     onError: (evt: Event, ws: WSContext<ServerWebSocket<any>>) => {
@@ -2014,10 +2004,10 @@ const tuningWsCallback = (
           ([key, value]) => value === ws,
         )?.[0] || jobId
       if (errorJobId) {
-        loggerWithChild({email: email}).error(evt, `WebSocket error for tuning job ${errorJobId}`)
+        Logger.error(evt, `WebSocket error for tuning job ${errorJobId}`)
         tuningWsConnections.delete(errorJobId)
       } else {
-        loggerWithChild({email: email}).error(evt, `WebSocket error but could not determine jobId.`)
+        Logger.error(evt, `WebSocket error but could not determine jobId.`)
       }
     },
   }
