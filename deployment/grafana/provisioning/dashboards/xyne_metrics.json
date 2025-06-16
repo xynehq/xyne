@@ -1099,7 +1099,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "max_over_time(total_chat_to_be_inserted{email=~\"$email\"}[$__range])",
+          "expr": "sum(total_chat_to_be_inserted{email=~\"$email\"})",
           "format": "table",
           "hide": false,
           "instant": true,
