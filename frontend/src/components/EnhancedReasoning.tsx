@@ -18,6 +18,88 @@ interface EnhancedReasoningProps {
   className?: string
 }
 
+// Step pattern configuration for robust parsing
+const STEP_PATTERNS = {
+  ITERATION: /Iteration (\d+)/,
+  PLANNING: /Planning|Planning next step/,
+  TOOL_SELECTED: /Tool selected:/,
+  TOOL_PARAMETERS: /Parameters:/,
+  TOOL_EXECUTING: /Executing tool:/,
+  TOOL_RESULT: /Tool result/,
+  TOOL_ERROR: /Error:/,
+  SYNTHESIS: /Synthesizing|synthesis/,
+  VALIDATION_ERROR: /Validation Error/,
+  BROADENING_SEARCH: /Broadening Search/,
+  ANALYZING: /Analyzing/,
+} as const
+
+// Step type configuration interface
+interface StepTypeConfig {
+  pattern: RegExp
+  type: AgentReasoningStepType
+  status: "pending" | "success" | "error" | "info"
+  getStatus?: (line: string) => "pending" | "success" | "error" | "info"
+  extractData?: (line: string, match: RegExpMatchArray) => { iterationNumber?: number }
+}
+
+// Step type mapping configuration
+const STEP_TYPE_CONFIG: StepTypeConfig[] = [
+  {
+    pattern: STEP_PATTERNS.ITERATION,
+    type: AgentReasoningStepType.Iteration,
+    status: "info",
+    extractData: (line: string, match: RegExpMatchArray) => ({
+      iterationNumber: match[1] ? parseInt(match[1]) : undefined,
+    }),
+  },
+  {
+    pattern: STEP_PATTERNS.PLANNING,
+    type: AgentReasoningStepType.Planning,
+    status: "pending",
+  },
+  {
+    pattern: STEP_PATTERNS.TOOL_SELECTED,
+    type: AgentReasoningStepType.ToolSelected,
+    status: "info",
+  },
+  {
+    pattern: STEP_PATTERNS.TOOL_PARAMETERS,
+    type: AgentReasoningStepType.ToolParameters,
+    status: "info",
+  },
+  {
+    pattern: STEP_PATTERNS.TOOL_EXECUTING,
+    type: AgentReasoningStepType.ToolExecuting,
+    status: "pending",
+  },
+  {
+    pattern: STEP_PATTERNS.TOOL_RESULT,
+    type: AgentReasoningStepType.ToolResult,
+    status: "success",
+    getStatus: (line: string) => (STEP_PATTERNS.TOOL_ERROR.test(line) ? "error" : "success"),
+  },
+  {
+    pattern: STEP_PATTERNS.SYNTHESIS,
+    type: AgentReasoningStepType.Synthesis,
+    status: "pending",
+  },
+  {
+    pattern: STEP_PATTERNS.VALIDATION_ERROR,
+    type: AgentReasoningStepType.ValidationError,
+    status: "error",
+  },
+  {
+    pattern: STEP_PATTERNS.BROADENING_SEARCH,
+    type: AgentReasoningStepType.BroadeningSearch,
+    status: "info",
+  },
+  {
+    pattern: STEP_PATTERNS.ANALYZING,
+    type: AgentReasoningStepType.AnalyzingQuery,
+    status: "pending",
+  },
+]
+
 // Parse reasoning content into structured steps with iteration grouping
 const parseReasoningContent = (content: string): ReasoningStep[] => {
   if (!content.trim()) return []
@@ -32,59 +114,38 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
     let stepContent = line.trim()
     let iterationNumber: number | undefined = undefined
 
-    // Detect step types based on content patterns
-    if (line.includes("Iteration ")) {
-      type = AgentReasoningStepType.Iteration
-      status = "info"
-      // Extract iteration number
-      const match = line.match(/Iteration (\d+)/)
+    // Find matching step type configuration
+    for (const config of STEP_TYPE_CONFIG) {
+      const match = line.match(config.pattern)
       if (match) {
-        iterationNumber = parseInt(match[1])
-      }
+        type = config.type
+        status = config.getStatus ? config.getStatus(line) : config.status
+        
+        // Extract additional data if extractor function exists
+        if (config.extractData) {
+          const extracted = config.extractData(line, match)
+          if (extracted.iterationNumber !== undefined) {
+            iterationNumber = extracted.iterationNumber
+          }
+        }
 
-      // Create new iteration step
-      const iterationStep: ReasoningStep = {
-        type,
-        content: stepContent,
-        timestamp: Date.now() + index,
-        status,
-        iterationNumber,
-        substeps: [],
-      }
+        // Handle iteration step creation
+        if (type === AgentReasoningStepType.Iteration) {
+          const iterationStep: ReasoningStep = {
+            type,
+            content: stepContent,
+            timestamp: Date.now() + index,
+            status,
+            iterationNumber,
+            substeps: [],
+          }
 
-      steps.push(iterationStep)
-      currentIteration = iterationStep
-      return
-    } else if (
-      line.includes("Planning") ||
-      line.includes("Planning next step")
-    ) {
-      type = AgentReasoningStepType.Planning
-      status = "pending"
-    } else if (line.includes("Tool selected:")) {
-      type = AgentReasoningStepType.ToolSelected
-      status = "info"
-    } else if (line.includes("Parameters:")) {
-      type = AgentReasoningStepType.ToolParameters
-      status = "info"
-    } else if (line.includes("Executing tool:")) {
-      type = AgentReasoningStepType.ToolExecuting
-      status = "pending"
-    } else if (line.includes("Tool result")) {
-      type = AgentReasoningStepType.ToolResult
-      status = line.includes("Error:") ? "error" : "success"
-    } else if (line.includes("Synthesizing") || line.includes("synthesis")) {
-      type = AgentReasoningStepType.Synthesis
-      status = "pending"
-    } else if (line.includes("Validation Error")) {
-      type = AgentReasoningStepType.ValidationError
-      status = "error"
-    } else if (line.includes("Broadening Search")) {
-      type = AgentReasoningStepType.BroadeningSearch
-      status = "info"
-    } else if (line.includes("Analyzing")) {
-      type = AgentReasoningStepType.AnalyzingQuery
-      status = "pending"
+          steps.push(iterationStep)
+          currentIteration = iterationStep
+          return
+        }
+        break
+      }
     }
 
     const step: ReasoningStep = {
@@ -193,6 +254,8 @@ const ReasoningStepComponent: React.FC<{
           {isIteration && hasSubsteps && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? 'Collapse iteration details' : 'Expand iteration details'}
               className="mr-1 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               {isExpanded ? (
@@ -229,7 +292,7 @@ const ReasoningStepComponent: React.FC<{
         <div className="space-y-1 ml-4 pl-2 w-full">
           {step.substeps!.map((substep, substepIndex) => (
             <ReasoningStepComponent
-              key={substepIndex}
+              key={substep.timestamp}
               step={substep}
               index={substepIndex}
               isStreaming={isStreaming}
@@ -311,7 +374,7 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
             {steps.length > 0 ? (
               steps.map((step, index) => (
                 <ReasoningStepComponent
-                  key={index}
+                  key={step.timestamp}
                   step={step}
                   index={index}
                   isStreaming={isStreaming}
