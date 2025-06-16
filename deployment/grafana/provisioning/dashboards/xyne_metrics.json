@@ -111,7 +111,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum (app_request_count) by (email)",
+          "expr": "sum (app_request_count{email=~\"$email\"}) by (email)",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -178,7 +178,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "ceil(increase(app_request_count{app_endpoint=\"/api/v1/message/create\"}[$__range]))",
+          "expr": "ceil(increase(app_request_count{app_endpoint=\"/api/v1/message/create\",email=~\"$email\"}[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -240,7 +240,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "increase(app_request_count{app_endpoint=\"/api/v1/search\", offset=\"0\"}[$__range])",
+          "expr": "increase(app_request_count{app_endpoint=\"/api/v1/search\", offset=\"0\", email=~\"$email\"}[$__range])",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
@@ -338,7 +338,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(app_endpoint,email) (\n  increase(app_request_count{app_endpoint!~\"/auth|/metrics\"}[$__range])\n)",
+          "expr": "sum by(app_endpoint) (\n  increase(app_request_count{app_endpoint!~\"/auth|/metrics\", email=~\"$email\"}[$__range])\n)",
           "format": "time_series",
           "instant": false,
           "legendFormat": "__auto",
@@ -450,7 +450,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(app_endpoint,email) (\n  increase(app_response_count{app_endpoint!~\"/auth|/metrics\"}[$__range])\n)",
+          "expr": "sum by(app_endpoint) (\n  increase(app_response_count{app_endpoint!~\"/auth|/metrics\", email=~\"$email\"}[$__range])\n)",
           "format": "time_series",
           "fullMetaSearch": false,
           "hide": false,
@@ -520,7 +520,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "increase(app_response_count{app_response_status=~\"[45]..\"}[$__rate_interval])",
+          "expr": "increase(app_response_count{app_response_status=~\"[45]..\", email=\"$email\"}[$__rate_interval])",
           "format": "time_series",
           "instant": false,
           "legendFormat": "{{app_endpoint}} : {{app_response_status}}",
@@ -633,7 +633,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "rate(app_request_response_duration_seconds_sum[1m]) \n/ \nrate(app_request_response_duration_seconds_count[1m])\n",
+          "expr": "rate(app_request_response_duration_seconds_sum{email=~\"$email\"}[1m]) \n/ \nrate(app_request_response_duration_seconds_count{email=~\"$email\"}[1m])\n",
           "format": "time_series",
           "fullMetaSearch": false,
           "hide": false,
@@ -825,7 +825,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "100 * sum(google_drive_ingested_total) / (sum(total_files_to_be_inserted))",
+          "expr": "100 * sum(google_drive_ingested_total{email=~\"$email\"}) / (sum(total_files_to_be_inserted{email=~\"$email\"}))",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -893,7 +893,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * sum(gmail_ingested_total) / (sum(gmail_to_be_ingested_total_count))",
+          "expr": "100 * sum(gmail_ingested_total{email=~\"$email\"}) / (sum(gmail_to_be_ingested_total_count{email=~\"$email\"}))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -939,19 +939,87 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "#EAB839",
-                "value": 39
-              },
-              {
-                "color": "#6ED0E0",
-                "value": 250
               }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "continuous-purples"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-yellow",
+                  "mode": "shades"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "E"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-red",
+                  "mode": "shades"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 9,
@@ -987,7 +1055,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(email) (max_over_time(gmail_to_be_ingested_total_count[$__range]))",
+          "expr": "max_over_time(gmail_to_be_ingested_total_count{email=~\"$email\"}[$__range])",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1001,7 +1069,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(email) (max_over_time(gmail_skipped_from_insertion_count[$__range]))",
+          "expr": "max_over_time(gmail_skipped_from_insertion_count{email=~\"$email\"}[$__range])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1016,7 +1084,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(email) (max_over_time(total_files_to_be_inserted[$__range]))",
+          "expr": "max_over_time(total_files_to_be_inserted{email=~\"$email\"}[$__range])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1031,7 +1099,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(user_email) (max_over_time(total_chat_to_be_inserted[$__range]))",
+          "expr": "max_over_time(total_chat_to_be_inserted{email=~\"$email\"}[$__range])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1046,7 +1114,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(user_email) (max_over_time(total_convesations_extracted_count[$__range]))",
+          "expr": "max_over_time(total_convesations_extracted_count{email=~\"$email\"}[$__range])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1151,7 +1219,7 @@
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(account_type) ( max_over_time(gmail_ingested_total[$__range]))",
+          "expr": "sum by(account_type) ( max_over_time(gmail_ingested_total{email=~\"$email\"}[$__range]))",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -1168,7 +1236,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total[$__range]))",
+          "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total{email=\"$email\"}[$__range]))",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1281,7 +1349,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total[$__range])) or max_over_time(google_entity_metadata[$__range]))\n",
+          "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadat{email=~\"$email\"}[$__range]))\n",
           "format": "table",
           "instant": true,
           "legendFormat": "SUCCESS",
@@ -1339,10 +1407,6 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -1351,13 +1415,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "EXTRACT_SUCCESS"
+              "options": "extract:success"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "dark-green",
+                  "fixedColor": "light-blue",
                   "mode": "fixed"
                 }
               }
@@ -1366,7 +1430,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Value #E"
+              "options": "ingest:failed"
             },
             "properties": [
               {
@@ -1381,13 +1445,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "INGEST_BLOCKED"
+              "options": "ingest:blocked"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "orange",
+                  "fixedColor": "light-yellow",
                   "mode": "fixed"
                 }
               }
@@ -1396,13 +1460,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "INGEST_FAILED"
+              "options": "extract:failed"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "dark-orange",
                   "mode": "fixed"
                 }
               }
@@ -1411,28 +1475,43 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "INGEST_FAILED_CALCULATED"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "super-light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "EXTRACT_FAILED_CALCULATED"
+              "options": "ingest_failed:calculated"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "light-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "extract_failed_calculated"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ingest:success"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-green",
                   "mode": "fixed"
                 }
               }
@@ -1474,7 +1553,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(file_type) ( max_over_time(google_drive_ingested_total[$__range]))\n",
+          "expr": "sum by(file_type) ( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range]))\n",
           "format": "table",
           "instant": true,
           "legendFormat": "SUCCESS",
@@ -1488,7 +1567,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "# Query C: sum ingestion errors by file_type\nsum by(file_type) (max_over_time(google_drive_ingestion_errors_total[$__range]))",
+          "expr": "# Query C: sum ingestion errors by file_type\nsum by(file_type) (max_over_time(google_drive_ingestion_errors_total{email=~\"$email\"}[$__range]))",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1503,7 +1582,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "# Query D: sum EXTRACTED files by file_type\nsum by(file_type) ( max_over_time(google_drive_files_extracted_total[$__range]))",
+          "expr": "# Query D: sum EXTRACTED files by file_type\nsum by(file_type) ( max_over_time(google_drive_files_extracted_total{email=~\"$email\"}[$__range]))",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1518,7 +1597,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "# Query B: sum blocked files by file_type\nsum by(file_type) (max_over_time(google_drive_blocked_files_total[$__range]))\n",
+          "expr": "# Query B: sum blocked files by file_type\nsum by(file_type) (max_over_time(google_drive_blocked_files_total{email=~\"$email\"}[$__range]))\n",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1533,7 +1612,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "# Query E: sum EXTRACTED ERROR files by file_type\nsum by(file_type) ( max_over_time(google_drive_file_extraction_errors_total[$__range]))",
+          "expr": "# Query E: sum EXTRACTED ERROR files by file_type\nsum by(file_type) ( max_over_time(google_drive_file_extraction_errors_total{email=~\"$email\"}[$__range]))",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1652,7 +1731,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 450
+            "y": 152
           },
           "id": 32,
           "options": {
@@ -1715,7 +1794,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 450
+            "y": 152
           },
           "id": 30,
           "options": {
@@ -1782,7 +1861,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 458
+            "y": 160
           },
           "id": 29,
           "options": {
@@ -1845,7 +1924,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 458
+            "y": 160
           },
           "id": 31,
           "options": {
@@ -1877,6 +1956,190 @@
           ],
           "title": "Insert Channel Message Count Error",
           "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 168
+          },
+          "id": 49,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "12.0.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "100 * sum(insert_chat_message_count{email=\"$email\"}) / (sum(total_chat_to_be_inserted{email=\"$email\"}))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "% of Chats Inserted",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 168
+          },
+          "id": 50,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "12.0.1",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "100 * sum(insert_conversation_count{email=\"$email\"}) / (sum(total_convesations_extracted_count{email=\"$email\"}))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "% of Conversations Inserted",
+          "type": "timeseries"
         },
         {
           "datasource": {
@@ -1929,7 +2192,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 466
+            "y": 176
           },
           "id": 41,
           "options": {
@@ -2021,7 +2284,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 466
+            "y": 176
           },
           "id": 40,
           "options": {
@@ -2113,7 +2376,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 474
+            "y": 184
           },
           "id": 43,
           "options": {
@@ -2205,7 +2468,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 474
+            "y": 184
           },
           "id": 42,
           "options": {
@@ -2274,7 +2537,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 482
+            "y": 192
           },
           "id": 28,
           "options": {
@@ -2341,7 +2604,7 @@
             "h": 12,
             "w": 12,
             "x": 0,
-            "y": 495
+            "y": 205
           },
           "id": 26,
           "options": {
@@ -2408,7 +2671,7 @@
             "h": 12,
             "w": 12,
             "x": 12,
-            "y": 495
+            "y": 205
           },
           "id": 27,
           "options": {
@@ -2474,7 +2737,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 507
+            "y": 217
           },
           "id": 24,
           "options": {
@@ -2539,7 +2802,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 507
+            "y": 217
           },
           "id": 25,
           "options": {
@@ -2619,5 +2882,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 9
+  "version": 14
 }

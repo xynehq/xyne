@@ -123,7 +123,6 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const start = Date.now()
 
     const offset = c.req.query('offset')?? ""
-    console.log(`Offset ${offset}`)
 
     appRequest.inc(
       {
