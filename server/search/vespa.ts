@@ -664,7 +664,6 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         ) 
         and ${dataSourceIdConditions}
-        ${appOrEntityFilter} 
       )`
   }
 
