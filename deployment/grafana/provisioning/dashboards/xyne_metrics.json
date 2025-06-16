@@ -520,7 +520,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "increase(app_response_count{app_response_status=~\"[45]..\", email=\"$email\"}[$__rate_interval])",
+          "expr": "increase(app_response_count{app_response_status=~\"[45]..\", email=~\"$email\"}[$__rate_interval])",
           "format": "time_series",
           "instant": false,
           "legendFormat": "{{app_endpoint}} : {{app_response_status}}",
@@ -1236,7 +1236,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total{email=\"$email\"}[$__range]))",
+          "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total{email=~\"$email\"}[$__range]))",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -2040,7 +2040,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "100 * sum(insert_chat_message_count{email=\"$email\"}) / (sum(total_chat_to_be_inserted{email=\"$email\"}))",
+              "expr": "100 * sum(insert_chat_message_count{email=~\"$email\"}) / (sum(total_chat_to_be_inserted{email=~\"$email\"}))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -2132,7 +2132,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "100 * sum(insert_conversation_count{email=\"$email\"}) / (sum(total_convesations_extracted_count{email=\"$email\"}))",
+              "expr": "100 * sum(insert_conversation_count{email=~\"$email\"}) / (sum(total_convesations_extracted_count{email=~\"$email\"}))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
