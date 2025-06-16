@@ -235,12 +235,12 @@ export const VespaSearchResponseToSearchResult = (
             }
             return ChatMessageResponseSchema.parse(fields)
           } else if (
-            (child.fields as { sddocname?: string }).sddocname === 
+            (child.fields as { sddocname?: string }).sddocname ===
             datasourceFileSchema
           ) {
             const dsFields = child.fields as VespaFileSearch & {
-              fileName?: string 
-              fileSize?: number 
+              fileName?: string
+              fileSize?: number
             }
             const processedChunks = getSortedScoredChunks(
               dsFields.matchfeatures,
@@ -437,4 +437,21 @@ export const entityToSchemaMapper = (
     }
   }
   return entitySchemaMap[entityName || ""] || null
+}
+
+export const appToSchemaMapper = (appName?: string): VespaSchema | null => {
+  if (!appName) {
+    return null
+  }
+  const lowerAppName = appName.toLowerCase()
+  const schemaMap: Record<string, VespaSchema> = {
+    [Apps.Gmail.toLowerCase()]: mailSchema,
+    [Apps.GoogleDrive.toLowerCase()]: fileSchema,
+    ["googledrive"]: fileSchema, // Alias for convenience
+    [Apps.GoogleCalendar.toLowerCase()]: eventSchema,
+    ["googleCalendar"]: eventSchema, // Alias for convenience
+    [Apps.Slack.toLowerCase()]: chatMessageSchema,
+    [Apps.DataSource.toLowerCase()]: datasourceFileSchema,
+  }
+  return schemaMap[lowerAppName] || null
 }
