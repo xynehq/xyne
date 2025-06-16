@@ -101,7 +101,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -1619,7 +1619,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 json: true,
                 reasoning:
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: messagesWithNoErrResponse,
+                messages: !chatId ? messagesWithNoErrResponse.slice(-5) : messagesWithNoErrResponse,
               },
             )
             for await (const chunk of getToolOrAnswerIterator) {
@@ -2795,6 +2795,8 @@ export const AgentMessageApi = async (c: Context) => {
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
+            // Limit messages to last 5 for the first LLM call if it's a new chat
+            const limitedMessages = messagesWithNoErrResponse.slice(-8);
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:
@@ -2804,7 +2806,7 @@ export const AgentMessageApi = async (c: Context) => {
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: messagesWithNoErrResponse,
+                messages: limitedMessages,
                 agentPrompt: agentPromptForLLM,
               })
 
@@ -2960,7 +2962,7 @@ export const AgentMessageApi = async (c: Context) => {
                 ctx,
                 message,
                 classification,
-                messagesWithNoErrResponse,
+                limitedMessages,
                 0.5,
                 userRequestsReasoning,
                 understandSpan,

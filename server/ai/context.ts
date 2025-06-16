@@ -16,7 +16,7 @@ import {
   type VespaChatMessageSearch,
   type ScoredChunk,
   // Corrected import name for datasourceFileSchema
-  datasourceFileSchema,
+  dataSourceFileSchema,
   type VespaDataSourceFileSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
@@ -514,7 +514,7 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
-  } else if (searchResult.fields.sddocname === datasourceFileSchema) {
+  } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
     return constructDataSourceFileContext(
       searchResult.fields as VespaDataSourceFileSearch,
       searchResult.relevance,

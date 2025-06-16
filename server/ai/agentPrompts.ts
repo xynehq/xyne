@@ -909,9 +909,7 @@ export const agentSearchQueryPrompt = (
   return `
     You are an AI router and classifier for an Enterprise Search and AI Agent.
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
-
     Agent System Prompt: ${agentPromptData.prompt}
-    
     # Agent Sources
     ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
     this is the context of the agent, it is very important to follow this.
@@ -1178,7 +1176,7 @@ export const agentSearchQueryPrompt = (
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    13. If the user makes a statement leading to a regular conversation, then you can put the response in a json with key as answer.
     14. If query is a follow up query then "isFollowUp" must be true.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
