@@ -3,6 +3,18 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AgentReasoningStepType } from "shared/types"
 
+// Simple hash function to generate stable IDs from content
+const generateStableId = (content: string, index: number): number => {
+  let hash = 0
+  const str = `${content}-${index}`
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = (hash << 5) - hash + char
+    hash = hash & hash
+  }
+  return Math.abs(hash)
+}
+
 interface ReasoningStep {
   type: AgentReasoningStepType | string
   content: string
@@ -39,7 +51,10 @@ interface StepTypeConfig {
   type: AgentReasoningStepType
   status: "pending" | "success" | "error" | "info"
   getStatus?: (line: string) => "pending" | "success" | "error" | "info"
-  extractData?: (line: string, match: RegExpMatchArray) => { iterationNumber?: number }
+  extractData?: (
+    line: string,
+    match: RegExpMatchArray,
+  ) => { iterationNumber?: number }
 }
 
 // Step type mapping configuration
@@ -73,10 +88,16 @@ const STEP_TYPE_CONFIG: StepTypeConfig[] = [
     status: "pending",
   },
   {
+    pattern: STEP_PATTERNS.TOOL_ERROR,
+    type: AgentReasoningStepType.ValidationError,
+    status: "error",
+  },
+  {
     pattern: STEP_PATTERNS.TOOL_RESULT,
     type: AgentReasoningStepType.ToolResult,
     status: "success",
-    getStatus: (line: string) => (STEP_PATTERNS.TOOL_ERROR.test(line) ? "error" : "success"),
+    getStatus: (line: string) =>
+      STEP_PATTERNS.TOOL_ERROR.test(line) ? "error" : "success",
   },
   {
     pattern: STEP_PATTERNS.SYNTHESIS,
@@ -120,7 +141,7 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
       if (match) {
         type = config.type
         status = config.getStatus ? config.getStatus(line) : config.status
-        
+
         // Extract additional data if extractor function exists
         if (config.extractData) {
           const extracted = config.extractData(line, match)
@@ -134,7 +155,7 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           const iterationStep: ReasoningStep = {
             type,
             content: stepContent,
-            timestamp: Date.now() + index,
+            timestamp: generateStableId(stepContent, index),
             status,
             iterationNumber,
             substeps: [],
@@ -151,7 +172,7 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
     const step: ReasoningStep = {
       type,
       content: stepContent,
-      timestamp: Date.now() + index,
+      timestamp: generateStableId(stepContent, index),
       status,
     }
 
@@ -255,7 +276,11 @@ const ReasoningStepComponent: React.FC<{
             <button
               onClick={() => setIsExpanded(!isExpanded)}
               aria-expanded={isExpanded}
-              aria-label={isExpanded ? 'Collapse iteration details' : 'Expand iteration details'}
+              aria-label={
+                isExpanded
+                  ? "Collapse iteration details"
+                  : "Expand iteration details"
+              }
               className="mr-1 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               {isExpanded ? (
