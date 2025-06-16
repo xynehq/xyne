@@ -1619,7 +1619,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 json: true,
                 reasoning:
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: !chatId ? messagesWithNoErrResponse.slice(-5) : messagesWithNoErrResponse,
+                messages: messagesWithNoErrResponse,
               },
             )
             for await (const chunk of getToolOrAnswerIterator) {
