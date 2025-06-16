@@ -109,7 +109,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 
     const { method } = c.req
     const path = getPath(c.req.raw)
-    const isMetrics = path.includes("/metrics")
+    const isMetrics = path.startsWith("/metrics")
 
     if(!isMetrics) {
       logger.info({
@@ -162,7 +162,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
   const baseLogger = child? getLogger(subsystem).child(child) : getLogger(subsystem)
 
-  return (children:loggerChildSchema={email:"no_email_found"}): Logger => {
+  return (children:loggerChildSchema={email:"n/a"}): Logger => {
     return baseLogger.child(children)
   }
 }
