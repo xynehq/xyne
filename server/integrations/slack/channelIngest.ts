@@ -232,7 +232,7 @@ export const safeConversationHistory = async (
   let oldestTs: string = timestamp // Initialize with the fallback timestamp
   let latestTs: string | undefined = undefined
 
-  loggerWithChild({email: email!}).info(
+  loggerWithChild({email: email??""}).info(
     `starting the slack ingestion for data rage ${startDate} -> ${endDate}`,
   )
 
@@ -240,7 +240,7 @@ export const safeConversationHistory = async (
     try {
       const startDateObj = new Date(startDate)
       if (isNaN(startDateObj.getTime())) {
-        loggerWithChild({email: email!}).warn(
+        loggerWithChild({email: email??""}).warn(
           `Invalid startDate "${startDate}" provided for channel ${channelId}. Falling back to oldest: ${timestamp}.`,
         )
       } else {
@@ -248,7 +248,7 @@ export const safeConversationHistory = async (
         oldestTs = Math.floor(startDateObj.getTime() / 1000).toString()
       }
     } catch (e) {
-      loggerWithChild({email: email!}).warn(
+      loggerWithChild({email: email??""}).warn(
         `Error processing startDate "${startDate}" for channel ${channelId}. Falling back to oldest: ${timestamp}. Error: ${e}`,
       )
     }
@@ -258,7 +258,7 @@ export const safeConversationHistory = async (
     try {
       const endDateObj = new Date(endDate)
       if (isNaN(endDateObj.getTime())) {
-        loggerWithChild({email: email!}).warn(
+        loggerWithChild({email: email??""}).warn(
           `Invalid endDate "${endDate}" provided for channel ${channelId}. Not applying 'latest' filter.`,
         )
       } else {
@@ -266,7 +266,7 @@ export const safeConversationHistory = async (
         latestTs = Math.floor(endDateObj.getTime() / 1000).toString()
       }
     } catch (e) {
-      loggerWithChild({email: email!}).warn(
+      loggerWithChild({email: email??""}).warn(
         `Error processing endDate "${endDate}" for channel ${channelId}. Not applying 'latest' filter. Error: ${e}`,
       )
     }
@@ -448,7 +448,7 @@ export async function insertChannelMessages(
               email: email,
             })
           } catch (error) {
-            loggerWithChild({email: email!}).error(error, `Error inserting chat message`)
+            loggerWithChild({email: email??""}).error(error, `Error inserting chat message`)
           }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
@@ -538,7 +538,7 @@ export async function insertChannelMessages(
                   email: email,
                 })
               } catch (error) {
-                loggerWithChild({email: email!}).error(error, `Error inserting chat message`)
+                loggerWithChild({email: email??""}).error(error, `Error inserting chat message`)
               }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
@@ -690,7 +690,7 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    loggerWithChild({email: email}).error("Error fetching channel users:", error)
+    loggerWithChild({email: email}).error(error, "Error fetching channel users:")
     return []
   }
 }
@@ -935,7 +935,7 @@ export const handleSlackChannelIngestion = async (
               status: OperationStatus.Success,
             })
           } catch (error) {
-            loggerWithChild({email: email!}).error(error, `Error inserting member`)
+            loggerWithChild({email: email??""}).error(error, `Error inserting member`)
             ingestedTeamErrorTotalCount.inc({
               email_domain: teamResp.team!.email_domain,
               enterprise_id: teamResp.team!.enterprise_id,

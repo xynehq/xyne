@@ -1974,7 +1974,7 @@ const tuningWsCallback = (
 ): WSEvents<ServerWebSocket<any>> => {
   const jobId = c.req.param("jobId")
   const jwtPayload = c.get("jwtPayload") 
-  const email = jwtPayload?.email;
+  const email = jwtPayload?.sub;
   return {
     onOpen: (evt: Event, ws: WSContext<ServerWebSocket<any>>) => {
       if (!jobId) {

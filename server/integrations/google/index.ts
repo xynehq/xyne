@@ -1787,7 +1787,7 @@ const insertFilesForUser = async (
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
 
-          loggerWithChild({email: userEmail!}).info(`Mime type: `, doc.mimeType)
+          loggerWithChild({email: userEmail!}).info(`Mime type: ${doc.mimeType}`)
 
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
@@ -2916,7 +2916,7 @@ export async function getGmailCounts(
 
   if (!startDate && !endDate) {
     // No date filters: Use direct profile and label counts for overall totals
-    loggerWithChild({email: email!}).info(
+    loggerWithChild({email: email??""}).info(
       "Gmail count: No date filters provided. Fetching overall totals.",
     )
     try {
@@ -2928,11 +2928,11 @@ export async function getGmailCounts(
         client,
       )
       messagesTotal = profile.data.messagesTotal ?? 0
-      loggerWithChild({email: email!}).info(
+      loggerWithChild({email: email??""}).info(
         `Gmail count: Overall messagesTotal from profile: ${messagesTotal}`,
       )
     } catch (error) {
-      loggerWithChild({email: email!}).error(
+      loggerWithChild({email: email??""}).error(
         error,
         `Error fetching Gmail profile for total count: ${(error as Error).message}`,
       )
@@ -2954,16 +2954,16 @@ export async function getGmailCounts(
         client,
       )
       promotionMessages = promoLabel.data.messagesTotal ?? 0
-      loggerWithChild({email: email!}).info(
+      loggerWithChild({email: email??""}).info(
         `Gmail count: Overall promotionMessages from label: ${promotionMessages}`,
       )
     } catch (error: any) {
       if (error.code === 404) {
-        loggerWithChild({email: email!}).warn(
+        loggerWithChild({email: email??""}).warn(
           "Promotions label (CATEGORY_PROMOTIONS) not found, assuming 0 promotion messages for overall count.",
         )
       } else {
-        loggerWithChild({email: email!}).error(
+        loggerWithChild({email: email??""}).error(
           error,
           `Error fetching Promotions label count (overall): ${error.message}`,
         )
@@ -2972,7 +2972,7 @@ export async function getGmailCounts(
     }
   } else {
     // Date filters are present: Use messages.list with queries
-    loggerWithChild({email: email!}).info(
+    loggerWithChild({email: email??""}).info(
       `Gmail count: Date filters present (startDate: ${startDate}, endDate: ${endDate}). Using query-based counts.`,
     )
     const dateFilters: string[] = []
@@ -3001,7 +3001,7 @@ export async function getGmailCounts(
       baseQuery = dateFilters.join(" AND ")
     }
 
-    loggerWithChild({email: email!}).info(
+    loggerWithChild({email: email??""}).info(
       `Gmail count query: Final query string for total: "${baseQuery}"`,
     )
     let nextPageToken: any = null
@@ -3029,11 +3029,11 @@ export async function getGmailCounts(
         nextPageToken = messagesResponse.data.nextPageToken || null
       } while (nextPageToken)
 
-      loggerWithChild({email: email!}).info(
+      loggerWithChild({email: email??""}).info(
         `Gmail count query: resultSizeEstimate for total (date-filtered): ${messagesTotal}`,
       )
     } catch (error) {
-      loggerWithChild({email: email!}).error(
+      loggerWithChild({email: email??""}).error(
         error,
         `Error fetching date-filtered Gmail messages count: ${(error as Error).message}`,
       )
@@ -3044,7 +3044,7 @@ export async function getGmailCounts(
       dateFilters.length > 0
         ? `category:promotions AND ${dateFilters.join(" AND ")}`
         : "category:promotions"
-    loggerWithChild({email: email!}).info(
+    loggerWithChild({email: email??""}).info(
       `Gmail count query: Promotions query string (date-filtered): "${promoQuery}"`,
     )
     try {
@@ -3065,14 +3065,14 @@ export async function getGmailCounts(
         promotionMessages += promoMessagesResponse.data.resultSizeEstimate ?? 0
         nextPageToken = promoMessagesResponse.data.nextPageToken || null
       } while (nextPageToken)
-      loggerWithChild({email: email!}).info(
+      loggerWithChild({email: email??""}).info(
         `Gmail count query: resultSizeEstimate for promotions (date-filtered): ${promotionMessages}`,
       )
     } catch (error: any) {
       // Check if the error is specifically the "notACalendarUser" error (though this is gmail, the pattern might be similar for disabled services or specific errors)
       // For Gmail, a 404 on promotions with a query might just mean no results, or an invalid query component if not handled carefully.
       // The `category:promotions` is standard; a 404 here is less likely than with labels.get if the category itself is "missing"
-      loggerWithChild({email: email!}).error(
+      loggerWithChild({email: email??""}).error(
         error,
         `Error fetching Promotions count (date-filtered): ${error.message}`,
       )
@@ -3084,7 +3084,7 @@ export async function getGmailCounts(
     0,
     messagesTotal - promotionMessages,
   )
-  loggerWithChild({email: email!}).info(
+  loggerWithChild({email: email??""}).info(
     `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions} (startDate: ${startDate}, endDate: ${endDate})`,
   )
   return { messagesTotal, messagesExcludingPromotions }
@@ -3102,7 +3102,7 @@ export async function countDriveFiles(
   let nextPageToken: string | undefined
   const dateFilters: string[] = []
 
-  loggerWithChild({email: email!}).info(`Started Counting Files`)
+  loggerWithChild({email: email??""}).info(`Started Counting Files`)
   if (startDate) {
     const startDateObj = new Date(startDate)
     const formattedStartDate = startDateObj.toISOString().split("T")[0]
@@ -3139,7 +3139,7 @@ export async function countDriveFiles(
     nextPageToken = res.data.nextPageToken as string | undefined
   } while (nextPageToken)
 
-  loggerWithChild({email: email!}).info(`Counted ${fileCount} Drive files`)
+  loggerWithChild({email: email??""}).info(`Counted ${fileCount} Drive files`)
   return fileCount
 }
 

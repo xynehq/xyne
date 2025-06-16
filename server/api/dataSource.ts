@@ -235,7 +235,7 @@ export const ListDataSourcesApi = async (c: Context) => {
 export const ListDataSourceFilesApi = async (c: Context) => {
   const jwtPayload = c.var.jwtPayload
   const dataSourceName = c.req.param("dataSourceName")
-  const email = jwtPayload.sub;
+  const email = jwtPayload.sub??"";
 
   if (!dataSourceName) {
     loggerWithChild({email: email}).error(

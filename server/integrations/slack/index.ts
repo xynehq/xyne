@@ -636,7 +636,7 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    loggerWithChild({email: email}).error("Error fetching channel users:", error)
+    loggerWithChild({email: email}).error(error, "Error fetching channel users:")
     return []
   }
 }

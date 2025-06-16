@@ -1854,7 +1854,7 @@ async function* processResultsForMetadata(
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
-    loggerWithChild({email: email!}).info(`Google Drive, Chunk size: ${chunksCount}`)
+    loggerWithChild({email: email??""}).info(`Google Drive, Chunk size: ${chunksCount}`)
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
 
@@ -1873,10 +1873,10 @@ async function* processResultsForMetadata(
 
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app === Apps.Gmail) {
-    loggerWithChild({email: email!}).info(`Using mailPromptJsonStream `)
+    loggerWithChild({email: email??""}).info(`Using mailPromptJsonStream `)
     iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
   } else {
-    loggerWithChild({email: email!}).info(`Using baselineRAGJsonStream`)
+    loggerWithChild({email: email??""}).info(`Using baselineRAGJsonStream`)
     iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
   }
 
