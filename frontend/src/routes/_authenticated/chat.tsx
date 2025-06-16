@@ -114,6 +114,26 @@ import { parseHighlight } from "@/components/Highlight"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
+// Utility function to suppress console logs for a specific operation
+function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
+  const originals = ['error', 'warn', 'log', 'info', 'debug'].map(k => [k, (console as any)[k]])
+  originals.forEach(([k]) => ((console as any)[k] = () => {}))
+  try {
+    const result = fn()
+    if (result instanceof Promise) {
+      return result.finally(() => {
+        originals.forEach(([k, v]) => ((console as any)[k] = v))
+      })
+    } else {
+      originals.forEach(([k, v]) => ((console as any)[k] = v))
+      return result
+    }
+  } catch (error) {
+    originals.forEach(([k, v]) => ((console as any)[k] = v))
+    throw error
+  }
+}
+
 // Mapping from source ID to app/entity object
 // const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
 //   {
@@ -1162,30 +1182,11 @@ const Code = ({
     
     // Try to parse with mermaid to validate syntax
     try {
-      // Create a safe parsing environment with suppressed console
-      const originalError = console.error
-      const originalWarn = console.warn
-      const originalLog = console.log
-      const originalInfo = console.info
-      const originalDebug = console.debug
-      
-      console.error = () => {}
-      console.warn = () => {}
-      console.log = () => {}
-      console.info = () => {}
-      console.debug = () => {}
-      
-      try {
+      // Use scoped console suppression to avoid global hijacking
+      return await suppressLogs(async () => {
         await mermaid.parse(trimmedCode)
         return true
-      } finally {
-        // Restore console methods
-        console.error = originalError
-        console.warn = originalWarn
-        console.log = originalLog
-        console.info = originalInfo
-        console.debug = originalDebug
-      }
+      })
     } catch (error) {
       // Invalid syntax
       return false
@@ -1249,56 +1250,45 @@ const Code = ({
           return
         }
 
-        // Suppress console methods during rendering
-        const originalError = console.error
-        const originalWarn = console.warn
-        const originalLog = console.log
-        const originalInfo = console.info
-        const originalDebug = console.debug
-        
-        console.error = () => {}
-        console.warn = () => {}
-        console.log = () => {}
-        console.info = () => {}
-        console.debug = () => {}
-
+        // Use scoped console suppression during rendering
         try {
-          // Render with additional error boundary
-          const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+          await suppressLogs(async () => {
+            // Render with additional error boundary
+            const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+            
+            // Validate that we got valid SVG
+            if (!svg || !svg.includes('<svg')) {
+              throw new Error('Invalid SVG generated')
+            }
+            
+            container.innerHTML = svg
+            setLastValidMermaid(sanitizedCode)
+          })
+        } catch (error: any) {
+          // Completely suppress all error details from users
           
-          // Validate that we got valid SVG
-          if (!svg || !svg.includes('<svg')) {
-            throw new Error('Invalid SVG generated')
+          // Always gracefully handle any mermaid errors by either:
+          // 1. Keeping the last valid diagram if we have one
+          // 2. Showing a loading/placeholder state if no valid diagram exists
+          // 3. Never showing syntax error messages to users
+          
+          if (lastValidMermaid) {
+            // Keep showing the last valid diagram - don't change anything
+            return
+          } else {
+            // Show a generic processing state instead of error details
+            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+              <div>📊 Mermaid Diagram</div>
+              <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
+            </div>`
           }
-          
-          container.innerHTML = svg
-          setLastValidMermaid(sanitizedCode)
-        } finally {
-          // Always restore console methods
-          console.error = originalError
-          console.warn = originalWarn
-          console.log = originalLog
-          console.info = originalInfo
-          console.debug = originalDebug
         }
-      } catch (error: any) {
-        // Completely suppress all error details from users
-        
-        // Always gracefully handle any mermaid errors by either:
-        // 1. Keeping the last valid diagram if we have one
-        // 2. Showing a loading/placeholder state if no valid diagram exists
-        // 3. Never showing syntax error messages to users
-        
-        if (lastValidMermaid) {
-          // Keep showing the last valid diagram - don't change anything
-          return
-        } else {
-          // Show a generic processing state instead of error details
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-            <div>📊 Mermaid Diagram</div>
-            <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
-          </div>`
-        }
+      } catch (outerError: any) {
+        // Final fallback error handling
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          <div>📊 Mermaid Diagram</div>
+          <div style="margin-top: 10px; font-size: 12px; color: #999;">Unable to render diagram</div>
+        </div>`
       }
     }, 300)
   }, [container, isMermaid, lastValidMermaid])
