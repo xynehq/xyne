@@ -85,7 +85,7 @@ export const GetConnectorTools = async (c: Context) => {
 
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-     loggerWithChild({email:sub}).error({ sub }, "No user found for sub in GetConnectorTools")
+    loggerWithChild({email:sub}).error({ sub }, "No user found for sub in GetConnectorTools")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -470,7 +470,7 @@ export const DeleteConnector = async (c: Context) => {
     try {
       // Delete all MCP tools associated with this connector
       await deleteToolsByConnectorId(db, user.workspaceId, connector.id)
-       loggerWithChild({email:sub}).info(`Deleted MCP tools for connector ${connectorId}`)
+      loggerWithChild({email:sub}).info(`Deleted MCP tools for connector ${connectorId}`)
     } catch (error) {
       loggerWithChild({email:sub}).error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
       throw new Error(`Failed to delete MCP tools: ${getErrorMessage(error)}`)
@@ -514,7 +514,7 @@ export const DeleteOauthConnector = async (c: Context) => {
       user.id,
     )
     if (!connector) {
-       loggerWithChild({email:sub}).warn(
+      loggerWithChild({email:sub}).warn(
         { connectorExternalId, userId: user.id },
         "Connector not found for deletion",
       )
