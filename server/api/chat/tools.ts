@@ -9,7 +9,7 @@ import {
   SearchModes,
   searchVespaInFiles,
   getItems,
-  SearchVespaWithDocID,
+  SearchVespaThreads,
   getThreadItems,
   type GetThreadItemsParams,
   searchVespaAgent,
@@ -1244,7 +1244,7 @@ export const getSlackThreads: AgentTool = {
           docIds.push(child.fields.docId)
         }
       }
-      const resp = await SearchVespaWithDocID(docIds, execSpan!)
+      const resp = await SearchVespaThreads(docIds, execSpan!)
       const allChildrenFromResp = resp.root?.children || []
       const threads: VespaSearchResults[] = allChildrenFromResp.filter(
         (item): item is VespaSearchResults =>
@@ -1511,7 +1511,7 @@ export const getSlackMessagesFromUser: AgentTool = {
 }
 
 export const getSlackRelatedMessages: AgentTool = {
-  name: "get_related_slack_messages",
+  name: "get_slack_related_messages",
   description:
     "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time range, thread, or any combination. Use this single tool for all Slack message retrieval needs.",
   parameters: {
@@ -2082,4 +2082,16 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
       execSpan?.end()
     }
   },
+}
+
+
+
+export const agentTools: Record<string, AgentTool> = {
+  get_user_info: userInfoTool,
+  metadata_retrieval: metadataRetrievalTool,
+  search: searchTool,
+  filtered_search: filteredSearchTool,
+  time_search: timeSearchTool,
+  get_slack_threads: getSlackThreads,
+  get_slack_related_messages: getSlackRelatedMessages,
 }

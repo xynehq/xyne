@@ -2051,7 +2051,7 @@ export const dateToUnixTimestamp = (
   return `${seconds}.${microseconds.toString().padStart(6, "0")}`
 }
 
-export const SearchVespaWithDocID = async (
+export const SearchVespaThreads = async (
   docIds: string[],
   generateAnswerSpan: Span,
 ): Promise<VespaSearchResponse> => {
@@ -2110,16 +2110,10 @@ export const getThreadItems = async (
 
   // Handle timestamp range normalization
   if (timestampRange) {
-    if (!timestampRange.from) {
-      timestampRange.from = new Date("2002-01-01").getTime()
-    }
-    if (!timestampRange.to) {
-      timestampRange.to = new Date(
-        new Date().setHours(23, 59, 59, 999),
-      ).getTime()
-    }
-    timestampRange.from = dateToUnixTimestamp(timestampRange.from, false)
-    timestampRange.to = dateToUnixTimestamp(timestampRange.to, true)
+    if(timestampRange.from && timestampRange.to) {
+      timestampRange.from = dateToUnixTimestamp(timestampRange.from, false)
+      timestampRange.to = dateToUnixTimestamp(timestampRange.to, true)
+    }  
   }
 
   // Get channel ID if channelName is provided

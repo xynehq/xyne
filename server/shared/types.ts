@@ -445,7 +445,7 @@ export enum XyneTools {
   Search = "search",
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
-  getSlackRelatedMessages = "get_related_slack_messages",
+  getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",
 }
 
