@@ -2859,7 +2859,7 @@
           ]
         },
         "definition": "label_values(google_drive_ingested_total,email)",
-        "includeAll": true,
+        "includeAll": false,
         "multi": true,
         "name": "email",
         "options": [],
@@ -2868,7 +2868,7 @@
           "query": "label_values(google_drive_ingested_total,email)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "type": "query"
       }
@@ -2882,5 +2882,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 20
+  "version": 21
 }
