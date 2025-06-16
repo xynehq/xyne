@@ -41,6 +41,8 @@ mermaid.initialize({
   theme: 'default',
   securityLevel: 'strict',
   fontFamily: 'monospace',
+  logLevel: 'fatal', // Minimize mermaid console logs
+  suppressErrorRendering: true, // Suppress error rendering if available
   flowchart: {
     useMaxWidth: true,
   },
@@ -1133,7 +1135,7 @@ const Code = ({
   const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Function to validate if mermaid syntax looks complete
-  const isMermaidSyntaxValid = (code: string): boolean => {
+  const isMermaidSyntaxValid = async (code: string): Promise<boolean> => {
     if (!code || code.trim() === "") return false
     
     const trimmedCode = code.trim()
@@ -1158,22 +1160,36 @@ const Code = ({
     const hasValidStart = mermaidPatterns.some(pattern => pattern.test(trimmedCode))
     if (!hasValidStart) return false
     
-    // For flowcharts, check for at least one node definition
-    if (/^(graph|flowchart)/i.test(trimmedCode)) {
-      // Look for node definitions (basic patterns)
-      const hasNodes = /\n\s*[A-Za-z0-9_]+(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|>[^<]*<|\([^)]*\))?/i.test(trimmedCode)
-      return hasNodes
+    // Try to parse with mermaid to validate syntax
+    try {
+      // Create a safe parsing environment with suppressed console
+      const originalError = console.error
+      const originalWarn = console.warn
+      const originalLog = console.log
+      const originalInfo = console.info
+      const originalDebug = console.debug
+      
+      console.error = () => {}
+      console.warn = () => {}
+      console.log = () => {}
+      console.info = () => {}
+      console.debug = () => {}
+      
+      try {
+        await mermaid.parse(trimmedCode)
+        return true
+      } finally {
+        // Restore console methods
+        console.error = originalError
+        console.warn = originalWarn
+        console.log = originalLog
+        console.info = originalInfo
+        console.debug = originalDebug
+      }
+    } catch (error) {
+      // Invalid syntax
+      return false
     }
-    
-    // For sequence diagrams, check for at least one participant or message
-    if (/^sequenceDiagram/i.test(trimmedCode)) {
-      const hasContent = /\n\s*(participant|actor|[A-Za-z0-9_]+->>|[A-Za-z0-9_]+->)/i.test(trimmedCode)
-      return hasContent
-    }
-    
-    // For other diagram types, just check if there's content after the declaration
-    const lines = trimmedCode.split('\n').filter(line => line.trim() !== '')
-    return lines.length > 1
   }
 
   // Debounced function to validate and render mermaid
@@ -1192,8 +1208,9 @@ const Code = ({
       return
     }
     
-    // Check if syntax looks valid
-    if (!isMermaidSyntaxValid(code)) {
+    // Check if syntax looks valid (async now)
+    const isValid = await isMermaidSyntaxValid(code)
+    if (!isValid) {
       // If we have a previous valid render, keep showing it
       if (lastValidMermaid) {
         return
@@ -1232,16 +1249,38 @@ const Code = ({
           return
         }
 
-        // Render with additional error boundary
-        const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+        // Suppress console methods during rendering
+        const originalError = console.error
+        const originalWarn = console.warn
+        const originalLog = console.log
+        const originalInfo = console.info
+        const originalDebug = console.debug
         
-        // Validate that we got valid SVG
-        if (!svg || !svg.includes('<svg')) {
-          throw new Error('Invalid SVG generated')
+        console.error = () => {}
+        console.warn = () => {}
+        console.log = () => {}
+        console.info = () => {}
+        console.debug = () => {}
+
+        try {
+          // Render with additional error boundary
+          const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+          
+          // Validate that we got valid SVG
+          if (!svg || !svg.includes('<svg')) {
+            throw new Error('Invalid SVG generated')
+          }
+          
+          container.innerHTML = svg
+          setLastValidMermaid(sanitizedCode)
+        } finally {
+          // Always restore console methods
+          console.error = originalError
+          console.warn = originalWarn
+          console.log = originalLog
+          console.info = originalInfo
+          console.debug = originalDebug
         }
-        
-        container.innerHTML = svg
-        setLastValidMermaid(sanitizedCode)
       } catch (error: any) {
         // Completely suppress all error details from users
         
