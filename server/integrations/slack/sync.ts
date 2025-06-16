@@ -20,7 +20,7 @@ import {
   insertMember,
   formatSlackSpecialMentions,
 } from "@/integrations/slack/index"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { GaxiosError } from "gaxios"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
@@ -79,13 +79,13 @@ import {
 import { chat } from "googleapis/build/src/apis/chat"
 import { jobs } from "googleapis/build/src/apis/jobs"
 import { getErrorMessage } from "@/utils"
-import { loggerWithChild } from "../google"
 type SlackMessage = NonNullable<
   ConversationsHistoryResponse["messages"]
 >[number]
 
 const concurrency = 5
 
+const loggerWithChild = getLoggerWithChild(Subsystem.Queue)
 type ChangeStats = {
   added: number
   removed: number

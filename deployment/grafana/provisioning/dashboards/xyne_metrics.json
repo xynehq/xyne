@@ -2793,12 +2793,8 @@
       {
         "allValue": ".*",
         "current": {
-          "text": [
-            "oindrila.b@xynehq.com"
-          ],
-          "value": [
-            "oindrila.b@xynehq.com"
-          ]
+          "text": "__Select Email__",
+          "value": []
         },
         "definition": "label_values(app_request_count,email)",
         "includeAll": false,

@@ -2332,7 +2332,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       },
     )
   } catch (error) {
-    loggerWithChild({email: email}).info(`MessageApi Error occurred.. {error}`)
+    loggerWithChild({email: email}).error(error, `MessageApi Error occurred.. ${error}`)
     const errorSpan = rootSpan.startSpan("handle_top_level_error")
     errorSpan.addEvent("error", {
       message: getErrorMessage(error),

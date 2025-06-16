@@ -100,8 +100,9 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
-    const { sub } = c.get(JwtPayloadKey)
-    const email = sub ?? ""
+  const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
+  const sub = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
+  const email = sub
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)

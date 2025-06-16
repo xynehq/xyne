@@ -177,8 +177,9 @@ export const GetChatTraceApi = async (c: Context) => {
   
   let email = ""
   try {
-    const { sub } = c.get(JwtPayloadKey)?? ""
-    email = sub
+  const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
+  email = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
+
     // @ts-ignore - Assume validation is handled by middleware in server.ts
     const { chatId, messageId } = c.req.valid("query")
 

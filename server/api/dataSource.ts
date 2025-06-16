@@ -19,7 +19,6 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
 
-const Logger = getLogger(Subsystem.Api)
 const log = getLogger(Subsystem.Api).child({module: "dataSourceService"})
 const loggerWithChild  = getLoggerWithChild(Subsystem.Api, {module: "dataSourceService"})
 const DOWNLOADS_DIR_DATASOURCE = join(

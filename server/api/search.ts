@@ -59,7 +59,6 @@ import {
 import { getAgentByExternalId } from "@/db/agent"
 import { getWorkspaceByExternalId } from "@/db/workspace"
 import { Apps } from "@/shared/types"
-const Logger = getLogger(Subsystem.Api)
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -218,18 +217,18 @@ export const SearchApi = async (c: Context) => {
 
   if (agentId) {
     const workspaceExternalId = workspaceId 
-    Logger.info(
+    loggerWithChild({email: email}).info(
       `Performing agent-specific search for agentId (external_id): ${agentId}, query: "${decodedQuery}", user: ${email}, workspaceExternalId: ${workspaceExternalId}`,
     )
 
     const workspace = await getWorkspaceByExternalId(db, workspaceExternalId)
     if (!workspace) {
-      Logger.warn(
+      loggerWithChild({email: email}).warn(
         `Workspace not found for externalId: ${workspaceExternalId}. Falling back to global search.`,
       )
     } else {
       const numericWorkspaceId = workspace.id
-      Logger.info(
+      loggerWithChild({email: email}).info(
         `Workspace found: id=${numericWorkspaceId} for externalId=${workspaceExternalId}. Looking for agent.`,
       )
       // agentId from the frontend is the external_id
@@ -262,7 +261,7 @@ export const SearchApi = async (c: Context) => {
               if (mappedApp && !dynamicAllowedApps.includes(mappedApp)) {
                 dynamicAllowedApps.push(mappedApp);
               } else if (!mappedApp) {
-                Logger.warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
+                loggerWithChild({email: email}).warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
               }
             }
           }
@@ -273,7 +272,7 @@ export const SearchApi = async (c: Context) => {
           dynamicAllowedApps.push(Apps.DataSource);
         }
 
-        Logger.info(
+        loggerWithChild({email: email}).info(
           `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`
         );
 
@@ -297,7 +296,7 @@ export const SearchApi = async (c: Context) => {
           newResults.groupCount = {} // Agent search currently doesn't provide group counts
           return c.json(newResults)
         } catch (e) {
-          Logger.error(
+          loggerWithChild({email: email}).error(
             e,
             `Error processing/responding to agent search for agentId ${agentId}, query "${decodedQuery}". Results: ${JSON.stringify(results)}`,
           )
@@ -306,13 +305,13 @@ export const SearchApi = async (c: Context) => {
           })
         }
       } else {
-        Logger.warn(
+        loggerWithChild({email: email}).warn(
           `Agent ${agentId} not found in workspace ${numericWorkspaceId}, or appIntegrations is missing/empty. Falling back to global search. Agent details: ${JSON.stringify(agent)}`,
         )
       }
     }
   }
-  Logger.info(
+  loggerWithChild({email: email}).info(
     `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
   )
   if (gc) {

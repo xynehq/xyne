@@ -31,7 +31,7 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
-const loggerWithChild = getLoggerWithChild(Subsystem.Integrations)
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {module: 'google'})
 
 
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
