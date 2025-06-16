@@ -1553,7 +1553,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by(file_type) ( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range]))\n",
+          "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadata{email=~\"$email\"}[$__range]))",
           "format": "table",
           "instant": true,
           "legendFormat": "SUCCESS",
@@ -2882,5 +2882,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 14
+  "version": 20
 }
