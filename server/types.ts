@@ -399,7 +399,6 @@ export const ingestMoreChannelSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
 })
-
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })
