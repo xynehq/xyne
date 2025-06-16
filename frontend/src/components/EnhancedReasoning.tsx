@@ -21,17 +21,17 @@ interface EnhancedReasoningProps {
 // Parse reasoning content into structured steps with iteration grouping
 const parseReasoningContent = (content: string): ReasoningStep[] => {
   if (!content.trim()) return []
-  
-  const lines = content.split('\n').filter(line => line.trim())
+
+  const lines = content.split("\n").filter((line) => line.trim())
   const steps: ReasoningStep[] = []
   let currentIteration: ReasoningStep | null = null
-  
+
   lines.forEach((line, index) => {
     let type: AgentReasoningStepType | string = "log_message"
     let status: "pending" | "success" | "error" | "info" = "info"
     let stepContent = line.trim()
     let iterationNumber: number | undefined = undefined
-    
+
     // Detect step types based on content patterns
     if (line.includes("Iteration ")) {
       type = AgentReasoningStepType.Iteration
@@ -41,7 +41,7 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
       if (match) {
         iterationNumber = parseInt(match[1])
       }
-      
+
       // Create new iteration step
       const iterationStep: ReasoningStep = {
         type,
@@ -49,13 +49,16 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
         timestamp: Date.now() + index,
         status,
         iterationNumber,
-        substeps: []
+        substeps: [],
       }
-      
+
       steps.push(iterationStep)
       currentIteration = iterationStep
       return
-    } else if (line.includes("Planning") || line.includes("Planning next step")) {
+    } else if (
+      line.includes("Planning") ||
+      line.includes("Planning next step")
+    ) {
       type = AgentReasoningStepType.Planning
       status = "pending"
     } else if (line.includes("Tool selected:")) {
@@ -83,14 +86,14 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
       type = AgentReasoningStepType.AnalyzingQuery
       status = "pending"
     }
-    
+
     const step: ReasoningStep = {
       type,
       content: stepContent,
       timestamp: Date.now() + index,
-      status
+      status,
     }
-    
+
     // If we have a current iteration and this isn't a new iteration, add as substep
     if (currentIteration && type !== AgentReasoningStepType.Iteration) {
       currentIteration.substeps!.push(step)
@@ -99,71 +102,74 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
       steps.push(step)
     }
   })
-  
+
   return steps
 }
 
 // Get display properties for different step types
 const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
-  const displays: Record<string, { icon: string; label: string; color: string; isError?: boolean }> = {
-    [AgentReasoningStepType.Iteration]: { 
-      icon: "→", 
+  const displays: Record<
+    string,
+    { icon: string; label: string; color: string; isError?: boolean }
+  > = {
+    [AgentReasoningStepType.Iteration]: {
+      icon: "→",
       label: "Iteration",
-      color: "text-blue-600 dark:text-blue-400"
+      color: "text-blue-600 dark:text-blue-400",
     },
-    [AgentReasoningStepType.Planning]: { 
-      icon: "●", 
+    [AgentReasoningStepType.Planning]: {
+      icon: "●",
       label: "Planning",
-      color: "text-purple-600 dark:text-purple-400"
+      color: "text-purple-600 dark:text-purple-400",
     },
-    [AgentReasoningStepType.ToolSelected]: { 
-      icon: "○", 
+    [AgentReasoningStepType.ToolSelected]: {
+      icon: "○",
       label: "Tool Selected",
-      color: "text-green-600 dark:text-green-400"
+      color: "text-green-600 dark:text-green-400",
     },
-    [AgentReasoningStepType.ToolParameters]: { 
-      icon: "·", 
+    [AgentReasoningStepType.ToolParameters]: {
+      icon: "·",
       label: "Parameters",
-      color: "text-gray-500 dark:text-gray-400"
+      color: "text-gray-500 dark:text-gray-400",
     },
-    [AgentReasoningStepType.ToolExecuting]: { 
-      icon: "↻", 
+    [AgentReasoningStepType.ToolExecuting]: {
+      icon: "↻",
       label: "Executing",
-      color: "text-amber-600 dark:text-amber-400"
+      color: "text-amber-600 dark:text-amber-400",
     },
-    [AgentReasoningStepType.ToolResult]: { 
-      icon: "✓", 
+    [AgentReasoningStepType.ToolResult]: {
+      icon: "✓",
       label: "Result",
-      color: "text-emerald-600 dark:text-emerald-400"
+      color: "text-emerald-600 dark:text-emerald-400",
     },
-    [AgentReasoningStepType.Synthesis]: { 
-      icon: "◇", 
+    [AgentReasoningStepType.Synthesis]: {
+      icon: "◇",
       label: "Synthesis",
-      color: "text-indigo-600 dark:text-indigo-400"
+      color: "text-indigo-600 dark:text-indigo-400",
     },
-    [AgentReasoningStepType.ValidationError]: { 
-      icon: "✗", 
-      label: "Error", 
+    [AgentReasoningStepType.ValidationError]: {
+      icon: "✗",
+      label: "Error",
       color: "text-red-600 dark:text-red-400",
-      isError: true
+      isError: true,
     },
-    [AgentReasoningStepType.BroadeningSearch]: { 
-      icon: "◯", 
+    [AgentReasoningStepType.BroadeningSearch]: {
+      icon: "◯",
       label: "Broadening Search",
-      color: "text-orange-600 dark:text-orange-400"
+      color: "text-orange-600 dark:text-orange-400",
     },
-    [AgentReasoningStepType.AnalyzingQuery]: { 
-      icon: "○", 
+    [AgentReasoningStepType.AnalyzingQuery]: {
+      icon: "○",
       label: "Analyzing",
-      color: "text-cyan-600 dark:text-cyan-400"
+      color: "text-cyan-600 dark:text-cyan-400",
     },
-    log_message: { 
-      icon: "·", 
+    log_message: {
+      icon: "·",
       label: "Thinking",
-      color: "text-gray-500 dark:text-gray-400"
-    }
+      color: "text-gray-500 dark:text-gray-400",
+    },
   }
-  
+
   return displays[type] || displays.log_message
 }
 
@@ -179,7 +185,7 @@ const ReasoningStepComponent: React.FC<{
   const display = getStepTypeDisplay(step.type)
   const isIteration = step.type === AgentReasoningStepType.Iteration
   const hasSubsteps = step.substeps && step.substeps.length > 0
-  
+
   return (
     <div className={cn("space-y-1 w-full min-w-full", depth > 0 && "ml-3")}>
       <div className="flex items-start space-x-2 py-1 w-full min-w-full">
@@ -196,19 +202,15 @@ const ReasoningStepComponent: React.FC<{
               )}
             </button>
           )}
-          <span className={cn(
-            "text-sm font-mono w-4 text-center",
-            display.color
-          )}>
+          <span
+            className={cn("text-sm font-mono w-4 text-center", display.color)}
+          >
             {display.icon}
           </span>
         </div>
         <div className="flex-1 min-w-0 w-full">
           <div className="flex items-center space-x-2 w-full">
-            <span className={cn(
-              "text-sm font-medium",
-              display.color
-            )}>
+            <span className={cn("text-sm font-medium", display.color)}>
               {display.label}
               {step.iterationNumber && ` ${step.iterationNumber}`}
             </span>
@@ -221,7 +223,7 @@ const ReasoningStepComponent: React.FC<{
           </p>
         </div>
       </div>
-      
+
       {/* Render substeps if iteration is expanded */}
       {isIteration && hasSubsteps && isExpanded && (
         <div className="space-y-1 ml-4 pl-2 w-full">
@@ -244,7 +246,7 @@ const ReasoningStepComponent: React.FC<{
 export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   content,
   isStreaming = false,
-  className
+  className,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [steps, setSteps] = useState<ReasoningStep[]>([])
@@ -257,14 +259,19 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
 
   // Auto-scroll to bottom when new content arrives during streaming
   useEffect(() => {
-    if (isStreaming && !isCollapsed && scrollContainerRef.current && steps.length > 0) {
+    if (
+      isStreaming &&
+      !isCollapsed &&
+      scrollContainerRef.current &&
+      steps.length > 0
+    ) {
       const container = scrollContainerRef.current
       // Use setTimeout to ensure DOM has updated before scrolling
       setTimeout(() => {
         // Scroll to the bottom smoothly
         container.scrollTo({
           top: container.scrollHeight,
-          behavior: 'smooth'
+          behavior: "smooth",
         })
       }, 10)
     }
@@ -288,24 +295,16 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
         ) : (
           <ChevronDown className="w-4 h-4 mr-2 text-slate-500" />
         )}
-        <span className="flex items-center font-medium flex-1">
-          Agent Reasoning
-          {/* {isStreaming && (
-            <span className="ml-2 flex items-center text-sm font-normal text-slate-500">
-              <span className="mr-1 text-blue-500">...</span>
-              thinking
-            </span>
-          )} */}
-        </span>
+        <span className="flex items-center font-medium flex-1">Reasoning</span>
         <span className="flex-shrink-0 text-sm text-slate-400">
-          {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+          {steps.length} {steps.length === 1 ? "step" : "steps"}
         </span>
       </button>
 
       {/* Content */}
       {!isCollapsed && (
         <div className="w-full min-w-full max-w-none pl-3 mt-2">
-          <div 
+          <div
             ref={scrollContainerRef}
             className="space-y-1 max-h-80 overflow-y-auto w-full min-w-full"
           >
@@ -330,14 +329,6 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
                 No reasoning steps available
               </div>
             )}
-            
-            {/* Show streaming indicator if content is being generated */}
-            {/* {isStreaming && content.trim() && (
-              <div className="flex items-center space-x-2 py-2 text-gray-500 dark:text-gray-400">
-                <span>...</span>
-                <span className="text-sm">thinking...</span>
-              </div>
-            )} */}
           </div>
         </div>
       )}
