@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Gavel } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AgentReasoningStepType } from "shared/types"
 
@@ -135,6 +135,12 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
     let stepContent = line.trim()
     let iterationNumber: number | undefined = undefined
 
+    // Clean up synthesis-related prefixes
+    if (stepContent.toLowerCase().startsWith('synthesis:') || 
+        stepContent.toLowerCase().startsWith('synthesis result:')) {
+      stepContent = stepContent.replace(/^synthesis(\s+result)?\s*:\s*/i, '').trim()
+    }
+
     // Find matching step type configuration
     for (const config of STEP_TYPE_CONFIG) {
       const match = line.match(config.pattern)
@@ -192,11 +198,11 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
 const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
   const displays: Record<
     string,
-    { icon: string; label: string; color: string; isError?: boolean }
+    { icon: string | React.ReactElement; label: string; color: string; isError?: boolean }
   > = {
     [AgentReasoningStepType.Iteration]: {
       icon: "→",
-      label: "Iteration",
+      label: "Attempt",
       color: "text-blue-600 dark:text-blue-400",
     },
     [AgentReasoningStepType.Planning]: {
@@ -210,12 +216,12 @@ const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
       color: "text-green-600 dark:text-green-400",
     },
     [AgentReasoningStepType.ToolParameters]: {
-      icon: "·",
+      icon: "",
       label: "Parameters",
       color: "text-gray-500 dark:text-gray-400",
     },
     [AgentReasoningStepType.ToolExecuting]: {
-      icon: "↻",
+      icon: <Gavel className="w-3 h-3" />,
       label: "Executing",
       color: "text-amber-600 dark:text-amber-400",
     },
@@ -246,7 +252,7 @@ const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
       color: "text-cyan-600 dark:text-cyan-400",
     },
     log_message: {
-      icon: "·",
+      icon: "",
       label: "Thinking",
       color: "text-gray-500 dark:text-gray-400",
     },
@@ -270,9 +276,9 @@ const ReasoningStepComponent: React.FC<{
 
   return (
     <div className={cn("space-y-1 w-full min-w-full", depth > 0 && "ml-3")}>
-      <div className="flex items-start space-x-2 py-1 w-full min-w-full">
-        <div className="flex-shrink-0 mt-1 flex items-center">
-          {isIteration && hasSubsteps && (
+      <div className="flex items-center space-x-2 py-1 w-full min-w-full">
+        <div className="flex-shrink-0 flex items-center">
+          {isIteration && hasSubsteps ? (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
               aria-expanded={isExpanded}
@@ -281,34 +287,37 @@ const ReasoningStepComponent: React.FC<{
                   ? "Collapse iteration details"
                   : "Expand iteration details"
               }
-              className="mr-1 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              className="flex items-center space-x-2 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               {isExpanded ? (
                 <ChevronDown className="w-3 h-3" />
               ) : (
                 <ChevronRight className="w-3 h-3" />
               )}
+              <span
+                className={cn("text-sm font-mono w-4 text-center flex items-center justify-center", display.color)}
+              >
+                {typeof display.icon === 'string' ? display.icon : display.icon}
+              </span>
+              <span className={cn("text-sm font-medium", display.color)}>
+                {display.label}
+                {step.iterationNumber && ` ${step.iterationNumber}`}
+              </span>
             </button>
+          ) : (
+            <span
+              className={cn("text-sm font-mono w-4 text-center flex items-center justify-center", display.color)}
+            >
+              {typeof display.icon === 'string' ? display.icon : display.icon}
+            </span>
           )}
-          <span
-            className={cn("text-sm font-mono w-4 text-center", display.color)}
-          >
-            {display.icon}
-          </span>
         </div>
         <div className="flex-1 min-w-0 w-full">
-          <div className="flex items-center space-x-2 w-full">
-            <span className={cn("text-sm font-medium", display.color)}>
-              {display.label}
-              {step.iterationNumber && ` ${step.iterationNumber}`}
-            </span>
-            {step.status === "pending" && isStreaming && isLastStep && (
-              <span className="text-gray-400 text-sm">...</span>
-            )}
-          </div>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 leading-relaxed w-full break-words">
-            {step.content}
-          </p>
+          {!isIteration && (
+            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed w-full break-words">
+              {step.content}
+            </p>
+          )}
         </div>
       </div>
 
