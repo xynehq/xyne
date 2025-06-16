@@ -50,6 +50,10 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+
+  MCP = "mcp",
+  GITHUB_MCP = "github_mcp",
+  Xyne = "xyne",
   DataSource = "data-source",
 }
 
@@ -174,7 +178,14 @@ export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
+export enum SystemEntity {
+  SystemInfo = "system_info",
+  UserProfile = "user_profile",
+}
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+
 export const entitySchema = z.union([
+  SystemEntitySchema,
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
@@ -185,6 +196,7 @@ export const entitySchema = z.union([
 ])
 
 export type Entity =
+  | SystemEntity
   | PeopleEntity
   | DriveEntity
   | NotionEntity
@@ -1091,3 +1103,16 @@ export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
 export type DataSourceFileResponse = z.infer<
   typeof DataSourceFileResponseSchema
 >
+
+export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
+  'gmail': Apps.Gmail,
+  'drive': Apps.GoogleDrive,
+  'googledrive': Apps.GoogleDrive,   
+  'googlecalendar': Apps.GoogleCalendar,  
+  'slack': Apps.Slack,
+  'datasource': Apps.DataSource,
+  'google-workspace': Apps.GoogleWorkspace,
+  'googledocs': Apps.GoogleDrive,
+  'googlesheets': Apps.GoogleDrive,
+  'pdf': Apps.GoogleDrive
+  };

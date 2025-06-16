@@ -39,6 +39,7 @@ const baseSearchSchema = z.object({
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
     .optional(),
+  agentId: z.string().optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
@@ -87,6 +88,23 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export const addApiKeyMCPConnectorSchema = z.object({
+  apiKey: z.string(),
+  url: z.string(),
+  name: z.string(),
+})
+
+export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
+
+export const addStdioMCPConnectorSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  name: z.string(),
+  appType: z.string(),
+})
+
+export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
@@ -101,6 +119,15 @@ export const deleteConnectorSchema = z.object({
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
+})
+
+export const updateToolStatusSchema = z.object({
+  toolId: z.coerce.number(), // Try coercing to number
+  enabled: z.boolean(),
+})
+
+export const updateToolsStatusSchema = z.object({
+  tools: z.array(updateToolStatusSchema),
 })
 
 export const serviceAccountIngestMoreSchema = z.object({
@@ -144,20 +171,6 @@ export const deleteUserDataSchema = z.object({
 export type DeleteUserDataPayload = z.infer<typeof deleteUserDataSchema>
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
-
-// Define an enum for connection types
-export enum ConnectorType {
-  // Google, Notion, Github
-  SaaS = "SaaS",
-  // DuckDB, Postgres, MySQL
-  Database = "Database",
-  // Weather api?
-  API = "Api",
-  // Manually uploaded data like pdf
-  File = "File",
-  // Where we can scrape and crawl
-  Website = "Website",
-}
 
 export type SaaSJob = {
   connectorId: number
@@ -301,6 +314,7 @@ export enum WorkerResponseTypes {
   Stats = "Stats",
   HistoryId = "HistoryId",
   Error = "Error",
+  ProgressUpdate = "ProgressUpdate",
 }
 
 export enum Subsystem {
@@ -344,6 +358,17 @@ export enum MessageRole {
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
+})
+
+export const MCPClientConfig = z.object({
+  url: z.string(),
+  version: z.string(),
+})
+
+export const MCPClientStdioConfig = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  version: z.string(),
 })
 
 // METRICS ENUMS

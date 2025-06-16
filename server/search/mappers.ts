@@ -54,6 +54,7 @@ import {
   EventResponseSchema,
   FileResponseSchema,
   UserResponseSchema,
+  DataSourceFileResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -233,6 +234,38 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
+          } else if (
+            (child.fields as { sddocname?: string }).sddocname === 
+            datasourceFileSchema
+          ) {
+            const dsFields = child.fields as VespaFileSearch & {
+              fileName?: string 
+              fileSize?: number 
+            }
+            const processedChunks = getSortedScoredChunks(
+              dsFields.matchfeatures,
+              dsFields.chunks_summary as string[],
+              maxSearchChunks,
+            )
+
+            const mappedResult = {
+              docId: dsFields.docId,
+              type: datasourceFileSchema,
+              app: Apps.DataSource,
+              entity: "file",
+              title: dsFields.fileName || dsFields.title,
+              fileName: dsFields.fileName,
+              url: dsFields.url,
+              updatedAt: dsFields.updatedAt,
+              createdAt: dsFields.createdAt,
+              mimeType: dsFields.mimeType,
+              size: dsFields.fileSize || (dsFields as any).size,
+              owner: dsFields.owner,
+              relevance: child.relevance,
+              chunks_summary: processedChunks,
+              matchfeatures: dsFields.matchfeatures,
+            }
+            return DataSourceFileResponseSchema.parse(mappedResult)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
@@ -371,7 +404,7 @@ export const entityToSchemaMapper = (
   entityName?: string,
   app?: string,
 ): VespaSchema | null => {
-  if(app === Apps.DataSource){
+  if (app === Apps.DataSource) {
     return datasourceFileSchema
   }
   const entitySchemaMap: Record<string, VespaSchema> = {

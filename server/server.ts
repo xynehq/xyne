@@ -17,13 +17,16 @@ import {
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
+  addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
   deleteConnectorSchema,
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
+  updateToolsStatusSchema, // Added for tool status updates
   serviceAccountIngestMoreSchema,
   deleteUserDataSchema,
   ingestMoreChannelSchema,
@@ -31,14 +34,18 @@ import {
 } from "@/types"
 import {
   AddApiKeyConnector,
+  AddApiKeyMCPConnector,
   AddServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
   DeleteOauthConnector,
   GetConnectors,
   StartOAuth,
+  AddStdioMCPConnector,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
+  GetConnectorTools, // Added GetConnectorTools
+  UpdateToolsStatusApi, // Added for tool status updates
   AdminDeleteUserData,
   IngestMoreChannelApi,
   StartSlackIngestionApi,
@@ -73,11 +80,10 @@ import {
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
-  messageFeedbackSchema,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
-} from "@/api/chat"
+} from "@/api/chat/chat"
 import { UserRole } from "@/shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -100,6 +106,7 @@ import {
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
+import { messageFeedbackSchema } from "@/api/chat/types"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -149,7 +156,9 @@ const AuthRedirect = async (c: Context, next: Next) => {
   } catch (err) {
     Logger.error(
       err,
-      `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
+      `${new AuthRedirectError({ cause: err as Error })} ${
+        (err as Error).stack
+      }`,
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
@@ -288,7 +297,18 @@ export const AppRoutes = app
     zValidator("form", addApiKeyConnectorSchema),
     AddApiKeyConnector,
   )
+  .post(
+    "/apikey/mcp/create",
+    zValidator("form", addApiKeyMCPConnectorSchema),
+    AddApiKeyMCPConnector,
+  )
+  .post(
+    "/stdio/mcp/create",
+    zValidator("form", addStdioMCPConnectorSchema),
+    AddStdioMCPConnector,
+  )
   .get("/connectors/all", GetConnectors)
+  .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
   .post(
     "/connector/update_status",
     zValidator("form", updateConnectorStatusSchema),
@@ -303,6 +323,12 @@ export const AppRoutes = app
     "/oauth/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
+  )
+  .post(
+    // Added route for updating tool statuses
+    "/tools/update_status",
+    zValidator("json", updateToolsStatusSchema),
+    UpdateToolsStatusApi,
   )
   .post(
     "/user/delete_data",
@@ -517,11 +543,22 @@ init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
 
+const errorHandler = (error: Error) => {
+  // Added Error type
+  return new Response(`<pre>${error}\n${error.stack}</pre>`, {
+    headers: {
+      "Content-Type": "text/html",
+    },
+  })
+}
+
 const server = Bun.serve({
   fetch: app.fetch,
   port: config.port,
   websocket,
   idleTimeout: 180,
+  development: true,
+  error: errorHandler,
 })
 Logger.info(`listening on port: ${config.port}`)
 

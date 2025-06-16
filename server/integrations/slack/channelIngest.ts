@@ -49,13 +49,19 @@ import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
 import { count, eq } from "drizzle-orm"
 import { StatType, Tracker } from "@/integrations/tracker"
 import { sendWebsocketMessage } from "../metricStream"
-import { AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
+import {
+  AuthType,
+  ConnectorStatus,
+  SyncJobStatus,
+  IngestionType,
+} from "@/shared/types"
 import pLimit from "p-limit"
 import { IngestionState } from "../ingestionState"
 import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import { time } from "console"
 import {
+  allConversationsInTotal,
   ingestedMembersErrorTotalCount,
   ingestedMembersTotalCount,
   ingestedTeamErrorTotalCount,
@@ -67,10 +73,17 @@ import {
   insertConversationCount,
   insertConversationDuration,
   insertConversationErrorCount,
+  totalChatToBeInsertedCount,
+  totalConversationsSkipped,
+  totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
 import { start } from "repl"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
+
+export const getUserLogger = (email: string) => {
+  return Logger.child({ email: email })
+}
 
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
@@ -365,6 +378,10 @@ export async function insertChannelMessages(
     }
 
     if (response.messages) {
+      totalChatToBeInsertedCount.inc(
+        { conversation_id: channelId ?? "", user_email: email },
+        response.messages?.length,
+      )
       for (const message of response.messages as (SlackMessage & {
         mentions: string[]
       })[]) {
@@ -429,6 +446,7 @@ export async function insertChannelMessages(
               conversation_id: channelId,
               status: OperationStatus.Success,
               team_id: message.team,
+              email: email,
             })
           } catch (error) {
             Logger.error(error, `Error inserting chat message`)
@@ -518,6 +536,7 @@ export async function insertChannelMessages(
                   conversation_id: channelId,
                   status: OperationStatus.Success,
                   team_id: message.team,
+                  email: email,
                 })
               } catch (error) {
                 Logger.error(error, `Error inserting chat message`)
@@ -640,8 +659,9 @@ export async function getConversationUsers(
   userId: string,
   client: WebClient,
   conversation: Channel,
+  email: string,
 ): Promise<string[]> {
-  Logger.info("fetching users from conversation")
+  getUserLogger(email).info("fetching users from conversation")
 
   if (conversation.is_im) {
     if (!conversation.user) {
@@ -671,7 +691,7 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    console.error("Error fetching channel users:", error)
+    getUserLogger(email).error("Error fetching channel users:", error)
     return []
   }
 }
@@ -808,6 +828,7 @@ export const handleSlackChannelIngestion = async (
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
+          IngestionType: IngestionType.partialIngestion,
           progress: tracker.getProgress(),
           userStats: tracker.getOAuthProgress().userStats,
           startTime: tracker.getStartTime(),
@@ -825,17 +846,25 @@ export const handleSlackChannelIngestion = async (
         if (response.ok && response.channel) {
           conversations.push(response.channel as Channel)
         } else {
-          Logger.warn(
+          getUserLogger(email).warn(
             `Failed to retrieve information for channel ${channelId}: ${response.error}`,
           )
         }
       } catch (error) {
-        Logger.error(
+        getUserLogger(email).error(
           `Exception while fetching info for channel ${channelId}:`,
           error,
         )
       }
     }
+    allConversationsInTotal.inc(
+      {
+        team_id: team.id ?? team.name ?? "",
+        user_email: email,
+        status: OperationStatus.Success,
+      },
+      conversations.length,
+    )
     for (const conv of conversations) {
       if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
     }
@@ -851,8 +880,12 @@ export const handleSlackChannelIngestion = async (
     //       !existenceMap[conversation.id!].exists) ||
     //     !existenceMap[conversation.id!],
     // )
-    Logger.info(
+    getUserLogger(email).info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
+    )
+    totalConversationsSkipped.inc(
+      { team_id: team.id ?? team.name ?? "", user_email: email },
+      conversations.length - conversationsToInsert.length,
     )
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
@@ -861,9 +894,18 @@ export const handleSlackChannelIngestion = async (
     tracker.setCurrent(0)
     tracker.setTotal(conversationsToInsert.length)
     let conversationIndex = 0
+    totalConversationsToBeInserted.inc(
+      { team_id: team.id ?? team.name ?? "", user_email: email },
+      conversationsToInsert.length,
+    )
     // can be done concurrently, but can cause issues with ratelimits
     for (const conversation of conversationsToInsert) {
-      const memberIds = await getConversationUsers(user, client, conversation)
+      const memberIds = await getConversationUsers(
+        user,
+        client,
+        conversation,
+        email,
+      )
       const membersToFetch = memberIds.filter((m: string) => !memberMap.get(m))
       const concurrencyLimit = pLimit(5)
       const memberPromises = membersToFetch.map((memberId: string) =>
@@ -900,6 +942,7 @@ export const handleSlackChannelIngestion = async (
               enterprise_id: teamResp.team!.enterprise_id,
               domain: teamResp.team!.domain,
               status: OperationStatus.Failure,
+              email: email,
             })
           }
         }
@@ -910,7 +953,9 @@ export const handleSlackChannelIngestion = async (
             status: OperationStatus.Success,
           })
         } catch (error) {
-          Logger.error(`Error inserting member ${member.id}: ${error}`)
+          getUserLogger(email).error(
+            `Error inserting member ${member.id}: ${error}`,
+          )
           ingestedMembersErrorTotalCount.inc({
             team_id: team.id,
             status: OperationStatus.Failure,
@@ -957,14 +1002,16 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
           status: OperationStatus.Success,
+          email: email,
         })
         tracker.updateUserStats(email, StatType.Slack_Conversation, 1)
       } catch (error) {
-        Logger.error("Error inserting Channel Messages")
+        getUserLogger(email).error("Error inserting Channel Messages")
         insertChannelMessagesErrorCount.inc({
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
           status: OperationStatus.Failure,
+          email: email,
         })
       }
       try {
@@ -980,15 +1027,17 @@ export const handleSlackChannelIngestion = async (
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
           status: OperationStatus.Success,
+          email: email,
         })
         conversationIndex++
         tracker.setCurrent(conversationIndex)
       } catch (error) {
-        Logger.error(`Error inserting Conversation`)
+        getUserLogger(email).error(`Error inserting Conversation`)
         insertConversationErrorCount.inc({
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
           status: OperationStatus.Failure,
+          email: email,
         })
       }
     }
@@ -1006,7 +1055,7 @@ export const handleSlackChannelIngestion = async (
         .where(eq(connectors.id, connector.id))
     })
   } catch (error) {
-    Logger.error(error)
+    getUserLogger(email).error(error)
   }
 }
 

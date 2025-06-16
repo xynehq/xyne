@@ -15,7 +15,7 @@ export const encryptedText = (encryption: Encryption) => {
      * @param value - The concatenated encrypted string from the database.
      * @returns The decrypted plain text.
      */
-    fromDriver(value: unknown): string | null {
+     fromDriver(value: unknown): string | null {
       if (!value) {
         return value as null
       }

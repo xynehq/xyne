@@ -46,10 +46,7 @@ export const getAgentByExternalId = async (
     .select()
     .from(agents)
     .where(
-      and(
-        eq(agents.externalId, agentExternalId),
-        isNull(agents.deletedAt),
-      ),
+      and(eq(agents.externalId, agentExternalId), isNull(agents.deletedAt)),
     )
   if (!agentArr || !agentArr.length) {
     return null
@@ -91,11 +88,7 @@ export const getAllAgents = async (
   const agentsArr = await trx
     .select()
     .from(agents)
-    .where(
-      and(
-        isNull(agents.deletedAt),
-      ),
-    )
+    .where(and(isNull(agents.deletedAt)))
     .orderBy(desc(agents.updatedAt))
     .limit(limit)
     .offset(offset)
