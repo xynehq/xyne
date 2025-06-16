@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react"
 import { ChevronDown, ChevronRight, Gavel } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { AgentReasoningStepType } from "shared/types"
+import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
+import { AgentReasoningStepType, Citation } from "shared/types"
+import MarkdownPreview from "@uiw/react-markdown-preview"
+import { useTheme } from "@/components/ThemeContext"
 
 // Simple hash function to generate stable IDs from content
 const generateStableId = (content: string, index: number): number => {
@@ -28,6 +30,8 @@ interface EnhancedReasoningProps {
   content: string
   isStreaming?: boolean
   className?: string
+  citations?: Citation[]
+  citationMap?: Record<number, number>
 }
 
 // Step pattern configuration for robust parsing
@@ -194,6 +198,40 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
   return steps
 }
 
+// Pattern to match citation references like [1], [2], etc.
+const textToCitationIndex = /\[(\d+)\]/g
+
+// Process reasoning content to include citation links
+const processReasoningWithCitations = (
+  text: string,
+  citations?: Citation[],
+  citationMap?: Record<number, number>
+): string => {
+  if (!text) return text
+  
+  // Split grouped citations like [1,2,3] into [1] [2] [3]
+  text = splitGroupedCitationsWithSpaces(text)
+  // If no citations provided, return text as-is
+  if (!citations?.length) return text
+  
+  const citationUrls = citations.map((c: Citation) => c.url)
+
+  if (citationMap) {
+    return text.replace(textToCitationIndex, (match, num) => {
+      const index = citationMap[num]
+      const url = citationUrls[index]
+      return typeof index === "number" && url
+        ? `[[${index + 1}]](${url})`
+        : "" // Remove citation if no mapping found
+    })
+  } else {
+    return text.replace(textToCitationIndex, (match, num) => {
+      const url = citationUrls[num - 1]
+      return url ? `[[${num}]](${url})` : "" // Remove citation if no URL found
+    })
+  }
+}
+
 // Get display properties for different step types
 const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
   const displays: Record<
@@ -268,8 +306,11 @@ const ReasoningStepComponent: React.FC<{
   isStreaming: boolean
   isLastStep: boolean
   depth?: number
-}> = ({ step, index, isStreaming, isLastStep, depth = 0 }) => {
+  citations?: Citation[]
+  citationMap?: Record<number, number>
+}> = ({ step, index, isStreaming, isLastStep, depth = 0, citations, citationMap }) => {
   const [isExpanded, setIsExpanded] = useState(true)
+  const { theme } = useTheme()
   const display = getStepTypeDisplay(step.type)
   const isIteration = step.type === AgentReasoningStepType.Iteration
   const hasSubsteps = step.substeps && step.substeps.length > 0
@@ -314,9 +355,37 @@ const ReasoningStepComponent: React.FC<{
         </div>
         <div className="flex-1 min-w-0 w-full">
           {!isIteration && (
-            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed w-full break-words">
-              {step.content}
-            </p>
+            <div className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed w-full break-words">
+              <MarkdownPreview
+                source={processReasoningWithCitations(step.content, citations, citationMap)}
+                wrapperElement={{
+                  "data-color-mode": theme,
+                }}
+                style={{
+                  padding: 0,
+                  backgroundColor: "transparent",
+                  fontSize: "inherit",
+                  color: "inherit",
+                  maxWidth: "100%",
+                  overflowWrap: "break-word",
+                  wordBreak: "break-word",
+                  minWidth: 0,
+                }}
+                components={{
+                  p: ({ children }) => <span>{children}</span>, // Render as inline to avoid extra spacing
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -332,6 +401,8 @@ const ReasoningStepComponent: React.FC<{
               isStreaming={isStreaming}
               isLastStep={substepIndex === step.substeps!.length - 1}
               depth={depth + 1}
+              citations={citations}
+              citationMap={citationMap}
             />
           ))}
         </div>
@@ -344,6 +415,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   content,
   isStreaming = false,
   className,
+  citations = [],
+  citationMap,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [steps, setSteps] = useState<ReasoningStep[]>([])
@@ -414,6 +487,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
                   isStreaming={isStreaming}
                   isLastStep={index === steps.length - 1}
                   depth={0}
+                  citations={citations}
+                  citationMap={citationMap}
                 />
               ))
             ) : isStreaming ? (
