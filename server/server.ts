@@ -195,7 +195,11 @@ export const WsApp = app.get(
 )
 
 const LogOut = async (c: Context) => {
-  deleteCookieByEnv(c, CookieName)
+  deleteCookieByEnv(c, CookieName, {
+    secure: true, // set to false in localhost
+    path: "/",
+    httpOnly: true,
+  })
   Logger.info("Cookie deleted, logged out")
   return c.json({ ok: true })
 }
@@ -429,7 +433,11 @@ app.get(
         existingUser.role,
         existingUser.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken)
+      setCookieByEnv(c, CookieName, jwtToken, {
+        secure: true, // set to false in localhost
+        path: "/",
+        httpOnly: true,
+      })
       return c.redirect(postOauthRedirect)
     }
 
@@ -453,7 +461,11 @@ app.get(
         user.role,
         user.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken)
+      setCookieByEnv(c, CookieName, jwtToken, {
+        secure: true, // set to false in localhost
+        path: "/",
+        httpOnly: true,
+      })
       return c.redirect(postOauthRedirect)
     }
 
@@ -480,7 +492,11 @@ app.get(
       userAcc.role,
       userAcc.workspaceExternalId,
     )
-    setCookieByEnv(c, CookieName, jwtToken)
+    setCookieByEnv(c, CookieName, jwtToken, {
+      secure: true, // set to false in localhost
+      path: "/",
+      httpOnly: true,
+    })
     return c.redirect(postOauthRedirect)
   },
 )
