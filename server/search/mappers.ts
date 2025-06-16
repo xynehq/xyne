@@ -449,7 +449,7 @@ export const appToSchemaMapper = (appName?: string): VespaSchema | null => {
     [Apps.GoogleDrive.toLowerCase()]: fileSchema,
     ["googledrive"]: fileSchema, // Alias for convenience
     [Apps.GoogleCalendar.toLowerCase()]: eventSchema,
-    ["googleCalendar"]: eventSchema, // Alias for convenience
+    ["googlecalendar"]: eventSchema, // Alias for convenience
     [Apps.Slack.toLowerCase()]: chatMessageSchema,
     [Apps.DataSource.toLowerCase()]: datasourceFileSchema,
   }
