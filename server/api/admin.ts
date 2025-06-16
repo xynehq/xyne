@@ -309,7 +309,7 @@ export const AddServiceConnection = async (c: Context) => {
       // Start ingestion in the background, but catch any errors it might throw later
       handleGoogleServiceAccountIngestion(SaasJobPayload).catch(
         (error: any) => {
-           loggerWithChild({email:email}).error(
+          loggerWithChild({email:email}).error(
             error,
             `Background Google Service Account ingestion failed for connector ${
               connector.id
@@ -456,7 +456,7 @@ export const DeleteConnector = async (c: Context) => {
   // Get connector details to check its type
   const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
-     loggerWithChild({email:sub}).warn(
+    loggerWithChild({email:sub}).warn(
       { connectorId, userId: user.id },
       "Connector not found for deletion",
     )
@@ -472,7 +472,7 @@ export const DeleteConnector = async (c: Context) => {
       await deleteToolsByConnectorId(db, user.workspaceId, connector.id)
        loggerWithChild({email:sub}).info(`Deleted MCP tools for connector ${connectorId}`)
     } catch (error) {
-       loggerWithChild({email:sub}).error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
+      loggerWithChild({email:sub}).error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
       throw new Error(`Failed to delete MCP tools: ${getErrorMessage(error)}`)
     }
   }
@@ -494,7 +494,7 @@ export const DeleteOauthConnector = async (c: Context) => {
     c.req.valid("form")
 
   if (!connectorExternalId) {
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       "connectorId (external) not provided in request for DeleteOauthConnector",
     )
     throw new HTTPException(400, { message: "Missing connectorId" })
@@ -502,7 +502,7 @@ export const DeleteOauthConnector = async (c: Context) => {
 
   const userRes = await getUserByEmail(db, sub)
   if (!userRes || !userRes.length) {
-     loggerWithChild({email:sub}).error({ sub }, "No user found for sub in DeleteOauthConnector")
+    loggerWithChild({email:sub}).error({ sub }, "No user found for sub in DeleteOauthConnector")
     throw new NoUserFound({})
   }
   const [user] = userRes
@@ -532,7 +532,7 @@ export const DeleteOauthConnector = async (c: Context) => {
       message: `OAuth connector ${connectorExternalId} and related data deleted successfully`,
     })
   } catch (error) {
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       { error, connectorExternalId, userId: user.id },
       "Error in DeleteOauthConnector API handler",
     )
@@ -605,7 +605,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       { email },
       "User not found for service account ingest more users.",
     )
@@ -614,7 +614,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const [userInstance] = userRes
   const userId = userInstance.id
 
-   loggerWithChild({email:sub}).info(
+  loggerWithChild({email:sub}).info(
     `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}. Date range: ${payload.startDate} to ${payload.endDate}. Services: Drive & Contacts=${payload.insertDriveAndContacts}, Gmail=${payload.insertGmail}, Calendar=${payload.insertCalendar}`,
   )
   try {
@@ -626,7 +626,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
       data: result,
     })
   } catch (error) {
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       error,
       `Failed to ingest more users for service account: ${getErrorMessage(
         error,
@@ -904,7 +904,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
         name: `connector-${connector.externalId}`,
         version: config.version,
       })
-       loggerWithChild({email:sub}).info(
+      loggerWithChild({email:sub}).info(
         `invoking stdio to ${config.command} with args: ${config.args.join(" ")}`, // Logging joined args for readability if needed
       )
       await client.connect(
@@ -932,7 +932,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
       )
     } catch (error) {
       status = ConnectorStatus.Failed
-       loggerWithChild({email:sub}).error(`error occurred while connecting to connector ${error}`)
+      loggerWithChild({email:sub}).error(`error occurred while connecting to connector ${error}`)
     }
     await updateConnector(db, connector.id, { status: status })
     return c.json({
@@ -942,7 +942,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
     })
   } catch (error) {
     const errMessage = getErrorMessage(error)
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       error,
       `${new AddServiceConnectionError({
         cause: error as Error,
@@ -961,7 +961,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
   try {
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
-       loggerWithChild({email:sub}).error({ sub }, "No user found for sub in StartSlackIngestionApi")
+      loggerWithChild({email:sub}).error({ sub }, "No user found for sub in StartSlackIngestionApi")
       throw new NoUserFound({})
     }
     const [user] = userRes
@@ -979,7 +979,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
       authType: connector.authType as AuthType,
       email: sub,
     }).catch((error) => {
-       loggerWithChild({email:sub}).error(
+      loggerWithChild({email:sub}).error(
         error,
         `Background Slack ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
       )
@@ -990,7 +990,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
       message: "Regular Slack ingestion started.",
     })
   } catch (error: any) {
-     loggerWithChild({email:sub}).error(
+    loggerWithChild({email:sub}).error(
       error,
       `Error starting regular Slack ingestion: ${getErrorMessage(error)}`,
     )
@@ -1025,7 +1025,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
       message: "Successfully ingested the channels",
     })
   } catch (error) {
-     loggerWithChild({email:sub}).error(error, "Failed to ingest Slack channels")
+    loggerWithChild({email:sub}).error(error, "Failed to ingest Slack channels")
     return c.json({
       success: false,
       message: getErrorMessage(error),

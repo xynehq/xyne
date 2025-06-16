@@ -20,7 +20,7 @@ import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Api)
-const log = getLogger(Subsystem.Api).child({  })
+const log = getLogger(Subsystem.Api).child({module: "dataSourceService"})
 const loggerWithChild  = getLoggerWithChild(Subsystem.Api, {module: "dataSourceService"})
 const DOWNLOADS_DIR_DATASOURCE = join(
   process.cwd(),
@@ -200,7 +200,7 @@ export async function handleSingleFileUploadToDataSource(
 export const ListDataSourcesApi = async (c: Context) => {
   const jwtPayload = c.var.jwtPayload
   if (!jwtPayload || typeof jwtPayload.sub !== "string") {
-    Logger.error("JWT payload or sub is missing/invalid in ListDataSourcesApi")
+    log.error("JWT payload or sub is missing/invalid in ListDataSourcesApi")
     return c.json(
       {
         error: "Unauthorized",
@@ -249,7 +249,7 @@ export const ListDataSourceFilesApi = async (c: Context) => {
   }
 
   if (!jwtPayload || typeof jwtPayload.sub !== "string") {
-    Logger.error(
+    log.error(
       "JWT payload or sub is missing/invalid in ListDataSourceFilesApi",
     )
     return c.json(
