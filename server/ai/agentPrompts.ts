@@ -1176,7 +1176,7 @@ export const agentSearchQueryPrompt = (
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    13. If the user makes a statement leading to a regular conversation, then you can put the response in a json with key as answer.
+    13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     14. If query is a follow up query then "isFollowUp" must be true.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
