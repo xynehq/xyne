@@ -93,34 +93,34 @@ html {
 }
 
 /* Chat-specific styles to prevent overflow */
-.markdown-content {
+.prevent-overflow {
   max-width: 100%;
   overflow-wrap: break-word;
   word-break: break-word;
   min-width: 0;
 }
 
+.markdown-content {
+  @apply prevent-overflow;
+}
+
 .markdown-content pre {
-  max-width: 100% !important;
+  @apply prevent-overflow;
   overflow-x: auto;
   white-space: pre;
 }
 
 .markdown-content code {
-  max-width: 100%;
-  overflow-wrap: break-word;
+  @apply prevent-overflow;
   word-break: break-all;
 }
 
 .markdown-content p {
-  max-width: 100%;
-  overflow-wrap: break-word;
-  word-break: break-word;
+  @apply prevent-overflow;
 }
 
 /* Ensure long URLs or links don't overflow */
 .markdown-content a {
-  max-width: 100%;
-  overflow-wrap: break-word;
+  @apply prevent-overflow;
   word-break: break-all;
 }

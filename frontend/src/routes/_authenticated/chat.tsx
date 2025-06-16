@@ -1471,7 +1471,6 @@ const Code = ({
           >
             <div style={{ display: "inline-block" }}>
               <code id={demoid.current} style={{ display: "none" }} />
-              {/* @ts-ignore */}
               <code
                 ref={refElement}
                 data-name="mermaid"
