@@ -1416,6 +1416,7 @@ function AgentComponent() {
               <ChatBox
                 role={user?.role}
                 query={query}
+                user={user}
                 setQuery={setQuery}
                 handleSend={handleSend}
                 handleStop={handleStop}

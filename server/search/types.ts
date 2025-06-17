@@ -433,6 +433,7 @@ export const MailSchema = z.object({
   chunks: z.array(z.string()),
   timestamp: z.number(),
   app: z.nativeEnum(Apps),
+  userMap: z.record(z.string()),
   entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
   from: z.string(),
@@ -1022,6 +1023,8 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   from: true,
   relevance: true,
   timestamp: true,
+  userMap: true,
+  mailId: true,
 })
   .strip()
   .extend({

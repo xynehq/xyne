@@ -16,6 +16,7 @@ import {
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
+  SlackEntity,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -1111,7 +1112,8 @@ export const searchVespa = async (
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    let result = await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return result
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1418,7 +1420,17 @@ export const ifDocumentsExist = async (
 
 export const ifMailDocumentsExist = async (
   mailIds: string[],
-): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+): Promise<
+  Record<
+    string,
+    {
+      docId: string
+      exists: boolean
+      updatedAt: number | null
+      userMap: Record<string, string>
+    }
+  >
+> => {
   try {
     return await vespa.ifMailDocumentsExist(mailIds)
   } catch (error) {
@@ -1769,8 +1781,8 @@ export const getItems = async (
   }
 
   try {
-    // Assuming vespa.getItems maps to a generic search in the client
-    return await vespa.search<VespaSearchResponse>(searchPayload)
+    let result = await vespa.getItems(searchPayload)
+    return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({
       cause: error as Error,
