@@ -21,6 +21,7 @@ import {
   ifMailDocumentsExist,
   insert,
   UpdateDocument,
+  IfMailDocExist,
 } from "@/search/vespa"
 import {
   MessageTypes,
@@ -264,6 +265,13 @@ export const handleGmailIngestion = async (
         limit(async () => {
           let msgResp
           try {
+            let mailExists = false
+            if (message.id && !skipMailExistCheck)
+              mailExists = await IfMailDocExist(email, message.id)
+            if (mailExists) {
+              Logger.info(`skipping mail with mailid: ${message.id}`)
+              return
+            }
             msgResp = await retryWithBackoff(
               () =>
                 gmail.users.messages.get({
@@ -277,21 +285,17 @@ export const handleGmailIngestion = async (
               client,
             )
             // Call modified parseMail to get data and PDF count
-            const { mailData, insertedPdfCount, exist } = await parseMail(
+            const { mailData, insertedPdfCount } = await parseMail(
               msgResp.data,
               gmail,
               client,
               email,
             )
 
-            if (!exist) {
-              await insert(mailData, mailSchema)
-              // Increment counters only on success
-              insertedMessagesInBatch++
-              insertedPdfAttachmentsInBatch += insertedPdfCount
-            } else {
-              await insert(mailData, mailSchema)
-            }
+            await insert(mailData, mailSchema)
+            // Increment counters only on success
+            insertedMessagesInBatch++
+            insertedPdfAttachmentsInBatch += insertedPdfCount
           } catch (error) {
             getUserLogger(email).error(
               error,
@@ -383,7 +387,7 @@ export const parseMail = async (
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
   userEmail: string,
-): Promise<{ mailData: Mail; insertedPdfCount: number; exist: boolean }> => {
+): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
   const messageId = email.id
   const threadId = email.threadId
   let insertedPdfCount = 0
@@ -418,13 +422,11 @@ export const parseMail = async (
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let docId = messageId
-  let exist = false
   let userMap: Record<string, string> = {}
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
       if (res[mailId]?.exists) {
-        exist = true
         userMap = res[mailId].userMap
         docId = res[mailId].docId
       }
@@ -433,7 +435,6 @@ export const parseMail = async (
         error,
         `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
       )
-      exist = false
     }
   }
   const dateHeader = getHeader("Date")
@@ -466,7 +467,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload && !exist) {
+  if (payload) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -550,7 +551,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, insertedPdfCount, exist }
+  return { mailData: emailData, insertedPdfCount }
 }
 
 const getBody = (payload: any): string => {

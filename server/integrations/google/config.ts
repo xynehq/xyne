@@ -22,4 +22,4 @@ export const PDFProcessingConcurrency = 8
 
 export const MAX_ATTACHMENT_PDF_SIZE = 15
 // We will skip the Vespa existence validation step and ingest emails directly.
-export const skipMailExistCheck = true
+export const skipMailExistCheck = false
