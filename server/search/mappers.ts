@@ -114,6 +114,7 @@ const maxSearchChunks = 1
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
+  email?:string,
 ): SearchResponse => {
   const { root, trace } = resp
   const children = root.children || []
@@ -167,6 +168,8 @@ export const VespaSearchResponseToSearchResult = (
           ) {
             // Directly use child.fields
             const fields = child.fields as VespaMailSearch & { type?: string }
+            if(email && fields.userMap)
+            fields.docId=fields.userMap[email] || fields.docId
             fields.type = mailSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields

@@ -874,6 +874,7 @@ export const ChatPage = ({
               agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
               setIsReasoningActive={setIsReasoningActive}
+              user={user} // Pass user prop
             />
           </div>
           <Sources
