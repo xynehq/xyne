@@ -239,8 +239,8 @@ export const VespaSearchResponseToSearchResult = (
             dataSourceFileSchema
           ) {
             const dsFields = child.fields as VespaFileSearch & {
-              fileName?: string 
-              fileSize?: number 
+              fileName?: string
+              fileSize?: number
             }
             const processedChunks = getSortedScoredChunks(
               dsFields.matchfeatures,
@@ -437,4 +437,21 @@ export const entityToSchemaMapper = (
     }
   }
   return entitySchemaMap[entityName || ""] || null
+}
+
+export const appToSchemaMapper = (appName?: string): VespaSchema | null => {
+  if (!appName) {
+    return null
+  }
+  const lowerAppName = appName.toLowerCase()
+  const schemaMap: Record<string, VespaSchema> = {
+    [Apps.Gmail.toLowerCase()]: mailSchema,
+    [Apps.GoogleDrive.toLowerCase()]: fileSchema,
+    ["googledrive"]: fileSchema, // Alias for convenience
+    [Apps.GoogleCalendar.toLowerCase()]: eventSchema,
+    ["googlecalendar"]: eventSchema, // Alias for convenience
+    [Apps.Slack.toLowerCase()]: chatMessageSchema,
+    [Apps.DataSource.toLowerCase()]: dataSourceFileSchema,
+  }
+  return schemaMap[lowerAppName] || null
 }
