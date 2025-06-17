@@ -1283,6 +1283,21 @@ export const GetDocument = async (
   }
 }
 
+export const IfMailDocExist = async (
+  email: string,
+  docId: string,
+): Promise<boolean> => {
+  try {
+    return await vespa.ifMailDocExist(email, docId)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error checking document with docId: ${docId} existance check`,
+    )
+    return false
+  }
+}
+
 export const GetDocumentsByDocIds = async (
   docIds: string[],
   generateAnswerSpan: Span,
