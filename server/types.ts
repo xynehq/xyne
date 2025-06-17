@@ -39,6 +39,7 @@ const baseSearchSchema = z.object({
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
     .optional(),
+  agentId: z.string().optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
@@ -398,7 +399,6 @@ export const ingestMoreChannelSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
 })
-
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })

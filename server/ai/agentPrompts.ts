@@ -909,49 +909,75 @@ export const agentSearchQueryPrompt = (
   return `
     You are an AI router and classifier for an Enterprise Search and AI Agent.
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
-
     Agent System Prompt: ${agentPromptData.prompt}
-    
     # Agent Sources
     ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
     this is the context of the agent, it is very important to follow this.
-
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
-
     Now handle the query as follows:
+
+    0. **Follow-Up Detection:** HIGHEST PRIORITY
+      For follow-up detection, if the users latest query against the ENTIRE conversation history.
+      **Required Evidence for Follow-Up Classification:**
+
+      - **Anaphoric References:** Pronouns or demonstratives that refer back to specific entities mentioned in previous assistant responses:
+
+      - **Explicit Continuation Markers:** Phrases that explicitly request elaboration on previous content:
+        - "tell me more about [specific item from previous response]"
+        - "can you elaborate on [specific content]"
+        - "what about the [specific item mentioned before]"
+        - "expand on that [specific reference]"
+
+      - **Direct Back-References:** Questions referencing specific numbered items, names, or content from previous responses:
+        - "the second option you mentioned"
+        - "that company from your list"
+        - "the document you found"
+
+      - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
+
+      **Mandatory Conditions for "isFollowUp": true:**
+      1. The current query must contain explicit referential language (as defined above)
+      2. The referential language must point to specific, identifiable content in a previous assistant response
+
+      **Always set "isFollowUp": false when:**
+      1. The query is fully self-contained and interpretable without conversation history
+      2. The query introduces new topics/entities not previously mentioned by the assistant
+      3. The query lacks explicit referential markers, even if topically related to previous messages
+      4. The query repeats or rephrases previous requests without explicit back-reference language
+      5. Shared keywords or topics exist but no direct linguistic dependency is present
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
+
     2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
        - what is the time in Japan
-       Do not do conversational if it violates the rules of the agent system prompt, i.e if requirements are the for how to talk to user.
-       If the query is conversational, respond naturally and appropriately.
+       If the query is conversational, respond naturally and appropriately. 
+
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
-    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
+
+    4. Determine if the query is about tracking down a calendar event or meeting that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
-      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
+      - If asking about a past calendar event or meeting (e.g., "last meeting", "previous meeting"), set "temporalDirection" to "prev". 
       - Otherwise, set "temporalDirection" to null.
-      - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
+      - For queries like "previous meetings" or "next meetings" that lack a concrete time range:
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
-      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
 
-    5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
-      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+    5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
-      - For apps other than gmail and google-calendar "temporalDirection" strictly set to null
+      - For all other apps and queries, "temporalDirection" should be set to null
 
     6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
@@ -971,9 +997,9 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    8. Extract the main intent or search keywords from the query to create a "filter_query" field:
+    8. Extract the main intent or search keywords from the query to create a "filterQuery" field:
       
-      **SIMPLIFIED FILTER_QUERY EXTRACTION RULES:**
+      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
       - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
@@ -982,7 +1008,7 @@ export const agentSearchQueryPrompt = (
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
       
-      Step 2: EXCLUDE these from filter_query consideration:
+      Step 2: EXCLUDE these from filterQuery consideration:
       - Generic action words: "find", "show", "get", "search", "give", "recent", "latest", "last"
       - Personal pronouns: "my", "your", "their"
       - Time-related terms: "recent", "latest", "last week", "old", "new", "current", "previous"
@@ -991,17 +1017,9 @@ export const agentSearchQueryPrompt = (
       - Structural words: "summary", "details", "info", "information"
       
       Step 3: Apply the rule:
-      - IF specific content keywords remain after exclusion → set filter_query to those keywords
-      - IF no specific content keywords remain after exclusion → set filter_query to null
+      - IF specific content keywords remain after exclusion → set filterQuery to those keywords
+      - IF no specific content keywords remain after exclusion → set filterQuery to null
       
-      **EXAMPLES:**
-      - "recent uber receipts" → filter_query: "uber receipts" (uber is specific content)
-      - "give me recent 5 zomato orders" → filter_query: "zomato orders" (zomato is specific content)  
-      - "recent emails" → filter_query: null (no specific content after removing generic terms)
-      - "previous 5 meetings" → filter_query: null (no specific content)
-      - "emails about marketing project" → filter_query: "marketing project" (specific content)
-      - "latest budget documents" → filter_query: "budget" (budget is specific content)
-      - "show me all files" → filter_query: null (no specific content)
 
     9. Now our task is to classify the user's query into one of the following categories:  
       a. ${QueryType.SearchWithoutFilters}
@@ -1018,8 +1036,7 @@ export const agentSearchQueryPrompt = (
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
-    - 'data sources', 'sources' → '${Apps.DataSource}'
-
+    
     Valid entity keywords that map to entities:
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
@@ -1149,7 +1166,6 @@ export const agentSearchQueryPrompt = (
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
-       - keep the answer empty if it violates the rules of the agent system prompt. Let the actual LLM Agent respond to it.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
@@ -1162,9 +1178,7 @@ export const agentSearchQueryPrompt = (
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     14. If query is a follow up query then "isFollowUp" must be true.
-    Make sure you always comply with these steps and only produce the JSON output described.
-
-`
+    Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
 export const agentSearchAgentPrompt = (
