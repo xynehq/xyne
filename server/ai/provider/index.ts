@@ -460,13 +460,16 @@ export const analyzeQueryMetadata = async (
 const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
-  // Store original text for fallback
-  const originalText = text
   try {
     text = text.trim()
-    text = text.replace(/^```(json)?\s*/i, "")
-    text = text.trim()
-    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
+    if (!jsonKey && (text.includes('```json') || (text.includes('```') && text.includes('{')))) {
+      const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/);
+      if (jsonCodeBlockMatch) {
+        text = jsonCodeBlockMatch[1].trim();
+      }
+    }
+    
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text) && !jsonKey) {
       text = text.replaceAll(/[\n"}:`]/g, "")
     }
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -475,19 +478,30 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1 && endBrace !== -1 && text.startsWith("{") && (text.includes(":") || text.includes('"'))) {
-      if (startBrace !== 0) {
-        text = text.substring(startBrace)
+    // Only extract brace content if we don't have a jsonKey or if the text properly starts with a brace
+    if ((startBrace !== -1 || endBrace !== -1) && (!jsonKey || text.startsWith("{"))) {
+      if (startBrace !== -1) {
+        if (startBrace !== 0) {
+          text = text.substring(startBrace)
+        }
       }
-      if (endBrace !== text.length - 1) {
-        text = text.substring(0, endBrace + 1)
+      if (endBrace !== -1) {
+        if (endBrace !== text.length - 1) {
+          text = text.substring(0, endBrace + 1)
+        }
       }
     }
-    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
+    // Handle case where we have jsonKey but text doesn't start with brace (plain text that needs wrapping)
+    if (jsonKey && !text.startsWith("{") && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        const escapedText = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")
+        // Properly escape quotes and newlines in the text content
+        const escapedText = text
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/"/g, '\\"')   // Escape quotes
+          .replace(/\n/g, '\\n')  // Escape newlines
+          .replace(/\r/g, '\\r')  // Escape carriage returns
         text = `{${jsonKey} "${escapedText}"}`
       }
     }
@@ -540,27 +554,27 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // throw new Error("Initial parse failed")
     }
   } catch (e) {
-    // If initial parsing failed, try wrapping the original text with jsonKey
-    if (jsonKey) {
-      try {
-        const escapedOriginal = originalText
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n")
-          .replace(/\r/g, "\\r")
-        const wrappedText = `{${jsonKey} "${escapedOriginal}"}`
-        jsonVal = parse(wrappedText)
-      } catch (parseError) {
-        Logger.error(
-          parseError,
-          `Failed to parse text even after wrapping: ${originalText.trim()}`,
-        )
-        // throw parseError
+    try {
+      text = text
+        .replace(/```(json)?/g, "")
+        .replace(/```/g, "")
+        .replace(/\/\/.*$/gm, "")
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+        .trim()
+      if (!text) {
+        return {}
       }
-    } else {
-      Logger.error(e, `No jsonKey provided and parsing failed for: ${originalText.trim()}`)
-      // If all parsing attempts fail, return null or an empty object to avoid downstream errors with {}
-      return jsonVal || null; 
+      if (text === "}") {
+        return {}
+      }
+      jsonVal = parse(text)
+    } catch (parseError) {
+      Logger.error(
+        parseError,
+        `The ai response that triggered the json parse error ${text.trim()}`,
+      )
+      // throw parseError
     }
   }
   return jsonVal

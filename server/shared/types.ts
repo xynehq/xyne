@@ -15,6 +15,7 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
+  dataSourceFileSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -272,10 +273,35 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
+export const DataSourceFileResponseSchema = z
+  .object({
+    docId: z.string(),
+    title: z.string().optional(),
+    fileName: z.string().optional(),
+    url: z.string().optional(),
+    owner: z.string().optional(),
+    ownerEmail: z.string().email().optional(),
+    updatedAt: z.number().optional(),
+    createdAt: z.number().optional(),
+    mimeType: z.string().optional(),
+    size: z.number().optional(),
+
+    type: z.literal(dataSourceFileSchema),
+    app: z.literal(Apps.DataSource),
+    entity: z.literal("file"),
+
+    chunks_summary: z.array(scoredChunk).optional(),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
   FileResponseSchema,
+  DataSourceFileResponseSchema,
   MailResponseSchema,
   EventResponseSchema,
   MailAttachmentResponseSchema,
@@ -329,6 +355,13 @@ export enum UserRole {
   TeamLeader = "TeamLeader", // manage Users
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
+}
+
+export enum UserAgentRole {
+  Owner = "owner", // User who owns/created the agent
+  Editor = "editor", // User who can edit the agent
+  Viewer = "viewer", // User who can only view/use the agent
+  Shared = "shared", // User who has been shared the agent (general access)
 }
 
 export enum MessageFeedback {

@@ -124,6 +124,8 @@ export const handleGmailIngestion = async (
               )
 
               tracker.updateUserStats(email, StatType.Gmail, 1)
+            } else {
+              await insert(mailData, mailSchema)
             }
           } catch (error) {
             Logger.child({ email: email }).error(
@@ -162,9 +164,8 @@ export const handleGmailIngestion = async (
 
 const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
-
   // Regular expression to match anything inside angle brackets
-  const emailRegex = /<([^>]+)>/g
+  
 
   const addresses: string[] = []
   let match
@@ -175,6 +176,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
     .filter(Boolean)
   for (const emailWithName of emailWithNames) {
     // it's not in the name <emai> format
+    const emailRegex = /<([^>]+)>/
     if (emailWithName.indexOf("<") == -1) {
       addresses.push(emailWithName)
       continue
@@ -228,11 +230,17 @@ export const parseMail = async (
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let exist = false
+  let docId = messageId
+  let userMap: Record<string, string> = {}
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
-      if (res[mailId]?.exists && !skipMailExistCheck) {
+      // console.log(res)
+      if (res[mailId]?.exists) {
         exist = true
+        userMap = res[mailId].userMap
+        docId = res[mailId].docId
+        // console.log("userMap->",userMap," \ndocId->",docId," \n userMail->",userEmail)
       }
     } catch (error) {
       Logger.warn(
@@ -358,15 +366,16 @@ export const parseMail = async (
       }
     }
   }
-
+  userMap[userEmail] = messageId
   const emailData: Mail = {
-    docId: messageId,
+    docId: docId!,
     threadId: threadId,
     mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
     app: Apps.Gmail,
+    userMap: userMap,
     entity: MailEntity.Email,
     permissions: permissions,
     from: from,

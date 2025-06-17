@@ -3,7 +3,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,

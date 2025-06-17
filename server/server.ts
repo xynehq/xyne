@@ -99,6 +99,8 @@ import {
   ListAgentsApi,
   UpdateAgentApi,
   DeleteAgentApi,
+  GetWorkspaceUsersApi,
+  GetAgentPermissionsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -168,8 +170,6 @@ const AuthRedirect = async (c: Context, next: Next) => {
 
 const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
-app.use("*", honoMiddlewareLogger)
-
 export const WsApp = app.get(
   "/ws",
   upgradeWebSocket((c) => {
@@ -197,6 +197,7 @@ export const WsApp = app.get(
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
+  .use("*", honoMiddlewareLogger)
   .post(
     "/autocomplete",
     zValidator("json", autocompleteSchema),
@@ -244,6 +245,8 @@ export const AppRoutes = app
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/workspace/users", GetWorkspaceUsersApi)
+  .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),

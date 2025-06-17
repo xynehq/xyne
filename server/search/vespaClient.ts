@@ -448,7 +448,9 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     const { docIds, generateAnswerSpan } = options
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
-    const yqlMailIds = docIds.map((id)=> `mailId contains '${id}'`).join(" or ")
+    const yqlMailIds = docIds
+      .map((id) => `mailId contains '${id}'`)
+      .join(" or ")
     const yqlQuery = `select * from sources * where (${yqlIds}) or (${yqlMailIds})`
     const url = `${this.vespaEndpoint}/search/`
 
@@ -806,9 +808,17 @@ class VespaClient {
     }
   }
 
-  async ifMailDocumentsExist(
-    mailIds: string[],
-  ): Promise<Record<string, {docId:string; exists: boolean; updatedAt: number | null; userMap: Record<string,string>; }>> {
+  async ifMailDocumentsExist(mailIds: string[]): Promise<
+    Record<
+      string,
+      {
+        docId: string
+        exists: boolean
+        updatedAt: number | null
+        userMap: Record<string, string>
+      }
+    >
+  > {
     // Construct the YQL query
     const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
     const yqlQuery = `select docId, mailId, updatedAt,userMap from sources mail where mailId in (${yqlIds})`
@@ -843,7 +853,7 @@ class VespaClient {
           docId: hit.fields?.docId as string, // fixed typo: fields, not field
           mailId: hit.fields?.mailId as string,
           updatedAt: hit.fields?.updatedAt as number | undefined,
-          userMap: hit.fields?.userMap as Record<string,string> // undefined if not present
+          userMap: hit.fields?.userMap as Record<string, string>, // undefined if not present
         })) || []
         
       // Build the result map using original mailIds as keys
@@ -857,11 +867,19 @@ class VespaClient {
             docId: foundDoc?.docId ?? "",
             exists: !!foundDoc,
             updatedAt: foundDoc?.updatedAt ?? null,
-            userMap: foundDoc?.userMap // null if not found or no updatedAt
+            userMap: foundDoc?.userMap, // null if not found or no updatedAt
           }
           return acc
         },
-        {} as Record<string, {docId:string, exists: boolean; updatedAt: number | null; userMap: Record<string, string> }>,
+        {} as Record<
+          string,
+          {
+            docId: string
+            exists: boolean
+            updatedAt: number | null
+            userMap: Record<string, string>
+          }
+        >,
       )
 
       return existenceMap

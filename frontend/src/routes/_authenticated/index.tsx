@@ -281,6 +281,7 @@ const Index = () => {
                 <ChatBox
                   role={user?.role}
                   query={query}
+                  user={user}
                   setQuery={setQuery}
                   handleSend={handleAsk}
                   allCitations={new Map()} // Change this line
