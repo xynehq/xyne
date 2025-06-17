@@ -15,6 +15,13 @@ schema mail {
       indexing: attribute | summary
       attribute: fast-search
     }
+  # This will map the useremail with the docId, which is required for the Url construction
+  # every users has different docId for the same mail
+    field userMap type map<string,string>{
+      indexing: summary
+      struct-field key   { indexing: attribute }
+      struct-field value { indexing: attribute }
+    }
 
     field subject type string {
       indexing: summary | index

@@ -97,6 +97,7 @@ import {
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
+  GetDocument,
 } from "@/search/vespa"
 import {
   Apps,
@@ -470,6 +471,19 @@ export const ChatBookmarkApi = async (c: Context) => {
       message: "Could not bookmark chat",
     })
   }
+}
+export const replaceDocIdwithUserDocId = async (
+  docId: string,
+  email: string,
+) => {
+  const res = await GetDocument(mailSchema, docId)
+  // Check if userMap exists in fields and cast to any to access it
+
+  const userMap =
+    res.fields && "userMap" in res.fields
+      ? (res.fields as any).userMap
+      : undefined
+  return userMap[email] || docId
 }
 
 function buildContext(
@@ -2890,6 +2904,18 @@ export const MessageApi = async (c: Context) => {
               }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
+                if (item && item.app == Apps.Gmail) {
+                  item.docId = await replaceDocIdwithUserDocId(
+                    item.docId,
+                    email,
+                  )
+                  if (item.url) {
+                    item.url = item.url.replace(
+                      /inbox\/[^/]+/,
+                      `inbox/${item.docId}`,
+                    )
+                  }
+                }
                 citations.push(item)
                 citationMap[index] = citations.length - 1
                 Logger.info(
@@ -3311,6 +3337,18 @@ export const MessageApi = async (c: Context) => {
                 }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
+                  if (item && item.app == Apps.Gmail) {
+                    item.docId = await replaceDocIdwithUserDocId(
+                      item.docId,
+                      email,
+                    )
+                    if (item.url) {
+                      item.url = item.url.replace(
+                        /inbox\/[^/]+/,
+                        `inbox/${item.docId}`,
+                      )
+                    }
+                  }
                   citations.push(item)
                   citationMap[index] = citations.length - 1
                   Logger.info(

@@ -30,11 +30,12 @@ import {
   Citation,
   Apps,
   SelectPublicAgent,
+  PublicUser,
   ConnectorType,
   AuthType,
   ConnectorStatus,
   UserRole,
-} from "shared/types" // Add SelectPublicAgent
+} from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,6 +75,7 @@ interface SearchResult {
   name?: string
   title?: string
   filename?: string
+  mailId?: string
   from?: string
   timestamp?: number
   updatedAt?: number
@@ -82,6 +84,7 @@ interface SearchResult {
   type?: string
   email?: string
   photoLink?: string
+  userMap?: Record<string, string>
 }
 
 interface ChatBoxProps {
@@ -106,6 +109,7 @@ interface ChatBoxProps {
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
+  user: PublicUser // Added user prop
 }
 
 const availableSources: SourceItem[] = [
@@ -226,6 +230,7 @@ export const ChatBox = ({
   agentIdFromChatData, // Destructure new prop
   isReasoningActive,
   setIsReasoningActive,
+  user, // Destructure user prop
   setIsAgenticMode,
   isAgenticMode = false,
 }: ChatBoxProps) => {
@@ -739,6 +744,7 @@ export const ChatBox = ({
       }
 
       const data = await response.json()
+
       const fetchedTotalCount = data.count || 0
       setTotalCount(fetchedTotalCount)
 
@@ -1010,10 +1016,12 @@ export const ChatBox = ({
       title: displayTitle,
       url: resultUrl,
       docId: result.docId,
+      mailId: result.mailId,
       app: result.app,
       entity: result.entity,
       type: "global",
       photoLink: result.photoLink,
+      userMap: result.userMap, // Ensure userMap is passed
     }
 
     const input = inputRef.current
@@ -1185,6 +1193,48 @@ export const ChatBox = ({
         }
       }
     }
+
+    // Replace data-doc-id and data-reference-id with mailId
+    const tempDiv = document.createElement("div")
+    tempDiv.innerHTML = htmlMessage
+    const pills = tempDiv.querySelectorAll("a.reference-pill")
+
+    pills.forEach((pill) => {
+      const mailId = pill.getAttribute("data-mail-id")
+      const userMap = pill.getAttribute("user-map")
+      const docId =
+        pill.getAttribute("data-doc-id") ||
+        pill.getAttribute("data-reference-id")
+      if (userMap) {
+        try {
+          const parsedUserMap = JSON.parse(userMap)
+          if (user?.email && parsedUserMap[user.email]) {
+            pill.setAttribute(
+              "href",
+              `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
+            )
+          } else {
+            console.warn(
+              `No mapping found for user email: ${user?.email} in userMap.`,
+            )
+          }
+        } catch (error) {
+          console.error("Failed to parse userMap:", error)
+        }
+      }
+
+      if (mailId) {
+        pill.setAttribute("data-doc-id", mailId)
+        pill.setAttribute("data-reference-id", mailId)
+      } else {
+        console.warn(
+          `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
+        )
+      }
+    })
+
+    htmlMessage = tempDiv.innerHTML
+
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
