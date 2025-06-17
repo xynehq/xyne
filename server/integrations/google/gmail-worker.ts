@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid"
 
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   Apps,
   MailAttachmentEntity,
@@ -16,7 +16,12 @@ import {
   type Mail,
   type MailAttachment,
 } from "@/search/types"
-import { ifDocumentsExist, ifMailDocumentsExist, insert } from "@/search/vespa"
+import {
+  ifDocumentsExist,
+  ifMailDocumentsExist,
+  insert,
+  UpdateDocument,
+} from "@/search/vespa"
 import {
   MessageTypes,
   Subsystem,
@@ -31,10 +36,8 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {module: 'google'})
 
-export const getUserLogger = (email: string) => {
-  return Logger.child({ email: email })
-}
 
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
@@ -230,7 +233,7 @@ export const handleGmailIngestion = async (
   if (dateFilters.length > 0) {
     query = `${query} ${dateFilters.join(" AND ")}`
   }
-  getUserLogger(email).info(`query: ${query}`)
+  loggerWithChild({email: email}).info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -284,9 +287,11 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
+            } else {
+              await insert(mailData, mailSchema)
             }
           } catch (error) {
-            getUserLogger(email).error(
+            loggerWithChild({email: email}).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -303,14 +308,14 @@ export const handleGmailIngestion = async (
 
       // Post stats based on successful operations in this batch
       // Always post Gmail count, even if it's zero for this batch, to confirm processing.
-      getUserLogger(email).info(
-        ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${insertedMessagesInBatch}, jobId: ${jobId}`,
+      loggerWithChild({email: email}).info(
+        ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${totalMails}, jobId: ${jobId}`,
       )
       sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
 
       // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        getUserLogger(email).info(
+        loggerWithChild({email: email}).info(
           ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
         )
         sendStatsUpdate(
@@ -338,7 +343,7 @@ export const handleGmailIngestion = async (
 
   failedAttachmentCount = 0
   failedMessageCount = 0
-  getUserLogger(email).info(`Inserted ${totalMails} mails`)
+  loggerWithChild({email: email}).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
@@ -346,7 +351,6 @@ const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
 
   // Regular expression to match anything inside angle brackets
-  const emailRegex = /<([^>]+)>/g
 
   const addresses: string[] = []
   let match
@@ -357,6 +361,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
     .filter(Boolean)
   for (const emailWithName of emailWithNames) {
     // it's not in the name <emai> format
+    const emailRegex = /<([^>]+)>/g
     if (emailWithName.indexOf("<") == -1) {
       addresses.push(emailWithName)
       continue
@@ -410,12 +415,16 @@ export const parseMail = async (
   const subject = getHeader("Subject") || ""
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let docId = messageId
   let exist = false
+  let userMap: Record<string, string> = {}
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
-      if (res[mailId]?.exists && !skipMailExistCheck) {
+      if (res[mailId]?.exists) {
         exist = true
+        userMap = res[mailId].userMap
+        docId = res[mailId].docId
       }
     } catch (error) {
       Logger.warn(
@@ -516,14 +525,17 @@ export const parseMail = async (
     }
   }
 
+  userMap[userEmail] = messageId
+
   const emailData: Mail = {
-    docId: messageId,
+    docId: docId!,
     threadId: threadId,
     mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
     app: Apps.Gmail,
+    userMap: userMap,
     entity: MailEntity.Email,
     permissions: permissions,
     from: from,
