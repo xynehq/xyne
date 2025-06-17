@@ -41,7 +41,7 @@ import {
   type VespaSchema,
   SlackEntity,
   datasourceSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -236,7 +236,7 @@ export const VespaSearchResponseToSearchResult = (
             return ChatMessageResponseSchema.parse(fields)
           } else if (
             (child.fields as { sddocname?: string }).sddocname === 
-            datasourceFileSchema
+            dataSourceFileSchema
           ) {
             const dsFields = child.fields as VespaFileSearch & {
               fileName?: string 
@@ -250,7 +250,7 @@ export const VespaSearchResponseToSearchResult = (
 
             const mappedResult = {
               docId: dsFields.docId,
-              type: datasourceFileSchema,
+              type: dataSourceFileSchema,
               app: Apps.DataSource,
               entity: "file",
               title: dsFields.fileName || dsFields.title,
@@ -405,7 +405,7 @@ export const entityToSchemaMapper = (
   app?: string,
 ): VespaSchema | null => {
   if (app === Apps.DataSource) {
-    return datasourceFileSchema
+    return dataSourceFileSchema
   }
   const entitySchemaMap: Record<string, VespaSchema> = {
     ...Object.fromEntries(

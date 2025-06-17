@@ -12,7 +12,7 @@ import {
   chatUserSchema,
   chatMessageSchema,
   datasourceSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
@@ -701,8 +701,8 @@ export const HybridDefaultProfileForAgent = (
           // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
           if (dataSourceIds && dataSourceIds.length > 0) {
             appQueries.push(buildDataSourceFileYQL())
-            if (!sources.includes(datasourceFileSchema))
-              sources.push(datasourceFileSchema)
+            if (!sources.includes(dataSourceFileSchema))
+              sources.push(dataSourceFileSchema)
           } else {
             // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
             // across all accessible data sources. This might be too broad or not the intended behavior.
@@ -720,8 +720,8 @@ export const HybridDefaultProfileForAgent = (
     // This handles the case where AllowedApps might be empty or null,
     // but specific dataSourceIds are provided (e.g., agent is only for specific data sources).
     appQueries.push(buildDataSourceFileYQL())
-    if (!sources.includes(datasourceFileSchema))
-      sources.push(datasourceFileSchema)
+    if (!sources.includes(dataSourceFileSchema))
+      sources.push(dataSourceFileSchema)
   }
 
   // Combine all queries
@@ -1693,7 +1693,7 @@ export const getItems = async (
   }
 
   // Permissions or owner condition based on schema
-  if (schema === datasourceFileSchema) {
+  if (schema === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
     conditions.push(`permissions contains @email`)
@@ -1800,7 +1800,7 @@ export const insertDataSourceFile = async (
   document: VespaDataSourceFile,
 ): Promise<void> => {
   try {
-    await insert(document as Inserts, datasourceFileSchema)
+    await insert(document as Inserts, dataSourceFileSchema)
     Logger.info(`DataSourceFile ${document.docId} inserted successfully`)
   } catch (error) {
     Logger.error(error, `Error inserting DataSourceFile ${document.docId}`)
@@ -1876,7 +1876,7 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
 ): Promise<boolean> => {
   const yql = `
     select * 
-    from sources ${datasourceFileSchema} 
+    from sources ${dataSourceFileSchema} 
     where fileName contains @fileName and dataSourceId contains @dataSourceId and uploadedBy contains @uploadedBy 
     limit 1
   `
@@ -1904,7 +1904,7 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
     throw new ErrorPerformingSearch({
       message: `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`,
       cause: error as Error,
-      sources: datasourceFileSchema,
+      sources: dataSourceFileSchema,
     })
   }
 }
@@ -1916,7 +1916,7 @@ export const getDataSourceFilesByName = async (
 ): Promise<VespaSearchResponse> => {
   const yql = `
     select * 
-    from sources ${datasourceFileSchema} 
+    from sources ${dataSourceFileSchema} 
     where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
     order by createdAt desc 
     limit ${limit}
@@ -1940,7 +1940,7 @@ export const getDataSourceFilesByName = async (
     throw new ErrorPerformingSearch({
       message: `Error fetching files for DataSource "${dataSourceName}" and user "${userEmail}"`,
       cause: error as Error,
-      sources: datasourceFileSchema,
+      sources: dataSourceFileSchema,
     })
   }
 }
