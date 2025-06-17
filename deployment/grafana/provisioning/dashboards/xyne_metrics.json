@@ -111,7 +111,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  email,\n  MAX(CASE WHEN app_type = 'google-drive' THEN 1 ELSE 0 END) AS google_drive,\n  MAX(CASE WHEN app_type = 'gmail' THEN 1 ELSE 0 END) AS gmail,\n  MAX(CASE WHEN app_type = 'google-calendar' THEN 1 ELSE 0 END) AS google_calendar,\n  MAX(CASE WHEN app_type = 'slack' THEN 1 ELSE 0 END) AS slack,\n  MAX(CASE WHEN app_type = 'github_mcp' THEN 1 ELSE 0 END) AS github_mcp\nFROM sync_jobs\nWHERE email IN ($email)\nGROUP BY email;\n",
+          "rawSql": "SELECT\n  email,\n  MAX(CASE WHEN app_type = 'google-drive' THEN 1 ELSE 0 END) AS google_drive,\n  MAX(CASE WHEN app_type = 'gmail' THEN 1 ELSE 0 END) AS gmail,\n  MAX(CASE WHEN app_type = 'google-calendar' THEN 1 ELSE 0 END) AS google_calendar,\n  MAX(CASE WHEN app_type = 'slack' THEN 1 ELSE 0 END) AS slack,\n  MAX(CASE WHEN app_type = 'github_mcp' THEN 1 ELSE 0 END) AS github_mcp\nFROM sync_jobs\nGROUP BY email;\n",
           "refId": "A",
           "sql": {
             "columns": [
