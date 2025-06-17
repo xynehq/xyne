@@ -16,6 +16,7 @@ import {
   ChevronRight as ChevronRightIcon,
   ClipboardCopy,
 } from "lucide-react"
+import ReactJson from "react-json-view"
 
 interface TraceSpan {
   traceId?: string
@@ -461,8 +462,8 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
 
   if (!isOpen) return null
 
-  // Format attribute value as in the attributes table
-  let formattedValue = attributeValue
+  let displayValue: any = attributeValue
+  let isJson = false
   const isUrl =
     typeof attributeValue === "string" && /^https?:\/\//.test(attributeValue)
   const isLongText =
@@ -472,24 +473,71 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
     try {
       const parsed = JSON.parse(attributeValue)
       if (parsed.yql) {
-        formattedValue = formatYqlQuery(parsed.yql)
+        displayValue = formatYqlQuery(parsed.yql)
       } else {
-        formattedValue = JSON.stringify(parsed, null, 2)
+        // For vespaPayload that is not YQL, we'll use ReactJson if it's an object
+        try {
+          const potentialJson = JSON.parse(attributeValue)
+          if (typeof potentialJson === "object" && potentialJson !== null) {
+            displayValue = potentialJson
+            isJson = true
+          } else {
+            displayValue = JSON.stringify(potentialJson, null, 2)
+          }
+        } catch (e) {
+          displayValue = String(attributeValue)
+        }
       }
     } catch (e) {
       console.error("Failed to parse vespaPayload:", e)
-      formattedValue = String(attributeValue)
+      displayValue = String(attributeValue)
     }
   } else if (typeof attributeValue === "object" && attributeValue !== null) {
-    formattedValue = JSON.stringify(attributeValue, null, 2)
+    displayValue = attributeValue
+    isJson = true
+  } else if (typeof attributeValue === "string") {
+    try {
+      const parsed = JSON.parse(attributeValue)
+      // Ensure it's an actual object or array, not just a stringified primitive
+      if (typeof parsed === "object" && parsed !== null) {
+        displayValue = parsed
+        isJson = true
+      } else {
+        displayValue = String(attributeValue)
+      }
+    } catch (e) {
+      displayValue = String(attributeValue)
+    }
   } else {
-    formattedValue = String(attributeValue)
+    displayValue = String(attributeValue)
   }
 
   // Handle copy to clipboard
   const handleCopy = async () => {
+    let textToCopy = ""
+    if (isJson) {
+      textToCopy = JSON.stringify(displayValue, null, 2)
+    } else if (
+      attributeKey === "vespaPayload" &&
+      typeof attributeValue === "string"
+    ) {
+      // Special handling for vespaPayload if it was formatted as YQL
+      try {
+        const parsed = JSON.parse(attributeValue)
+        if (parsed.yql) {
+          textToCopy = formatYqlQuery(parsed.yql)
+        } else {
+          textToCopy = JSON.stringify(parsed, null, 2)
+        }
+      } catch (e) {
+        textToCopy = String(attributeValue)
+      }
+    } else {
+      textToCopy = String(attributeValue)
+    }
+
     try {
-      await navigator.clipboard.writeText(formattedValue)
+      await navigator.clipboard.writeText(textToCopy)
       setIsCopied(true)
       setTimeout(() => setIsCopied(false), 2000) // Reset after 2 seconds
     } catch (err) {
@@ -543,22 +591,34 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
           </div>
         </div>
         <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 p-4 rounded border border-gray-200 dark:border-gray-600">
-          {isUrl ? (
+          {isJson ? (
+            <div className="max-h-full overflow-y-auto text-sm font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
+              <ReactJson
+                src={displayValue}
+                theme={darkMode ? "ocean" : "summerfruit:inverted"}
+                indentWidth={2}
+                displayDataTypes={false}
+                name={false}
+                enableClipboard={false}
+                style={{ backgroundColor: darkMode ? "#1f2937" : "#ffffff" }}
+              />
+            </div>
+          ) : isUrl ? (
             <a
-              href={formattedValue}
+              href={String(displayValue)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 hover:underline break-all"
             >
-              {formattedValue}
+              {String(displayValue)}
             </a>
-          ) : isLongText || attributeKey === "vespaPayload" ? (
+          ) : isLongText || (attributeKey === "vespaPayload" && !isJson) ? (
             <div className="max-h-full overflow-y-auto whitespace-pre-wrap text-sm font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-600">
-              {formattedValue}
+              {String(displayValue)}
             </div>
           ) : (
             <pre className="text-sm whitespace-pre-wrap font-mono">
-              {formattedValue}
+              {String(displayValue)}
             </pre>
           )}
         </div>
@@ -1590,9 +1650,21 @@ export function RagTraceVirtualization({
             )}
           </button>
         </div>
-        <pre className="text-sm whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-200">
-          {JSON.stringify(rawTraceData, null, 2)}
-        </pre>
+        <div className="text-sm font-mono text-gray-700 dark:text-gray-200">
+          <ReactJson
+            src={rawTraceData}
+            theme={darkMode ? "ocean" : "summerfruit:inverted"}
+            indentWidth={2}
+            displayDataTypes={false}
+            name={false}
+            enableClipboard={false} // Using custom copy button
+            style={{
+              backgroundColor: darkMode
+                ? "rgb(31 41 55 / 1)"
+                : "rgb(249 250 251 / 1)",
+            }} // Match tab background
+          />
+        </div>
       </div>
     )
   }

@@ -114,6 +114,59 @@ class VespaClient {
       throw new Error(`Vespa search error: ${error.message}`)
     }
   }
+  private async fetchDocumentBatch(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    limit: number,
+    offset: number,
+    email: string,
+  ): Promise<any[]> {
+    const yqlQuery = `select * from sources ${schema} where true`
+    const searchPayload = {
+      yql: yqlQuery,
+      hits: limit,
+      offset,
+      timeout: "10s",
+    }
+
+    const response = await this.search<VespaSearchResponse>(searchPayload)
+    return (response.root?.children || []).map((doc) => {
+      // Use optional chaining and nullish coalescing to safely extract fields
+      const { matchfeatures, ...fieldsWithoutMatch } = doc.fields as any
+      return fieldsWithoutMatch
+    })
+  }
+
+  async getAllDocumentsParallel(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    concurrency: number = 3,
+    email: string,
+  ): Promise<any[]> {
+    // First get document count
+    const countResponse = await this.getDocumentCount(schema, options, email)
+    const totalCount = countResponse?.root?.fields?.totalCount || 0
+
+    if (totalCount === 0) return []
+
+    // Calculate optimal batch size and create batch tasks
+    const batchSize = 350
+    const tasks = []
+
+    for (let offset = 0; offset < totalCount; offset += batchSize) {
+      tasks.push(() =>
+        this.fetchDocumentBatch(schema, options, batchSize, offset, email),
+      )
+    }
+
+    // Run tasks with concurrency limit
+    const pLimit = (await import("p-limit")).default
+    const limit = pLimit(concurrency)
+    const results = await Promise.all(tasks.map((task) => limit(task)))
+
+    // Flatten results
+    return results.flat()
+  }
 
   async deleteAllDocuments(options: VespaConfigValues): Promise<void> {
     const { cluster, namespace, schema } = options
@@ -208,7 +261,7 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        // Logger.info(`Document ${document.docId} inserted successfully`)
+        Logger.info(`Document ${document.docId} inserted successfully`)
       } else {
       }
     } catch (error) {
@@ -311,11 +364,15 @@ class VespaClient {
     }
   }
 
-  async getDocumentCount(schema: VespaSchema, options: VespaConfigValues) {
+  async getDocumentCount(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    email: string,
+  ) {
     try {
       // Encode the YQL query to ensure it's URL-safe
       const yql = encodeURIComponent(
-        `select * from sources ${schema} where true`,
+        `select * from sources ${schema} where uploadedBy contains '${email}'`,
       )
       // Construct the search URL with necessary query parameters
       const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${options.cluster}`
@@ -378,6 +435,46 @@ class VespaClient {
     } catch (error) {
       const errMessage = getErrorMessage(error)
       throw new Error(`Error fetching document docId: ${docId} - ${errMessage}`)
+    }
+  }
+
+  async getDocumentsByOnlyDocIds(
+    options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
+  ): Promise<VespaSearchResponse> {
+    const { docIds, generateAnswerSpan } = options
+    const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
+    const yqlQuery = `select * from sources * where (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: docIds?.length,
+        maxHits: docIds?.length,
+      }
+
+      generateAnswerSpan.setAttribute("vespaPayload", JSON.stringify(payload))
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching documents: ${errMessage}`)
     }
   }
 
@@ -520,8 +617,8 @@ class VespaClient {
   async deleteDocument(
     options: VespaConfigValues & { docId: string },
   ): Promise<void> {
-    const { docId, namespace, schema } = options
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const { docId, namespace, schema } = options // Extract namespace and schema again
+    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}` // Revert to original URL construction
     try {
       const response = await this.fetchWithRetry(url, {
         method: "DELETE",
@@ -542,6 +639,103 @@ class VespaClient {
     }
   }
 
+  async ifDocumentsExistInChatContainer(
+    docIds: string[],
+  ): Promise<
+    Record<
+      string,
+      { exists: boolean; updatedAt: number | null; permissions: string[] }
+    >
+  > {
+    // If no docIds are provided, return an empty record
+    if (!docIds.length) {
+      return {}
+    }
+
+    // Set a reasonable batch size for each query
+    const BATCH_SIZE = 500
+    let existenceMap: Record<
+      string,
+      { exists: boolean; updatedAt: number | null; permissions: string[] }
+    > = {}
+
+    // Process docIds in batches
+    for (let i = 0; i < docIds.length; i += BATCH_SIZE) {
+      const batchDocIds = docIds.slice(i, i + BATCH_SIZE)
+      Logger.info(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchDocIds.length} document IDs`,
+      )
+
+      // Construct the YQL query for this batch
+      const yqlIds = batchDocIds.map((id) => `"${id}"`).join(", ")
+      const yqlQuery = `select docId, updatedAt, permissions from chat_container where docId in (${yqlIds})`
+      const url = `${this.vespaEndpoint}/search/`
+
+      try {
+        const payload = {
+          yql: yqlQuery,
+          hits: batchDocIds.length,
+          maxHits: batchDocIds.length + 1,
+        }
+
+        const response = await this.fetchWithRetry(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        })
+
+        if (!response.ok) {
+          const errorText = response.statusText
+          throw new Error(
+            `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+          )
+        }
+
+        const result = await response.json()
+
+        // Extract found documents with their docId, updatedAt, and permissions
+        const foundDocs =
+          result.root?.children?.map((hit: any) => ({
+            docId: hit.fields.docId as string,
+            updatedAt: hit.fields.updatedAt as number | undefined,
+            permissions: hit.fields.permissions as string[] | undefined,
+          })) || []
+
+        // Add to the result map for this batch
+        const batchExistenceMap = batchDocIds.reduce(
+          (acc, id) => {
+            const foundDoc = foundDocs.find(
+              (doc: { docId: string }) => doc.docId === id,
+            )
+            acc[id] = {
+              exists: !!foundDoc,
+              updatedAt: foundDoc?.updatedAt ?? null,
+              permissions: foundDoc?.permissions ?? [], // Empty array if not found or no permissions
+            }
+            return acc
+          },
+          {} as Record<
+            string,
+            { exists: boolean; updatedAt: number | null; permissions: string[] }
+          >,
+        )
+
+        // Merge the batch results into the overall map
+        existenceMap = { ...existenceMap, ...batchExistenceMap }
+      } catch (error) {
+        const errMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Error checking batch of chat container documents existence: ${errMessage}`,
+        )
+        throw error
+      }
+    }
+
+    return existenceMap
+  }
   // TODO: Add pagination if docId's are more than
   // max hits and merge the finaly Record
   async ifDocumentsExist(
@@ -588,6 +782,69 @@ class VespaClient {
         (acc, id) => {
           const foundDoc = foundDocs.find(
             (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
+          return acc
+        },
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
+      )
+
+      return existenceMap
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence:  ${errMessage}`)
+      throw error
+    }
+  }
+
+  async ifMailDocumentsExist(
+    mailIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
+    // Construct the YQL query
+    const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
+    const yqlQuery = `select mailId, updatedAt from sources mail where mailId in (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: mailIds.length,
+        maxHits: mailIds.length + 1,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Extract found documents with their mailId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          mailId: hit.fields.mailId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
+
+      // Build the result map using original mailIds as keys
+      const existenceMap = mailIds.reduce(
+        (acc, id) => {
+          const cleanedId = id.replace(/<(.*?)>/, "$1")
+          const foundDoc = foundDocs.find(
+            (doc: { mailId: string }) => doc.mailId === cleanedId,
           )
           acc[id] = {
             exists: !!foundDoc,

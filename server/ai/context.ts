@@ -15,6 +15,9 @@ import {
   type VespaUser,
   type VespaChatMessageSearch,
   type ScoredChunk,
+  // Corrected import name for datasourceFileSchema
+  dataSourceFileSchema,
+  type VespaDataSourceFileSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -25,6 +28,17 @@ import { getDateForAI } from "@/utils/index"
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
+export const constructToolContext = (tool_schema: string) => {
+  const tool = JSON.parse(tool_schema)
+  const toolSchemaContext = Object.entries(tool).map(
+    ([key, value]) => `- ${key}: ${JSON.stringify(value)}`,
+  )
+  return `
+  Tool Schema:
+   ${toolSchemaContext.join("\n")}
+   `
+}
+
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,
@@ -32,7 +46,7 @@ const constructFileContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -52,12 +66,14 @@ const constructFileContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -67,9 +83,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated At: ${getRelativeTime(fields.updatedAt)}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -81,8 +95,7 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` 
 // TODO: tell if workspace that this is an employee
 const constructUserContext = (fields: VespaUser, relevance: number): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Added: ${getRelativeTime(fields.creationTime)}
+Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
 ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
@@ -98,7 +111,7 @@ const constructMailContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -118,12 +131,14 @@ const constructMailContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -132,8 +147,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -163,8 +177,7 @@ const constructSlackMessageContext = (
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    ${fields.threadId ? "it's a message thread" : ""}
-    Time: ${getRelativeTime(fields.createdAt)}
+    ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -175,7 +188,7 @@ const constructMailAttachmentContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -195,12 +208,14 @@ const constructMailAttachmentContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -209,8 +224,7 @@ const constructMailAttachmentContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
@@ -227,12 +241,8 @@ Event Name: ${fields.name ? `Name: ${fields.name}` : ""}
 Description: ${fields.description ? fields.description.substring(0, 50) : ""}
 Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
 Status: ${fields.status ? fields.status : "Status unknown"}
-Location: ${fields.location ? fields.location : "No location specified"}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated: ${getRelativeTime(fields.updatedAt)}
-Today's Date: ${getDateForAI()}
-Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}
-End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
+Location: ${fields.location ? fields.location : "No location specified"}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated: ${getRelativeTime(fields.updatedAt)}` : ""}
+Today's Date: ${getDateForAI()}${typeof fields.startTime === "number" && isFinite(fields.startTime) ? `\nStart Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}` : ""}${typeof fields.endTime === "number" && isFinite(fields.endTime) ? `\nEnd Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}` : ""}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
     fields.attendees && fields.attendees.length
@@ -262,9 +272,7 @@ const constructFileMetadataContext = (
 ): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated At: ${getRelativeTime(fields.updatedAt)}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -278,8 +286,7 @@ const constructUserMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Added: ${getRelativeTime(fields.creationTime)}
+Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
 ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
@@ -294,8 +301,7 @@ const constructMailMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -310,8 +316,7 @@ const constructMailAttachmentMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-timestamp: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\ntimestamp: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.fileType ? `FileType: ${fields.fileType}` : ""}
@@ -324,9 +329,7 @@ const constructFileColoredContext = (
 ): string => {
   return `${pc.green("App")}: ${fields.app}
 ${pc.green("Entity")}: ${fields.entity}
-${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}
-${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}
-${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}
+${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\n${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.url ? `${pc.green("Link")}: ${pc.cyan(fields.url)}` : ""}
 ${fields.owner ? `${pc.green("Owner")}: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `${pc.green("Owner Email")}: ${fields.ownerEmail}` : ""}
@@ -341,8 +344,7 @@ const constructUserColoredContext = (
   relevance: number,
 ): string => {
   return `${pc.green("App")}: ${fields.app}
-${pc.green("Entity")}: ${fields.entity}
-${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}
+${pc.green("Entity")}: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\n${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `${pc.green("Name")}: ${fields.name}` : ""}
 ${fields.email ? `${pc.green("Email")}: ${fields.email}` : ""}
 ${fields.gender ? `${pc.green("Gender")}: ${fields.gender}` : ""}
@@ -357,8 +359,7 @@ const constructMailColoredContext = (
   relevance: number,
 ): string => {
   return `${pc.green("App")}: ${fields.app}
-${pc.green("Entity")}: ${fields.entity}
-${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}
+${pc.green("Entity")}: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\n${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `${pc.green("Subject")}: ${fields.subject}` : ""}
 ${fields.from ? `${pc.green("From")}: ${fields.from}` : ""}
 ${fields.to ? `${pc.green("To")}: ${fields.to.join(", ")}` : ""}
@@ -367,6 +368,56 @@ ${fields.bcc ? `${pc.green("Bcc")}: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `${pc.green("Labels")}: ${fields.labels.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}
 \n${pc.green("vespa relevance score")}: ${relevance}`
+}
+
+const constructDataSourceFileContext = (
+  fields: VespaDataSourceFileSearch,
+  relevance: number,
+  maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
+): string => {
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures && fields.chunks_summary) {
+    const summaryStrings = fields.chunks_summary.map((c) =>
+      typeof c === "string" ? c : c.chunk,
+    )
+    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+  } else if (fields.chunks_summary) {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: typeof chunk === "string" ? 0 : chunk.score,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  }
+
+  return `Title: ${fields.fileName || "N/A"}
+  App: ${fields.app || "N/A"}
+  ${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
+  Mime Type: ${fields.mimeType || "N/A"}
+  ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+  ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
+  ${content ? `Content: ${content}` : ""}
+  \nvespa relevance score: ${relevance}\n`
 }
 
 type AiMetadataContext = string
@@ -459,10 +510,16 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
-    // later can be based on app
     return constructSlackMessageContext(
       searchResult.fields,
       searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
+    return constructDataSourceFileContext(
+      searchResult.fields as VespaDataSourceFileSearch,
+      searchResult.relevance,
+      maxSummaryChunks,
+      isSelectedFiles,
     )
   } else {
     throw new Error(
@@ -480,6 +537,7 @@ export const cleanColoredContext = (text: string): string => {
 }
 
 const cleanVespaHighlights = (text: string): string => {
+  if (!text) return ""
   const hiTagPattern = /<\/?hi>/g
   return text.replace(hiTagPattern, "").trim()
 }
@@ -547,12 +605,12 @@ export const userContext = ({
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
   return `My Name is ${user.name}
-Email: ${user.email}
-Company: ${workspace.name}
-Company domain: ${workspace.domain}
-Current Time: ${currentTime}
-Today is: ${currentDate}
-Timezone: IST`
+    Email: ${user.email}
+    Company: ${workspace.name}
+    Company domain: ${workspace.domain}
+    Current Time: ${currentTime}
+    Today is: ${currentDate}
+    Timezone: IST`
 }
 
 /**

@@ -27,7 +27,7 @@ import { toast } from "@/hooks/use-toast"
 
 const logger = console
 
-const UserLayout = ({ user, workspace }: AdminPageProps) => {
+const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
   const navigator = useNavigate()
   const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
@@ -145,9 +145,13 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
 
   if (error) return "An error has occurred: " + error.message
   return (
-    <div className="flex w-full h-full">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
-      <IntegrationsSidebar role={user.role} />
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
+      <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -193,8 +197,15 @@ export const Route = createFileRoute("/_authenticated/integrations/google")({
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <UserLayout user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <UserLayout
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   errorComponent: errorComponent,
 })

@@ -90,7 +90,11 @@ export const UserQueryHistoryAutocompleteElement = ({
 }: { result: UserQueryHAutocomplete; onClick: () => void }) => {
   return (
     <div onClick={onClick} className="flex items-center">
-      <History color="#AEBAD3" size={16} className="mr-[10px]" />
+      <History
+        color="#AEBAD3"
+        size={16}
+        className="mr-[10px] dark:text-[#F1F3F4]"
+      />
       <p>{result.query_text}</p>
     </div>
   )
@@ -111,7 +115,7 @@ export const AutocompleteElement = forwardRef(
           href={`https://contacts.google.com/${result.email}`}
           ref={ref}
           onClick={onClick}
-          className="flex cursor-pointer hover:bg-gray-100 px-4 py-2 no-underline text-inherit"
+          className="flex cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 px-4 py-2 no-underline text-inherit"
         >
           {content}
         </a>
@@ -139,7 +143,7 @@ export const AutocompleteElement = forwardRef(
         ref={ref}
         onClick={onClick}
         // className="cursor-pointer hover:bg-gray-100 px-4 py-2"
-        className="p-3 hover:bg-gray-100 cursor-pointer"
+        className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
       >
         {content}
       </div>

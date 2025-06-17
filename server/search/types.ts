@@ -17,9 +17,10 @@ export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
 export const chatAttachment = "chat_attachment"
-
 // previous queries
 export const userQuerySchema = "user_query"
+export const datasourceSchema = "datasource"
+export const dataSourceFileSchema = "datasource_file"
 
 export type VespaSchema =
   | typeof fileSchema
@@ -32,6 +33,9 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof chatAttachment
+  | typeof datasourceSchema
+  | typeof dataSourceFileSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -42,10 +46,15 @@ export enum Apps {
 
   Gmail = "gmail",
 
-  Notion = "notion",
+  // Notion = "notion",  // Notion is not yet supported
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+
+  MCP = "mcp",
+  GITHUB_MCP = "github_mcp",
+  Xyne = "xyne",
+  DataSource = "data-source",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -73,10 +82,12 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity) ||
         Object.values(GooglePeopleEntity)
           .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
-      // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
-      // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
-    : false
+    : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
+      false
 }
 
 export enum GooglePeopleEntity {
@@ -97,6 +108,8 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
+  z.literal(datasourceSchema),
+  z.literal(dataSourceFileSchema),
 ])
 
 export enum MailEntity {
@@ -165,7 +178,14 @@ export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
+export enum SystemEntity {
+  SystemInfo = "system_info",
+  UserProfile = "user_profile",
+}
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+
 export const entitySchema = z.union([
+  SystemEntitySchema,
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
@@ -176,6 +196,7 @@ export const entitySchema = z.union([
 ])
 
 export type Entity =
+  | SystemEntity
   | PeopleEntity
   | DriveEntity
   | NotionEntity
@@ -263,7 +284,6 @@ const MailAttachmentMatchFeaturesSchema = z.object({
   chunk_scores: chunkScoresSchema,
 })
 
-// Match features for chat message schema
 const ChatMessageMatchFeaturesSchema = z.object({
   vector_score: z.number().optional(),
   combined_nativeRank: z.number().optional(),
@@ -278,11 +298,74 @@ export type MailAttachmentMatchFeatures = z.infer<
   typeof MailAttachmentMatchFeaturesSchema
 >
 
+const DataSourceFileMatchFeaturesSchema = z.object({
+  "bm25(fileName)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+  chunk_scores: chunkScoresSchema.optional(),
+})
+export type DataSourceFileMatchFeatures = z.infer<
+  typeof DataSourceFileMatchFeaturesSchema
+>
+
 export const VespaMatchFeatureSchema = z.union([
   FileMatchFeaturesSchema,
   MailMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
+  DataSourceFileMatchFeaturesSchema,
 ])
+
+// Base schema for DataSource (for insertion)
+export const VespaDataSourceSchemaBase = z.object({
+  docId: z.string(),
+  name: z.string(),
+  createdBy: z.string(),
+  createdAt: z.number(), // long
+  updatedAt: z.number(), // long
+})
+export type VespaDataSource = z.infer<typeof VespaDataSourceSchemaBase>
+
+// Search schema for DataSource
+export const VespaDataSourceSearchSchema = VespaDataSourceSchemaBase.extend({
+  sddocname: z.literal(datasourceSchema),
+  matchfeatures: z.any().optional(),
+  rankfeatures: z.any().optional(),
+}).merge(defaultVespaFieldsSchema)
+export type VespaDataSourceSearch = z.infer<typeof VespaDataSourceSearchSchema>
+
+// Base schema for DataSourceFile (for insertion)
+export const VespaDataSourceFileSchemaBase = z.object({
+  docId: z.string(),
+  description: z.string().optional(),
+  app: z.literal(Apps.DataSource),
+  fileName: z.string().optional(),
+  fileSize: z.number().optional(), // long
+  chunks: z.array(z.string()),
+  uploadedBy: z.string(),
+  duration: z.number().optional(), // long
+  mimeType: z.string().optional(),
+  createdAt: z.number(), // long
+  updatedAt: z.number(), // long
+  dataSourceRef: z.string(), // reference to datasource docId
+  metadata: z.string().optional(), // JSON string
+})
+export type VespaDataSourceFile = z.infer<typeof VespaDataSourceFileSchemaBase>
+
+// Search schema for DataSourceFile
+export const VespaDataSourceFileSearchSchema =
+  VespaDataSourceFileSchemaBase.extend({
+    sddocname: z.literal(dataSourceFileSchema),
+    matchfeatures: DataSourceFileMatchFeaturesSchema,
+    rankfeatures: z.any().optional(),
+    dataSourceName: z.string().optional(),
+  })
+    .merge(defaultVespaFieldsSchema)
+    .extend({
+      chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    })
+export type VespaDataSourceFileSearch = z.infer<
+  typeof VespaDataSourceFileSearchSchema
+>
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
@@ -345,6 +428,7 @@ export const AttachmentSchema = z.object({
 export const MailSchema = z.object({
   docId: z.string(),
   threadId: z.string(),
+  mailId: z.string().optional(), // Optional for threads
   subject: z.string().default(""), // Default to empty string to avoid zod errors when subject is missing
   chunks: z.array(z.string()),
   timestamp: z.number(),
@@ -528,6 +612,12 @@ export const VespaChatUserSchema = z.object({
   updatedAt: z.number(),
 })
 
+export const VespaChatUserGetSchema = z.object({
+  id: z.string(),
+  pathId: z.string(),
+  fields: VespaChatUserSchema,
+})
+export type ChatUserCore = z.infer<typeof VespaChatUserGetSchema>
 export const VespaChatUserSearchSchema = VespaChatUserSchema.extend({
   sddocname: z.literal(chatUserSchema),
 }).merge(defaultVespaFieldsSchema)
@@ -549,6 +639,7 @@ export const VespaChatContainerSchema = z.object({
 
   createdAt: z.number(),
   updatedAt: z.number(),
+  lastSyncedAt: z.number(),
 
   topic: z.string(),
   description: z.string(),
@@ -588,7 +679,7 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
-
+export type VespaChatUserType = z.infer<typeof VespaChatUserSchema>
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -599,7 +690,17 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
+  VespaDataSourceSearchSchema,
+  VespaDataSourceFileSearchSchema,
 ])
+
+// Get schema for DataSourceFile
+export const VespaDataSourceFileGetSchema = VespaDataSourceFileSchemaBase.merge(
+  defaultVespaFieldsSchema,
+)
+export type VespaDataSourceFileGet = z.infer<
+  typeof VespaDataSourceFileGetSchema
+>
 
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
@@ -608,6 +709,7 @@ const SearchMatchFeaturesSchema = z.union([
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
+  DataSourceFileMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -621,6 +723,7 @@ export const VespaGetFieldsSchema = z.union([
   VespaUserSchema,
   VespaFileGetSchema,
   VespaMailGetSchema,
+  VespaDataSourceFileGetSchema,
 ])
 
 export const VespaSearchResultsSchema = z.object({
@@ -738,6 +841,8 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
+  | VespaDataSource
+  | VespaDataSourceFile
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -972,3 +1077,42 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
     matchfeatures: z.any().optional(),
     rankfeatures: z.any().optional(),
   })
+
+export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
+  docId: true,
+  description: true,
+  app: true,
+  fileName: true,
+  fileSize: true,
+  uploadedBy: true,
+  duration: true,
+  mimeType: true,
+  createdAt: true,
+  updatedAt: true,
+  dataSourceRef: true,
+  metadata: true,
+  relevance: true,
+})
+  .strip()
+  .extend({
+    type: z.literal(dataSourceFileSchema), // Using the schema const for the literal
+    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    matchfeatures: DataSourceFileMatchFeaturesSchema.optional(), // or z.any().optional() if specific match features aren't always needed here
+    rankfeatures: z.any().optional(),
+  })
+export type DataSourceFileResponse = z.infer<
+  typeof DataSourceFileResponseSchema
+>
+
+export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
+  'gmail': Apps.Gmail,
+  'drive': Apps.GoogleDrive,
+  'googledrive': Apps.GoogleDrive,   
+  'googlecalendar': Apps.GoogleCalendar,  
+  'slack': Apps.Slack,
+  'datasource': Apps.DataSource,
+  'google-workspace': Apps.GoogleWorkspace,
+  'googledocs': Apps.GoogleDrive,
+  'googlesheets': Apps.GoogleDrive,
+  'pdf': Apps.GoogleDrive
+  };

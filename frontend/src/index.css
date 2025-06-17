@@ -56,10 +56,10 @@ html {
   }
 
   .dark {
-    --background: 224 71.4% 4.1%;
-    --foreground: 210 20% 98%;
-    --card: 224 71.4% 4.1%;
-    --card-foreground: 210 20% 98%;
+    --background: 220 0% 11.8%; /* Equivalent to #1E1E1E */
+    --foreground: 216 17% 95%; /* Equivalent to #F1F3F4 */
+    --card: 220 0% 11.8%; /* Assuming card background should also match */
+    --card-foreground: 216 17% 95%; /* Equivalent to #F1F3F4 */
     --popover: 224 71.4% 4.1%;
     --popover-foreground: 210 20% 98%;
     --primary: 210 20% 98%;
@@ -90,4 +90,37 @@ html {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Chat-specific styles to prevent overflow */
+.prevent-overflow {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.markdown-content {
+  @apply prevent-overflow;
+}
+
+.markdown-content pre {
+  @apply prevent-overflow;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.markdown-content code {
+  @apply prevent-overflow;
+  word-break: break-all;
+}
+
+.markdown-content p {
+  @apply prevent-overflow;
+}
+
+/* Ensure long URLs or links don't overflow */
+.markdown-content a {
+  @apply prevent-overflow;
+  word-break: break-all;
 }

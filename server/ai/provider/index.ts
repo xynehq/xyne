@@ -60,6 +60,7 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
@@ -67,9 +68,13 @@ import {
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
+  SearchQueryToolContextPrompt,
+  synthesisContextPrompt,
   temporalDirectionJsonPrompt,
   userChatSystem,
+  withToolQueryPrompt,
 } from "@/ai/prompts"
+
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
 import { Ollama } from "ollama"
@@ -80,14 +85,98 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
+import {
+  agentAnalyzeInitialResultsOrRewriteSystemPrompt,
+  agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
+  agentBaselinePrompt,
+  agentBaselinePromptJson,
+  agentBaselineReasoningPromptJson,
+  agentEmailPromptJson,
+  agentGenerateMarkdownTableSystemPrompt,
+  agentOptimizedPrompt,
+  agentQueryRewritePromptJson,
+  agentSearchQueryPrompt,
+  agentTemporalDirectionJsonPrompt,
+} from "../agentPrompts"
+import { is } from "drizzle-orm"
+
 const Logger = getLogger(Subsystem.AI)
+
+interface AgentPromptData {
+  name: string
+  description: string
+  prompt: string
+  sources: any[]
+}
+
+interface ParsedPromptCandidate {
+  name?: unknown
+  description?: unknown
+  prompt?: unknown
+  appIntegrations?: unknown
+  sources?: unknown
+}
+
+function parseAgentPrompt(
+  agentPromptString: string | undefined,
+): AgentPromptData {
+  const defaults: AgentPromptData = {
+    name: "",
+    description: "",
+    prompt: "",
+    sources: [],
+  }
+
+  if (!agentPromptString) {
+    return defaults
+  }
+
+  try {
+    const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate
+
+    if (
+      typeof parsed.name === "string" &&
+      typeof parsed.description === "string" &&
+      typeof parsed.prompt === "string" &&
+      Array.isArray(parsed.appIntegrations)
+    ) {
+      return {
+        name: parsed.name,
+        description: parsed.description,
+        prompt: parsed.prompt,
+        sources: parsed.appIntegrations as any[],
+      }
+    }
+
+    if (typeof parsed.prompt === "string" && Array.isArray(parsed.sources)) {
+      return {
+        ...defaults,
+        prompt: parsed.prompt,
+        sources: parsed.sources,
+      }
+    }
+
+    Logger.warn(
+      `Agent prompt string is valid JSON but did not match expected structures. Treating as literal prompt: '${agentPromptString}'`,
+    )
+    return { ...defaults, prompt: agentPromptString }
+  } catch (error) {
+    Logger.info(
+      `Agent prompt string is not valid JSON or is empty. Treating as literal prompt: '${agentPromptString}'`,
+    )
+    return { ...defaults, prompt: agentPromptString }
+  }
+}
+
+function isAgentPromptEmpty(agentPromptString: string | undefined): boolean {
+  const { prompt, sources } = parseAgentPrompt(agentPromptString)
+  return prompt === "" && Array.isArray(sources) && sources.length === 0
+}
 
 const askQuestionSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
 
 type TokenCount = number
-// this will be a few tokens less than the output of bedrock
-// the gap should be around 50 tokens
 export const askQuestionInputTokenCount = (
   query: string,
   context: string,
@@ -178,7 +267,6 @@ const initializeProviders = (): void => {
     )
   }
   providersInitialized = true
-  // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
 
 const getProviders = (): {
@@ -280,7 +368,7 @@ export const askQuestion = (
       params,
     )
   } catch (error) {
-    console.error("Error asking question:", error)
+    Logger.error(error, "Error asking question")
     throw error
   }
 }
@@ -324,7 +412,7 @@ export const analyzeQuery = async (
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
-    console.error("Error analyzing query:", error)
+    Logger.error(error, "Error analyzing query")
     throw error
   }
 }
@@ -365,7 +453,7 @@ export const analyzeQueryMetadata = async (
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
-    console.error("Error analyzing query:", error)
+    Logger.error(error, "Error analyzing query metadata")
     throw error
   }
 }
@@ -375,38 +463,48 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    // edge case "null\n} or ": "null\n}
-    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
+    console.log(text)
+    if (!jsonKey && (text.includes('```json') || (text.includes('```') && text.includes('{')))) {
+      const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/);
+      if (jsonCodeBlockMatch) {
+        text = jsonCodeBlockMatch[1].trim();
+      }
+    }
+    
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text) && !jsonKey) {
       text = text.replaceAll(/[\n"}:`]/g, "")
     }
-    // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
       text = `{${text}`
     }
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1 || endBrace !== -1) {
-      // there is no json
+    // Only extract brace content if we don't have a jsonKey or if the text properly starts with a brace
+    if ((startBrace !== -1 || endBrace !== -1) && (!jsonKey || text.startsWith("{"))) {
       if (startBrace !== -1) {
         if (startBrace !== 0) {
           text = text.substring(startBrace)
         }
       }
       if (endBrace !== -1) {
-        // Only add the closing brace if it's not already there
         if (endBrace !== text.length - 1) {
           text = text.substring(0, endBrace + 1)
         }
       }
     }
-    // we only want to do this if enough text has accumulated
-    // we don't want to do case where just `json` comes and we wrap it as answer
-    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
+    // Handle case where we have jsonKey but text doesn't start with brace (plain text that needs wrapping)
+    if (jsonKey && !text.startsWith("{") && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        text = `{${jsonKey} "${text}"`
+        // Properly escape quotes and newlines in the text content
+        const escapedText = text
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/"/g, '\\"')   // Escape quotes
+          .replace(/\n/g, '\\n')  // Escape newlines
+          .replace(/\r/g, '\\r')  // Escape carriage returns
+        text = `{${jsonKey} "${escapedText}"}`
       }
     }
 
@@ -415,41 +513,51 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     }
     try {
       jsonVal = parse(text.trim())
-      // If the object is empty but contains content, we explicitly add newline and carriage return characters (\\n).
-      // This is necessary because the parsing library fails to handle multi-line strings properly,
-      // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
-        // Replace newlines with \n in content between quotes
-        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+        let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
+        if (jsonKey && withNewLines.startsWith("{")) {
+          const startBraceIndex = withNewLines.indexOf("{")
+          const keyIndex = withNewLines.indexOf(jsonKey)
+          if (keyIndex > startBraceIndex) {
+            withNewLines =
+              withNewLines.slice(0, startBraceIndex + 1) +
+              withNewLines.slice(keyIndex)
+          }
+        }
         jsonVal = parse(withNewLines.trim())
       }
 
-      /* Edge case: If the last two characters are \\", Json.parse replaces \\ with ". We need to remove the last " from the value.
-          Example:
-          Input text: '{"answer": "Prasad \\""}'
-          After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
-          After this fix: { answer: 'Prasad' }     // Extra quote removed
-          
-          This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
-      */
-      if (jsonKey && text.slice(-2) === `\\"` && jsonVal[jsonKey.slice(1, -2)][jsonVal[jsonKey.slice(1, -2)].length - 1] === `"`) {
-        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(0, -1)
+      if (
+        jsonKey &&
+        text.slice(-2) === `\\"` &&
+        jsonVal[jsonKey.slice(1, -2)][
+          jsonVal[jsonKey.slice(1, -2)].length - 1
+        ] === `"`
+      ) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(
+          0,
+          -1,
+        )
       }
 
-      // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
-        if (jsonVal[key].trim() === "null") {
+        if (jsonVal[key]?.trim() === "null") {
           jsonVal = { [key]: null }
         }
       }
       return jsonVal
-    } catch {
+    } catch (err) {
+      // During streaming, incomplete JSON is common and expected
+      // Only log actual parsing errors, not incomplete data during streaming
+      if (text.trim().length > 0 && !text.includes('\\n') && text.includes('{')) {
+        Logger.debug(`JSON parse attempt failed for potentially incomplete data: ${text.slice(0, 100)}...`)
+      }
       // If first parse failed, continue to code block cleanup
-      throw new Error("Initial parse failed")
+      // Don't throw error here as it's expected during streaming
     }
   } catch (e) {
     try {
@@ -472,7 +580,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         parseError,
         `The ai response that triggered the json parse error ${text.trim()}`,
       )
-      throw parseError
+      // throw parseError
     }
   }
   return jsonVal
@@ -538,6 +646,7 @@ export const userChat = (
       params,
     )
   } catch (error) {
+    Logger.error(error, "Error in userChat")
     throw error
   }
 }
@@ -545,6 +654,7 @@ export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
 ): Promise<{ title: string; cost: number }> => {
+  Logger.info("inside generateTitleUsingQuery")
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -555,6 +665,7 @@ export const generateTitleUsingQuery = async (
     }
 
     params.json = true
+    Logger.info("inside generateTitleUsingQuery")
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -569,6 +680,7 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    Logger.info("after getProvider generateTitleUsingQuery")
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }
@@ -585,7 +697,7 @@ export const generateTitleUsingQuery = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
-      `Error asking question: ${errMessage} ${(error as Error).stack}`,
+      `Error generating title: ${errMessage} ${(error as Error).stack}`,
     )
     throw error
   }
@@ -599,7 +711,7 @@ export const askQuestionWithCitations = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     params.systemPrompt = chatWithCitationsSystemPrompt(userContext)
-    params.json = true // Ensure that the provider returns JSON
+    params.json = true
     const baseMessage: Message = {
       role: MessageRole.User as const,
       content: [
@@ -618,6 +730,7 @@ ${context}`,
 
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
+    Logger.error(error, "Error in askQuestionWithCitations")
     throw error
   }
 }
@@ -628,8 +741,14 @@ export const analyzeInitialResultsOrRewrite = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = analyzeInitialResultsOrRewriteSystemPrompt(userCtx)
-
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteSystemPrompt(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = analyzeInitialResultsOrRewriteSystemPrompt(userCtx)
+  }
   const baseMessage: Message = {
     role: MessageRole.User as const,
     content: [
@@ -655,8 +774,14 @@ export const analyzeInitialResultsOrRewriteV2 = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = analyzeInitialResultsOrRewriteV2SystemPrompt(userCtx)
-
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteV2SystemPrompt(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = analyzeInitialResultsOrRewriteV2SystemPrompt(userCtx)
+  }
   const baseMessage: Message = {
     role: MessageRole.User as const,
     content: [
@@ -729,8 +854,14 @@ export const answerOrSearch = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-
-    params.systemPrompt = optimizedPrompt(userCtx)
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentOptimizedPrompt(
+        userCtx,
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = optimizedPrompt(userCtx)
+    }
     params.json = true
 
     const baseMessage: Message = {
@@ -748,40 +879,14 @@ export const answerOrSearch = (
 
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
+    Logger.error(error, "Error in answerOrSearch")
     throw error
   }
 }
 
-// removing one op from prompt so we can figure out how to integrate this
-// otherwise it conflicts with our current search system if we start
-// talking about a single item
-
-// 3. **RetrieveMetadata**:
-//    - The user wants to retrieve metadata or details about a specific document, email, or item.
-//    - Example Queries:
-//      - "When was the file 'Budget.xlsx' last modified?"
-//      - "Who owns the document titled 'Meeting Notes'?"
-//    - **JSON Structure**:
-//      {
-//        "type": "RetrieveMetadata",
-//        "filters": {
-//          "app": "<app>",
-//          "entity": "<entity>",
-//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
-//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
-//        }
-//      }
-
-// // !this is under validation heading! not a prompt
-
-//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-
-// Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
   ListItems = "ListItems",
-  // RetrieveMetadata = "RetrieveMetadata",
 }
 
 export const listItems = (
@@ -790,7 +895,15 @@ export const listItems = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = generateMarkdownTableSystemPrompt(userCtx, query)
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentGenerateMarkdownTableSystemPrompt(
+      userCtx,
+      query,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = generateMarkdownTableSystemPrompt(userCtx, query)
+  }
   const baseMessage: Message = {
     role: MessageRole.User,
     content: [
@@ -819,7 +932,15 @@ export const baselineRAG = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentBaselinePrompt(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
+  }
   params.json = false
 
   const baseMessage = {
@@ -860,8 +981,16 @@ export const baselineRAGJson = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
-  params.json = true // Set to true to ensure JSON response
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentBaselinePromptJson(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  }
+  params.json = true
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -911,26 +1040,43 @@ export const baselineRAGJsonStream = (
   }
 
   if (specificFiles) {
+    Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   } else if (defaultReasoning) {
-    // TODO: replace with reasoning specific prompt
-    // clean retrieved context and turn Index <number> to just [<number>]
-    // this is extra work because we just now set Index <number>
-    // in future once the reasoning mode better supported we won't have to do this
-    params.systemPrompt = baselineReasoningPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    Logger.info("Using baselineReasoningPromptJson")
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else {
-    params.systemPrompt = baselinePromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    Logger.info("Using baselinePromptJson")
+
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselinePromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselinePromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   }
-  params.json = true // Set to true to ensure JSON response
+  params.json = true
+
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -940,7 +1086,7 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  params.messages = []
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -956,8 +1102,16 @@ export const temporalPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
-  params.json = true // Set to true to ensure JSON response
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentTemporalDirectionJsonPrompt(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  }
+  params.json = true
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -982,7 +1136,41 @@ export const mailPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentEmailPromptJson(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+  }
+  params.json = true
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const meetingPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1012,7 +1200,14 @@ export const queryRewriter = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentQueryRewritePromptJson(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
+    params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
+  }
   params.json = true
 
   const baseMessage = {
@@ -1047,11 +1242,10 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<TemporalClassifier & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filterQuery"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  // params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true
 
   const baseMessage = {
@@ -1083,20 +1277,59 @@ export const temporalEventClassification = async (
   }
 }
 
+export function generateToolSelectionOutput(
+  userQuery: string,
+  userContext: string,
+  toolContext: string,
+  initialPlanning: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+
+  let defaultReasoning = isReasoning
+
+  params.systemPrompt = SearchQueryToolContextPrompt(
+    userContext,
+    toolContext,
+    initialPlanning,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
   params: ModelParams,
+  toolContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
-  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
   let defaultReasoning = isReasoning
 
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
+
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  } else if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentSearchQueryPrompt(
+      userContext,
+      parseAgentPrompt(params.agentPrompt),
+    )
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
@@ -1115,4 +1348,63 @@ export function generateSearchQueryOrAnswerFromConversation(
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateAnswerBasedOnToolOutput(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+  toolContext: string,
+  toolOutput: string,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = withToolQueryPrompt(
+    userContext,
+    toolContext,
+    toolOutput,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateSynthesisBasedOnToolOutput(
+  userCtx: string,
+  currentMessage: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = synthesisContextPrompt(
+    userCtx,
+    currentMessage,
+    gatheredFragments,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converse(messages, params)
 }

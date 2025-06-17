@@ -17,25 +17,38 @@ import {
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
+  addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
   deleteConnectorSchema,
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
+  updateToolsStatusSchema, // Added for tool status updates
   serviceAccountIngestMoreSchema,
+  deleteUserDataSchema,
+  ingestMoreChannelSchema,
+  startSlackIngestionSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
+  AddApiKeyMCPConnector,
   AddServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
   DeleteOauthConnector,
   GetConnectors,
   StartOAuth,
+  AddStdioMCPConnector,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
+  GetConnectorTools, // Added GetConnectorTools
+  UpdateToolsStatusApi, // Added for tool status updates
+  AdminDeleteUserData,
+  IngestMoreChannelApi,
+  StartSlackIngestionApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -58,6 +71,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
+import { ListDataSourcesApi, ListDataSourceFilesApi } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -65,10 +79,11 @@ import {
   ChatRenameApi,
   GetChatApi,
   MessageApi,
+  MessageFeedbackApi,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
-} from "@/api/chat"
+} from "@/api/chat/chat"
 import { UserRole } from "@/shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -79,7 +94,26 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
-import { GetConfiguredModelsApi } from "./api/chat"
+import { GetConfiguredModelsApi } from "@/api/chat/chat"
+import {
+  CreateAgentApi,
+  ListAgentsApi,
+  UpdateAgentApi,
+  DeleteAgentApi,
+  createAgentSchema,
+  listAgentsSchema,
+  updateAgentSchema,
+} from "@/api/agent"
+import metricRegister from "@/metrics/sharedRegistry"
+import { handleFileUpload } from "@/api/files"
+import { z } from "zod" // Ensure z is imported if not already at the top for schemas
+import { messageFeedbackSchema } from "@/api/chat/types"
+
+// Define Zod schema for delete datasource file query parameters
+const deleteDataSourceFileQuerySchema = z.object({
+  dataSourceName: z.string().min(1),
+  fileName: z.string().min(1),
+})
 
 export type Variables = JwtVariables
 
@@ -123,7 +157,9 @@ const AuthRedirect = async (c: Context, next: Next) => {
   } catch (err) {
     Logger.error(
       err,
-      `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
+      `${new AuthRedirectError({ cause: err as Error })} ${
+        (err as Error).stack
+      }`,
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
@@ -167,6 +203,7 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("files/upload", handleFileUpload)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -186,8 +223,15 @@ export const AppRoutes = app
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
   )
+  .post(
+    "/message/feedback",
+    zValidator("json", messageFeedbackSchema),
+    MessageFeedbackApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
+  .get("/datasources", ListDataSourcesApi)
+  .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post("/tuning/evaluate", EvaluateHandler)
@@ -200,6 +244,16 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+  // Agent Routes
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .put(
+    "/agent/:agentExternalId",
+    zValidator("json", updateAgentSchema),
+    UpdateAgentApi,
+  )
+  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  // Admin Routes
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema
@@ -221,11 +275,36 @@ export const AppRoutes = app
     CreateOAuthProvider,
   )
   .post(
+    "/slack/ingest_more_channel",
+    async (c, next) => {
+      console.log("i am ")
+      await next()
+    },
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .post(
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
     AddApiKeyConnector,
   )
+  .post(
+    "/apikey/mcp/create",
+    zValidator("form", addApiKeyMCPConnectorSchema),
+    AddApiKeyMCPConnector,
+  )
+  .post(
+    "/stdio/mcp/create",
+    zValidator("form", addStdioMCPConnectorSchema),
+    AddStdioMCPConnector,
+  )
   .get("/connectors/all", GetConnectors)
+  .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
   .post(
     "/connector/update_status",
     zValidator("form", updateConnectorStatusSchema),
@@ -240,6 +319,17 @@ export const AppRoutes = app
     "/oauth/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
+  )
+  .post(
+    // Added route for updating tool statuses
+    "/tools/update_status",
+    zValidator("json", updateToolsStatusSchema),
+    UpdateToolsStatusApi,
+  )
+  .post(
+    "/user/delete_data",
+    zValidator("json", deleteUserDataSchema),
+    AdminDeleteUserData,
   )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
@@ -433,15 +523,38 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {
   await initQueue()
 }
+
+app.get("/metrics", async (c) => {
+  try {
+    const metrics = await metricRegister.metrics()
+    return c.text(metrics, 200, {
+      "Content-Type": metricRegister.contentType,
+    })
+  } catch (err) {
+    return c.text("Error generating metrics", 500)
+  }
+})
+
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
+
+const errorHandler = (error: Error) => {
+  // Added Error type
+  return new Response(`<pre>${error}\n${error.stack}</pre>`, {
+    headers: {
+      "Content-Type": "text/html",
+    },
+  })
+}
 
 const server = Bun.serve({
   fetch: app.fetch,
   port: config.port,
   websocket,
   idleTimeout: 180,
+  development: true,
+  error: errorHandler,
 })
 Logger.info(`listening on port: ${config.port}`)
 

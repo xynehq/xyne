@@ -19,11 +19,17 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "types": ["vitest/globals"],
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "../server/shared", "../server/search/types"]
+  "include": [
+    "src",
+    "../server/shared",
+    "../server/search/types",
+    "src/Tests.ts"
+  ]
 }

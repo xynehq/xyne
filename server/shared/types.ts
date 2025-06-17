@@ -15,6 +15,7 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
+  dataSourceFileSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -27,6 +28,23 @@ export {
   isMailAttachment,
 } from "search/types"
 export type { Entity } from "search/types"
+
+// Define an enum for connection types - MOVED HERE FROM server/types.ts
+export enum ConnectorType {
+  // Google, Notion, Github
+  SaaS = "SaaS",
+  // DuckDB, Postgres, MySQL
+  Database = "Database",
+  // Weather api?
+  API = "Api",
+  // Manually uploaded data like pdf
+  File = "File",
+  // Where we can scrape and crawl
+  Website = "Website",
+  // All MCP Clients
+  MCP = "Mcp",
+}
+
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
@@ -40,6 +58,7 @@ export type {
   PublicUser,
   SelectPublicChat,
   PublicWorkspace,
+  SelectPublicAgent,
   // @ts-ignore
 } from "@/db/schema"
 
@@ -244,6 +263,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   app: true,
   entity: true,
   photoLink: true,
+  docId: true,
 })
   .strip()
   .extend({
@@ -253,10 +273,35 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
+export const DataSourceFileResponseSchema = z
+  .object({
+    docId: z.string(),
+    title: z.string().optional(),
+    fileName: z.string().optional(),
+    url: z.string().optional(),
+    owner: z.string().optional(),
+    ownerEmail: z.string().email().optional(),
+    updatedAt: z.number().optional(),
+    createdAt: z.number().optional(),
+    mimeType: z.string().optional(),
+    size: z.number().optional(),
+
+    type: z.literal(dataSourceFileSchema),
+    app: z.literal(Apps.DataSource),
+    entity: z.literal("file"),
+
+    chunks_summary: z.array(scoredChunk).optional(),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
   FileResponseSchema,
+  DataSourceFileResponseSchema,
   MailResponseSchema,
   EventResponseSchema,
   MailAttachmentResponseSchema,
@@ -310,4 +355,125 @@ export enum UserRole {
   TeamLeader = "TeamLeader", // manage Users
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
+}
+
+export enum MessageFeedback {
+  Like = "like",
+  Dislike = "dislike",
+}
+
+export enum MessageMode {
+  Ask = "ask",
+  Agentic = "agentic",
+}
+export enum AgentToolName {
+  MetadataRetrieval = "metadata_retrieval",
+  Search = "search",
+  FilteredSearch = "filtered_search",
+  TimeSearch = "time_search",
+  SynthesizeAnswer = "SYNTHESIZE_ANSWER", // For the explicit synthesis step
+}
+
+export enum AgentReasoningStepType {
+  Iteration = "iteration",
+  Planning = "planning",
+  ToolSelected = "tool_selected",
+  ToolParameters = "tool_parameters",
+  ToolExecuting = "tool_executing",
+  ToolResult = "tool_result",
+  Synthesis = "synthesis",
+  ValidationError = "validation_error", // For when single result validation fails
+  BroadeningSearch = "broadening_search", // When the agent decides to broaden the search
+  AnalyzingQuery = "analyzing_query", // Initial analysis step
+  LogMessage = "log_message", // For generic log messages from the agent
+}
+
+export enum ContextSysthesisState {
+  Complete = "complete",
+  Partial = "partial_information",
+  NotFound = "information_not_found",
+}
+
+export interface AgentReasoningIteration {
+  type: AgentReasoningStepType.Iteration
+  iteration: number
+}
+
+export interface AgentReasoningPlanning {
+  type: AgentReasoningStepType.Planning
+  details: string // e.g., "Planning next step..."
+}
+
+export interface AgentReasoningToolSelected {
+  type: AgentReasoningStepType.ToolSelected
+  toolName: AgentToolName | string // string for flexibility if new tools are added without enum update
+}
+
+export interface AgentReasoningToolParameters {
+  type: AgentReasoningStepType.ToolParameters
+  parameters: Record<string, any> // Parameters as an object
+}
+
+export interface AgentReasoningToolExecuting {
+  type: AgentReasoningStepType.ToolExecuting
+  toolName: AgentToolName | string
+}
+
+export interface AgentReasoningToolResult {
+  type: AgentReasoningStepType.ToolResult
+  toolName: AgentToolName | string
+  resultSummary: string
+  itemsFound?: number
+  error?: string // If the tool execution resulted in an error
+}
+
+export interface AgentReasoningSynthesis {
+  type: AgentReasoningStepType.Synthesis
+  details: string // e.g., "Synthesizing answer from X fragments..."
+}
+
+export interface AgentReasoningValidationError {
+  type: AgentReasoningStepType.ValidationError
+  details: string // e.g., "Single result validation failed (POOR_MATCH #X). Will continue searching."
+}
+
+export interface AgentReasoningBroadeningSearch {
+  type: AgentReasoningStepType.BroadeningSearch
+  details: string // e.g., "Specific search failed validation X times. Attempting to broaden search."
+}
+
+export interface AgentReasoningAnalyzingQuery {
+  type: AgentReasoningStepType.AnalyzingQuery
+  details: string // e.g., "Analyzing your question..."
+}
+
+export interface AgentReasoningLogMessage {
+  type: AgentReasoningStepType.LogMessage
+  message: string // Generic message from the agent's log
+}
+
+export type AgentReasoningStep =
+  | AgentReasoningIteration
+  | AgentReasoningPlanning
+  | AgentReasoningToolSelected
+  | AgentReasoningToolParameters
+  | AgentReasoningToolExecuting
+  | AgentReasoningToolResult
+  | AgentReasoningSynthesis
+  | AgentReasoningValidationError
+  | AgentReasoningBroadeningSearch
+  | AgentReasoningAnalyzingQuery
+  | AgentReasoningLogMessage
+
+export enum XyneTools {
+  GetUserInfo = "get_user_info",
+  MetadataRetrieval = "metadata_retrieval",
+  Search = "search",
+  FilteredSearch = "filtered_search",
+  TimeSearch = "time_search",
+}
+
+export enum IngestionType {
+  fullIngestion = "full_ingestion",
+  partialIngestion = "partial_ingestion",
 }

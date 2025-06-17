@@ -1,4 +1,4 @@
-import { processMessage, textToCitationIndex } from "@/api/chat"
+import { processMessage, textToCitationIndex } from "@/api/chat/chat"
 import { splitGroupedCitationsWithSpaces } from "@/utils"
 import { describe, expect, test } from "bun:test"
 
@@ -78,6 +78,18 @@ describe("Grouped Citation Splitting", () => {
     const text = "Good [1,2] bad [a,b] ok [3,4]"
     const result = splitGroupedCitationsWithSpaces(text)
     expect(result).toBe("Good [1] [2] bad [a,b] ok [3] [4]")
+  })
+
+  test("should correctly split grouped citations with spaces and multiple digits", () => {
+    const text = "This is a test [3, 20, 22] for citations."
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("This is a test [3] [20] [22] for citations.")
+  })
+
+  test("should correctly split grouped citations with no spaces and multiple digits", () => {
+    const text = "This is a test [3,20,22] for citations."
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("This is a test [3] [20] [22] for citations.")
   })
 
   // this fails for now

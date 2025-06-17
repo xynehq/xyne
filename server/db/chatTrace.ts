@@ -1,5 +1,5 @@
 import { db } from "./client"
-import { chatTrace } from "./schema"
+import { chatTrace } from "@/db/schema"
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"

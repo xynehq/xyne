@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Search as SearchIcon } from "lucide-react"
@@ -25,28 +26,29 @@ enum Tabs {
   Ask = "ask",
 }
 
-// Define a local Reference type matching the expected structure from ChatBox
-interface LocalReference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
-
 const Index = () => {
+  const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
+    return storedValue ? JSON.parse(storedValue) : true
+  })
+  const AGENTIC_STATE = "agenticState"
+  const [isAgenticMode, setIsAgenticMode] = useState(() => {
+    const storedValue = localStorage.getItem(AGENTIC_STATE)
     return storedValue ? JSON.parse(storedValue) : false
   })
 
   useEffect(() => {
-    localStorage.setItem("isReasoningGlobalState", JSON.stringify(isReasoningActive))
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
+
+  useEffect(() => {
+    localStorage.setItem(
+      "isReasoningGlobalState",
+      JSON.stringify(isReasoningActive),
+    )
   }, [isReasoningActive])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
@@ -61,7 +63,7 @@ const Index = () => {
 
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
-  const { user } = matches[matches.length - 1].context
+  const { user, agentWhiteList } = matches[matches.length - 1].context
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -130,11 +132,20 @@ const Index = () => {
   const handleAsk = (
     messageToSend: string,
     llmModelId: string, // Added llmModelId
-    references: LocalReference[], 
-    selectedSources?: string[]
+    selectedSources?: string[],
+    agentId?: string | null,
+    toolExternalIds?: string[],
   ) => {
     if (messageToSend.trim()) {
-      const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string; llmModelId?: string } = {
+      const searchParams: {
+        q: string
+        llmModelId?: string, // Made llmModelId optional
+        reasoning?: boolean
+        sources?: string
+        agentId?: string
+        toolExternalIds?: string[]
+        agentic?: boolean
+      } = {
         q: encodeURIComponent(messageToSend.trim()),
       };
 
@@ -145,20 +156,26 @@ const Index = () => {
         searchParams.reasoning = true
       }
 
-      if (references && references.length > 0) {
-        // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id));
-      }
-
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",");
+      }
+      // If agentId is provided, add it to the searchParams
+      if (agentId) {
+        // Use agentId directly
+        searchParams.agentId = agentId
+      }
+      if (isAgenticMode) {
+        searchParams.agentic = true
+      }
+
+      if (toolExternalIds && toolExternalIds.length > 0) {
+        searchParams.toolExternalIds = toolExternalIds
       }
 
       navigate({
         to: "/chat",
         search: searchParams,
-      });
-      // Log them to confirm they are received
+      })
     }
   };
 
@@ -180,23 +197,37 @@ const Index = () => {
 
   return (
     <TooltipProvider>
-      <div className="h-full w-full flex flex-row bg-white">
-        <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
-        <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
-          <div className="flex flex-col min-h-36 w-full max-w-3xl">
+      <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
+        <Sidebar
+          photoLink={user?.photoLink ?? ""}
+          role={user?.role}
+          isAgentMode={agentWhiteList}
+        />
+        <div className="flex flex-col flex-grow justify-center items-center ml-[52px] relative">
+          <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+            {" "}
+            {/* Ensure content is above the text logo */}
             <div className="flex mb-[14px] w-full justify-start">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     className={`flex items-center pr-[12px] rounded-[20px] ${
                       activeTab === Tabs.Ask
-                        ? "bg-[#EDF2F7] text-[#33383D]"
-                        : "text-[#728395]"
+                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                        : "text-[#728395] dark:text-gray-400"
                     }`}
                     onClick={() => setActiveTab(Tabs.Ask)}
                   >
                     <Sparkle
-                      stroke={activeTab === Tabs.Ask ? "#33383D" : "#728395"}
+                      stroke={
+                        activeTab === Tabs.Ask
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
                     />
                     Ask
@@ -207,16 +238,24 @@ const Index = () => {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    className={`flex items-center text-[#33383D] pr-[12px] rounded-[20px] ${
+                    className={`flex items-center pr-[12px] rounded-[20px] ${
                       activeTab === Tabs.Search
-                        ? "bg-[#EDF2F7] text-[#33383D]"
-                        : "text-[#728395]"
+                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                        : "text-[#728395] dark:text-gray-400"
                     }`}
                     onClick={() => setActiveTab(Tabs.Search)}
                   >
                     <SearchIcon
                       size={16}
-                      stroke={activeTab === Tabs.Search ? "#33383D" : "#728395"}
+                      stroke={
+                        activeTab === Tabs.Search
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
                     />
                     Search
@@ -226,7 +265,7 @@ const Index = () => {
               </Tooltip>
             </div>
             {activeTab === "search" && (
-              <div className="w-full">
+              <div className="w-full h-72">
                 <SearchBar
                   query={query}
                   setQuery={setQuery}
@@ -240,19 +279,21 @@ const Index = () => {
                   ref={autocompleteRef}
                   hasSearched={false}
                   filter={filter}
-                  autocompleteRef={autocompleteRef}
                 />
               </div>
             )}
             {activeTab === "ask" && (
-              <div className="w-full max-w-3xl">
+              <div className="w-full h-72">
                 <ChatBox
+                  role={user?.role}
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
                   allCitations={new Map()} // Change this line
                   isReasoningActive={isReasoningActive}
                   setIsReasoningActive={setIsReasoningActive}
+                  isAgenticMode={isAgenticMode}
+                  setIsAgenticMode={setIsAgenticMode}
                 />
               </div>
             )}
