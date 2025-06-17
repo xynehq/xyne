@@ -102,7 +102,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -141,7 +141,7 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
-import { entityToSchemaMapper } from "@/search/mappers"
+import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -156,6 +156,9 @@ import {
   searchToCitation,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
+
+const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
+const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
 const {
   JwtPayloadKey,
@@ -249,7 +252,7 @@ const checkAndYieldCitations = function* (
       const item = results[citationIndex - baseIndex]
       if (item) {
         // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === datasourceFileSchema) {
+        if (item.fields.sddocname === dataSourceFileSchema) {
           // Removed transcriptSchema check
           continue
         }
@@ -2019,8 +2022,13 @@ async function* generateMetadataQueryAnswer(
     `App : "${app}" , Entity : "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
+  let schema: VespaSchema | null
+  if (!entity && app) {
+    schema = appToSchemaMapper(app)
+  } else {
+    schema = entityToSchemaMapper(entity, app)
+  }
 
-  const schema = entityToSchemaMapper(entity, app) as VespaSchema
   let items: VespaSearchResult[] = []
 
   // Determine search strategy based on conditions
@@ -2154,7 +2162,17 @@ async function* generateMetadataQueryAnswer(
     )
     span?.setAttribute("modelId", defaultBestModel)
     loggerWithChild({email: email}).info(`Search Type : ${QueryType.GetItems}`)
+    if (!schema) {
+      loggerWithChild({email: email}).error(
+        `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
+      )
+      span?.setAttribute("error", "Schema determination failed")
+      span?.setAttribute("app_for_schema_failure", app || "undefined")
+      span?.setAttribute("entity_for_schema_failure", entity || "undefined")
 
+      yield { text: METADATA_FALLBACK_TO_RAG }
+      return
+    }
     let searchResults
     items = []
     if (agentPrompt) {
@@ -2198,7 +2216,7 @@ async function* generateMetadataQueryAnswer(
     if (!items.length) {
       span?.end()
       loggerWithChild({email: email}).info("No documents found for unspecific metadata retrieval")
-      yield { text: "no documents found" }
+      yield { text: METADATA_NO_DOCUMENTS_FOUND }
       return
     }
 
@@ -2309,7 +2327,7 @@ async function* generateMetadataQueryAnswer(
           }`,
         )
         iterationSpan?.end()
-        yield { text: "null" }
+        yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
 
@@ -2329,7 +2347,7 @@ async function* generateMetadataQueryAnswer(
         iterationSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
           iterationSpan?.end()
-          yield { text: "null" }
+          yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
           loggerWithChild({email: email}).info(`no answer found for iteration - ${iteration}`)
@@ -2342,7 +2360,7 @@ async function* generateMetadataQueryAnswer(
     }
   } else {
     // None of the conditions matched
-    yield { text: "null" }
+    yield { text: METADATA_FALLBACK_TO_RAG }
     return
   }
 }
@@ -2457,13 +2475,13 @@ export async function* UnderstandMessageAndAnswer(
 
     let hasYieldedAnswer = false
     for await (const answer of answerIterator) {
-      if (answer.text === "no documents found") {
+      if (answer.text === METADATA_NO_DOCUMENTS_FOUND) {
         return yield {
           text: `I couldn't find any ${fallbackText(
             classification,
           )}. Would you like to try a different search?`,
         }
-      } else if (answer.text === "null") {
+      } else if (answer.text === METADATA_FALLBACK_TO_RAG) {
         loggerWithChild({email: email}).info(
           "No context found for metadata retrieval, moving to iterative RAG",
         )
