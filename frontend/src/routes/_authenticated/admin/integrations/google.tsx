@@ -1125,35 +1125,10 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                                   )
                                   const serviceAccountConnectorId =
                                     googleSAConnector?.id
-                          <TabsContent
-                            value="ingest_more_user_admin"
-                            className="h-full"
-                          >
-                            <Card className="border-none shadow-none">
-                              <CardHeader className="px-0 pt-4">
-                                <CardTitle className="text-lg">
-                                  Ingest Data for Additional Users
-                                </CardTitle>
-                                <CardDescription>
-                                  Add more users to the existing Google
-                                  Workspace Service Account integration. Enter
-                                  comma-separated emails and specify
-                                  services/date ranges.
-                                </CardDescription>
-                              </CardHeader>
-                              <CardContent className="px-1 pb-0">
-                                {(() => {
-                                  const googleSAConnector = data?.find(
-                                    (c: Connectors) =>
-                                      c.app === Apps.GoogleDrive &&
-                                      c.authType === AuthType.ServiceAccount,
-                                  )
-                                  const serviceAccountConnectorId =
-                                    googleSAConnector?.id
 
                                   if (!serviceAccountConnectorId) {
                                     return (
-                                      <p className="text-sm text-destructive">
+                                      <p className="text-sm text-destructive dark:text-red-400">
                                         Google Workspace Service Account
                                         integration not found or not configured.
                                         Please set it up first in the 'Service

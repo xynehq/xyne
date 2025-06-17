@@ -408,7 +408,7 @@ export const entityToSchemaMapper = (
   app?: string,
 ): VespaSchema | null => {
   if (app === Apps.DataSource) {
-    return datasourceFileSchema
+    return dataSourceFileSchema
   }
   const entitySchemaMap: Record<string, VespaSchema> = {
     ...Object.fromEntries(

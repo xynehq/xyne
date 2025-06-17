@@ -27,7 +27,7 @@ import { UserAgentRole } from "@/shared/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
 const { JwtPayloadKey } = config
-
+const Logger = getLogger(Subsystem.AgentApi)
 // Schema for creating an agent
 export const createAgentSchema = z.object({
   // Keep this for create

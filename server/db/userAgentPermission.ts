@@ -128,7 +128,6 @@ export const getUserAccessibleAgents = async (
       isPublic: agents.isPublic,
       appIntegrations: agents.appIntegrations,
       allowWebSearch: agents.allowWebSearch,
-      uploadedFileNames: agents.uploadedFileNames,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
     })
