@@ -1,9 +1,10 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, DriveEntity, SlackEntity } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
+import type { CalendarEntity, MailAttachmentEntity, MailEntity, PeopleEntity } from "./search/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -371,28 +372,6 @@ export const MCPClientStdioConfig = z.object({
   version: z.string(),
 })
 
-// METRICS ENUMS
-export enum metricNames {
-  syncOauthAccountChanges = "google_oauth_changes",
-  syncServiceAccountChanges = "google_service_account_changes",
-  syncGoogleWorkspaceChange = "google_workspace_changes",
-  syncSlackChanges = "slack_changes",
-  checkDownloadsFolder = "check_downloads_folder",
-}
-
-export enum metricAppType {
-  google = "Google",
-  slack = "Slack",
-}
-
-export enum metricAccountType {
-  oauth = "google_oauth_account",
-  service = "google_service_account",
-  slackAdmin = "slack_admin",
-  slackUser = "slackUser",
-  admin = "admin",
-}
-
 export const ingestMoreChannelSchema = z.object({
   connectorId: z.number(),
   channelsToIngest: z.array(z.string()),
@@ -402,3 +381,15 @@ export const ingestMoreChannelSchema = z.object({
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })
+
+export type EntityType = DriveEntity|SlackEntity|MailEntity|MailAttachmentEntity|CalendarEntity|PeopleEntity
+export type OperationType = "ingestion" | "request" | "response" | "chat-create" | "chat-response" | "chat-response-error" | "search" | "search-response" | "ingest-more_user"
+
+export type loggerChildSchema = {
+  email: string,
+  appType?: Apps,
+  entityType?: EntityType,
+  responseCode?:string,
+  responseStatus?:string,
+  operationType?:OperationType
+}

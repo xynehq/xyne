@@ -357,6 +357,13 @@ export enum UserRole {
   SuperAdmin = "SuperAdmin", // Admin level changes
 }
 
+export enum UserAgentRole {
+  Owner = "owner", // User who owns/created the agent
+  Editor = "editor", // User who can edit the agent
+  Viewer = "viewer", // User who can only view/use the agent
+  Shared = "shared", // User who has been shared the agent (general access)
+}
+
 export enum MessageFeedback {
   Like = "like",
   Dislike = "dislike",

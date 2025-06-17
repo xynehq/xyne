@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid"
 
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   Apps,
   MailAttachmentEntity,
@@ -21,6 +21,7 @@ import {
   ifMailDocumentsExist,
   insert,
   UpdateDocument,
+  IfMailDocExist,
 } from "@/search/vespa"
 import {
   MessageTypes,
@@ -36,10 +37,8 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {module: 'google'})
 
-export const getUserLogger = (email: string) => {
-  return Logger.child({ email: email })
-}
 
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
@@ -235,7 +234,7 @@ export const handleGmailIngestion = async (
   if (dateFilters.length > 0) {
     query = `${query} ${dateFilters.join(" AND ")}`
   }
-  getUserLogger(email).info(`query: ${query}`)
+  loggerWithChild({email: email}).info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -264,6 +263,13 @@ export const handleGmailIngestion = async (
         limit(async () => {
           let msgResp
           try {
+            let mailExists = false
+            if (message.id && !skipMailExistCheck)
+              mailExists = await IfMailDocExist(email, message.id)
+            if (mailExists) {
+              Logger.info(`skipping mail with mailid: ${message.id}`)
+              return
+            }
             msgResp = await retryWithBackoff(
               () =>
                 gmail.users.messages.get({
@@ -277,23 +283,19 @@ export const handleGmailIngestion = async (
               client,
             )
             // Call modified parseMail to get data and PDF count
-            const { mailData, insertedPdfCount, exist } = await parseMail(
+            const { mailData, insertedPdfCount } = await parseMail(
               msgResp.data,
               gmail,
               client,
               email,
             )
 
-            if (!exist) {
-              await insert(mailData, mailSchema)
-              // Increment counters only on success
-              insertedMessagesInBatch++
-              insertedPdfAttachmentsInBatch += insertedPdfCount
-            } else {
-              await insert(mailData, mailSchema)
-            }
+            await insert(mailData, mailSchema)
+            // Increment counters only on success
+            insertedMessagesInBatch++
+            insertedPdfAttachmentsInBatch += insertedPdfCount
           } catch (error) {
-            getUserLogger(email).error(
+            loggerWithChild({email: email}).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -310,14 +312,14 @@ export const handleGmailIngestion = async (
 
       // Post stats based on successful operations in this batch
       // Always post Gmail count, even if it's zero for this batch, to confirm processing.
-      getUserLogger(email).info(
-        ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${insertedMessagesInBatch}, jobId: ${jobId}`,
+      loggerWithChild({email: email}).info(
+        ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${totalMails}, jobId: ${jobId}`,
       )
       sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
 
       // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        getUserLogger(email).info(
+        loggerWithChild({email: email}).info(
           ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
         )
         sendStatsUpdate(
@@ -345,7 +347,7 @@ export const handleGmailIngestion = async (
 
   failedAttachmentCount = 0
   failedMessageCount = 0
-  getUserLogger(email).info(`Inserted ${totalMails} mails`)
+  loggerWithChild({email: email}).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
@@ -383,7 +385,7 @@ export const parseMail = async (
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
   userEmail: string,
-): Promise<{ mailData: Mail; insertedPdfCount: number; exist: boolean }> => {
+): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
   const messageId = email.id
   const threadId = email.threadId
   let insertedPdfCount = 0
@@ -418,13 +420,13 @@ export const parseMail = async (
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let docId = messageId
-  let exist = false
   let userMap: Record<string, string> = {}
+  let mailExist = false
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
       if (res[mailId]?.exists) {
-        exist = true
+        mailExist = true
         userMap = res[mailId].userMap
         docId = res[mailId].docId
       }
@@ -433,7 +435,6 @@ export const parseMail = async (
         error,
         `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
       )
-      exist = false
     }
   }
   const dateHeader = getHeader("Date")
@@ -466,7 +467,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload && !exist) {
+  if (payload && !mailExist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -550,7 +551,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, insertedPdfCount, exist }
+  return { mailData: emailData, insertedPdfCount }
 }
 
 const getBody = (payload: any): string => {

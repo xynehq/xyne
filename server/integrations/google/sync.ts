@@ -22,6 +22,7 @@ import {
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
   insertWithRetry,
+  IfMailDocExist,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -69,10 +70,12 @@ import {
   getTextFromEventDescription,
   getUniqueEmails,
   insertContact,
+  loggerWithChild,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
 import { GaxiosError } from "gaxios"
+import { skipMailExistCheck } from "./config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -449,8 +452,8 @@ export const handleGoogleOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
-  Logger.info("handleGoogleOAuthChanges")
   const data = job.data
+  loggerWithChild({email: data.email??""}).info("handleGoogleOAuthChanges")
   const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
   for (const syncJob of syncJobs) {
     let stats = newStats()
@@ -489,7 +492,7 @@ export const handleGoogleOAuthChanges = async (
         newStartPageToken &&
         newStartPageToken !== config.driveToken
       ) {
-        Logger.info(`total changes:  ${changes.length}`)
+        loggerWithChild({email: data.email??""}).info(`total changes:  ${changes.length}`)
         for (const change of changes) {
           try {
             let changeStats = await handleGoogleDriveChange(
@@ -500,7 +503,7 @@ export const handleGoogleOAuthChanges = async (
             stats = mergeStats(stats, changeStats)
             changesExist = true
           } catch (err) {
-            Logger.error(
+            loggerWithChild({email: data.email??""}).error(
               err,
               `Error syncing drive change, but continuing sync engine execution.`,
             )
@@ -542,7 +545,7 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          Logger.error(
+          loggerWithChild({email: data.email??""}).error(
             err,
             `Error syncing contacts, but continuing sync engine execution.`,
           )
@@ -587,7 +590,7 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          Logger.error(
+          loggerWithChild({email: data.email??""}).error(
             err,
             `Error syncing other contacts, but continuing sync engine execution.`,
           )
@@ -631,15 +634,15 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        Logger.info(
+        loggerWithChild({email: data.email??""}).info(
           `Changes successfully synced for Drive: ${JSON.stringify(stats)}`,
         )
       } else {
-        Logger.info(`No changes to sync`)
+        loggerWithChild({email: data.email??""}).info(`No changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      Logger.error(
+      loggerWithChild({email: data.email??""}).error(
         error,
         `Could not successfully complete sync for Google Drive, but continuing sync engine execution.: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
@@ -721,7 +724,7 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        Logger.info(
+        loggerWithChild({email: data.email??""}).info(
           `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
         )
       } else {
@@ -729,7 +732,7 @@ export const handleGoogleOAuthChanges = async (
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      Logger.error(
+      loggerWithChild({email: data.email??""}).error(
         error,
         `Could not successfully complete Oauth sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
@@ -816,15 +819,15 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        Logger.info(
+        loggerWithChild({email: data.email??""}).info(
           `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
         )
       } else {
-        Logger.info(`No Google Calendar Event changes to sync`)
+        loggerWithChild({email: data.email??""}).info(`No Google Calendar Event changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      Logger.error(
+      loggerWithChild({email: data.email??""}).error(
         error,
         `Could not successfully complete Oauth sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
@@ -1161,6 +1164,13 @@ const handleGmailChanges = async (
           if (history.messagesAdded) {
             for (const { message } of history.messagesAdded) {
               try {
+                let mailExists = false
+                if (message && message.id && !skipMailExistCheck)
+                  mailExists = await IfMailDocExist(userEmail, message.id)
+                if (mailExists && message) {
+                  Logger.info(`skipping mail with mailid: ${message.id}`)
+                  continue
+                }
                 const msgResp = await retryWithBackoff(
                   () =>
                     gmail.users.messages.get({
@@ -1174,20 +1184,16 @@ const handleGmailChanges = async (
                   client,
                 )
 
-                const { mailData, exist } = await parseMail(
+                const { mailData } = await parseMail(
                   msgResp.data,
                   gmail,
                   userEmail,
                   client!,
                 )
-                if (!exist) {
-                  await insert(mailData, mailSchema)
-                  stats.added += 1
-                  changesExist = true
-                } else {
-                  // we are inserting with updated userMap
-                  await insert(mailData, mailSchema)
-                }
+
+                await insert(mailData, mailSchema)
+                stats.added += 1
+                changesExist = true
               } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(
