@@ -99,6 +99,8 @@ import {
   ListAgentsApi,
   UpdateAgentApi,
   DeleteAgentApi,
+  GetWorkspaceUsersApi,
+  GetAgentPermissionsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -243,6 +245,8 @@ export const AppRoutes = app
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/workspace/users", GetWorkspaceUsersApi)
+  .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
