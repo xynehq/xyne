@@ -20,7 +20,7 @@ import {
   insertMember,
   formatSlackSpecialMentions,
 } from "@/integrations/slack/index"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { GaxiosError } from "gaxios"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
@@ -85,6 +85,7 @@ type SlackMessage = NonNullable<
 
 const concurrency = 5
 
+const loggerWithChild = getLoggerWithChild(Subsystem.Queue)
 type ChangeStats = {
   added: number
   removed: number
@@ -320,12 +321,13 @@ export const handleSlackChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
-  Logger.info("handleSlackChanges started")
+  const jobData = job.data
+  loggerWithChild({email: jobData.email??""}).info("handleSlackChanges started")
 
   try {
     const syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
     if (!syncJobs || syncJobs.length === 0) {
-      Logger.info("No Slack sync jobs found")
+      loggerWithChild({email: jobData.email??""}).info("No Slack sync jobs found")
       return
     }
 
@@ -367,7 +369,12 @@ export const handleSlackChanges = async (
 
         // Get all conversations
         const conversations = (
-          (await getAllConversations(client, true, new AbortController())) || []
+          (await getAllConversations(
+            client,
+            true,
+            new AbortController(),
+            email,
+          )) || []
         ).filter((conversation) => {
           return (
             conversation.is_mpim ||
@@ -419,13 +426,13 @@ export const handleSlackChanges = async (
           limit(async () => {
             try {
               if (!channel.id) {
-                Logger.warn("Skipping channel without ID")
+                loggerWithChild({email: jobData.email??""}).warn("Skipping channel without ID")
                 return
               }
 
               // Skip if this channel has already been synced by another job in this run
               if (syncedChannels.has(channel.id)) {
-                Logger.info(
+                loggerWithChild({email: jobData.email??""}).info(
                   `Skipping channel ${channel.name || channel.id} as it was already synced by another job`,
                 )
                 return
@@ -439,6 +446,7 @@ export const handleSlackChanges = async (
                 user,
                 client,
                 channel,
+                email,
               )
               Logger.info(
                 `Current members for channel ${channel.name || channel.id}: ${currentMemberIds.length}`,
@@ -482,7 +490,7 @@ export const handleSlackChanges = async (
               )
 
               if (missingMemberIds.length > 0) {
-                Logger.info(
+                loggerWithChild({email: jobData.email??""}).info(
                   `Fetching ${missingMemberIds.length} missing members from Slack API`,
                 )
                 const concurrencyLimit = pLimit(5)
@@ -492,7 +500,7 @@ export const handleSlackChanges = async (
                       try {
                         return await client.users.info({ user: memberId })
                       } catch (error) {
-                        Logger.error(
+                        loggerWithChild({email: jobData.email??""}).error(
                           `Error fetching user ${memberId}: ${error}`,
                         )
                         return { ok: false }
@@ -521,7 +529,7 @@ export const handleSlackChanges = async (
                           jobStats.added++
                         }
                       } catch (error) {
-                        Logger.error(
+                        loggerWithChild({email: jobData.email??""}).error(
                           `Error fetching team for user ${userResp.user.id}: ${error}`,
                         )
                       }
@@ -532,7 +540,7 @@ export const handleSlackChanges = async (
                       await insertMember(userResp.user)
                       jobStats.added++
                     } catch (error) {
-                      Logger.error(
+                      loggerWithChild({email: jobData.email??""}).error(
                         `Error inserting member ${userResp.user.id}: ${error}`,
                       )
                     }
@@ -575,7 +583,7 @@ export const handleSlackChanges = async (
 
               if (!channelExists) {
                 // New channel - insert with current permissions
-                Logger.info(`New channel found: ${channel.name || channel.id}`)
+                loggerWithChild({email: jobData.email??""}).info(`New channel found: ${channel.name || channel.id}`)
 
                 // Insert the new channel
                 const conversationWithPermission: Channel & {
@@ -586,7 +594,7 @@ export const handleSlackChanges = async (
                 }
 
                 // For new channels, fetch all messages using insertChannelMessages
-                Logger.info(
+                loggerWithChild({email: jobData.email??""}).info(
                   `Fetching all messages for new channel ${channel.name || channel.id}`,
                 )
                 await insertChannelMessages(
@@ -603,7 +611,7 @@ export const handleSlackChanges = async (
                 changeExist = true
                 jobStats.added++
               } else {
-                Logger.info(
+                loggerWithChild({email: jobData.email??""}).info(
                   `Fetching messages since last sync for channel ${channel.name || channel.id}`,
                 )
                 const messagesChanged = await insertChannelMessages(
@@ -631,7 +639,7 @@ export const handleSlackChanges = async (
               // Mark this channel as synced
               syncedChannels.add(channel.id)
             } catch (error) {
-              Logger.error(`Error processing channel ${channel.id}: ${error}`)
+              loggerWithChild({email: jobData.email??""}).error(`Error processing channel ${channel.id}: ${error}`)
             }
           }),
         )
@@ -670,7 +678,7 @@ export const handleSlackChanges = async (
               lastRanOn: jobStartTime,
             })
           })
-          Logger.info(`Changes successfully synced for Slack job ${syncJob.id}`)
+          loggerWithChild({email: jobData.email??""}).info(`Changes successfully synced for Slack job ${syncJob.id}`)
         } else {
           // Logger.info(`No changes to sync for Slack job ${syncJob.id}`);
 
@@ -728,7 +736,7 @@ export const handleSlackChanges = async (
       }
     }
   } catch (error) {
-    Logger.error(`Error in Slack sync: ${error}`)
+    loggerWithChild({email: jobData.email??""}).error(`Error in Slack sync: ${error}`)
   }
 }
 

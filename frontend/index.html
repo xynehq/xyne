@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/src/assets/logo.svg" />
     <title>Xyne Search</title>
+    <script>
+      (function() {
+        try {
+          const preference = localStorage.getItem('theme'); // Use 'theme' key
+          if (preference !== null) {
+            // Check if the stored preference is 'dark'
+            if (preference === 'dark') {
+              document.documentElement.classList.add('dark');
+            }
+            // If it's 'light', or any other value, do nothing (no 'dark' class added by this script)
+          } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            // If no theme preference in localStorage, use system preference
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          console.error('Error applying initial theme:', e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

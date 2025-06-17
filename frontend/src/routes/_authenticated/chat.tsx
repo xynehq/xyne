@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -17,17 +18,67 @@ import {
   ChevronDown,
   ThumbsUp,
   ThumbsDown,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+  Plus,
+  Minus,
+  Maximize2,
+  Minimize2,
 } from "lucide-react"
-import { useEffect, useRef, useState, Fragment } from "react"
+import { useEffect, useRef, useState, Fragment, useCallback } from "react"
 import {
-  ChatSSEvents,
+  TransformWrapper,
+  TransformComponent,
+  useControls,
+} from "react-zoom-pan-pinch"
+import { useTheme } from "@/components/ThemeContext"
+import mermaid from "mermaid"
+
+// Initialize mermaid with secure configuration to prevent syntax errors
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'strict',
+  fontFamily: 'monospace',
+  logLevel: 'fatal', // Minimize mermaid console logs
+  suppressErrorRendering: true, // Suppress error rendering if available
+  flowchart: {
+    useMaxWidth: true,
+  },
+  sequence: {
+    useMaxWidth: true,
+  },
+  gantt: {
+    useMaxWidth: true,
+  },
+  journey: {
+    useMaxWidth: true,
+  },
+  class: {
+    useMaxWidth: true,
+  },
+  state: {
+    useMaxWidth: true,
+  },
+  er: {
+    useMaxWidth: true,
+  },
+  pie: {
+    useMaxWidth: true,
+  },
+  gitGraph: {
+    useMaxWidth: true,
+  },
+})
+import {
   SelectPublicMessage,
   Citation,
   MessageFeedback,
   // Apps,
   // DriveEntity,
 } from "shared/types"
-import AssistantLogo from "@/assets/assistant-logo.svg"
+import logo from "@/assets/logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -49,6 +100,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { EnhancedReasoning } from "@/components/EnhancedReasoning"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
@@ -57,16 +109,30 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+import { useChatStream } from "@/hooks/useChatStream"
+import { useChatHistory } from "@/hooks/useChatHistory"
+import { parseHighlight } from "@/components/Highlight"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
-type CurrentResp = {
-  resp: string
-  chatId?: string
-  messageId?: string
-  sources?: Citation[]
-  citationMap?: Record<number, number>
-  thinking?: string
+// Utility function to suppress console logs for a specific operation
+function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
+  const originals = ['error', 'warn', 'log', 'info', 'debug'].map(k => [k, (console as any)[k]])
+  originals.forEach(([k]) => ((console as any)[k] = () => {}))
+  try {
+    const result = fn()
+    if (result instanceof Promise) {
+      return result.finally(() => {
+        originals.forEach(([k, v]) => ((console as any)[k] = v))
+      })
+    } else {
+      originals.forEach(([k, v]) => ((console as any)[k] = v))
+      return result
+    }
+  } catch (error) {
+    originals.forEach(([k, v]) => ((console as any)[k] = v))
+    throw error
+  }
 }
 
 // Mapping from source ID to app/entity object
@@ -103,67 +169,6 @@ type ParsedMessagePart =
       }
     }
   | { type: "link"; value: string }
-
-// Helper function to parse HTML message input
-const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
-  const container = document.createElement("div")
-  container.innerHTML = htmlString
-  const parts: Array<ParsedMessagePart> = []
-
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (node.textContent) {
-        parts.push({ type: "text", value: node.textContent })
-      }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement
-      if (
-        el.tagName.toLowerCase() === "a" &&
-        el.classList.contains("reference-pill") &&
-        (el.dataset.docId || el.dataset.referenceId)
-      ) {
-        const entity = el.dataset.entity
-        const isContactPill =
-          entity === "OtherContacts" || entity === "Contacts"
-        let imgSrc: string | null = null
-        const imgElement = el.querySelector("img")
-        if (imgElement) {
-          imgSrc = imgElement.getAttribute("src")
-        }
-        parts.push({
-          type: "pill",
-          value: {
-            docId: el.dataset.docId || el.dataset.referenceId!,
-            url: isContactPill ? null : el.getAttribute("href"),
-            title: el.getAttribute("title"),
-            app: el.dataset.app,
-            entity: entity,
-            imgSrc: imgSrc,
-          },
-        })
-      } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
-        // Ensure this link is not also a reference pill that we've already processed
-        if (
-          !(
-            el.classList.contains("reference-pill") &&
-            (el.dataset.docId || el.dataset.referenceId)
-          )
-        ) {
-          parts.push({
-            type: "link",
-            value: el.getAttribute("href") || "",
-          })
-        }
-        // Do not walk children of a link we've already processed as a "link" part
-      } else {
-        Array.from(el.childNodes).forEach(walk)
-      }
-    }
-  }
-
-  Array.from(container.childNodes).forEach(walk)
-  return parts
-}
 
 // Helper function to convert JSON message parts back to HTML using Pill component
 const jsonToHtmlMessage = (jsonString: string): string => {
@@ -207,7 +212,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           // Create a simple anchor tag string for links
           // Ensure it has similar styling to how it's created in ChatBox
           // The text of the link will be the URL itself
-          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800 cursor-pointer">${url}</a>`
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer">${url}</a>`
         }
         // Add a space only if the part is not the last one, or if the next part is text.
         // This avoids trailing spaces or double spaces between elements.
@@ -226,12 +231,13 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
-
+const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
   workspace,
   agentWhiteList,
 }: ChatPageProps) => {
+  const { theme } = useTheme()
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -239,7 +245,9 @@ export const ChatPage = ({
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
-
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    Boolean(chatParams.agentic),
+  )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -247,33 +255,61 @@ export const ChatPage = ({
       : "/_authenticated/chat",
   })
   const queryClient = useQueryClient()
+  
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+      search: {
+        ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+        ...(isAgenticMode ? { agentic: true } : {}),
+      },
     })
   }
   const hasHandledQueryParam = useRef(false)
 
   const [query, setQuery] = useState("")
-  const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : [],
-  )
-  const [chatId, setChatId] = useState<string | null>(
-    (params as any).chatId || null,
-  )
+  const chatId = (params as any).chatId || null
+  
+  // Add retryIsStreaming state
+  const [retryIsStreaming, setRetryIsStreaming] = useState(false)
+  
+  // Use custom hooks for streaming and history
+  const { data: historyData, isLoading: historyLoading } = useChatHistory(chatId)
+  const {
+    partial,
+    thinking,
+    sources,
+    citationMap,
+    isStreaming,
+    messageId: streamInfoMessageId,
+    startStream,
+    stopStream,
+    retryMessage,
+  } = useChatStream(chatId, (title: string) => setChatTitle(title), setRetryIsStreaming)
+  
+  // Use history data if available, otherwise fall back to loader data
+  const messages = historyData?.messages || (isWithChatId ? data?.messages || [] : [])
+  
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
   )
-  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
-  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
-  const [stopMsg, setStopMsg] = useState<boolean>(false)
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
-    null,
-  ) // Added state
+  
+  // Create a current streaming response for compatibility with existing UI,
+  // merging the real stream IDs once available
+  const currentResp = isStreaming
+    ? {
+        resp: partial,
+        thinking,
+        sources,
+        citationMap,
+        messageId: streamInfoMessageId,
+        chatId,
+      }
+    : null
 
-  const currentRespRef = useRef<CurrentResp | null>(null)
+  const [showRagTrace, setShowRagTrace] = useState(false)
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
@@ -281,7 +317,6 @@ export const ChatPage = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
-  const [isStreaming, setIsStreaming] = useState(false)
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
@@ -291,8 +326,8 @@ export const ChatPage = ({
   const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
     new Map(),
   ) // State for all citations
-  const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
-  const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+  // const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
+  // const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, MessageFeedback | null>
   >({})
@@ -302,10 +337,15 @@ export const ChatPage = ({
     return storedValue ? JSON.parse(storedValue) : true
   })
 
+  // Compute disableRetry flag for retry buttons
+  const disableRetry = isStreaming || retryIsStreaming
+
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
-
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
     Error,
@@ -360,7 +400,7 @@ export const ChatPage = ({
   useEffect(() => {
     const newCitations = new Map(allCitations)
     let changed = false
-    messages.forEach((msg) => {
+    messages.forEach((msg: SelectPublicMessage) => {
       if (msg.messageRole === "assistant" && msg.sources) {
         // Add explicit type for citation
         msg.sources.forEach((citation: Citation) => {
@@ -417,7 +457,7 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
-    if (isStreaming) {
+    if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
           if (prev.length >= 3) {
@@ -432,13 +472,14 @@ export const ChatPage = ({
     } else {
       setDots("")
     }
-  }, [isStreaming])
+  }, [isStreaming, retryIsStreaming])
 
+  // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
-      setMessages(isWithChatId ? data?.messages || [] : [])
+      // Data will be loaded via useChatHistory hook
     }
-    setChatId((params as any).chatId || null)
+    
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
@@ -455,10 +496,6 @@ export const ChatPage = ({
       setFeedbackMap(initialFeedbackMap)
     }
 
-    if (!isStreaming && !hasHandledQueryParam.current) {
-      setCurrentResp(null)
-      currentRespRef.current = null
-    }
     inputRef.current?.focus()
     setShowSources(false)
     setCurrentCitations([])
@@ -466,7 +503,7 @@ export const ChatPage = ({
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
-    data?.messages, // This will re-run when messages data changes
+    data?.messages,
     isWithChatId,
     params,
   ])
@@ -476,7 +513,6 @@ export const ChatPage = ({
       const messageToSend = decodeURIComponent(chatParams.q)
 
       let sourcesArray: string[] = []
-      // Process chatParams.sources safely
       const _sources = chatParams.sources as string | string[] | undefined
 
       if (Array.isArray(_sources)) {
@@ -488,13 +524,17 @@ export const ChatPage = ({
           .filter((s) => s.length > 0)
       }
 
-      // Set reasoning state from URL param if present
       if (typeof chatParams.reasoning === "boolean") {
         setIsReasoningActive(chatParams.reasoning)
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(messageToSend, sourcesArray, chatParams.agentId)
+      handleSend(
+        messageToSend,
+        sourcesArray,
+        chatParams.agentId,
+        chatParams.toolExternalIds,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -504,6 +544,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
+          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
       })
@@ -513,265 +554,40 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
+    chatParams.toolExternalIds,
     router,
   ])
 
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
-    agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
+    agentIdFromChatBox?: string | null,
+    toolExternalIds?: string[],
   ) => {
-    if (!messageToSend || isStreaming) return
-
-    // Reset userHasScrolled to false when a new message is sent.
-    // This ensures that the view will scroll down automatically as the new message streams in,
-    // unless the user manually scrolls up during the streaming.
+    if (!messageToSend || isStreaming || retryIsStreaming) return
+    
     setUserHasScrolled(false)
     setQuery("")
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      { messageRole: "user", message: messageToSend },
-    ])
-
-    setIsStreaming(true)
-    setCurrentResp({ resp: "", thinking: "" })
-    currentRespRef.current = { resp: "", sources: [], thinking: "" }
-
-    // const appEntities = selectedSources
-    //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
-    //   .filter((item) => item !== undefined)
-
-    // Always parse the message input to a structured format
-    const parsedMessageParts = parseMessageInput(messageToSend)
-
-    // Determine if the message contains any pills or links
-    const hasRichContent = parsedMessageParts.some(
-      (part) => part.type === "pill" || part.type === "link",
+    
+    // Add user message optimistically to React Query cache
+    const queryKey = chatId
+    
+    queryClient.setQueryData<any>(
+      ["chatHistory", queryKey],
+      (oldData: any) => {
+        if (!oldData) {
+          return { messages: [{ messageRole: "user", message: messageToSend }] }
+        }
+        return {
+          ...oldData,
+          messages: [...(oldData.messages || []), { messageRole: "user", message: messageToSend }],
+        }
+      }
     )
-
-    let finalMessagePayload: string
-    if (hasRichContent) {
-      finalMessagePayload = JSON.stringify(parsedMessageParts)
-    } else {
-      // If only text parts, send the original plain text message
-      // We extract the text content from parsedMessageParts to ensure it's just the text
-      // and not potentially an empty array string if messageToSend was empty.
-      finalMessagePayload = parsedMessageParts
-        .filter((part) => part.type === "text")
-        .map((part) => part.value)
-        .join("")
-    }
-
-    const url = new URL(`/api/v1/message/create`, window.location.origin)
-    if (chatId) {
-      url.searchParams.append("chatId", chatId)
-    }
-    url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", finalMessagePayload)
-
-    // if (appEntities.length > 0) {
-    //   url.searchParams.append(
-    //     "stringifiedAppEntity",
-    //     JSON.stringify(appEntities),
-    //   )
-    // }
-    if (isReasoningActive) {
-      url.searchParams.append("isReasoningEnabled", "true")
-    }
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    console.log("Using agentId:", agentIdToUse)
-    if (agentIdToUse) {
-      url.searchParams.append("agentId", agentIdToUse)
-    }
-
-    eventSourceRef.current = new EventSource(url.toString(), {
-      // Store EventSource
-      withCredentials: true,
-    })
-
-    // ... (rest of the eventSource listeners remain the same) ...
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.CitationsUpdate,
-      (event) => {
-        // Use ref
-        const { contextChunks, citationMap } = JSON.parse(event.data)
-        if (currentRespRef.current) {
-          currentRespRef.current.sources = contextChunks
-          currentRespRef.current.citationMap = citationMap
-          // Add explicit type for prevResp
-          setCurrentResp((prevResp: CurrentResp | null) => ({
-            ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
-            resp: prevResp?.resp || "",
-            sources: contextChunks,
-            citationMap,
-          }))
-        }
-      },
-    )
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      setCurrentResp((prevResp: CurrentResp | null) => ({
-        ...(prevResp || { resp: "", thinking: event.data || "" }),
-        thinking: (prevResp?.thinking || "") + event.data,
-      }))
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.ResponseUpdate,
-      (event) => {
-        setCurrentResp((prevResp: CurrentResp | null) => {
-          const updatedResp = prevResp
-            ? { ...prevResp, resp: prevResp.resp + event.data }
-            : { resp: event.data, thinking: "", sources: [], citationMap: {} }
-          currentRespRef.current = updatedResp
-          return updatedResp
-        })
-      },
-    )
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.ResponseMetadata,
-      (event) => {
-        // Use ref
-        const { chatId, messageId } = JSON.parse(event.data)
-        setChatId(chatId)
-        if (chatId) {
-          setTimeout(() => {
-            router.navigate({
-              to: "/chat/$chatId",
-              params: { chatId },
-              search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-            })
-          }, 1000)
-
-          if (!stopMsg) {
-            setStopMsg(true)
-          }
-        }
-        if (messageId) {
-          if (currentRespRef.current) {
-            setCurrentResp((resp: CurrentResp | null) => {
-              const updatedResp = resp || { resp: "", thinking: "" }
-              updatedResp.chatId = chatId
-              updatedResp.messageId = messageId
-              currentRespRef.current = updatedResp
-              return updatedResp
-            })
-          } else {
-            setMessages((prevMessages) => {
-              const lastMessage = prevMessages[prevMessages.length - 1]
-              if (lastMessage.messageRole === "assistant") {
-                return [
-                  ...prevMessages.slice(0, -1),
-                  { ...lastMessage, externalId: messageId },
-                ]
-              }
-              return prevMessages
-            })
-          }
-        }
-      },
-    )
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.ChatTitleUpdate,
-      (event) => {
-        // Use ref
-        setChatTitle(event.data)
-      },
-    )
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
-      // Use ref
-      const currentResp = currentRespRef.current
-      if (currentResp) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          {
-            messageRole: "assistant",
-            message: currentResp.resp,
-            externalId: currentResp.messageId,
-            sources: currentResp.sources,
-            citationMap: currentResp.citationMap,
-            thinking: currentResp.thinking,
-          },
-        ])
-      }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setStopMsg(false)
-      setIsStreaming(false)
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
-      // Use ref
-      console.error("Error with SSE:", event.data)
-      const currentResp = currentRespRef.current
-      if (currentResp) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          {
-            messageRole: "assistant",
-            message: `${event.data}`,
-            externalId: currentResp.messageId,
-            sources: currentResp.sources,
-            citationMap: currentResp.citationMap,
-            thinking: currentResp.thinking,
-          },
-        ])
-      }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setStopMsg(false)
-      setIsStreaming(false)
-    })
-
-    eventSourceRef.current.onerror = (error) => {
-      // Use ref
-      // Check if the stop was intentional
-      if (userStopped) {
-        setUserStopped(false) // Reset the flag
-        // Clean up state, similar to handleStop or End event
-        setCurrentResp(null)
-        currentRespRef.current = null
-        setStopMsg(false)
-        setIsStreaming(false)
-        // Close again just in case, and clear ref
-        eventSourceRef.current?.close()
-        eventSourceRef.current = null
-        // Do NOT add an error message in this case
-        return
-      }
-
-      // If it wasn't a user stop, proceed with error handling as before
-      console.error("Error with SSE:", error)
-      const currentResp = currentRespRef.current
-      if (currentResp) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          {
-            messageRole: "assistant",
-            message: `Error occurred: please try again`,
-          },
-        ])
-      }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setStopMsg(false)
-      setIsStreaming(false)
-    }
-
-    setQuery("")
+    await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, toolExternalIds || [], agentIdToUse)
   }
 
   const handleFeedback = async (
@@ -818,356 +634,9 @@ export const ChatPage = ({
     }
   }
 
-  const handleStop = async () => {
-    setUserStopped(true) // Indicate intentional stop before closing
-
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null // Clear the ref
-    }
-
-    setIsStreaming(false)
-
-    // 4. Attempt to send stop request to backend if IDs are available
-    if (chatId && isStreaming) {
-      // This `isStreaming` check might be redundant now, but let's keep it for safety
-      try {
-        await api.chat.stop.$post({
-          json: {
-            chatId: chatId,
-          },
-        })
-      } catch (error) {
-        console.error("Failed to send stop request to backend:", error)
-        toast({
-          title: "Error",
-          description: "Could not stop streaming.",
-          variant: "destructive",
-          duration: 1000,
-        })
-        // Backend stop failed, but client-side is already stopped
-      }
-    }
-
-    // 5. Add partial response to messages if available
-    if (currentRespRef.current && currentRespRef.current.resp) {
-      // Use currentRespRef.current directly
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        {
-          messageRole: "assistant",
-          message: currentRespRef.current?.resp || " ", // Use currentRespRef.current
-          externalId: currentRespRef.current?.messageId, // Use currentRespRef.current
-          sources: currentRespRef.current?.sources, // Use currentRespRef.current
-          citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
-          thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
-        },
-      ])
-    }
-
-    // 6. Clear streaming-related state *after* backend request and message handling
-    setCurrentResp(null)
-    currentRespRef.current = null
-    setStopMsg(false)
-    // 7. Invalidate router state after a short delay to refetch loader data
-    setTimeout(() => {
-      router.invalidate()
-    }, 1000) // Delay for 500ms
-  }
-
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
-
-    setIsStreaming(true)
-    const userMsgWithErr = messages.find(
-      (msg) =>
-        msg.externalId === messageId &&
-        msg.messageRole === "user" &&
-        msg.errorMessage,
-    )
-    setMessages((prevMessages) => {
-      if (userMsgWithErr) {
-        const updatedMessages = [...prevMessages]
-        const index = updatedMessages.findIndex(
-          (msg) => msg.externalId === messageId && msg.messageRole === "user",
-        )
-
-        if (index !== -1) {
-          updatedMessages[index] = {
-            ...updatedMessages[index],
-            errorMessage: "",
-          }
-          updatedMessages.splice(index + 1, 0, {
-            messageRole: "assistant",
-            message: "",
-            isRetrying: true,
-            thinking: "",
-            sources: [],
-          })
-        }
-
-        return updatedMessages
-      } else {
-        return prevMessages.map((msg) => {
-          if (msg.externalId === messageId && msg.messageRole === "assistant") {
-            return {
-              ...msg,
-              message: "",
-              isRetrying: true,
-              sources: [],
-              thinking: "",
-            }
-          }
-          return msg
-        })
-      }
-    })
-
-    const url = new URL(`/api/v1/message/retry`, window.location.origin)
-    url.searchParams.append("messageId", encodeURIComponent(messageId))
-    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
-    setStopMsg(true) // Ensure stop message can be sent for retries
-    eventSourceRef.current = new EventSource(url.toString(), {
-      // Store EventSource
-      withCredentials: true,
-    })
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.ResponseUpdate,
-      (event) => {
-        // Use ref
-        if (userMsgWithErr) {
-          setMessages((prevMessages) => {
-            const index = prevMessages.findIndex(
-              (msg) => msg.externalId === messageId,
-            )
-
-            if (index === -1 || index + 1 >= prevMessages.length) {
-              return prevMessages
-            }
-
-            const newMessages = [...prevMessages]
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              message: newMessages[index + 1].message + event.data,
-            }
-
-            return newMessages
-          })
-        } else {
-          setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg.externalId === messageId && msg.isRetrying
-                ? { ...msg, message: msg.message + event.data }
-                : msg,
-            ),
-          )
-        }
-      },
-    )
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      // Use ref
-      if (userMsgWithErr) {
-        setMessages((prevMessages) => {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            thinking: (newMessages[index + 1].thinking || "") + event.data,
-          }
-
-          return newMessages
-        })
-      } else {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, thinking: (msg.thinking || "") + event.data }
-              : msg,
-          ),
-        )
-      }
-    })
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.ResponseMetadata,
-      (event) => {
-        // Use ref
-        const userMessage = messages.find(
-          (msg) => msg.externalId === messageId && msg.messageRole === "user",
-        )
-        if (userMessage) {
-          const { messageId: newMessageId } = JSON.parse(event.data)
-
-          if (newMessageId) {
-            setMessages((prevMessages) => {
-              const index = prevMessages.findIndex(
-                (msg) => msg.externalId === messageId,
-              )
-
-              if (index === -1 || index + 1 >= prevMessages.length) {
-                return prevMessages
-              }
-
-              const newMessages = [...prevMessages]
-              newMessages[index + 1] = {
-                ...newMessages[index + 1],
-                externalId: newMessageId,
-              }
-              return newMessages
-            })
-          }
-        }
-      },
-    )
-
-    eventSourceRef.current.addEventListener(
-      ChatSSEvents.CitationsUpdate,
-      (event) => {
-        // Use ref
-        const { contextChunks, citationMap } = JSON.parse(event.data)
-        setMessages((prevMessages) => {
-          if (userMsgWithErr) {
-            const index = prevMessages.findIndex(
-              (msg) => msg.externalId === messageId,
-            )
-
-            if (index === -1 || index + 1 >= prevMessages.length) {
-              return prevMessages
-            }
-
-            const newMessages = [...prevMessages]
-
-            if (newMessages[index + 1].isRetrying) {
-              newMessages[index + 1] = {
-                ...newMessages[index + 1],
-                sources: contextChunks,
-                citationMap,
-              }
-            }
-
-            return newMessages
-          } else {
-            return prevMessages.map((msg) =>
-              msg.externalId === messageId && msg.isRetrying
-                ? { ...msg, sources: contextChunks, citationMap }
-                : msg,
-            )
-          }
-        })
-      },
-    )
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
-      // Use ref
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-
-          if (newMessages[index + 1].isRetrying) {
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              isRetrying: false,
-            }
-          }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, isRetrying: false }
-              : msg,
-          )
-        }
-      })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setIsStreaming(false)
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
-      // Use ref
-      console.error("Retry Error with SSE:", event.data)
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-
-          if (newMessages[index + 1].isRetrying)
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              isRetrying: false,
-              message: event.data,
-            }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, isRetrying: false, message: event.data }
-              : msg,
-          )
-        }
-      })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setIsStreaming(false)
-    })
-
-    eventSourceRef.current.onerror = (error) => {
-      // Use ref
-      console.error("Retry SSE Error:", error)
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            isRetrying: false,
-          }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-          )
-        }
-      })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
-      setIsStreaming(false)
-    }
+    await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
   const handleBookmark = async () => {
@@ -1195,22 +664,17 @@ export const ChatPage = ({
 
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
-    // Set userHasScrolled to true if the user scrolls up from the bottom.
-    // This will prevent the automatic scrolling behavior while the user is manually scrolling.
     setUserHasScrolled(!isAtBottom)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
-    // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
-    // This prevents the view from jumping to the bottom if the user is trying to read previous messages
-    // while a new message is streaming in.
     if (!container || userHasScrolled) return
 
     container.scrollTop = container.scrollHeight
-  }, [messages, currentResp?.resp])
+  }, [messages, partial])
 
-  if (data?.error) {
+  if (data?.error || historyLoading) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar isAgentMode={agentWhiteList} />
@@ -1267,7 +731,7 @@ export const ChatPage = ({
   }
 
   return (
-    <div className="h-full w-full flex flex-row bg-white">
+    <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -1275,43 +739,49 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
               <input
                 ref={titleRef}
-                className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
+                className="flex-grow text-[#1C1D1F] dark:text-gray-100 bg-transparent text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap outline-none"
                 onInput={handleInput}
                 onKeyDown={handleKeyDown}
                 onBlur={handleBlur}
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+              <span className="flex-grow text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                 {chatTitle}
               </span>
             )}
             {chatTitle && (
               <Pencil
                 stroke="#4A4F59"
+                className="dark:stroke-gray-400 cursor-pointer"
                 size={18}
                 onClick={handleChatRename}
-                className="cursor-pointer"
               />
             )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[20px] cursor-pointer"
+              className="ml-[20px] cursor-pointer dark:stroke-gray-400"
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
               onClick={handleBookmark}
               size={18}
             />
-            <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
-        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
-        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
         <div
           className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
@@ -1319,7 +789,7 @@ export const ChatPage = ({
         >
           <div className={`w-full h-full flex flex-col items-center`}>
             <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
-              {messages.map((message, index) => {
+              {messages.map((message: SelectPublicMessage, index: number) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
                 const userMessageWithErr =
@@ -1363,6 +833,7 @@ export const ChatPage = ({
                       onShowRagTrace={handleShowRagTrace}
                       feedbackStatus={feedbackMap[message.externalId!] || null}
                       onFeedback={handleFeedback}
+                      disableRetry={disableRetry}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -1403,6 +874,7 @@ export const ChatPage = ({
                           feedbackMap[message.externalId!] || null
                         }
                         onFeedback={handleFeedback}
+                        disableRetry={disableRetry}
                       />
                     )}
                   </Fragment>
@@ -1442,12 +914,13 @@ export const ChatPage = ({
                   // Feedback not applicable for streaming response, but props are needed
                   feedbackStatus={null}
                   onFeedback={handleFeedback}
+                  disableRetry={disableRetry}
                 />
               )}
-              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
+              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white dark:bg-[#1E1E1E]"></div>
             </div>
             {showRagTrace && chatId && selectedMessageId && (
-              <div className="fixed inset-0 z-50 bg-white overflow-auto">
+              <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
                 <RagTraceVirtualization
                   chatId={chatId}
                   messageId={selectedMessageId}
@@ -1459,16 +932,21 @@ export const ChatPage = ({
               </div>
             )}
             <ChatBox
+              role={user?.role}
               query={query}
               setQuery={setQuery}
-              handleSend={handleSend} // handleSend function is passed here
-              handleStop={handleStop}
+              handleSend={handleSend}
+              handleStop={stopStream}
               isStreaming={isStreaming}
+              retryIsStreaming={retryIsStreaming}
               allCitations={allCitations}
+              setIsAgenticMode={setIsAgenticMode}
+              isAgenticMode={isAgenticMode}
               chatId={chatId}
               agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
               setIsReasoningActive={setIsReasoningActive}
+              user={user} // Pass user prop
             />
           </div>
           <Sources
@@ -1499,7 +977,7 @@ const MessageCitationList = ({
         {citations.map((citation: Citation, index: number) => (
           <li
             key={index}
-            className="border-[#E6EBF5] border-[1px] rounded-[10px] w-[196px] mr-[6px]"
+            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
           >
             <a
               href={citation.url}
@@ -1509,20 +987,20 @@ const MessageCitationList = ({
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                 <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
-                    {citation.title}
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                    {citation.title ? parseHighlight(citation.title) : ""}
                   </p>
                   <div className="flex flex-col mt-[9px]">
                     <div className="flex items-center pb-[12px]">
                       {getIcon(citation.app, citation.entity)}
                       <span
                         style={{ fontWeight: 450 }}
-                        className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]"
+                        className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]"
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
                       <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px]"
+                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
                         style={{ fontFamily: "JetBrains Mono" }}
                       >
                         {index + 1}
@@ -1557,7 +1035,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
       {citations.map((citation: Citation, index: number) => (
         <li
           key={index}
-          className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[85%]"
+          className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%]"
         >
           <a
             href={citation.url}
@@ -1571,18 +1049,18 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] rounded-full text-[9px] mr-[8px]"
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
                 style={{ fontFamily: "JetBrains Mono" }}
               >
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
-                  {citation.title}
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                  {citation.title ? parseHighlight(citation.title) : ""}
                 </span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
                   {getIcon(citation.app, citation.entity)}
-                  <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
+                  <span className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]">
                     {getName(citation.app, citation.entity)}
                   </span>
                 </div>
@@ -1605,10 +1083,10 @@ const Sources = ({
   closeSources: () => void
 }) => {
   return showSources ? (
-    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] bg-white flex flex-col">
-      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5]">
+    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
+      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
         <span
-          className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
+          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
           style={{ fontFamily: "JetBrains Mono" }}
         >
           SOURCES
@@ -1616,7 +1094,7 @@ const Sources = ({
         <X
           stroke="#9EAEBE"
           size={14}
-          className="ml-auto cursor-pointer"
+          className="ml-auto cursor-pointer dark:stroke-gray-400"
           onClick={closeSources}
         />
       </div>
@@ -1633,8 +1111,422 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" />
+  <a
+    {...linkProps}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 dark:text-blue-400 hover:underline"
+  />
 )
+
+const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
+const Code = ({
+  inline,
+  children,
+  className,
+  ...props
+}: {
+  inline?: boolean
+  children?: React.ReactNode
+  className?: string
+  node?: any
+}) => {
+  const demoid = useRef(`dome${randomid()}`)
+  const [container, setContainer] = useState<HTMLElement | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [containerHeight, setContainerHeight] = useState(600)
+  const isMermaid =
+    className && /^language-mermaid/.test(className.toLocaleLowerCase())
+
+  let codeContent = ""
+  if (props.node && props.node.children && props.node.children.length > 0) {
+    codeContent = getCodeString(props.node.children)
+  } else if (typeof children === "string") {
+    codeContent = children
+  } else if (
+    Array.isArray(children) &&
+    children.length > 0 &&
+    typeof children[0] === "string"
+  ) {
+    // Fallback for cases where children might still be an array with a single string
+    codeContent = children[0]
+  }
+
+  // State for managing mermaid validation and rendering
+  const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
+  const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Function to validate if mermaid syntax looks complete
+  const isMermaidSyntaxValid = async (code: string): Promise<boolean> => {
+    if (!code || code.trim() === "") return false
+    
+    const trimmedCode = code.trim()
+    
+    // Basic checks for common mermaid diagram types
+    const mermaidPatterns = [
+      /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
+      /^sequenceDiagram\s*\n/i, 
+      /^classDiagram\s*\n/i,
+      /^stateDiagram\s*\n/i,
+      /^erDiagram\s*\n/i,
+      /^journey\s*\n/i,
+      /^gantt\s*\n/i,
+      /^pie\s*\n/i,
+      /^gitgraph\s*\n/i,
+      /^mindmap\s*\n/i,
+      /^timeline\s*\n/i,
+    ]
+    
+    // Check if it starts with a valid mermaid diagram type
+    const hasValidStart = mermaidPatterns.some(pattern => pattern.test(trimmedCode))
+    if (!hasValidStart) return false
+    
+    // Try to parse with mermaid to validate syntax
+    try {
+      // Use scoped console suppression to avoid global hijacking
+      return await suppressLogs(async () => {
+        await mermaid.parse(trimmedCode)
+        return true
+      })
+    } catch (error) {
+      // Invalid syntax
+      return false
+    }
+  }
+
+  // Debounced function to validate and render mermaid
+  const debouncedMermaidRender = useCallback(async (code: string) => {
+    if (!container || !isMermaid) return
+    
+    // Clear any existing timeout
+    if (mermaidRenderTimeoutRef.current) {
+      clearTimeout(mermaidRenderTimeoutRef.current)
+    }
+    
+    // If code is empty, clear the container
+    if (!code || code.trim() === "") {
+      container.innerHTML = ""
+      setLastValidMermaid("")
+      return
+    }
+    
+    // Check if syntax looks valid (async now)
+    const isValid = await isMermaidSyntaxValid(code)
+    if (!isValid) {
+      // If we have a previous valid render, keep showing it
+      if (lastValidMermaid) {
+        return
+      } else {
+        // Show loading state for incomplete syntax
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          <div>Mermaid Chart..</div>
+          <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
+        </div>`
+        return
+      }
+    }
+    
+    // Debounce the actual rendering to avoid too many rapid attempts
+    mermaidRenderTimeoutRef.current = setTimeout(async () => {
+      try {
+        // Additional safety: validate the code before rendering
+        if (!code || code.trim().length === 0) {
+          container.innerHTML = ""
+          setLastValidMermaid("")
+          return
+        }
+
+        // Sanitize the code to prevent potential issues
+        const sanitizedCode = code
+          .replace(/javascript:/gi, '') // Remove javascript: protocols
+          .replace(/data:/gi, '') // Remove data: protocols  
+          .replace(/<script[^>]*>.*?<\/script>/gis, '') // Remove script tags
+          .trim()
+
+        if (!sanitizedCode) {
+          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+            <div>📊 Mermaid Diagram</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #999;">Invalid diagram content</div>
+          </div>`
+          return
+        }
+
+        // Use scoped console suppression during rendering
+        try {
+          await suppressLogs(async () => {
+            // Render with additional error boundary
+            const { svg } = await mermaid.render(demoid.current, sanitizedCode)
+            
+            // Validate that we got valid SVG
+            if (!svg || !svg.includes('<svg')) {
+              throw new Error('Invalid SVG generated')
+            }
+            
+            container.innerHTML = svg
+            setLastValidMermaid(sanitizedCode)
+          })
+        } catch (error: any) {
+          // Completely suppress all error details from users
+          
+          // Always gracefully handle any mermaid errors by either:
+          // 1. Keeping the last valid diagram if we have one
+          // 2. Showing a loading/placeholder state if no valid diagram exists
+          // 3. Never showing syntax error messages to users
+          
+          if (lastValidMermaid) {
+            // Keep showing the last valid diagram - don't change anything
+            return
+          } else {
+            // Show a generic processing state instead of error details
+            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+              <div>📊 Mermaid Diagram</div>
+              <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
+            </div>`
+          }
+        }
+      } catch (outerError: any) {
+        // Final fallback error handling
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          <div>📊 Mermaid Diagram</div>
+          <div style="margin-top: 10px; font-size: 12px; color: #999;">Unable to render diagram</div>
+        </div>`
+      }
+    }, 300)
+  }, [container, isMermaid, lastValidMermaid])
+
+  useEffect(() => {
+    debouncedMermaidRender(codeContent)
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (mermaidRenderTimeoutRef.current) {
+        clearTimeout(mermaidRenderTimeoutRef.current)
+      }
+    }
+  }, [debouncedMermaidRender, codeContent])
+
+  const refElement = useCallback((node: HTMLElement | null) => {
+    if (node !== null) {
+      setContainer(node)
+    }
+  }, [])
+
+  const handleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  const adjustHeight = (delta: number) => {
+    setContainerHeight((prev) => Math.max(200, Math.min(1200, prev + delta)))
+  }
+
+  const MermaidControls = () => {
+    const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+    const buttonBaseClass =
+      "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10 transition-colors"
+    const iconSize = 12
+
+    const handleResetAndCenter = () => {
+      resetTransform()
+      // Small delay to ensure reset is complete before centering
+      setTimeout(() => {
+        centerView()
+      }, 10)
+    }
+
+    return (
+      <div className="absolute top-2 left-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <button
+          onClick={() => zoomIn()}
+          className={`${buttonBaseClass} rounded-l-md`}
+          title="Zoom In"
+        >
+          <ZoomIn size={iconSize} />
+        </button>
+        <button
+          onClick={() => zoomOut()}
+          className={`${buttonBaseClass}`}
+          title="Zoom Out"
+        >
+          <ZoomOut size={iconSize} />
+        </button>
+        <button
+          onClick={handleResetAndCenter}
+          className={`${buttonBaseClass}`}
+          title="Reset View"
+        >
+          <RefreshCw size={iconSize} />
+        </button>
+        <button
+          onClick={() => adjustHeight(-100)}
+          className={`${buttonBaseClass}`}
+          title="Decrease Height"
+        >
+          <Minus size={iconSize} />
+        </button>
+        <button
+          onClick={() => adjustHeight(100)}
+          className={`${buttonBaseClass}`}
+          title="Increase Height"
+        >
+          <Plus size={iconSize} />
+        </button>
+        <button
+          onClick={handleFullscreen}
+          className={`${buttonBaseClass} rounded-r-md`}
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? (
+            <Minimize2 size={iconSize} />
+          ) : (
+            <Maximize2 size={iconSize} />
+          )}
+        </button>
+      </div>
+    )
+  }
+
+  if (isMermaid) {
+    const containerStyle = isFullscreen
+      ? {
+          position: "fixed" as const,
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(113, 109, 109, 0.95)",
+          zIndex: 9999,
+        }
+      : {
+          width: "100%",
+          height: `${containerHeight}px`,
+          minHeight: "200px",
+          maxHeight: "1200px",
+        }
+
+    // Transform wrapper configuration for different view modes
+    const transformConfig = isFullscreen
+      ? {
+          initialScale: 2,
+          minScale: 0.5,
+          maxScale: 10,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+      : {
+          initialScale: 1.5,
+          minScale: 0.5,
+          maxScale: 7,
+          limitToBounds: true,
+          centerOnInit: true,
+          centerZoomedOut: true,
+          doubleClick: { disabled: true },
+          wheel: { step: 0.1 },
+          panning: { velocityDisabled: true },
+        }
+
+    return (
+      <div
+        className={`group relative mb-6 overflow-hidden ${isFullscreen ? "" : "w-full"}`}
+        style={isFullscreen ? containerStyle : undefined}
+      >
+        <TransformWrapper
+          key={`mermaid-transform-${isFullscreen ? "fullscreen" : "normal"}`}
+          initialScale={transformConfig.initialScale}
+          minScale={transformConfig.minScale}
+          maxScale={transformConfig.maxScale}
+          limitToBounds={transformConfig.limitToBounds}
+          centerOnInit={transformConfig.centerOnInit}
+          centerZoomedOut={transformConfig.centerZoomedOut}
+          doubleClick={transformConfig.doubleClick}
+          wheel={transformConfig.wheel}
+          panning={transformConfig.panning}
+        >
+          <TransformComponent
+            wrapperStyle={{
+              width: "100%",
+              height: isFullscreen ? "100vh" : `${containerHeight}px`,
+              cursor: "grab",
+              backgroundColor: isFullscreen ? "transparent" : "transparent",
+            }}
+            contentStyle={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "inline-block" }}>
+              <code id={demoid.current} style={{ display: "none" }} />
+              <code
+                ref={refElement}
+                data-name="mermaid"
+                className={`mermaid ${className || ""}`}
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "transparent",
+                }}
+              />
+            </div>
+          </TransformComponent>
+          <MermaidControls />
+        </TransformWrapper>
+        {isFullscreen && (
+          <button
+            onClick={handleFullscreen}
+            className="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-2 rounded-full shadow-lg z-10 transition-colors"
+            title="Exit Fullscreen"
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // For regular code blocks, improve styling
+  if (!inline) {
+    return (
+      <div className="relative group mb-4 w-full max-w-full">
+        <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
+          {className ? className.replace("language-", "") : "code"}
+        </div>
+        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto w-full max-w-full min-w-0">
+          <code
+            className={`${className || ""} text-sm block w-full`}
+            style={{
+              fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+              whiteSpace: "pre",
+              overflowWrap: "break-word",
+              wordBreak: "break-all",
+              maxWidth: "100%",
+            }}
+          >
+            {children}
+          </code>
+        </pre>
+      </div>
+    )
+  }
+
+  return (
+    <code
+      className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+      style={{
+        overflowWrap: "break-word",
+        wordBreak: "break-all",
+        maxWidth: "100%",
+      }}
+    >
+      {children}
+    </code>
+  )
+}
 
 export const ChatMessage = ({
   message,
@@ -1654,6 +1546,7 @@ export const ChatMessage = ({
   onShowRagTrace,
   feedbackStatus,
   onFeedback,
+  disableRetry = false,
 }: {
   message: string
   thinking: string
@@ -1670,9 +1563,11 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
-  feedbackStatus?: MessageFeedback | null
-  onFeedback?: (messageId: string, feedback: MessageFeedback) => void
+  feedbackStatus?: MessageFeedback | null;
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
+  disableRetry?: boolean;
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
 
@@ -1696,62 +1591,76 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
     >
       {isUser ? (
         <div
-          className="break-words overflow-wrap-anywhere"
+          className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
           dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
         />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row w-full">
+          <div className="flex flex-row w-full max-w-full min-w-0">
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={AssistantLogo}
+              src={logo}
             />
-            <div className="mt-[4px] markdown-content">
+            <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
               {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
-                  <MarkdownPreview
-                    source={processMessage(thinking)}
-                    wrapperElement={{
-                      "data-color-mode": "light",
-                    }}
-                    style={{
-                      padding: 0,
-                      backgroundColor: "transparent",
-                      color: "#627384",
-                      maxWidth: "100%",
-                      overflowWrap: "break-word",
-                    }}
-                    components={{
-                      a: renderMarkdownLink,
-                    }}
+                <>
+                  <EnhancedReasoning
+                    content={thinking}
+                    isStreaming={!responseDone}
+                    className="mb-4"
+                    citations={citations}
+                    citationMap={citationMap}
                   />
-                </div>
+                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
+                    <MarkdownPreview
+                      wrapperElement={{
+                        "data-color-mode": theme,
+                      }}
+                      style={{
+                        padding: 0,
+                        backgroundColor: "transparent",
+                        color: theme === "dark" ? "#A0AEC0" : "#627384",
+                        maxWidth: "100%",
+                        overflowWrap: "break-word",
+                        wordBreak: "break-word",
+                        minWidth: 0,
+                      }}
+                      components={{
+                        a: renderMarkdownLink,
+                        code: Code,
+                      }}
+                    />
+                  </div>
+                </>
               )}
               {message === "" && (!responseDone || isRetrying) ? (
-                <div className="flex-grow">
+                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
               ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     maxWidth: "100%",
                     overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
                   }}
                   components={{
                     a: renderMarkdownLink,
+                    code: Code,
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto max-w-full my-2">
                         <table
@@ -1762,7 +1671,7 @@ export const ChatMessage = ({
                             width: "100%",
                             maxWidth: "100%",
                           }}
-                          className="min-w-full"
+                          className="min-w-full dark:bg-slate-800" // Table background for dark
                           {...props}
                         />
                       </div>
@@ -1775,6 +1684,7 @@ export const ChatMessage = ({
                           textAlign: "left",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:text-white"
                         {...props}
                       />
                     ),
@@ -1782,21 +1692,27 @@ export const ChatMessage = ({
                       <td
                         style={{
                           border: "none",
-                          borderTop: "1px solid #e5e7eb",
+                          borderTop: "1px solid #e5e7eb", // Will need dark:border-gray-700
                           padding: "4px 8px",
                           overflowWrap: "break-word",
                         }}
+                        className="dark:border-gray-700 dark:text-white"
                         {...props}
                       />
                     ),
                     tr: ({ node, ...props }) => (
                       <tr
-                        style={{ backgroundColor: "#ffffff", border: "none" }}
+                        style={{ border: "none" }}
+                        className="bg-white dark:bg-[#1E1E1E]"
                         {...props}
                       />
                     ),
                     h1: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.6em" }} {...props} />
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
                     ),
                     h2: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.2em" }} {...props} />
@@ -1812,6 +1728,34 @@ export const ChatMessage = ({
                     ),
                     h6: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "0.68em" }} {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        style={{
+                          listStyleType: "disc",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol
+                        style={{
+                          listStyleType: "decimal",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li
+                        style={{
+                          marginBottom: "0.25rem",
+                        }}
+                        {...props}
+                      />
                     ),
                   }}
                 />
@@ -1840,11 +1784,9 @@ export const ChatMessage = ({
                   }
                 />
                 <img
-                  className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                  className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() =>
-                    messageId && !isStreaming && handleRetry(messageId)
-                  }
+                  onClick={() => messageId && !disableRetry && handleRetry(messageId)}
                   title="Retry"
                 />
                 {messageId && onFeedback && (
@@ -1918,6 +1860,11 @@ const chatParams = z.object({
     .optional()
     .default("false"),
   reasoning: z.boolean().optional(),
+  agentic: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
@@ -1930,14 +1877,25 @@ const chatParams = z.object({
           ? parsed
           : undefined
       } catch (e) {
-        return undefined // Invalid JSON
+        return undefined
       }
     }),
-  sources: z // Changed from sourceIds to sources, expects comma-separated string
+  sources: z
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  toolExternalIds: z
+    .string()
+    .optional()
+    .transform((val) =>
+      val
+        ? val
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined,
+    ),
 })
 
 type XyneChat = z.infer<typeof chatParams>

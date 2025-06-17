@@ -158,7 +158,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
               placeholder="Enter client id"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -182,7 +182,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
               placeholder="Enter client secret"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -205,7 +205,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
               placeholder="Enter OAuth scopes"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -288,7 +288,7 @@ export const ServiceAccountForm = ({
               placeholder="Enter your email"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -324,10 +324,10 @@ export const ServiceAccountForm = ({
               id="service-key"
               type="file"
               onChange={(e) => field.handleChange(e.target.files?.[0])}
-              className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -594,7 +594,7 @@ const IngestMoreUsersForm = ({
               placeholder="user1@example.com,user2@example.com"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
@@ -749,11 +749,13 @@ const ServiceAccountTab = ({
           <CardTitle>Google Workspace Service Account</CardTitle>
           {isActuallyConnecting ? (
             <>
-              <CardDescription>Connecting {progress}%</CardDescription>
+              <CardDescription className="dark:text-gray-300">
+                Connecting {progress}%
+              </CardDescription>
               <Progress value={progress} className="p-0 w-[60%]" />
             </>
           ) : (
-            <CardDescription>
+            <CardDescription className="dark:text-gray-300">
               Status: {currentStatus}
               {googleSAConnector &&
                 googleSAConnector.lastSyncedAt &&
@@ -993,7 +995,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
   )
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -1065,7 +1067,9 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
               {activeTab === "oauth" &&
                 showUserStats(userStats, "oauth", oauthIntegrationStatus) && (
                   <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-8">
-                    <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
+                    <h3 className="text-lg font-medium mb-2 dark:text-gray-100">
+                      Ingested Users
+                    </h3>
                     <UserStatsTable
                       userStats={userStats}
                       type={AuthType.OAuth}
@@ -1096,6 +1100,31 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                               Delete Users Data
                             </TabsTrigger>
                           </TabsList>
+                          <TabsContent
+                            value="ingest_more_user_admin"
+                            className="h-full"
+                          >
+                            <Card className="border-none shadow-none">
+                              <CardHeader className="px-0 pt-4">
+                                <CardTitle className="text-lg">
+                                  Ingest Data for Additional Users
+                                </CardTitle>
+                                <CardDescription>
+                                  Add more users to the existing Google
+                                  Workspace Service Account integration. Enter
+                                  comma-separated emails and specify
+                                  services/date ranges.
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="px-1 pb-0">
+                                {(() => {
+                                  const googleSAConnector = data?.find(
+                                    (c: Connectors) =>
+                                      c.app === Apps.GoogleDrive &&
+                                      c.authType === AuthType.ServiceAccount,
+                                  )
+                                  const serviceAccountConnectorId =
+                                    googleSAConnector?.id
                           <TabsContent
                             value="ingest_more_user_admin"
                             className="h-full"
@@ -1198,7 +1227,9 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                   (stats) => stats.type === AuthType.ServiceAccount,
                 ) && (
                   <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-12 pb-8">
-                    <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
+                    <h3 className="text-lg font-medium mb-2 dark:text-gray-100">
+                      Ingested Users
+                    </h3>
                     <UserStatsTable
                       userStats={userStats}
                       type={AuthType.ServiceAccount}
@@ -1379,7 +1410,7 @@ const DeleteUserDataForm = ({
               placeholder="user@example.com"
             />
             {field.state.meta.errors.length ? (
-              <p className="text-red-600 text-sm">
+              <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}

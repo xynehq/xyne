@@ -28,9 +28,6 @@ function FileUploadIntegration() {
   const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
-  const [, setDataSourceFiles] = useState<any[]>([])
-  const [, setIsLoadingFiles] = useState(false)
-  const [, setFilesError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const refreshFilesForActiveDataSource = () => {
@@ -59,46 +56,6 @@ function FileUploadIntegration() {
 
     fetchApiDataSources()
   }, [])
-
-  useEffect(() => {
-    if (activeDataSource && activeDataSource.trim() !== "") {
-      const fetchFilesForDataSource = async () => {
-        setIsLoadingFiles(true)
-        setFilesError(null)
-        try {
-          const response = await api.datasources[":dataSourceName"].files.$get({
-            param: { dataSourceName: activeDataSource },
-          })
-          if (response.ok) {
-            const filesData = await response.json()
-            setDataSourceFiles(filesData)
-          } else {
-            const errorText = await response.text()
-            console.error(
-              `Failed to fetch files for datasource ${activeDataSource}:`,
-              errorText,
-            )
-            setFilesError(`Failed to load files: ${response.statusText}`)
-            setDataSourceFiles([])
-          }
-        } catch (error) {
-          console.error(
-            `Error fetching files for datasource ${activeDataSource}:`,
-            error,
-          )
-          setFilesError("An unexpected error occurred while fetching files.")
-          setDataSourceFiles([])
-        } finally {
-          setIsLoadingFiles(false)
-        }
-      }
-      fetchFilesForDataSource()
-    } else {
-      setDataSourceFiles([])
-      setIsLoadingFiles(false)
-      setFilesError(null)
-    }
-  }, [activeDataSource, refreshKey])
 
   const handleDatasourceCreated = async (name: string) => {
     if (!dataSources.includes(name)) {
@@ -140,7 +97,7 @@ function FileUploadIntegration() {
   }
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -165,18 +122,18 @@ function FileUploadIntegration() {
               <div>
                 <div className="mb-6 text-center">
                   <div className="flex items-center justify-center space-x-2">
-                    <h2 className="text-2xl font-semibold text-gray-800">
+                    <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">
                       {activeDataSource}
                     </h2>
                   </div>
-                  <p className="text-gray-600 mt-1">
+                  <p className="text-gray-600 dark:text-gray-300 mt-1">
                     Upload more files to this data source.
                   </p>
                 </div>
 
                 <div className="mb-8">
                   <div
-                    className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
+                    className="flex items-center justify-between p-4 border dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800"
                     onClick={() => setIsUploadMoreOpen(!isUploadMoreOpen)}
                     role="button"
                     tabIndex={0}
@@ -188,15 +145,15 @@ function FileUploadIntegration() {
                     aria-controls="upload-more-content"
                   >
                     <div className="flex items-center gap-3">
-                      <UploadCloud className="h-5 w-5 text-slate-600" />
-                      <span className="text-lg font-medium">
+                      <UploadCloud className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                      <span className="text-lg font-medium dark:text-gray-200">
                         Upload more files to this datasource
                       </span>
                     </div>
                     {isUploadMoreOpen ? (
-                      <ChevronUp className="h-5 w-5 text-slate-600" />
+                      <ChevronUp className="h-5 w-5 text-slate-600 dark:text-slate-400" />
                     ) : (
-                      <ChevronDown className="h-5 w-5 text-slate-600" />
+                      <ChevronDown className="h-5 w-5 text-slate-600 dark:text-slate-400" />
                     )}
                   </div>
 
@@ -212,18 +169,21 @@ function FileUploadIntegration() {
                 </div>
 
                 <div className="mt-8 mb-8">
-                  <h3 className="text-lg font-medium mb-4">
+                  <h3 className="text-lg font-medium mb-4 dark:text-gray-200">
                     Files in {activeDataSource}
                   </h3>
-                  <FileAccordion activeDataSourceName={activeDataSource} />
+                  <FileAccordion 
+                  activeDataSourceName={activeDataSource} 
+                  refreshKey={refreshKey}
+                  />
                 </div>
               </div>
             ) : (
               <div className="text-center py-16">
-                <h2 className="text-xl font-medium text-gray-700 mb-2">
+                <h2 className="text-xl font-medium text-gray-700 dark:text-gray-200 mb-2">
                   Select a data source
                 </h2>
-                <p className="text-gray-500">
+                <p className="text-gray-500 dark:text-gray-400">
                   Choose a data source from the sidebar or create a new one
                 </p>
               </div>

@@ -1,8 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Bot, Plug, Plus, History } from "lucide-react"
+import { Bot, Plug, Plus, History, Sun, Moon } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
+import { useTheme } from "@/components/ThemeContext"
 import { UserRole } from "shared/types"
 import {
   Tooltip,
@@ -25,6 +26,8 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
+  const { theme, toggleTheme } = useTheme()
+  const isDarkMode = theme === "dark"
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,10 +61,12 @@ export const Sidebar = ({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showHistory])
 
+  // toggleDarkMode is now toggleTheme from context (no separate function needed here)
+
   return (
     <TooltipProvider>
       <div
-        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none ${CLASS_NAMES.SIDEBAR_CONTAINER}`}
+        className={`bg-white dark:bg-[#1E1E1E] h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col fixed ${className} z-20 select-none ${CLASS_NAMES.SIDEBAR_CONTAINER}`}
       >
         {showHistory && (
           <HistoryModal
@@ -86,7 +91,11 @@ export const Sidebar = ({
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plus size={18} stroke="#384049" />
+                <Plus
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="New" />
             </Tooltip>
@@ -94,11 +103,15 @@ export const Sidebar = ({
 
           <div
             onClick={() => setShowHistory((history) => !history)}
-            className={`flex w-8 h-8 ${showHistory ? "bg-[#D8DFE680]" : ""} rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] mt-[10px]`}
+            className={`flex w-8 h-8 ${showHistory ? "bg-[#D8DFE680] dark:bg-gray-700" : ""} rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]`}
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <History size={18} stroke="#384049" />
+                <History
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="History" />
             </Tooltip>
@@ -108,13 +121,19 @@ export const Sidebar = ({
           {isAgentMode && (
             <Link
               to="/agent"
-              className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
-                location.pathname.includes("/agent") ? "bg-[#D8DFE680]" : ""
+              className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+                location.pathname.includes("/agent")
+                  ? "bg-[#D8DFE680] dark:bg-gray-700"
+                  : ""
               }`}
             >
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Bot stroke="#384049" size={18} />
+                  <Bot
+                    stroke="#384049"
+                    size={18}
+                    className="dark:stroke-[#F1F3F4]"
+                  />
                 </TooltipTrigger>
                 <Tip side="right" info="agent" />{" "}
                 {/* Placeholder: Update this tooltip info */}
@@ -124,20 +143,43 @@ export const Sidebar = ({
 
           <Link
             to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
-            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
               location.pathname.includes("/admin/integrations") ||
               location.pathname.includes("/integrations")
-                ? "bg-[#D8DFE680]"
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
                 : ""
             }`}
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plug stroke="#384049" size={18} />
+                <Plug
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
             </Tooltip>
           </Link>
+
+          <div
+            onClick={toggleTheme}
+            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {isDarkMode ? (
+                  <Sun size={18} stroke="#F1F3F4" />
+                ) : (
+                  <Moon size={18} stroke="#384049" />
+                )}
+              </TooltipTrigger>
+              <Tip
+                side="right"
+                info={isDarkMode ? "Light Mode" : "Dark Mode"}
+              />
+            </Tooltip>
+          </div>
         </div>
 
         <a

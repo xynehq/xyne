@@ -8,13 +8,14 @@ import {
   updateAgentByExternalIdWithPermissionCheck,
   getAgentByExternalIdWithPermissionCheck,
   deleteAgentByExternalIdWithPermissionCheck,
+  getAllAgents,
 } from "@/db/agent"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
 } from "@/db/userAgentPermission"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
@@ -24,7 +25,7 @@ import { eq } from "drizzle-orm"
 import { users } from "@/db/schema"
 import { UserAgentRole } from "@/shared/types"
 
-const Logger = getLogger(Subsystem.AgentApi)
+const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
 const { JwtPayloadKey } = config
 
 // Schema for creating an agent
@@ -58,9 +59,10 @@ export const listAgentsSchema = z.object({
 })
 
 export const CreateAgentApi = async (c: Context) => {
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     const body = await c.req.json<CreateAgentPayload>()
 
     const validatedBody = createAgentSchema.parse(body)
@@ -118,7 +120,7 @@ export const CreateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(newAgent), 201)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Create Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -133,9 +135,10 @@ export const CreateAgentApi = async (c: Context) => {
 }
 
 export const UpdateAgentApi = async (c: Context) => {
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     const agentExternalId = c.req.param("agentExternalId")
     const body = await c.req.json<UpdateAgentPayload>()
 
@@ -221,7 +224,7 @@ export const UpdateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(updatedAgent))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Update Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -236,9 +239,10 @@ export const UpdateAgentApi = async (c: Context) => {
 }
 
 export const DeleteAgentApi = async (c: Context) => {
+  let email= ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    const email = sub // For logging or audit if needed, not directly used in delete logic by ID
+    email = sub // For logging or audit if needed, not directly used in delete logic by ID
     const agentExternalId = c.req.param("agentExternalId")
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -285,7 +289,7 @@ export const DeleteAgentApi = async (c: Context) => {
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Delete Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -294,9 +298,10 @@ export const DeleteAgentApi = async (c: Context) => {
 }
 
 export const ListAgentsApi = async (c: Context) => {
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     // @ts-ignore
     const { limit, offset } = c.req.valid("query") as z.infer<
       typeof listAgentsSchema
@@ -316,17 +321,11 @@ export const ListAgentsApi = async (c: Context) => {
       return c.json({ message: "User or workspace not found" }, 404)
     }
 
-    const agents = await getAgentsAccessibleToUser(
-      db,
-      userAndWorkspace.user.id,
-      userAndWorkspace.workspace.id,
-      limit,
-      offset,
-    )
+    const agents = await getAllAgents(db, limit, offset)
     return c.json(agents)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `List Agents Error: ${errMsg} ${(error as Error).stack}`,
     )

@@ -15,7 +15,6 @@ interface PillProps {
 }
 
 export const Pill: React.FC<PillProps> = ({ newRef }) => {
-  // Renamed from ReferencePill
   const pillRef = React.useRef<HTMLAnchorElement | null>(null)
 
   React.useEffect(() => {
@@ -82,12 +81,16 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       href={newRef.url || "#"}
       target="_blank"
       rel="noopener noreferrer"
-      className="reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semibold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
+      className="reference-pill bg-[#F1F5F9] dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-[#2074FA] dark:text-blue-400 text-sm font-semibold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
       contentEditable={false}
       data-reference-id={newRef.id}
-      {...(newRef.docId && { "data-doc-id": newRef.docId })}
-      {...(newRef.app && { "data-app": newRef.app })}
-      {...(newRef.entity && { "data-entity": newRef.entity })}
+      {...(newRef.docId ? { "data-doc-id": newRef.docId } : {})}
+      {...(newRef.mailId ? { "data-mail-id": newRef.mailId } : {})}
+      {...(newRef.app ? { "data-app": newRef.app } : {})}
+      {...(newRef.entity ? { "data-entity": newRef.entity } : {})}
+      {...(newRef.userMap
+        ? { "user-map": JSON.stringify(newRef.userMap) }
+        : {})} // Ensure userMap is serialized
       title={newRef.title}
     >
       {displayIcon}

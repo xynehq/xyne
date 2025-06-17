@@ -41,7 +41,7 @@ import {
   type VespaSchema,
   SlackEntity,
   datasourceSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -54,6 +54,7 @@ import {
   EventResponseSchema,
   FileResponseSchema,
   UserResponseSchema,
+  DataSourceFileResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -114,6 +115,7 @@ const maxSearchChunks = 1
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
+  email?:string,
 ): SearchResponse => {
   const { root, trace } = resp
   const children = root.children || []
@@ -167,6 +169,8 @@ export const VespaSearchResponseToSearchResult = (
           ) {
             // Directly use child.fields
             const fields = child.fields as VespaMailSearch & { type?: string }
+            if(email && fields.userMap)
+            fields.docId=fields.userMap[email] || fields.docId
             fields.type = mailSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields
@@ -233,6 +237,38 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
+          } else if (
+            (child.fields as { sddocname?: string }).sddocname === 
+            dataSourceFileSchema
+          ) {
+            const dsFields = child.fields as VespaFileSearch & {
+              fileName?: string
+              fileSize?: number
+            }
+            const processedChunks = getSortedScoredChunks(
+              dsFields.matchfeatures,
+              dsFields.chunks_summary as string[],
+              maxSearchChunks,
+            )
+
+            const mappedResult = {
+              docId: dsFields.docId,
+              type: dataSourceFileSchema,
+              app: Apps.DataSource,
+              entity: "file",
+              title: dsFields.fileName || dsFields.title,
+              fileName: dsFields.fileName,
+              url: dsFields.url,
+              updatedAt: dsFields.updatedAt,
+              createdAt: dsFields.createdAt,
+              mimeType: dsFields.mimeType,
+              size: dsFields.fileSize || (dsFields as any).size,
+              owner: dsFields.owner,
+              relevance: child.relevance,
+              chunks_summary: processedChunks,
+              matchfeatures: dsFields.matchfeatures,
+            }
+            return DataSourceFileResponseSchema.parse(mappedResult)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
@@ -404,4 +440,21 @@ export const entityToSchemaMapper = (
     }
   }
   return entitySchemaMap[entityName || ""] || null
+}
+
+export const appToSchemaMapper = (appName?: string): VespaSchema | null => {
+  if (!appName) {
+    return null
+  }
+  const lowerAppName = appName.toLowerCase()
+  const schemaMap: Record<string, VespaSchema> = {
+    [Apps.Gmail.toLowerCase()]: mailSchema,
+    [Apps.GoogleDrive.toLowerCase()]: fileSchema,
+    ["googledrive"]: fileSchema, // Alias for convenience
+    [Apps.GoogleCalendar.toLowerCase()]: eventSchema,
+    ["googlecalendar"]: eventSchema, // Alias for convenience
+    [Apps.Slack.toLowerCase()]: chatMessageSchema,
+    [Apps.DataSource.toLowerCase()]: dataSourceFileSchema,
+  }
+  return schemaMap[lowerAppName] || null
 }

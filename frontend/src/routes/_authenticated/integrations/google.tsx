@@ -145,7 +145,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
 
   if (error) return "An error has occurred: " + error.message
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}

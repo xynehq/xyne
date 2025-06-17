@@ -67,8 +67,11 @@ import {
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
+  SearchQueryToolContextPrompt,
+  synthesisContextPrompt,
   temporalDirectionJsonPrompt,
   userChatSystem,
+  withToolQueryPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -459,9 +462,14 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    text = text.replace(/^```(json)?\s*/i, "")
-    text = text.trim()
-    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
+    if (!jsonKey && (text.includes('```json') || (text.includes('```') && text.includes('{')))) {
+      const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/);
+      if (jsonCodeBlockMatch) {
+        text = jsonCodeBlockMatch[1].trim();
+      }
+    }
+    
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text) && !jsonKey) {
       text = text.replaceAll(/[\n"}:`]/g, "")
     }
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -470,7 +478,8 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1 || endBrace !== -1) {
+    // Only extract brace content if we don't have a jsonKey or if the text properly starts with a brace
+    if ((startBrace !== -1 || endBrace !== -1) && (!jsonKey || text.startsWith("{"))) {
       if (startBrace !== -1) {
         if (startBrace !== 0) {
           text = text.substring(startBrace)
@@ -482,11 +491,18 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         }
       }
     }
-    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
+    // Handle case where we have jsonKey but text doesn't start with brace (plain text that needs wrapping)
+    if (jsonKey && !text.startsWith("{") && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        text = `{${jsonKey} "${text}"`
+        // Properly escape quotes and newlines in the text content
+        const escapedText = text
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/"/g, '\\"')   // Escape quotes
+          .replace(/\n/g, '\\n')  // Escape newlines
+          .replace(/\r/g, '\\r')  // Escape carriage returns
+        text = `{${jsonKey} "${escapedText}"}`
       }
     }
 
@@ -535,7 +551,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     } catch (err) {
       Logger.error(`Initial parse failed - ${JSON.stringify(err)}`)
       // If first parse failed, continue to code block cleanup
-      throw new Error("Initial parse failed")
+      // throw new Error("Initial parse failed")
     }
   } catch (e) {
     try {
@@ -558,7 +574,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         parseError,
         `The ai response that triggered the json parse error ${text.trim()}`,
       )
-      throw parseError
+      // throw parseError
     }
   }
   return jsonVal
@@ -632,6 +648,7 @@ export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
 ): Promise<{ title: string; cost: number }> => {
+  Logger.info("inside generateTitleUsingQuery")
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -642,6 +659,7 @@ export const generateTitleUsingQuery = async (
     }
 
     params.json = true
+    Logger.info("inside generateTitleUsingQuery")
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -656,6 +674,7 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    Logger.info("after getProvider generateTitleUsingQuery")
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }
@@ -1061,7 +1080,7 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  params.messages = []
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -1252,10 +1271,44 @@ export const temporalEventClassification = async (
   }
 }
 
+export function generateToolSelectionOutput(
+  userQuery: string,
+  userContext: string,
+  toolContext: string,
+  initialPlanning: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+
+  let defaultReasoning = isReasoning
+
+  params.systemPrompt = SearchQueryToolContextPrompt(
+    userContext,
+    toolContext,
+    initialPlanning,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
   params: ModelParams,
+  toolContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1289,4 +1342,63 @@ export function generateSearchQueryOrAnswerFromConversation(
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateAnswerBasedOnToolOutput(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+  toolContext: string,
+  toolOutput: string,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = withToolQueryPrompt(
+    userContext,
+    toolContext,
+    toolOutput,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateSynthesisBasedOnToolOutput(
+  userCtx: string,
+  currentMessage: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = synthesisContextPrompt(
+    userCtx,
+    currentMessage,
+    gatheredFragments,
+  )
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converse(messages, params)
 }

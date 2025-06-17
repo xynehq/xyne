@@ -14,6 +14,7 @@ import {
   UpdateDocument,
   updateUserQueryHistory,
   SearchModes,
+  searchVespaAgent,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -21,6 +22,7 @@ import { HTTPException } from "hono/http-exception"
 import {
   userQuerySchema,
   userSchema,
+  APP_INTEGRATION_MAPPING,
   type VespaSearchResponse,
   type VespaUser,
 } from "@/search/types"
@@ -42,7 +44,7 @@ import {
 import { VespaSearchResultsSchema } from "@/search/types"
 import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
@@ -54,7 +56,10 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
-const Logger = getLogger(Subsystem.Api)
+import { getAgentByExternalId } from "@/db/agent"
+import { getWorkspaceByExternalId } from "@/db/workspace"
+import { Apps } from "@/shared/types"
+const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
   config
@@ -110,6 +115,20 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
+  toolExternalIds: z.preprocess((val) => {
+    if (Array.isArray(val)) {
+      return val.filter(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      )
+    }
+    if (typeof val === "string") {
+      return val
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0)
+    }
+    return undefined
+  }, z.array(z.string()).optional()),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -118,11 +137,21 @@ export const messageSchema = z.object({
       return val.toLowerCase() === "true"
     }),
   agentId: z.string().optional(),
+  toolsList: z
+    .array(
+      z.object({
+        connectorId: z.string(),
+        tools: z.array(z.string()),
+      }),
+    )
+    .optional(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
+  agentId: z.string().optional(),
+  agentic: z.string().optional().default("false"),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -135,9 +164,10 @@ export const messageRetrySchema = z.object({
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 
 export const AutocompleteApi = async (c: Context) => {
+  let email = ""
   try {
     const { sub } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
@@ -150,7 +180,7 @@ export const AutocompleteApi = async (c: Context) => {
     return c.json(newResults)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Autocomplete Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -161,7 +191,7 @@ export const AutocompleteApi = async (c: Context) => {
 }
 
 export const SearchApi = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey)
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   let userAlpha = await getUserPersonalizationAlpha(db, email)
 
@@ -175,6 +205,7 @@ export const SearchApi = async (c: Context) => {
     lastUpdated,
     isQueryTyped,
     debug,
+    agentId,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -183,6 +214,106 @@ export const SearchApi = async (c: Context) => {
     ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
     : null
   const decodedQuery = decodeURIComponent(query)
+
+  if (agentId) {
+    const workspaceExternalId = workspaceId 
+    loggerWithChild({email: email}).info(
+      `Performing agent-specific search for agentId (external_id): ${agentId}, query: "${decodedQuery}", user: ${email}, workspaceExternalId: ${workspaceExternalId}`,
+    )
+
+    const workspace = await getWorkspaceByExternalId(db, workspaceExternalId)
+    if (!workspace) {
+      loggerWithChild({email: email}).warn(
+        `Workspace not found for externalId: ${workspaceExternalId}. Falling back to global search.`,
+      )
+    } else {
+      const numericWorkspaceId = workspace.id
+      loggerWithChild({email: email}).info(
+        `Workspace found: id=${numericWorkspaceId} for externalId=${workspaceExternalId}. Looking for agent.`,
+      )
+      // agentId from the frontend is the external_id
+      const agent = await getAgentByExternalId(db, agentId, numericWorkspaceId)
+
+      if (
+        agent &&
+        agent.appIntegrations &&
+        Array.isArray(agent.appIntegrations) &&
+        agent.appIntegrations.length > 0
+      ) {
+        const dynamicAllowedApps: Apps[] = [];
+        const dynamicDataSourceIds: string[] = [];
+
+        if (Array.isArray(agent.appIntegrations)) {
+          for (const integration of agent.appIntegrations) {
+            if (typeof integration === 'string') {
+              const lowerIntegration = integration.toLowerCase();
+              
+              // Handle data source IDs
+              if (lowerIntegration.startsWith("ds-")) {
+                dynamicDataSourceIds.push(integration);
+                if (!dynamicAllowedApps.includes(Apps.DataSource)) {
+                  dynamicAllowedApps.push(Apps.DataSource);
+                }
+                continue;
+              }
+
+              const mappedApp = APP_INTEGRATION_MAPPING[lowerIntegration];
+              if (mappedApp && !dynamicAllowedApps.includes(mappedApp)) {
+                dynamicAllowedApps.push(mappedApp);
+              } else if (!mappedApp) {
+                loggerWithChild({email: email}).warn(`Unknown app integration string: ${integration} for agent ${agentId}`);
+              }
+            }
+          }
+        }
+
+        // Ensure we have at least one app if data sources are present
+        if (dynamicAllowedApps.length === 0 && dynamicDataSourceIds.length > 0) {
+          dynamicAllowedApps.push(Apps.DataSource);
+        }
+
+        loggerWithChild({email: email}).info(
+          `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`
+        );
+
+        results = await searchVespaAgent(
+          decodedQuery,
+          email,
+          null,
+          entity,
+          dynamicAllowedApps.length > 0 ? dynamicAllowedApps : null,
+          {
+            alpha: userAlpha,
+            limit: page,
+            offset: offset,
+            requestDebug: debug,
+            dataSourceIds: dynamicDataSourceIds,
+            timestampRange: timestampRange, 
+          },
+        )
+        try {
+          const newResults = VespaSearchResponseToSearchResult(results)
+          newResults.groupCount = {} // Agent search currently doesn't provide group counts
+          return c.json(newResults)
+        } catch (e) {
+          loggerWithChild({email: email}).error(
+            e,
+            `Error processing/responding to agent search for agentId ${agentId}, query "${decodedQuery}". Results: ${JSON.stringify(results)}`,
+          )
+          throw new HTTPException(500, {
+            message: "Error processing agent search results",
+          })
+        }
+      } else {
+        loggerWithChild({email: email}).warn(
+          `Agent ${agentId} not found in workspace ${numericWorkspaceId}, or appIntegrations is missing/empty. Falling back to global search. Agent details: ${JSON.stringify(agent)}`,
+        )
+      }
+    }
+  }
+  loggerWithChild({email: email}).info(
+    `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
+  )
   if (gc) {
     const tasks: Array<any> = [
       groupVespaSearch(decodedQuery, email, config.page, timestampRange),
@@ -211,9 +342,11 @@ export const SearchApi = async (c: Context) => {
   }
 
   // TODO: deduplicate for google admin and contacts
-  const newResults = VespaSearchResponseToSearchResult(results)
+
+  const newResults = VespaSearchResponseToSearchResult(results,email)
   newResults.groupCount = groupCount
   return c.json(newResults)
+
 }
 
 export const AnswerApi = async (c: Context) => {
@@ -259,7 +392,7 @@ export const AnswerApi = async (c: Context) => {
 
   const tokenLimit = maxTokenBeforeMetadataCleanup
   let useMetadata = false
-  Logger.info(`User Asked: ${decodedQuery}`)
+  loggerWithChild({email: email}).info(`User Asked: ${decodedQuery}`)
   // if we don't use this, 3.4 seems like a good approx value
   if (
     llama3Tokenizer.encode(initialContext).length > tokenLimit ||
@@ -318,7 +451,9 @@ export const AnswerApi = async (c: Context) => {
   const metadataContext = results.root.children
     .map((v, i) =>
       cleanContext(
-        `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        `Index ${i} \n ${answerMetadataContextMap(
+          v as z.infer<typeof VespaSearchResultsSchema>,
+        )}`,
       ),
     )
     .join("\n\n")
@@ -344,7 +479,7 @@ export const AnswerApi = async (c: Context) => {
   )
 
   return streamSSE(c, async (stream) => {
-    Logger.info("SSE stream started")
+    loggerWithChild({email: email}).info("SSE stream started")
     // Stream the initial context information
     await stream.writeSSE({
       data: ``,
@@ -369,8 +504,11 @@ export const AnswerApi = async (c: Context) => {
         }
       }
 
-      Logger.info(
-        `costArr: ${costArr} \n Total Cost: ${costArr.reduce((prev, curr) => prev + curr, 0)}`,
+      loggerWithChild({email: email}).info(
+        `costArr: ${costArr} \n Total Cost: ${costArr.reduce(
+          (prev, curr) => prev + curr,
+          0,
+        )}`,
       )
     }
     await stream.writeSSE({
@@ -378,9 +516,9 @@ export const AnswerApi = async (c: Context) => {
       event: AnswerSSEvents.End,
     })
 
-    Logger.info("SSE stream ended")
+    loggerWithChild({email: email}).info("SSE stream ended")
     stream.onAbort(() => {
-      Logger.error("SSE stream aborted")
+      loggerWithChild({email: email}).error("SSE stream aborted")
     })
   })
 }

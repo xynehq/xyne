@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
+import React, {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react" // Ensure React is imported
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -7,15 +15,27 @@ import {
   Layers,
   Square,
   ChevronDown,
+  Infinity,
   Check,
   Link,
   Search,
   RotateCcw,
   Atom,
   Bot, // Import Bot icon
+  PlugZap, // Added for new dropdown
+  PlusCircle, // For MCP connector tools
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
-import { Citation, Apps, SelectPublicAgent } from "shared/types" // Add SelectPublicAgent
+import {
+  Citation,
+  Apps,
+  SelectPublicAgent,
+  PublicUser,
+  ConnectorType,
+  AuthType,
+  ConnectorStatus,
+  UserRole,
+} from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +75,7 @@ interface SearchResult {
   name?: string
   title?: string
   filename?: string
+  mailId?: string
   from?: string
   timestamp?: number
   updatedAt?: number
@@ -63,17 +84,23 @@ interface SearchResult {
   type?: string
   email?: string
   photoLink?: string
+  userMap?: Record<string, string>
 }
 
 interface ChatBoxProps {
+  role: UserRole
   query: string
   setQuery: (query: string) => void
+  setIsAgenticMode: Dispatch<SetStateAction<boolean>>
+  isAgenticMode: boolean
   handleSend: (
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
+    toolExternalIds?: string[],
   ) => void // Expects agentId string
   isStreaming?: boolean
+  retryIsStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null // Current chat ID
   agentIdFromChatData?: string | null // New prop for agentId from chat data
@@ -82,6 +109,7 @@ interface ChatBoxProps {
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
+  user: PublicUser // Added user prop
 }
 
 const availableSources: SourceItem[] = [
@@ -190,17 +218,49 @@ const setCaretPosition = (element: Node, position: number) => {
 }
 
 export const ChatBox = ({
+  role,
   query,
   setQuery,
   handleSend,
   isStreaming = false,
+  retryIsStreaming = false,
   allCitations,
   handleStop,
   chatId,
   agentIdFromChatData, // Destructure new prop
   isReasoningActive,
   setIsReasoningActive,
+  user, // Destructure user prop
+  setIsAgenticMode,
+  isAgenticMode = false,
 }: ChatBoxProps) => {
+  // Interface for fetched tools
+  interface FetchedTool {
+    id: number
+    workspaceId: number
+    connectorId: number
+    toolName: string
+    toolSchema: string // Assuming schema is a JSON string
+    description: string | null
+    enabled: boolean // Added enabled field
+    createdAt: string
+    updatedAt: string
+    externalId: string // This is the externalId from the backend
+  }
+
+  // Interface for fetched connectors
+  interface FetchedConnector {
+    id: string // externalId from backend
+    app: Apps | string
+    authType: AuthType | string
+    type: ConnectorType | string
+    status: ConnectorStatus | string
+    createdAt: string // Assuming ISO string date
+    config: Record<string, any>
+    connectorId: number // internal DB id
+    displayName?: string // For UI
+  }
+
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
   const referenceItemsRef = useRef<
@@ -232,6 +292,27 @@ export const ChatBox = ({
   const [showSourcesButton, _] = useState(false) // Added this line
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+  const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(
+    null,
+  )
+  const [isConnectorsMenuOpen, setIsConnectorsMenuOpen] = useState(false)
+  const [connectorTools, setConnectorTools] = useState<FetchedTool[]>([])
+  const [isLoadingTools, setIsLoadingTools] = useState(false)
+  const [isToolSelectionModalOpen, setIsToolSelectionModalOpen] =
+    useState(false)
+  const [toolSearchTerm, setToolSearchTerm] = useState("")
+  const connectorsDropdownTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const toolModalRef = useRef<HTMLDivElement | null>(null) // Ref for the tool modal itself
+  const [toolModalPosition, setToolModalPosition] = useState<{
+    top: number
+    left: number
+  } | null>(null)
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
+
+  // localStorage keys for tool selection persistence
+  const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
+  const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
 
   // Effect to initialize and update persistedAgentId
   useEffect(() => {
@@ -284,6 +365,182 @@ export const ChatBox = ({
 
     fetchAgentDetails()
   }, [persistedAgentId]) // Depend on persistedAgentId
+
+  const loadToolSelectionsFromStorage = (): Record<string, Set<string>> => {
+    try {
+      const stored = localStorage.getItem(SELECTED_CONNECTOR_TOOLS_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        // Convert arrays back to Sets
+        const result: Record<string, Set<string>> = {}
+        for (const [connectorId, toolNames] of Object.entries(parsed)) {
+          if (Array.isArray(toolNames)) {
+            result[connectorId] = new Set(toolNames as string[])
+          }
+        }
+        return result
+      }
+    } catch (error) {
+      console.warn("Failed to load tool selections from localStorage:", error)
+    }
+    return {}
+  }
+
+  const saveToolSelectionsToStorage = (
+    selections: Record<string, Set<string>>,
+  ) => {
+    try {
+      // Convert Sets to arrays for JSON serialization
+      const serializable: Record<string, string[]> = {}
+      for (const [connectorId, toolNames] of Object.entries(selections)) {
+        serializable[connectorId] = Array.from(toolNames)
+      }
+      localStorage.setItem(
+        SELECTED_CONNECTOR_TOOLS_KEY,
+        JSON.stringify(serializable),
+      )
+    } catch (error) {
+      console.warn("Failed to save tool selections to localStorage:", error)
+    }
+  }
+
+  // Initialize selectedConnectorTools with data from localStorage
+  const [selectedConnectorTools, setSelectedConnectorTools] = useState<
+    Record<string, Set<string>>
+  >(loadToolSelectionsFromStorage)
+
+  // Persist tool selections to localStorage whenever they change
+  useEffect(() => {
+    saveToolSelectionsToStorage(selectedConnectorTools)
+  }, [selectedConnectorTools])
+
+  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  useEffect(() => {
+    // Effect to adjust tool modal position based on its height
+    if (
+      isToolSelectionModalOpen &&
+      toolModalRef.current &&
+      connectorsDropdownTriggerRef.current
+    ) {
+      const modalHeight = toolModalRef.current.offsetHeight
+
+      const triggerRect =
+        connectorsDropdownTriggerRef.current.getBoundingClientRect()
+      const chatBoxContainer = inputRef.current?.closest(
+        ".relative.flex.flex-col.w-full",
+      ) as HTMLElement | null
+      const connectorDropdownWidth = 288 // Based on w-72 class (18rem * 16px/rem)
+      const gap = 8 // 8px gap
+
+      let newLeftCalculation: number
+      let topReferenceForModalBottom: number
+
+      if (chatBoxContainer) {
+        const containerRect = chatBoxContainer.getBoundingClientRect()
+        newLeftCalculation =
+          triggerRect.left - containerRect.left + connectorDropdownWidth + gap
+        topReferenceForModalBottom = triggerRect.top - containerRect.top
+      } else {
+        // Fallback if chatBoxContainer is not found (less likely but good for robustness)
+        newLeftCalculation = triggerRect.left + connectorDropdownWidth + gap
+        topReferenceForModalBottom = triggerRect.top
+      }
+
+      const newModalTop = topReferenceForModalBottom - modalHeight
+
+      setToolModalPosition((currentPosition) => {
+        // Check if the position actually needs updating to prevent infinite loops
+        if (
+          currentPosition &&
+          currentPosition.top === newModalTop &&
+          currentPosition.left === newLeftCalculation
+        ) {
+          return currentPosition
+        }
+        return { top: newModalTop, left: newLeftCalculation }
+      })
+    }
+  }, [
+    isToolSelectionModalOpen,
+    isLoadingTools,
+    connectorTools,
+    toolSearchTerm,
+    // Intentionally not including toolModalPosition here to avoid loops,
+    // as this effect is responsible for calculating the definitive position.
+    // It re-runs when factors affecting modal height change.
+  ])
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      let processedConnectors: FetchedConnector[] = []
+      try {
+        const response = await api.admin.connectors.all.$get(undefined, {
+          credentials: "include",
+        })
+        const data = await response.json()
+        if (Array.isArray(data)) {
+          processedConnectors = data.map((conn: any) => ({
+            ...conn,
+            displayName: conn.config?.name || conn.app || conn.id,
+          }))
+        } else {
+          console.error("Fetched connectors data is not an array:", data)
+        }
+      } catch (error) {
+        console.error("Error fetching connectors:", error)
+      }
+
+      setAllConnectors(processedConnectors)
+
+      const storedMcpId = localStorage.getItem(SELECTED_MCP_CONNECTOR_ID_KEY)
+      if (storedMcpId && processedConnectors.length > 0) {
+        const connectorExists = processedConnectors.find(
+          (c) => c.id === storedMcpId && c.type === ConnectorType.MCP,
+        )
+        if (connectorExists) {
+          setSelectedConnectorId(storedMcpId)
+        } else {
+          // If stored ID is invalid (not found or not MCP), remove it.
+          localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
+        }
+      }
+      setInitialLoadComplete(true) // Mark initial load as complete
+    }
+
+    loadInitialData()
+  }, []) // Empty dependency array ensures this runs once on mount
+
+  // useEffect to save selected MCP connector ID
+  useEffect(() => {
+    if (!initialLoadComplete) {
+      // Don't run save logic during initial load phase
+      return
+    }
+
+    if (selectedConnectorId) {
+      // Only proceed if allConnectors has been populated.
+      if (allConnectors.length > 0) {
+        const connector = allConnectors.find(
+          (c) => c.id === selectedConnectorId,
+        )
+        if (connector && connector.type === ConnectorType.MCP) {
+          localStorage.setItem(
+            SELECTED_MCP_CONNECTOR_ID_KEY,
+            selectedConnectorId,
+          )
+        } else {
+          // If the selected connector is not an MCP, or not found, remove the key.
+          localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
+        }
+      }
+      // If allConnectors is not yet populated (should not happen if initialLoadComplete is true),
+      // this effect will re-run when allConnectors changes.
+    } else {
+      // If selectedConnectorId is null (deselected)
+      localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
+    }
+  }, [selectedConnectorId, allConnectors, initialLoadComplete])
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -469,11 +726,25 @@ export const ChatBox = ({
         limit: limit.toString(),
         offset: offset.toString(),
       }
+
+      if (persistedAgentId) {
+        params.agentId = persistedAgentId
+      }
+
       const response = await api.search.$get({
         query: params,
         credentials: "include",
       })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(
+          `API request failed with status ${response.status}: ${errorText}`,
+        )
+      }
+
       const data = await response.json()
+
       const fetchedTotalCount = data.count || 0
       setTotalCount(fetchedTotalCount)
 
@@ -745,10 +1016,12 @@ export const ChatBox = ({
       title: displayTitle,
       url: resultUrl,
       docId: result.docId,
+      mailId: result.mailId,
       app: result.app,
       entity: result.entity,
       type: "global",
       photoLink: result.photoLink,
+      userMap: result.userMap, // Ensure userMap is passed
     }
 
     const input = inputRef.current
@@ -906,18 +1179,67 @@ export const ChatBox = ({
       .map(([id]) => id)
 
     let htmlMessage = inputRef.current?.innerHTML || ""
-
     htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
     htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
     htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
 
-    // The `references` array is no longer passed to handleSend.
-    // Pills and links are part of htmlMessage.
-    // Use the persistedAgentId from state when calling handleSend
+    let toolIdsToSend: string[] | undefined = undefined
+    if (selectedConnectorId) {
+      const connector = allConnectors.find((c) => c.id === selectedConnectorId)
+      if (connector && connector.type === ConnectorType.MCP) {
+        const selectedToolExternalIdsSet = selectedConnectorTools[connector.id] // connector.id is externalId of connector
+        if (selectedToolExternalIdsSet && selectedToolExternalIdsSet.size > 0) {
+          toolIdsToSend = Array.from(selectedToolExternalIdsSet) // externalIds are already strings
+        }
+      }
+    }
+
+    // Replace data-doc-id and data-reference-id with mailId
+    const tempDiv = document.createElement("div")
+    tempDiv.innerHTML = htmlMessage
+    const pills = tempDiv.querySelectorAll("a.reference-pill")
+
+    pills.forEach((pill) => {
+      const mailId = pill.getAttribute("data-mail-id")
+      const userMap = pill.getAttribute("user-map")
+      const docId =
+        pill.getAttribute("data-doc-id") ||
+        pill.getAttribute("data-reference-id")
+      if (userMap) {
+        try {
+          const parsedUserMap = JSON.parse(userMap)
+          if (user?.email && parsedUserMap[user.email]) {
+            pill.setAttribute(
+              "href",
+              `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
+            )
+          } else {
+            console.warn(
+              `No mapping found for user email: ${user?.email} in userMap.`,
+            )
+          }
+        } catch (error) {
+          console.error("Failed to parse userMap:", error)
+        }
+      }
+
+      if (mailId) {
+        pill.setAttribute("data-doc-id", mailId)
+        pill.setAttribute("data-reference-id", mailId)
+      } else {
+        console.warn(
+          `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
+        )
+      }
+    })
+
+    htmlMessage = tempDiv.innerHTML
+
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
+      toolIdsToSend,
     )
     // setReferences([]) // This state and its setter are removed.
 
@@ -973,14 +1295,14 @@ export const ChatBox = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className={`absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col ${CLASS_NAMES.REFERENCE_BOX}`}
+          className={`absolute bottom-[calc(80%+8px)] bg-white dark:bg-[#1E1E1E] rounded-md w-[400px] max-w-full z-10 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col ${CLASS_NAMES.REFERENCE_BOX}`}
           style={{
             left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
           }}
         >
           {activeAtMentionIndex === -1 && (
-            <div className="p-2 border-b border-gray-200 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <div className="p-2 border-b border-gray-200 dark:border-gray-700 relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
               <Input
                 ref={referenceSearchInputRef}
                 type="text"
@@ -1007,8 +1329,10 @@ export const ChatBox = ({
                         <div
                           key={citation.url}
                           ref={(el) => (referenceItemsRef.current[index] = el)}
-                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                            index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                            index === selectedRefIndex
+                              ? "bg-[#EDF2F7] dark:bg-slate-700"
+                              : ""
                           }`}
                           onClick={() => handleAddReference(citation)}
                           onMouseEnter={() => setSelectedRefIndex(index)}
@@ -1021,13 +1345,16 @@ export const ChatBox = ({
                                 mr: 0,
                               })
                             ) : (
-                              <Link size={16} className="text-gray-400" />
+                              <Link
+                                size={16}
+                                className="text-gray-400 dark:text-gray-500"
+                              />
                             )}
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                               {citation.title || citation.name}
                             </p>
                           </div>
-                          <p className="text-xs text-gray-500 truncate ml-6">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
                             {citation.url}
                           </p>
                         </div>
@@ -1035,11 +1362,11 @@ export const ChatBox = ({
                     })}
                   </>
                 ) : derivedReferenceSearch.length > 0 ? (
-                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                     No citations found for "{derivedReferenceSearch}".
                   </p>
                 ) : (
-                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                     Start typing to search citations from this chat.
                   </p>
                 )}
@@ -1050,14 +1377,14 @@ export const ChatBox = ({
                 {isGlobalLoading &&
                   globalResults.length === 0 &&
                   !globalError && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       {currentSearchTerm
                         ? `Searching for "${currentSearchTerm}"...`
                         : "Searching..."}
                     </p>
                   )}
                 {globalError && (
-                  <p className="text-sm text-red-500 px-2 py-1 text-center">
+                  <p className="text-sm text-red-500 dark:text-red-400 px-2 py-1 text-center">
                     {globalError}
                   </p>
                 )}
@@ -1066,7 +1393,7 @@ export const ChatBox = ({
                   globalResults.length === 0 &&
                   currentSearchTerm &&
                   currentSearchTerm.length > 0 && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       No results found for "{currentSearchTerm}".
                     </p>
                   )}
@@ -1074,7 +1401,7 @@ export const ChatBox = ({
                   !globalError &&
                   globalResults.length === 0 &&
                   (!currentSearchTerm || currentSearchTerm.length === 0) && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       Type to search for documents, messages, and more.
                     </p>
                   )}
@@ -1091,8 +1418,10 @@ export const ChatBox = ({
                       <div
                         key={result.docId || result.email || index}
                         ref={(el) => (referenceItemsRef.current[index] = el)}
-                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                          index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                          index === selectedRefIndex
+                            ? "bg-[#EDF2F7] dark:bg-slate-700"
+                            : ""
                         }`}
                         onClick={() => handleSelectGlobalResult(result)}
                         onMouseEnter={() => setSelectedRefIndex(index)}
@@ -1111,12 +1440,12 @@ export const ChatBox = ({
                               mr: 0,
                             })
                           )}
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                             {displayTitle}
                           </p>
                         </div>
                         {result.type !== "user" && (
-                          <p className="text-xs text-gray-500 truncate ml-6">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
                             {result.from ? `From: ${result.from} | ` : ""}
                             {formatTimestamp(
                               result.timestamp || result.updatedAt,
@@ -1134,7 +1463,7 @@ export const ChatBox = ({
                         (referenceItemsRef.current[globalResults.length] = el)
                       }
                       onClick={handleLoadMore}
-                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 bg-gray-50 hover:bg-[#EDF2F7] rounded-md border border-gray-200 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] ring-1 ring-blue-300" : ""}`}
+                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
                       disabled={isGlobalLoading}
                       onMouseEnter={() =>
                         setSelectedRefIndex(globalResults.length)
@@ -1151,11 +1480,11 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border rounded-[20px] bg-white ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.SEARCH_CONTAINER}`}
       >
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
-            <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] pointer-events-none">
+            <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
               Ask anything across apps...
             </div>
           )}
@@ -1163,7 +1492,7 @@ export const ChatBox = ({
             ref={inputRef}
             contentEditable
             data-at-mention // Using the attribute directly as per SELECTORS.AT_MENTION_AREA
-            className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
+            className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] dark:text-[#F1F3F4] placeholder-[#ACBCCC] dark:placeholder-gray-500 pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
               const pastedText = e.clipboardData?.getData("text/plain")
@@ -1217,7 +1546,7 @@ export const ChatBox = ({
                           anchor.target = "_blank"
                           anchor.rel = "noopener noreferrer"
                           anchor.className =
-                            "text-blue-600 underline hover:text-blue-800 cursor-pointer"
+                            "text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer"
                           nodeToInsert = anchor
                           isLinkNode = true
                         } else {
@@ -1426,11 +1755,14 @@ export const ChatBox = ({
           />
         </div>
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-          <Attach className="text-[#464D53] cursor-pointer" />
-          <Globe size={16} className="text-[#464D53] cursor-pointer" />
+          <Attach className="text-[#464D53] dark:text-gray-400 cursor-pointer" />
+          <Globe
+            size={16}
+            className="text-[#464D53] dark:text-gray-400 cursor-pointer"
+          />
           <AtSign
             size={16}
-            className={`text-[#464D53] cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+            className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
             onClick={() => {
               const input = inputRef.current
               if (!input) return
@@ -1471,16 +1803,429 @@ export const ChatBox = ({
               input.focus()
             }}
           />
+          {/* Dropdown for All Connectors */}
+          {role === UserRole.SuperAdmin && (
+            <DropdownMenu
+              open={isConnectorsMenuOpen}
+              onOpenChange={setIsConnectorsMenuOpen}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  ref={connectorsDropdownTriggerRef}
+                  className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-slate-300 cursor-pointer"
+                >
+                  {selectedConnectorId &&
+                  allConnectors.find((c) => c.id === selectedConnectorId) ? (
+                    getIcon(
+                      allConnectors.find((c) => c.id === selectedConnectorId)!
+                        .app,
+                      allConnectors.find((c) => c.id === selectedConnectorId)!
+                        .type,
+                      { w: 14, h: 14, mr: 0 },
+                    )
+                  ) : (
+                    <PlugZap
+                      size={14}
+                      className="text-[#464D53] dark:text-slate-400"
+                    />
+                  )}
+                  <span>
+                    {selectedConnectorId
+                      ? allConnectors.find((c) => c.id === selectedConnectorId)
+                          ?.displayName || "Connector"
+                      : "Mcp"}
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className="ml-1 text-gray-500 dark:text-slate-400"
+                  />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-72 relative rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700" // Increased width, added dark mode bg and border
+                align="start"
+                side="top"
+              >
+                <DropdownMenuLabel className="p-2 text-gray-700 dark:text-slate-300">
+                  Select a Connector
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-gray-200 dark:bg-slate-700" />
+                {allConnectors.length > 0 ? (
+                  allConnectors
+                    .filter((c) => c.type === ConnectorType.MCP)
+                    .map((connector) => {
+                      const isMCP = connector.type === ConnectorType.MCP
+
+                      return (
+                        <DropdownMenuItem
+                          key={connector.id}
+                          onSelect={(e) => e.preventDefault()} // Prevent closing on item click if it has a sub-menu
+                          className="p-0" // Remove padding for full-width item
+                        >
+                          <div
+                            className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700"
+                            onClick={() => {
+                              const isCurrentlySelected =
+                                selectedConnectorId === connector.id
+
+                              if (isCurrentlySelected) {
+                                // If clicking the already selected connector, deselect it
+                                setSelectedConnectorId(null)
+                                setConnectorTools([]) // Clear any tools
+                                // Optionally, close the tool selection modal if it's open for this connector
+                                if (
+                                  isToolSelectionModalOpen &&
+                                  selectedConnectorId === connector.id
+                                ) {
+                                  setIsToolSelectionModalOpen(false)
+                                }
+                                // Keep the main dropdown open or close it based on desired UX for deselection.
+                                // For now, let's assume it stays open.
+                              } else {
+                                // Clicking a new connector to select it
+                                setSelectedConnectorId(connector.id)
+                                if (!isMCP) {
+                                  // For non-MCP connectors, preserve existing selections or initialize empty
+                                  setConnectorTools([])
+                                  // Don't override existing selections, they should be preserved from localStorage
+                                  if (!selectedConnectorTools[connector.id]) {
+                                    setSelectedConnectorTools((prev) => ({
+                                      ...prev,
+                                      [connector.id]: new Set(),
+                                    }))
+                                  }
+                                  setIsConnectorsMenuOpen(false) // Close the dropdown
+                                } else {
+                                  // For MCP connectors, clear tools from any previously selected MCP.
+                                  setConnectorTools([])
+                                  // Tool fetching for this MCP connector is handled by PlusCircle click.
+                                  // Dropdown stays open.
+                                }
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2 flex-grow">
+                              {getIcon(connector.app, connector.type, {
+                                w: 14,
+                                h: 14,
+                                mr: 0,
+                              })}
+                              <span className="truncate text-gray-900 dark:text-slate-100">
+                                {connector.displayName}
+                              </span>
+                            </div>
+
+                            {/* Icons container - aligned to the right */}
+                            <div className="flex items-center ml-auto">
+                              {selectedConnectorId === connector.id && (
+                                <Check
+                                  className={`h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0 ${isMCP ? "mr-1.5" : ""}`}
+                                />
+                              )}
+                              {isMCP && (
+                                <PlusCircle
+                                  size={18}
+                                  className="text-blue-500 dark:text-blue-400 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
+                                  onClick={async (e) => {
+                                    e.stopPropagation() // IMPORTANT: Prevent main item click handler
+
+                                    // Ensure this connector is marked as active if not already
+                                    if (selectedConnectorId !== connector.id) {
+                                      setSelectedConnectorId(connector.id)
+                                      setConnectorTools([]) // Clear tools if switching to this MCP
+                                    } else if (
+                                      !connectorTools.length &&
+                                      selectedConnectorId === connector.id
+                                    ) {
+                                      // If it's already selected but tools aren't loaded (e.g. re-opening modal)
+                                      // proceed to load them.
+                                    }
+
+                                    if (connectorsDropdownTriggerRef.current) {
+                                      const rect =
+                                        connectorsDropdownTriggerRef.current.getBoundingClientRect()
+                                      const chatBoxContainer =
+                                        inputRef.current?.closest(
+                                          ".relative.flex.flex-col.w-full",
+                                        ) as HTMLElement | null
+                                      const connectorDropdownWidth = 288 // w-72
+                                      const gap = 8
+
+                                      let preliminaryLeftCalc: number
+                                      let preliminaryTopReference: number
+
+                                      if (chatBoxContainer) {
+                                        const containerRect =
+                                          chatBoxContainer.getBoundingClientRect()
+                                        preliminaryLeftCalc =
+                                          rect.left -
+                                          containerRect.left +
+                                          connectorDropdownWidth +
+                                          gap
+                                        preliminaryTopReference =
+                                          rect.top - containerRect.top
+                                      } else {
+                                        preliminaryLeftCalc =
+                                          rect.left +
+                                          connectorDropdownWidth +
+                                          gap
+                                        preliminaryTopReference = rect.top
+                                      }
+                                      setToolModalPosition({
+                                        top: preliminaryTopReference,
+                                        left: preliminaryLeftCalc,
+                                      })
+                                    }
+
+                                    setIsLoadingTools(true)
+                                    setToolSearchTerm("")
+                                    try {
+                                      const response: Response =
+                                        await api.admin.connector[
+                                          connector.id
+                                        ].tools.$get(undefined, {
+                                          credentials: "include",
+                                        })
+                                      const toolsData: FetchedTool[] | any =
+                                        await response.json()
+                                      if (Array.isArray(toolsData)) {
+                                        const enabledTools = toolsData.filter(
+                                          (tool) => tool.enabled,
+                                        )
+                                        setConnectorTools(enabledTools)
+
+                                        // Check if we have existing selections from localStorage for this connector
+                                        const existingSelections =
+                                          selectedConnectorTools[connector.id]
+
+                                        if (
+                                          existingSelections &&
+                                          existingSelections.size > 0
+                                        ) {
+                                          // Use existing selections from localStorage, but only for enabled tools
+                                          const enabledToolExternalIds =
+                                            new Set(
+                                              enabledTools.map(
+                                                (t) => t.externalId,
+                                              ),
+                                            )
+                                          const validSelections = new Set(
+                                            Array.from(
+                                              existingSelections,
+                                            ).filter((toolExternalId) =>
+                                              enabledToolExternalIds.has(
+                                                toolExternalId,
+                                              ),
+                                            ),
+                                          )
+
+                                          setSelectedConnectorTools((prev) => ({
+                                            ...prev,
+                                            [connector.id]: validSelections,
+                                          }))
+                                        } else {
+                                          // No existing selections, default to all enabled tools being selected
+                                          const initiallySelectedEnabledTools =
+                                            new Set(
+                                              enabledTools.map(
+                                                (t) => t.externalId,
+                                              ),
+                                            )
+                                          setSelectedConnectorTools((prev) => ({
+                                            ...prev,
+                                            [connector.id]:
+                                              initiallySelectedEnabledTools,
+                                          }))
+                                        }
+                                      } else {
+                                        setConnectorTools([])
+                                        // Ensure no selections if tools aren't loaded correctly or if data is not an array
+                                        setSelectedConnectorTools((prev) => ({
+                                          ...prev,
+                                          [connector.id]: new Set(),
+                                        }))
+                                      }
+                                    } catch (error) {
+                                      console.error(
+                                        `Error fetching tools for ${connector.id}:`,
+                                        error,
+                                      )
+                                      setConnectorTools([])
+                                      // Clear selections for this connector on error
+                                      setSelectedConnectorTools((prev) => ({
+                                        ...prev,
+                                        [connector.id]: new Set(),
+                                      }))
+                                    } finally {
+                                      setIsLoadingTools(false)
+                                      setIsToolSelectionModalOpen(true)
+                                      // Main dropdown (isConnectorsMenuOpen) should remain open
+                                    }
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                        </DropdownMenuItem>
+                      )
+                    })
+                ) : (
+                  <DropdownMenuItem
+                    disabled
+                    className="text-center text-gray-500 dark:text-slate-400"
+                  >
+                    No connectors available
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Tool Selection Modal / Popover */}
+          {isToolSelectionModalOpen &&
+            selectedConnectorId &&
+            toolModalPosition &&
+            allConnectors.find((c) => c.id === selectedConnectorId)?.type ===
+              ConnectorType.MCP && (
+              <div
+                ref={toolModalRef}
+                className="absolute bg-white dark:bg-slate-800 rounded-lg shadow-xl p-4 z-50 border border-gray-200 dark:border-slate-700"
+                style={{
+                  top: `${toolModalPosition.top}px`,
+                  left: `${toolModalPosition.left}px`,
+                  width: "280px", // Smaller width
+                  maxHeight: "300px", // Max height for scroll
+                }}
+                onClick={(e) => e.stopPropagation()} // Prevent clicks inside from closing it if it's part of a larger clickable area
+              >
+                <div className="flex flex-col h-full">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-md font-semibold text-gray-900 dark:text-slate-100">
+                      Tools for{" "}
+                      {
+                        allConnectors.find((c) => c.id === selectedConnectorId)
+                          ?.displayName
+                      }
+                    </h3>
+                    <button
+                      onClick={() => setIsToolSelectionModalOpen(false)}
+                      className="text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-5 h-5"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="Search tools..."
+                    value={toolSearchTerm}
+                    onChange={(e) => setToolSearchTerm(e.target.value)}
+                    className="mb-2 text-sm"
+                  />
+                  {isLoadingTools ? (
+                    <p className="text-sm text-gray-500 dark:text-slate-400 text-center py-4">
+                      Loading tools...
+                    </p>
+                  ) : (
+                    <div
+                      className="overflow-y-auto"
+                      style={{ maxHeight: "180px" }}
+                    >
+                      {" "}
+                      {/* Explicit max-height for scrolling */}
+                      {connectorTools.filter((tool) =>
+                        tool.toolName
+                          .toLowerCase()
+                          .includes(toolSearchTerm.toLowerCase()),
+                      ).length > 0 ? (
+                        connectorTools
+                          .filter((tool) =>
+                            tool.toolName
+                              .toLowerCase()
+                              .includes(toolSearchTerm.toLowerCase()),
+                          )
+                          .map((tool) => (
+                            <div
+                              key={tool.id}
+                              className="flex items-center justify-between py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 rounded px-1 cursor-pointer"
+                              onClick={() => {
+                                setSelectedConnectorTools((prev) => {
+                                  const newSelected = new Set(
+                                    prev[selectedConnectorId!] || [],
+                                  )
+                                  if (newSelected.has(tool.externalId)) {
+                                    newSelected.delete(tool.externalId)
+                                  } else {
+                                    newSelected.add(tool.externalId)
+                                  }
+                                  return {
+                                    ...prev,
+                                    [selectedConnectorId!]: newSelected,
+                                  }
+                                })
+                              }}
+                            >
+                              <span
+                                className="text-sm flex-grow mr-2 truncate text-gray-800 dark:text-slate-200"
+                                title={tool.description || tool.toolName}
+                              >
+                                {tool.toolName}
+                              </span>
+                              <div className="h-4 w-4 flex items-center justify-center">
+                                {(
+                                  selectedConnectorTools[
+                                    selectedConnectorId!
+                                  ] || new Set()
+                                ).has(tool.externalId) && (
+                                  <Check className="h-4 w-4 text-green-500 dark:text-green-400" />
+                                )}
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <p className="text-sm text-gray-500 dark:text-slate-400 text-center py-4">
+                          No tools found
+                          {toolSearchTerm ? ` for "${toolSearchTerm}"` : ""}.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* "Done" button can be removed if selection is immediate, or kept for explicit confirmation */}
+                  {/* <button
+                  onClick={() => setIsToolSelectionModalOpen(false)}
+                  className="mt-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1.5 px-3 rounded text-sm self-end"
+                >
+                  Done
+                </button> */}
+                </div>
+              </div>
+            )}
+
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
             <DropdownMenu
               open={isSourceMenuOpen}
               onOpenChange={setIsSourceMenuOpen}
             >
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
+                <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                   {selectedSourcesCount === 0 ? (
                     <>
-                      <Layers size={14} className="text-[#464D53]" />
+                      <Layers
+                        size={14}
+                        className="text-[#464D53] dark:text-gray-400"
+                      />
                       <span>Sources</span>
                     </>
                   ) : (
@@ -1500,7 +2245,10 @@ export const ChatBox = ({
                       </span>
                     </>
                   )}
-                  <ChevronDown size={16} className="ml-1 text-gray-500" />
+                  <ChevronDown
+                    size={16}
+                    className="ml-1 text-gray-500 dark:text-gray-400"
+                  />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -1518,7 +2266,7 @@ export const ChatBox = ({
                         <TooltipTrigger asChild>
                           <button
                             onClick={handleClearAllSources}
-                            className="p-1 rounded-full hover:bg-[#EDF2F7] text-gray-500 hover:text-gray-700"
+                            className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                             aria-label="Clear all selected sources"
                           >
                             <RotateCcw size={16} />
@@ -1566,7 +2314,7 @@ export const ChatBox = ({
                         className={`ml-auto h-5 w-5 border rounded flex items-center justify-center ${
                           isChecked
                             ? "bg-green-500 border-green-500"
-                            : "border-gray-400"
+                            : "border-gray-400 dark:border-gray-500"
                         }`}
                       >
                         {isChecked && <Check className="h-4 w-4 text-white" />}
@@ -1582,38 +2330,72 @@ export const ChatBox = ({
             <button
               onClick={() => setIsReasoningActive(!isReasoningActive)}
               className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-                isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                isReasoningActive
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-[#464D53] dark:text-gray-400"
               }`}
             >
               <Atom
                 size={16}
-                className={isReasoningActive ? "text-green-600" : ""}
+                className={
+                  isReasoningActive
+                    ? "text-green-600 dark:text-green-400"
+                    : "dark:text-gray-400"
+                }
               />
-              <span>Reasoning</span>
+              <span className={isReasoningActive ? "" : "dark:text-gray-300"}>
+                Reasoning
+              </span>
             </button>
             {displayAgentName && (
-              <div className="flex items-center text-xs text-[#464D53] ml-2 px-1 py-0.5 cursor-default">
-                <Bot size={16} className="mr-1 text-[#464D53]" />
-                <span className="font-medium">{displayAgentName}</span>
+              <div className="flex items-center text-xs text-[#464D53] dark:text-gray-400 ml-2 px-1 py-0.5 cursor-default">
+                <Bot
+                  size={16}
+                  className="mr-1 text-[#464D53] dark:text-gray-400"
+                />
+                <span className="font-medium dark:text-gray-300">
+                  {displayAgentName}
+                </span>
               </div>
             )}
           </div>
-          {isStreaming && chatId ? (
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsAgenticMode(!isAgenticMode)
+            }}
+            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
+          >
+            <Infinity
+              size={14}
+              strokeWidth={2.4}
+              className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+            />
+            <span
+              className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+            >
+              Agent
+            </span>
+          </div>
+          {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}
               style={{ marginLeft: "auto" }}
-              className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+              className="flex mr-6 bg-[#464B53] dark:bg-gray-700 text-white dark:text-gray-200 hover:bg-[#5a5f66] dark:hover:bg-gray-600 rounded-full w-[32px] h-[32px] items-center justify-center"
             >
-              <Square className="text-white" size={16} />
+              <Square className="text-white dark:text-gray-200" size={16} />
             </button>
           ) : (
             <button
-              disabled={isStreaming}
+              disabled={isStreaming || retryIsStreaming}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
-              className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
+              className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
             >
-              <ArrowRight className="text-white" size={16} />
+              <ArrowRight
+                className="text-white dark:text-slate-200"
+                size={16}
+              />
             </button>
           )}
         </div>
