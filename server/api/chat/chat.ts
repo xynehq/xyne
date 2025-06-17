@@ -102,7 +102,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -243,7 +243,7 @@ const checkAndYieldCitations = function* (
       const item = results[citationIndex - baseIndex]
       if (item) {
         // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === datasourceFileSchema) {
+        if (item.fields.sddocname === dataSourceFileSchema) {
           // Removed transcriptSchema check
           continue
         }

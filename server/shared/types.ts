@@ -15,7 +15,7 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -286,7 +286,7 @@ export const DataSourceFileResponseSchema = z
     mimeType: z.string().optional(),
     size: z.number().optional(),
 
-    type: z.literal(datasourceFileSchema),
+    type: z.literal(dataSourceFileSchema),
     app: z.literal(Apps.DataSource),
     entity: z.literal("file"),
 
