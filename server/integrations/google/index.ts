@@ -1681,7 +1681,7 @@ const insertFilesForUser = async (
         mime_type: "google_pdf",
         email: userEmail,
       })
-      let pdfInserted = 0
+      let driveFilesInserted = 0
       for (const doc of pdfs) {
         try {
           processedFiles += 1
@@ -1693,8 +1693,8 @@ const insertFilesForUser = async (
             file_type: DriveEntity.PDF,
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
-          pdfInserted++
-          getUserLogger(userEmail!).info(`Inserted ${pdfInserted} PDFs`)
+          driveFilesInserted++
+          getUserLogger(userEmail!).info(`Inserted ${driveFilesInserted} PDFs`)
         } catch (error) {
           ingestionErrorsTotal.inc(
             {
@@ -1711,7 +1711,7 @@ const insertFilesForUser = async (
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
       getUserLogger(userEmail).info(
-        `Inserted ${pdfInserted} files of type ${DriveEntity.PDF}`,
+        `Inserted ${driveFilesInserted} files of type ${DriveEntity.PDF}`,
       )
 
       const totalDurationOfDriveFileExtraction =
@@ -1784,7 +1784,7 @@ const insertFilesForUser = async (
         try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
-
+          driveFilesInserted++;
           getUserLogger(userEmail!).info(`Mime type: `, doc.mimeType)
 
           if (doc.mimeType !== DriveMime.Sheets) {
@@ -1830,6 +1830,7 @@ const insertFilesForUser = async (
       )
 
       getUserLogger(userEmail!).info(`finished ${initialCount} files`)
+      getUserLogger(userEmail!).info(`Inserted a total of ${driveFilesInserted} drive files`)
       totalIngestionDuration()
     }
   } catch (error) {
