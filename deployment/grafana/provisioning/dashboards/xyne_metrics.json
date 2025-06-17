@@ -51,6 +51,92 @@
     },
     {
       "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PCC1356B0A80992B8"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 51,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "12.0.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PCC1356B0A80992B8"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  email,\n  MAX(CASE WHEN app_type = 'google-drive' THEN 1 ELSE 0 END) AS google_drive,\n  MAX(CASE WHEN app_type = 'gmail' THEN 1 ELSE 0 END) AS gmail,\n  MAX(CASE WHEN app_type = 'google-calendar' THEN 1 ELSE 0 END) AS google_calendar,\n  MAX(CASE WHEN app_type = 'slack' THEN 1 ELSE 0 END) AS slack,\n  MAX(CASE WHEN app_type = 'github_mcp' THEN 1 ELSE 0 END) AS github_mcp\nFROM sync_jobs\nWHERE email IN ($email)\nGROUP BY email;\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Ingested Entity Tracker",
+      "type": "table"
+    },
+    {
+      "datasource": {
         "type": "prometheus",
         "uid": "P442C0F3243930FD5"
       },
@@ -90,7 +176,7 @@
         "h": 14,
         "w": 11,
         "x": 0,
-        "y": 1
+        "y": 12
       },
       "id": 48,
       "options": {
@@ -156,7 +242,7 @@
         "h": 14,
         "w": 7,
         "x": 11,
-        "y": 1
+        "y": 12
       },
       "id": 46,
       "options": {
@@ -218,7 +304,7 @@
         "h": 14,
         "w": 6,
         "x": 18,
-        "y": 1
+        "y": 12
       },
       "id": 47,
       "options": {
@@ -316,7 +402,7 @@
         "h": 13,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 26
       },
       "id": 21,
       "options": {
@@ -424,7 +510,7 @@
         "h": 13,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 26
       },
       "id": 20,
       "options": {
@@ -495,7 +581,7 @@
         "h": 10,
         "w": 10,
         "x": 0,
-        "y": 28
+        "y": 39
       },
       "id": 22,
       "options": {
@@ -604,7 +690,7 @@
         "h": 10,
         "w": 14,
         "x": 10,
-        "y": 28
+        "y": 39
       },
       "id": 23,
       "options": {
@@ -700,7 +786,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 49
       },
       "id": 19,
       "options": {
@@ -763,7 +849,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 59
       },
       "id": 36,
       "panels": [],
@@ -801,7 +887,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 60
       },
       "id": 44,
       "options": {
@@ -871,7 +957,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 60
       },
       "id": 45,
       "options": {
@@ -1025,7 +1111,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 71
       },
       "id": 39,
       "options": {
@@ -1193,7 +1279,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 80
       },
       "id": 18,
       "options": {
@@ -1317,7 +1403,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 89
       },
       "id": 16,
       "interval": "30",
@@ -1523,7 +1609,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 88
+        "y": 99
       },
       "id": 17,
       "options": {
@@ -1697,7 +1783,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 100
+        "y": 111
       },
       "id": 35,
       "panels": [],
@@ -1734,7 +1820,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 101
+        "y": 112
       },
       "id": 32,
       "options": {
@@ -1797,7 +1883,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 101
+        "y": 112
       },
       "id": 30,
       "options": {
@@ -1864,7 +1950,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 120
       },
       "id": 29,
       "options": {
@@ -1927,7 +2013,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 109
+        "y": 120
       },
       "id": 31,
       "options": {
@@ -1991,7 +2077,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 128
       },
       "id": 49,
       "options": {
@@ -2053,7 +2139,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 117
+        "y": 128
       },
       "id": 50,
       "options": {
@@ -2138,7 +2224,7 @@
         "h": 12,
         "w": 6,
         "x": 0,
-        "y": 129
+        "y": 140
       },
       "id": 41,
       "options": {
@@ -2246,7 +2332,7 @@
         "h": 12,
         "w": 6,
         "x": 6,
-        "y": 129
+        "y": 140
       },
       "id": 40,
       "options": {
@@ -2354,7 +2440,7 @@
         "h": 12,
         "w": 6,
         "x": 12,
-        "y": 129
+        "y": 140
       },
       "id": 42,
       "options": {
@@ -2462,7 +2548,7 @@
         "h": 12,
         "w": 6,
         "x": 18,
-        "y": 129
+        "y": 140
       },
       "id": 43,
       "options": {
@@ -2531,7 +2617,7 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 141
+        "y": 152
       },
       "id": 28,
       "options": {
@@ -2598,7 +2684,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 154
+        "y": 165
       },
       "id": 26,
       "options": {
@@ -2665,7 +2751,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 154
+        "y": 165
       },
       "id": 27,
       "options": {
@@ -2731,7 +2817,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 166
+        "y": 177
       },
       "id": 24,
       "options": {
@@ -2796,7 +2882,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 166
+        "y": 177
       },
       "id": 25,
       "options": {
@@ -2868,5 +2954,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 32
+  "version": 36
 }

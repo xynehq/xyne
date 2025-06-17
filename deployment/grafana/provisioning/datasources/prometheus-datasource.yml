@@ -12,9 +12,3 @@ datasources:
   #   httpMethod: POST # Example if your prometheus needs it
   # basicAuth: false
 
-- name: PostgreSQLLocal
-  type: postgresql
-  access: proxy
-  url: postgres://xyne:xyne@xyne-db:5432/xyne
-  isDefault: false
-  editable: false
