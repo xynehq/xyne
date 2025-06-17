@@ -24,6 +24,9 @@ services:
       - "3002:3000"
     networks:
       - xyne
+    environment:
+      - POSTGRES_PASSWORD=xyne
+      
   vespa:
     image: vespaengine/vespa
     container_name: vespa

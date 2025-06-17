@@ -8,8 +8,8 @@ datasources:
     database: xyne
     user: xyne
     secureJsonData:
-      password: xyne
+      password: ${POSTGRES_PASSWORD}
     jsonData:
-      sslmode: disable      
+      sslmode: disable
     isDefault: false
     editable: false
