@@ -4,7 +4,7 @@ datasources:
   - name: PostgreSQLLocal
     type: postgres
     access: proxy
-    url: xyne-db:5432      
+    url: xyne-db:5432     #add the hostname:port where the pg db is deployed
     database: xyne
     user: xyne
     secureJsonData:
