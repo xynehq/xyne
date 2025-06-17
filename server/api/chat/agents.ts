@@ -168,6 +168,7 @@ import {
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
+import { not } from "drizzle-orm"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -194,7 +195,6 @@ const checkAndYieldCitationsForAgent = function* (
   let match
   while ((match = textToCitationIndex.exec(text)) !== null) {
     const citationIndex = parseInt(match[1], 10)
-    console.log(citationIndex, "citations index")
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
       if (item.source.docId) {
@@ -1822,7 +1822,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   try {
                     // TODO: Implement your parameter validation logic here before calling the tool.
                     if ("perPage" in toolParams) {
-                      if (toolParams.perPage && toolParams.perPage > 10) {
+                      if (toolParams.perPage && toolParams.perPage > 50) {
                         await logAndStreamReasoning({
                           type: AgentReasoningStepType.LogMessage,
                           message: `Detected perPage ${toolParams.perPage} in arguments for tool ${toolName}`,
@@ -1833,6 +1833,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                           message: `Limited perPage for tool ${toolName} to 10`,
                         })
                       }
+                    }
+                    else if(!("perPage" in toolParams)) {
+                      // If perPage is not in toolParams, set it to 10 by default
+                      toolParams.perPage = 10
                     }
                     const mcpToolResponse: any = await foundClient.callTool({
                       name: toolName,
