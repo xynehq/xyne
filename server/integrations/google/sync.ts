@@ -1184,6 +1184,9 @@ const handleGmailChanges = async (
                   await insert(mailData, mailSchema)
                   stats.added += 1
                   changesExist = true
+                } else {
+                  // we are inserting with updated userMap
+                  await insert(mailData, mailSchema)
                 }
               } catch (error) {
                 // Handle errors if the message no longer exists

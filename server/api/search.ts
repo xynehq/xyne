@@ -341,9 +341,11 @@ export const SearchApi = async (c: Context) => {
   }
 
   // TODO: deduplicate for google admin and contacts
-    const newResults = VespaSearchResponseToSearchResult(results)
-    newResults.groupCount = groupCount
-    return c.json(newResults)
+
+  const newResults = VespaSearchResponseToSearchResult(results,email)
+  newResults.groupCount = groupCount
+  return c.json(newResults)
+
 }
 
 export const AnswerApi = async (c: Context) => {
