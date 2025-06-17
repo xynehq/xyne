@@ -234,11 +234,13 @@ export const parseMail = async (
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let docId = messageId
   let userMap: Record<string, string> = {}
+  let mailExist = false
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
       // console.log(res)
       if (res[mailId]?.exists) {
+        mailExist = true
         userMap = res[mailId].userMap
         docId = res[mailId].docId
         // console.log("userMap->",userMap," \ndocId->",docId," \n userMail->",userEmail)
@@ -281,7 +283,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload) {
+  if (payload && !mailExist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames

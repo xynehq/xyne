@@ -1288,7 +1288,7 @@ export const IfMailDocExist = async (
   docId: string,
 ): Promise<boolean> => {
   try {
-    return vespa.ifMailDocExist(email, docId)
+    return await vespa.ifMailDocExist(email, docId)
   } catch (error) {
     Logger.error(
       error,
