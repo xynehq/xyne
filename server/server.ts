@@ -196,7 +196,7 @@ export const WsApp = app.get(
 
 const LogOut = async (c: Context) => {
   deleteCookieByEnv(c, CookieName, {
-    secure: true, // set to false in localhost
+    secure: true,
     path: "/",
     httpOnly: true,
   })
@@ -434,7 +434,7 @@ app.get(
         existingUser.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken, {
-        secure: true, // set to false in localhost
+        secure: true,
         path: "/",
         httpOnly: true,
       })
@@ -462,7 +462,7 @@ app.get(
         user.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken, {
-        secure: true, // set to false in localhost
+        secure: true,
         path: "/",
         httpOnly: true,
       })
@@ -493,7 +493,7 @@ app.get(
       userAcc.workspaceExternalId,
     )
     setCookieByEnv(c, CookieName, jwtToken, {
-      secure: true, // set to false in localhost
+      secure: true,
       path: "/",
       httpOnly: true,
     })
