@@ -842,9 +842,6 @@ export const SearchQueryToolContextPrompt = (
     - For "not found" errors, consider whether you assumed identifiers that might not exist
     - Use available search/discovery tools to find what actually exists
     
-    **Available Tools:**  
-    ${toolContext}
-
     **MCP Tool Context:**  
     ${toolContext}
     
