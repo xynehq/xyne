@@ -28,13 +28,20 @@ services:
     volumes:
       - ../server/vespa-data:/opt/vespa/var
       - ../server/vespa-logs:/opt/vespa/logs
-    command: chown -R 1000:1000 /opt/vespa/var /opt/vespa/logs
+    command: sh -c "chown -R 1000:1000 /opt/vespa/var /opt/vespa/logs && touch /tmp/init_done && sleep infinity"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/init_done"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 0s
     networks:
       - xyne
 
   prometheus:
     image: "prom/prometheus"
     container_name: xyne-prometheus
+    user: "65534:65534"
     volumes:
       - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
     ports:
@@ -50,6 +57,7 @@ services:
   grafana:
     image: grafana/grafana
     container_name: xyne-grafana
+    user: "472:472"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/grafana-storage:/var/lib/grafana
@@ -66,7 +74,7 @@ services:
     user: "1000:1000"
     depends_on:
       vespa-init:
-        condition: service_completed_successfully
+        condition: service_healthy
     ports:
       - "8080:8080"
       - "19071:19071"
