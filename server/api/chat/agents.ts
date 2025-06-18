@@ -436,6 +436,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            ...(agentId ? {agentId: agentIdToStore} : {})
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -662,7 +663,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         `  - Title: ${f.source.title || "Untitled"}\n` +
                         // Truncate content in the scratchpad to keep the prompt concise.
                         // The full content is available in `planningContext` for the final answer.
-                        `  - Content Snippet: "${f.content.substring(0, 100)}"`,
+                        `  - Content Snippet: "${f.content.substring(0, 100)}..."`,
                     )
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"

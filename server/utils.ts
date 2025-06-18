@@ -93,8 +93,12 @@ export const getErrorMessage = (error: unknown) => {
 
 // // we want LLM to have a better understanding of time
 export const getRelativeTime = (oldTimestamp: number) => {
-  // Convert `oldTimestamp` to seconds if it is in milliseconds
-  const oldTimestampInSeconds = Math.floor(oldTimestamp / 1000)
+  // If timestamp > 10^12, treat it as milliseconds
+  const oldTimestampInSeconds =
+    oldTimestamp > 1e12
+      ? Math.floor(oldTimestamp / 1000)
+      : Math.floor(oldTimestamp)
+
   const now = Math.floor(Date.now() / 1000)
   const difference = now - oldTimestampInSeconds
 
