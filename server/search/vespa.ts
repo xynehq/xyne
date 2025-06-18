@@ -2077,26 +2077,40 @@ export const dateToUnixTimestamp = (
 }
 
 export const SearchVespaThreads = async (
-  docIds: string[],
+  threadIdsInput: string[],
   generateAnswerSpan: Span,
 ): Promise<VespaSearchResponse> => {
-  const option = { namespace: NAMESPACE, docIds, generateAnswerSpan }
+  const validThreadIds = threadIdsInput.filter(
+    (id) => typeof id === "string" && id.length > 0,
+  )
 
-  const result = await vespa.getDocumentsByOnlyDocIds(option)
-  // now we have to iterate in its children and get the docIds
-  const messages = result.root?.children || []
-  let threadIds: string[] = []
-  for (let message of messages) {
-    threadIds.push(
-      message.fields && "threadId" in message.fields
-        ? (message.fields.threadId as string)
-        : "",
-    )
+  if (validThreadIds.length === 0) {
+    Logger.warn("SearchVespaThreads called with no valid threadIds.")
+    return {
+      root: {
+        id: "nullss",
+        relevance: 0,
+        fields: { totalCount: 0 },
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: true,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0,
+        },
+        children: [],
+      },
+    }
   }
+
   try {
-    return vespa.getDocumentsBythreadId(threadIds)
+    return vespa.getDocumentsBythreadId(validThreadIds)
   } catch (error) {
-    Logger.error(error, `Error fetching document docIds: ${docIds}`)
+    Logger.error(
+      error,
+      `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
+    )
     const errMessage = getErrorMessage(error)
     throw new Error(errMessage)
   }

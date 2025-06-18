@@ -356,9 +356,6 @@ export const MessageWithToolsApi = async (c: Context) => {
       agentId,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
-    loggerWithChild({ email: sub }).info(
-      `getting mcp create with body: ${JSON.stringify(body)}`,
-    )
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -435,7 +432,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            ...(agentId ? {agentId: agentIdToStore} : {})
+            ...(agentId ? { agentId: agentIdToStore } : {}),
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -2445,4 +2442,3 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.end()
   }
 }
-

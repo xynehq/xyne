@@ -150,10 +150,7 @@ import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { ragPipelineConfig, RagPipelineStages, type Citation } from "./types"
 import { activeStreams } from "./stream"
-import {
-  AgentMessageApi,
-  MessageWithToolsApi,
-} from "@/api/chat/agents"
+import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -2743,9 +2740,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
-      Logger.info(
-        `Routing to MessageWithToolsApi as isAgentic is true and no agentId provided.`,
-      )
+      Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
 

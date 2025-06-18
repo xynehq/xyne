@@ -33,6 +33,7 @@ import {
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatMessage,
   type VespaChatUser,
   type VespaSchema,
   type VespaSearchResponse,
@@ -54,6 +55,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
   agentSpecificDataSourceIds: string[]
 } {
+  console.log(agentPrompt, "agent pront")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
 
@@ -65,6 +67,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
+    console.log(agentPromptData, "agent pront afgter parse")
   } catch (error) {
     Logger.warn("Failed to parse agentPrompt JSON", {
       error,
@@ -531,6 +534,71 @@ export const timeSearchTool: AgentTool = {
   },
 }
 
+// Item type mapping configuration
+interface ItemTypeMappingDetails {
+  schema: VespaSchema
+  defaultEntity: Entity | null
+  timestampField: string
+  defaultApp: Apps | null
+}
+
+const meetingEventMapping: ItemTypeMappingDetails = {
+  schema: eventSchema,
+  defaultEntity: CalendarEntity.Event,
+  timestampField: "startTime",
+  defaultApp: Apps.GoogleCalendar,
+}
+
+const emailMessageNotificationMapping: ItemTypeMappingDetails = {
+  schema: mailSchema,
+  defaultEntity: MailEntity.Email,
+  timestampField: "timestamp",
+  defaultApp: Apps.Gmail,
+}
+
+const documentFileMapping: ItemTypeMappingDetails = {
+  schema: fileSchema,
+  defaultEntity: null,
+  timestampField: "updatedAt",
+  defaultApp: Apps.GoogleDrive,
+}
+
+const attachmentMapping: ItemTypeMappingDetails = {
+  schema: mailAttachmentSchema,
+  defaultEntity: null,
+  timestampField: "timestamp",
+  defaultApp: Apps.Gmail,
+}
+
+const userPersonMapping: ItemTypeMappingDetails = {
+  schema: userSchema,
+  defaultEntity: null,
+  timestampField: "creationTime",
+  defaultApp: Apps.GoogleWorkspace,
+}
+
+const contactMapping: ItemTypeMappingDetails = {
+  schema: userSchema,
+  defaultEntity: null,
+  timestampField: "creationTime",
+  defaultApp: null, // Default to null app to target personal contacts via owner field in getItems
+}
+
+const itemTypeMappings: Record<string, ItemTypeMappingDetails> = {
+  meeting: meetingEventMapping,
+  event: meetingEventMapping,
+  email: emailMessageNotificationMapping,
+  message: emailMessageNotificationMapping,
+  notification: emailMessageNotificationMapping,
+  document: documentFileMapping,
+  file: documentFileMapping,
+  mail_attachment: attachmentMapping,
+  attachment: attachmentMapping,
+  user: userPersonMapping,
+  person: userPersonMapping,
+  contact: contactMapping,
+}
+
 // === NEW Metadata Retrieval Tool ===
 export const metadataRetrievalTool: AgentTool = {
   name: "metadata_retrieval",
@@ -596,6 +664,7 @@ export const metadataRetrievalTool: AgentTool = {
     },
     span?: Span,
     email?: string,
+    userCtx?: string,
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("execute_metadata_retrieval_tool")
@@ -645,58 +714,23 @@ export const metadataRetrievalTool: AgentTool = {
       }
 
       // 2. Map item_type to schema, entity, timestampField, and default appToUse if not already set by user
-      switch (params.item_type.toLowerCase()) {
-        case "meeting":
-        case "event":
-          schema = eventSchema
-          entity = CalendarEntity.Event
-          timestampField = "startTime"
-          if (!appToUse) appToUse = Apps.GoogleCalendar
-          break
-        case "email":
-        case "message":
-        case "notification": // 'notification' often implies email
-          schema = mailSchema
-          entity = MailEntity.Email
-          timestampField = "timestamp"
-          if (!appToUse) appToUse = Apps.Gmail
-          break
-        case "document":
-        case "file":
-          schema = fileSchema
-          entity = null
-          timestampField = "updatedAt" // Default entity to null for broader file searches
-          if (!appToUse) appToUse = Apps.GoogleDrive
-          break
-        case "mail_attachment": // New case for mail attachments
-        case "attachment": // New case for mail attachments
-          schema = mailAttachmentSchema
-          entity = null // No specific MailEntity for attachments, rely on schema
-          timestampField = "timestamp" // Assuming 'timestamp' for recency
-          if (!appToUse) appToUse = Apps.Gmail
-          break
-        case "user":
-        case "person":
-          schema = userSchema
-          entity = null
-          timestampField = "creationTime"
-          if (!appToUse) appToUse = Apps.GoogleWorkspace // Default to Google Workspace users
-          break
-        case "contact":
-          schema = userSchema
-          entity = null
-          timestampField = "creationTime"
-          if (!appToUse) appToUse = null // Default to null app to target personal contacts via owner field in getItems
-          break
-        default:
-          const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
-          execSpan?.setAttribute("error", unknownItemMsg)
-          console.error(
-            "[metadata_retrieval] Unknown item_type:",
-            unknownItemMsg,
-          )
-          return { result: unknownItemMsg, error: `Unknown item_type` }
+      const mapping = itemTypeMappings[params.item_type.toLowerCase()]
+
+      if (!mapping) {
+        const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
+        execSpan?.setAttribute("error", unknownItemMsg)
+        console.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
+        return { result: unknownItemMsg, error: `Unknown item_type` }
       }
+
+      schema = mapping.schema
+      entity = mapping.defaultEntity
+      timestampField = mapping.timestampField
+      if (!appToUse) {
+        // Only set appToUse from mapping if not already set by user's 'app' param
+        appToUse = mapping.defaultApp
+      }
+
       console.log(
         `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
       )
@@ -990,11 +1024,18 @@ export const metadataRetrievalTool: AgentTool = {
         execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
         if (agentPrompt) {
           const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+
           execSpan?.setAttribute(
             "agent_app_enums",
             JSON.stringify(agentAppEnums),
           )
-          if (agentAppEnums.find((x) => x == appToUse)) {
+          if (appToUse === null) {
+            return {
+              result: `Retrieving '${params.item_type}' without a specific app context is not supported when an agent profile is active with app restrictions. Please specify an app or use a filter query.`,
+              contexts: [],
+            }
+          } else if (agentAppEnums.includes(appToUse)) {
+            // appToUse is not null and is allowed
             const res = await getItems({
               email,
               schema,
@@ -1008,6 +1049,12 @@ export const metadataRetrievalTool: AgentTool = {
               (item): item is VespaSearchResults =>
                 !!(item.fields && "sddocname" in item.fields),
             )
+          } else {
+            // app is not null but not in agentAppEnums
+            return {
+              result: `${appToUse} is not an allowed app for this agent. Cannot retrieve ${params.item_type}.`,
+              contexts: [],
+            }
           }
         } else {
           searchResults = await getItems({
@@ -1180,19 +1227,36 @@ export const getSlackThreads: AgentTool = {
       required: false,
     },
   }, // No parameters needed from the LLM
-  execute: async (params: any, span?: Span, email?: string, ctx?: string) => {
+  execute: async (
+    params: any,
+    span?: Span,
+    email?: string,
+    ctx?: string,
+    agentPrompt?: string,
+  ) => {
     const execSpan = span?.startSpan("slack_message")
     if (!email) {
       const errorMsg = "email is required for search tool execution."
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing user email" }
     }
+
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
+        return {
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve Slack threads.",
+          contexts: [],
+        }
+      }
+    }
+
     try {
-      let schema: VespaSchema = chatMessageSchema
-      let appToUse: Apps = Apps.Slack
+      let appToUse: Apps = Apps.Slack // This tool is specific to Slack
 
       let searchResults: VespaSearchResponse | null = null
-      let children: VespaSearchResults[] = []
       const searchOptionsVespa: {
         limit: number
         offset: number
@@ -1218,37 +1282,46 @@ export const getSlackThreads: AgentTool = {
       )
 
       const searchQuery = params.filter_query
-      console.log(
-        `[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`,
-      )
+      console.log(`[getSlackThreads] Using filter_query: '${searchQuery}'`)
 
+      // The search is always for Slack messages (appToUse = Apps.Slack)
+      // The entity is implicitly SlackEntity.Message when fetching threads.
       if (params.order_direction === "desc") {
         execSpan?.setAttribute("vespa_call_type", "searchVespa_GlobalSorted")
-        // TODO: let rank profile global sorted also respect the direction
-        // currently it's hardcoded to desc
-        searchResults = await searchVespa(searchQuery, email, appToUse, null, {
-          limit: searchOptionsVespa.limit,
-          offset: searchOptionsVespa.offset,
-          rankProfile: SearchModes.GlobalSorted,
-          span: execSpan?.startSpan(
-            "vespa_search_filtered_sorted_globalsorted",
-          ),
-        })
+        searchResults = await searchVespa(
+          searchQuery,
+          email,
+          appToUse,
+          SlackEntity.Message,
+          {
+            limit: searchOptionsVespa.limit,
+            offset: searchOptionsVespa.offset,
+            rankProfile: SearchModes.GlobalSorted,
+            span: execSpan?.startSpan(
+              "vespa_search_slack_threads_globalsorted",
+            ),
+          },
+        )
       } else {
         execSpan?.setAttribute("vespa_call_type", "searchVespa_filter_no_sort")
-        searchResults = await searchVespa(searchQuery, email, appToUse, null, {
-          limit: searchOptionsVespa.limit,
-          offset: searchOptionsVespa.offset,
-          rankProfile: SearchModes.NativeRank,
-          span: execSpan?.startSpan("vespa_search_metadata_filtered"),
-        })
+        searchResults = await searchVespa(
+          searchQuery,
+          email,
+          appToUse,
+          SlackEntity.Message,
+          {
+            limit: searchOptionsVespa.limit,
+            offset: searchOptionsVespa.offset,
+            rankProfile: SearchModes.NativeRank,
+            span: execSpan?.startSpan("vespa_search_slack_threads_native"),
+          },
+        )
       }
-      children = (searchResults?.root?.children || []).filter(
+      const children = (searchResults?.root?.children || []).filter(
         (item): item is VespaSearchResults =>
           !!(item.fields && "sddocname" in item.fields),
       )
 
-      const docIds = []
       if (!children.length) {
         return {
           result: `No messages found matching the filter query. ${params.filter_query ? `Query: '${params.filter_query}'` : ""}`,
@@ -1256,20 +1329,27 @@ export const getSlackThreads: AgentTool = {
         }
       }
 
+      const threadIdsToFetch: string[] = []
       for (const child of children) {
-        const a =
-          child.fields && "threadId" in child.fields
-            ? child.fields.threadId
-            : " "
-        const b =
-          child.fields && "createdAt" in child.fields
-            ? child.fields.createdAt
-            : " "
-        if (child.fields && a == b) {
-          docIds.push(child.fields.docId)
+        if (child.fields && child.fields.sddocname === chatMessageSchema) {
+          const messageFields = child.fields as VespaChatMessage
+          if (messageFields.app === Apps.Slack) {
+            const createdAtNum = messageFields.createdAt
+            const threadIdStr = messageFields.threadId
+            if (String(createdAtNum) === threadIdStr) {
+              threadIdsToFetch.push(threadIdStr)
+            }
+          }
         }
       }
-      const resp = await SearchVespaThreads(docIds, execSpan!)
+
+      if (threadIdsToFetch.length === 0) {
+        return {
+          result: `No primary thread messages found matching the criteria. ${params.filter_query ? `Query: '${params.filter_query}'` : ""}`,
+          contexts: [],
+        }
+      }
+      const resp = await SearchVespaThreads(threadIdsToFetch, execSpan!)
       const allChildrenFromResp = resp.root?.children || []
       const threads: VespaSearchResults[] = allChildrenFromResp.filter(
         (item): item is VespaSearchResults =>
@@ -1394,15 +1474,34 @@ export const getSlackMessagesFromUser: AgentTool = {
       required: false,
     },
   }, // No parameters needed from the LLM
-  execute: async (params: any, span?: Span, email?: string, ctx?: string) => {
+  execute: async (
+    params: any,
+    span?: Span,
+    email?: string,
+    ctx?: string,
+    agentPrompt?: string,
+  ) => {
     const execSpan = span?.startSpan("slack_message")
     if (!email) {
       const errorMsg = "email is required for search tool execution."
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing user email" }
     }
+
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
+        return {
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve messages from user.",
+          contexts: [],
+        }
+      }
+    }
+
     try {
-      let appToUse: Apps = Apps.Slack
+      let appToUse: Apps = Apps.Slack // This tool is specific to Slack
       if (!params.user_email) {
         return {
           result: "User email is required to retrieve messages.",
@@ -1584,7 +1683,13 @@ export const getSlackRelatedMessages: AgentTool = {
     },
   },
 
-  execute: async (params: any, span?: Span, email?: string, ctx?: string) => {
+  execute: async (
+    params: any,
+    span?: Span,
+    email?: string,
+    ctx?: string,
+    agentPrompt?: string,
+  ) => {
     const execSpan = span?.startSpan("slack_messages_unified")
 
     if (!email) {
@@ -1593,19 +1698,32 @@ export const getSlackRelatedMessages: AgentTool = {
       return { result: errorMsg, error: "Missing user email" }
     }
 
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
+        return {
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve related Slack messages.",
+          contexts: [],
+        }
+      }
+      // If agentPrompt is present and Slack is allowed, proceed.
+    }
+
     try {
       // Validate that at least one scope parameter is provided
       const hasScope =
         params.channel_name ||
         params.user_email ||
-        params.thread_id ||
+        params.thread_id || // Assuming thread_id might be a parameter for this unified tool
         params.date_from ||
         params.date_to
 
       if (!hasScope && !params.filter_query) {
         return {
           result:
-            "Please provide at least one filter: channel_name, user_email, thread_id, date range, or filter_query to scope the search.",
+            "Please provide at least one filter (e.g., channel_name, user_email, date range, or filter_query) to scope the Slack message search.",
           error: "Insufficient search parameters",
         }
       }
@@ -1762,9 +1880,23 @@ export const getUserSlackProfile: AgentTool = {
     params: { user_email: string },
     span?: Span,
     invokingUserEmail?: string,
+    agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("get_user_slack_profile_tool")
     execSpan?.setAttribute("target_user_email", params.user_email)
+
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
+        return {
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve Slack user profile.",
+          contexts: [],
+        }
+      }
+    }
+
     if (!params.user_email) {
       const errorMsg =
         "Target user_email parameter is required to retrieve the Slack profile."
@@ -1899,15 +2031,34 @@ export const getSlackMessagesFromChannel: AgentTool = {
       required: false,
     },
   }, // No parameters needed from the LLM
-  execute: async (params: any, span?: Span, email?: string, ctx?: string) => {
+  execute: async (
+    params: any,
+    span?: Span,
+    email?: string,
+    ctx?: string,
+    agentPrompt?: string,
+  ) => {
     const execSpan = span?.startSpan("slack_message")
     if (!email) {
       const errorMsg = "email is required for search tool execution."
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing user email" }
     }
+
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
+        return {
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve messages from channel.",
+          contexts: [],
+        }
+      }
+    }
+
     try {
-      let appToUse: Apps = Apps.Slack
+      let appToUse: Apps = Apps.Slack // This tool is specific to Slack
       if (!params.channel_name) {
         return {
           result: "channel_name is required to retrieve messages.",
@@ -2078,25 +2229,43 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
       required: false,
     },
   }, // No parameters needed from the LLM
-  execute: async (params: any, span?: Span, email?: string, ctx?: string) => {
+  execute: async (
+    params: any,
+    span?: Span,
+    email?: string,
+    ctx?: string,
+    agentPrompt?: string,
+  ) => {
     const execSpan = span?.startSpan("slack_message")
     if (!email) {
       const errorMsg = "email is required for search tool execution."
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing user email" }
     }
-    try {
-      let appToUse: Apps = Apps.Slack
-      if (
-        !params.timestamp_range ||
-        !params.timestamp_range.from ||
-        !params.timestamp_range.to
-      ) {
+
+    if (agentPrompt) {
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+      if (!agentAppEnums.includes(Apps.Slack)) {
         return {
-          result: "Timestamp range is required to retrieve messages.",
-          error: "Missing timestamp_range parameter",
+          result:
+            "Slack is not an allowed app for this agent. Cannot retrieve messages from time range.",
+          contexts: [],
         }
       }
+    }
+
+    try {
+      // Correctly check for date_from and date_to as per the tool's parameters
+      if (!params.date_from || !params.date_to) {
+        return {
+          result:
+            "Date range (date_from and date_to) is required to retrieve messages.",
+          error: "Missing date_from or date_to parameter",
+        }
+      }
+
+      const appToUse: Apps = Apps.Slack // This tool is specific to Slack
 
       const searchOptionsVespa: {
         limit: number
@@ -2111,14 +2280,14 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
         offset: params.offset || 0,
         filterQuery: params.filter_query,
         orderDirection: params.order_direction || "desc",
-        dateFrom: params.date_from ?? null,
-        dateTo: params.date_to ?? null,
+        dateFrom: params.date_from, // Use params.date_from as it's required
+        dateTo: params.date_to, // Use params.date_to as it's required
         span: execSpan,
       }
 
       const searchQuery = params.filter_query
       console.log(
-        `[get_slack_messages_from_channel] Using filter_query: '${searchQuery}'`,
+        `[getSlackMessagesFromTimeRange] Using filter_query: '${searchQuery || ""}'`,
       )
 
       const searchParams: GetThreadItemsParams & {
