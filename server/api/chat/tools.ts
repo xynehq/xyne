@@ -875,7 +875,7 @@ export const metadataRetrievalTool: AgentTool = {
           `[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`,
         )
 
-        if (params.order_direction) {
+        if (params.order_direction === "desc") {
           execSpan?.setAttribute("vespa_call_type", "searchVespa_GlobalSorted")
           // TODO: let rank profile global sorted also respect the direction
           // currently it's hardcoded to desc
@@ -987,22 +987,48 @@ export const metadataRetrievalTool: AgentTool = {
             !!(item.fields && "sddocname" in item.fields),
         )
       } else {
-        execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
-        searchResults = await getItems({
-          schema,
-          app: appToUse,
-          entity: finalEntity, // Use finalEntity here
-          timestampRange: null,
-          limit: searchOptionsVespa.limit,
-          offset: searchOptionsVespa.offset,
-          email,
-          asc: params.order_direction === "asc",
-          excludedIds: params.excludedIds, // Pass excludedIds from params directly
-        })
-        children = (searchResults?.root?.children || []).filter(
-          (item): item is VespaSearchResults =>
-            !!(item.fields && "sddocname" in item.fields),
+        execSpan?.setAttribute(
+          "vespa_call_type",
+          "getItems_no_keyword_filter",
         )
+        if (agentPrompt) {
+          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+          execSpan?.setAttribute(
+            "agent_app_enums",
+            JSON.stringify(agentAppEnums),
+          )
+          if (agentAppEnums.find((x) => x == appToUse)) {
+            const res = await getItems({
+              email,
+              schema,
+              app: appToUse ?? null,
+              entity: entity ?? null,
+              timestampRange: null,
+              limit: searchOptionsVespa.limit,
+              asc: params.order_direction === "asc",
+            })
+            children = (res?.root?.children || []).filter(
+              (item): item is VespaSearchResults =>
+                !!(item.fields && "sddocname" in item.fields),
+            )
+          }
+        } else {
+          searchResults = await getItems({
+            schema,
+            app: appToUse,
+            entity: finalEntity, // Use finalEntity here
+            timestampRange: null,
+            limit: searchOptionsVespa.limit,
+            offset: searchOptionsVespa.offset,
+            email,
+            asc: params.order_direction === "asc",
+            excludedIds: params.excludedIds, // Pass excludedIds from params directly
+          })
+          children = (searchResults?.root?.children || []).filter(
+            (item): item is VespaSearchResults =>
+              !!(item.fields && "sddocname" in item.fields),
+          )
+        }
       }
 
       execSpan?.setAttribute("retrieved_items_count", children.length)
@@ -1672,7 +1698,6 @@ export const getSlackRelatedMessages: AgentTool = {
             content: content,
             source: citation,
             confidence: item.relevance || 0.7,
-            
           }
         },
       )
@@ -1727,7 +1752,6 @@ export const getSlackRelatedMessages: AgentTool = {
   },
 }
 
-
 export const getUserSlackProfile: AgentTool = {
   name: "get_user_slack_profile",
   description: "Get a user's Slack profile details by their email address.",
@@ -1738,11 +1762,16 @@ export const getUserSlackProfile: AgentTool = {
       required: true,
     },
   },
-  execute: async (params: { user_email: string }, span?: Span, invokingUserEmail?: string) => {
+  execute: async (
+    params: { user_email: string },
+    span?: Span,
+    invokingUserEmail?: string,
+  ) => {
     const execSpan = span?.startSpan("get_user_slack_profile_tool")
     execSpan?.setAttribute("target_user_email", params.user_email)
     if (!params.user_email) {
-      const errorMsg = "Target user_email parameter is required to retrieve the Slack profile."
+      const errorMsg =
+        "Target user_email parameter is required to retrieve the Slack profile."
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing target_user_email parameter" }
     }
@@ -1759,40 +1788,53 @@ export const getUserSlackProfile: AgentTool = {
         }
       }
 
-      const userProfileDoc = children[0] as VespaSearchResults 
+      const userProfileDoc = children[0] as VespaSearchResults
       if (!userProfileDoc.fields) {
-         Logger.warn("Couldn't retrieve user profile", { docId: userProfileDoc.id, fields: userProfileDoc.fields });
-        return { result: `Found a document for ${params.user_email}, but it's not a valid Slack user profile. Expected sddocname 'chat_user'.`, contexts: [] };
+        Logger.warn("Couldn't retrieve user profile", {
+          docId: userProfileDoc.id,
+          fields: userProfileDoc.fields,
+        })
+        return {
+          result: `Found a document for ${params.user_email}, but it's not a valid Slack user profile. Expected sddocname 'chat_user'.`,
+          contexts: [],
+        }
       }
 
-      const profileData = userProfileDoc.fields as VespaChatUser;
+      const profileData = userProfileDoc.fields as VespaChatUser
 
       let profileSummary = `Slack Profile for ${profileData.name || params.user_email}:\n`
       if (profileData.email) profileSummary += `- Email: ${profileData.email}\n`
       // Use docId for User ID as it's the Slack User ID from chat_user schema
-      if (profileData.docId) profileSummary += `- User ID: ${profileData.docId}\n`
+      if (profileData.docId)
+        profileSummary += `- User ID: ${profileData.docId}\n`
       if (profileData.name) profileSummary += `- Name: ${profileData.name}\n`
-      if (profileData.image) profileSummary += `- Image URL: ${profileData.image}\n` // Use 'image'
-      if (profileData.statusText) profileSummary += `- Status: ${profileData.statusText}\n`
+      if (profileData.image)
+        profileSummary += `- Image URL: ${profileData.image}\n` // Use 'image'
+      if (profileData.statusText)
+        profileSummary += `- Status: ${profileData.statusText}\n`
       if (profileData.title) profileSummary += `- Title: ${profileData.title}\n` // 'title' field from VespaChatUser
-      if (profileData.teamId) profileSummary += `- Team ID: ${profileData.teamId}\n`
-      if (profileData.isAdmin !== undefined) profileSummary += `- Is Admin: ${profileData.isAdmin}\n`
-      if (profileData.deleted !== undefined) profileSummary += `- Is Deleted: ${profileData.deleted}\n`
+      if (profileData.teamId)
+        profileSummary += `- Team ID: ${profileData.teamId}\n`
+      if (profileData.isAdmin !== undefined)
+        profileSummary += `- Is Admin: ${profileData.isAdmin}\n`
+      if (profileData.deleted !== undefined)
+        profileSummary += `- Is Deleted: ${profileData.deleted}\n`
 
-
-      const profileUrl = `https://app.slack.com/client/${profileData.teamId}/${profileData.docId}`;
+      const profileUrl = `https://app.slack.com/client/${profileData.teamId}/${profileData.docId}`
 
       const userFragment: MinimalAgentFragment = {
-        id: userProfileDoc.id || `slack-profile-${params.user_email}-${Date.now()}`,
+        id:
+          userProfileDoc.id ||
+          `slack-profile-${params.user_email}-${Date.now()}`,
         content: profileSummary,
         source: {
-          docId: userProfileDoc.id || profileData.docId || params.user_email, 
+          docId: userProfileDoc.id || profileData.docId || params.user_email,
           title: `Slack Profile: ${profileData.name || params.user_email}`,
           app: Apps.Slack,
           entity: SlackEntity.User,
-          url: profileUrl, 
+          url: profileUrl,
         },
-        confidence: userProfileDoc.relevance || 0.98, 
+        confidence: userProfileDoc.relevance || 0.98,
       }
 
       return {
@@ -2173,8 +2215,6 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
   },
 }
 
-
-
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
@@ -2183,5 +2223,5 @@ export const agentTools: Record<string, AgentTool> = {
   time_search: timeSearchTool,
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
-  get_user_slack_profile: getUserSlackProfile
+  get_user_slack_profile: getUserSlackProfile,
 }

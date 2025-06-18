@@ -183,7 +183,6 @@ const checkAndYieldCitationsForAgent = function* (
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
-      console.log(results, citationIndex - 1)
       if (item.source.docId) {
         yield {
           citation: {
