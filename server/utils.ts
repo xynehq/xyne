@@ -94,8 +94,10 @@ export const getErrorMessage = (error: unknown) => {
 // // we want LLM to have a better understanding of time
 export const getRelativeTime = (oldTimestamp: number) => {
   // If timestamp > 10^12, treat it as milliseconds
+
+  const MILLISECOND_THRESHOLD = 1e10
   const oldTimestampInSeconds =
-    oldTimestamp > 1e12
+    oldTimestamp >= MILLISECOND_THRESHOLD
       ? Math.floor(oldTimestamp / 1000)
       : Math.floor(oldTimestamp)
 

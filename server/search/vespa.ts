@@ -2144,7 +2144,6 @@ export const getThreadItems = async (
   // Get channel ID if channelName is provided
   if (channelName) {
     try {
-      console.log(channelName)
       const resp = await vespa.getChatContainerIdByChannelName(channelName)
       // console.log(resp.root.children[0].fields.docId)
       // @ts-ignore

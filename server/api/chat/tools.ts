@@ -987,10 +987,7 @@ export const metadataRetrievalTool: AgentTool = {
             !!(item.fields && "sddocname" in item.fields),
         )
       } else {
-        execSpan?.setAttribute(
-          "vespa_call_type",
-          "getItems_no_keyword_filter",
-        )
+        execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
         if (agentPrompt) {
           const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
           execSpan?.setAttribute(
@@ -1297,15 +1294,14 @@ export const getSlackThreads: AgentTool = {
           },
         )
 
-        let responseText = `Found ${fragments.length} ${params.item_type}(s)`
+        let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
         if (params.filter_query) {
           responseText += ` matching '${params.filter_query}'`
         }
-        // Use the processed app name if available
+
         const appNameForText = appToUse
-        if (params.app) {
-          responseText += ` in \`${appNameForText}\``
-        }
+        responseText += ` in \`${appNameForText}\``
+
         if (params.offset && params.offset > 0) {
           const currentOffset = params.offset || 0
           responseText += ` (showing items ${currentOffset + 1} to ${currentOffset + fragments.length})`
@@ -1486,7 +1482,7 @@ export const getSlackMessagesFromUser: AgentTool = {
           },
         )
 
-        let responseText = `Found ${fragments.length} ${params.item_type}(s)`
+        let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
         if (params.filter_query) {
           responseText += ` matching '${params.filter_query}'`
         }
@@ -1991,7 +1987,7 @@ export const getSlackMessagesFromChannel: AgentTool = {
         },
       )
 
-      let responseText = `Found ${fragments.length} ${params.item_type}(s)`
+      let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
       if (params.filter_query) {
         responseText += ` matching '${params.filter_query}'`
       }
@@ -2173,7 +2169,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
         },
       )
 
-      let responseText = `Found ${fragments.length} ${params.item_type}(s)`
+      let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
       if (params.filter_query) {
         responseText += ` matching '${params.filter_query}'`
       }
