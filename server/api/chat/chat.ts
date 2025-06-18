@@ -504,12 +504,9 @@ export const replaceDocIdwithUserDocId = async (
 ) => {
   const res = await GetDocument(mailSchema, docId)
   // Check if userMap exists in fields and cast to any to access it
+  const userMap = (res.fields as any)?.userMap ?? {};
 
-  const userMap =
-    res.fields && "userMap" in res.fields
-      ? (res.fields as any).userMap
-      : undefined
-  return userMap[email] || docId
+  return userMap[email] ?? docId;
 }
 
 function buildContext(
