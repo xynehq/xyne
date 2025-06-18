@@ -1010,6 +1010,38 @@ class VespaClient {
       throw new Error(`Error fetching items: ${errMessage}`)
     }
   }
+
+  async ifMailDocExist(email: string, docId: string): Promise<boolean> {
+    // Construct the YQL query using userMap with sameElement
+    const yqlQuery = `select docId from mail where userMap contains sameElement(key contains "${email}", value contains "${docId}")`
+
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=1`
+
+    try {
+      const response = await this.fetchWithRetry(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Check if document exists
+      return !!result.root?.children?.[0]
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence: ${errMessage}`)
+      throw error
+    }
+  }
   /**
    * Get all documents where a specific field exists
    * @param fieldName The name of the field that should exist

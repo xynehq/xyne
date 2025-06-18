@@ -12,7 +12,7 @@ import {
   type MailAttachment,
   type VespaMailAttachment,
 } from "@/search/types"
-import { ifMailDocumentsExist, insert } from "@/search/vespa"
+import { ifMailDocumentsExist, insert, IfMailDocExist } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
@@ -90,6 +90,14 @@ export const handleGmailIngestion = async (
         limit(async () => {
           let msgResp
           try {
+            let mailExists = false
+            if (message.id && !skipMailExistCheck)
+              mailExists = await IfMailDocExist(email, message.id)
+            if (mailExists) {
+              Logger.info(`skipping mail with mailid: ${message.id}`)
+              return
+            }
+
             msgResp = await retryWithBackoff(
               () =>
                 gmail.users.messages.get({
@@ -102,7 +110,7 @@ export const handleGmailIngestion = async (
               0,
               client,
             )
-            const { mailData, exist } = await parseMail(
+            const { mailData } = await parseMail(
               msgResp.data,
               gmail,
               email,
@@ -110,23 +118,19 @@ export const handleGmailIngestion = async (
               tracker,
             )
 
-            if (!exist) {
-              await insert(mailData, mailSchema)
+            await insert(mailData, mailSchema)
 
-              totalIngestedMails.inc(
-                {
-                  mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
-                  status: "GMAIL_INGEST_SUCCESS",
-                  email: email,
-                  account_type: AuthType.OAuth,
-                },
-                1,
-              )
+            totalIngestedMails.inc(
+              {
+                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                status: "GMAIL_INGEST_SUCCESS",
+                email: email,
+                account_type: AuthType.OAuth,
+              },
+              1,
+            )
 
-              tracker.updateUserStats(email, StatType.Gmail, 1)
-            } else {
-              await insert(mailData, mailSchema)
-            }
+            tracker.updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.child({ email: email }).error(
               error,
@@ -165,7 +169,6 @@ export const handleGmailIngestion = async (
 const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
   // Regular expression to match anything inside angle brackets
-  
 
   const addresses: string[] = []
   let match
@@ -196,7 +199,7 @@ export const parseMail = async (
   userEmail: string,
   client: GoogleClient,
   tracker?: Tracker,
-): Promise<{ mailData: Mail; exist: boolean }> => {
+): Promise<{ mailData: Mail }> => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
@@ -229,15 +232,15 @@ export const parseMail = async (
   const subject = getHeader("Subject") || ""
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
-  let exist = false
   let docId = messageId
   let userMap: Record<string, string> = {}
+  let mailExist = false
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
       // console.log(res)
       if (res[mailId]?.exists) {
-        exist = true
+        mailExist = true
         userMap = res[mailId].userMap
         docId = res[mailId].docId
         // console.log("userMap->",userMap," \ndocId->",docId," \n userMail->",userEmail)
@@ -247,7 +250,6 @@ export const parseMail = async (
         error,
         `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
       )
-      exist = false
     }
   }
   // Handle timestamp from Date header if available
@@ -281,7 +283,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload && !exist) {
+  if (payload && !mailExist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -388,7 +390,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, exist: exist }
+  return { mailData: emailData }
 }
 
 const getBody = (payload: any): string => {
