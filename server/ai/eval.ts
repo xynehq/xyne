@@ -25,6 +25,7 @@ import {
   Models,
   type LLMProvider,
   type ModelParams,
+  type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
   type TimeDirection,
@@ -36,7 +37,7 @@ import { answerContextMap, cleanContext, userContext } from "./context"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import { ConversationRole, type Message } from "@aws-sdk/client-bedrock-runtime"
-import { UnderstandMessageAndAnswer } from "@/api/chat"
+import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
 import { getTracer } from "@/tracer"
 import { OpenAIProvider } from "./provider/openai"
 import { getLogger } from "@/logger"
@@ -535,7 +536,7 @@ const endToEndFlow = async (
     answer: "",
     queryRewrite: "",
     temporalDirection: null,
-    filter_query: "",
+    filterQuery: "",
     filters: queryFilters,
     type: "",
     from: null,
@@ -569,10 +570,10 @@ const endToEndFlow = async (
       message = parsed.queryRewrite
     }
 
-    const classification: TemporalClassifier & QueryRouterResponse = {
+    const classification: QueryRouterLLMResponse = {
       direction: parsed.temporalDirection,
       type: parsed.type as any,
-      filter_query: parsed.filter_query,
+      filterQuery: parsed.filterQuery,
       filters: {
         ...parsed.filters,
         app: parsed.filters.app as any,
@@ -591,6 +592,7 @@ const endToEndFlow = async (
       classification,
       messages,
       0.5,
+      false,
       ragSpan,
     )
 

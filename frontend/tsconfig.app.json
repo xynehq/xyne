@@ -26,5 +26,10 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "../server/shared", "../server/search/types", "src/Tests.ts"]
+  "include": [
+    "src",
+    "../server/shared",
+    "../server/search/types",
+    "src/Tests.ts"
+  ]
 }

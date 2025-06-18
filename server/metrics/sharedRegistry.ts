@@ -1,11 +1,11 @@
-import { collectDefaultMetrics, Registry } from "prom-client";
+import { collectDefaultMetrics, Registry } from "prom-client"
 
-const metricRegister = new Registry();
+const metricRegister = new Registry()
 
 metricRegister.setDefaultLabels({
   service: "xyne-metrics",
-});
+})
 
-collectDefaultMetrics({ register:metricRegister });
+collectDefaultMetrics({ register: metricRegister })
 
-export default metricRegister;
+export default metricRegister

@@ -34,7 +34,7 @@ let aiProviderBaseUrl = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
-
+let VESPA_NAMESPACE = "my_content"
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -146,6 +146,8 @@ export default {
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
   chatPageSize: 20, // default page size for ai search
+  maxGoogleDriveSummary: 50,
+  maxUserRequestCount: 50,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
@@ -153,4 +155,9 @@ export default {
   JobExpiryHours: 23,
   maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
+  VESPA_NAMESPACE,
+  agentWhiteList: (process.env.AGENT_WHITELIST || "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter((email) => email.length > 0),
 }

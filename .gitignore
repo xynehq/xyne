@@ -171,6 +171,9 @@ dist
 # IntelliJ based IDEs
 .idea
 
+# Vim 
+Session.vim
+
 # Finder (MacOS) folder config
 .DS_Store
 
@@ -198,3 +201,6 @@ server/downloads
 build
 server/eval-results
 server/.venv/*
+
+deployment/grafana/grafana-storage
+deployment/loki/*

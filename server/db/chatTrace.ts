@@ -1,10 +1,10 @@
 import { db } from "./client"
-import { chatTrace } from "./schema"
+import { chatTrace } from "@/db/schema"
+import type { InferInsertModel, InferSelectModel} from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"
 import { eq, and } from "drizzle-orm"
 import { compressTraceJson, decompressTraceJson } from "@/utils/compression"
-import type { InferSelectModel } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 
 export const insertChatTraceSchema = createInsertSchema(chatTrace, {

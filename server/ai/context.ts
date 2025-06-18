@@ -15,6 +15,9 @@ import {
   type VespaUser,
   type VespaChatMessageSearch,
   type ScoredChunk,
+  // Corrected import name for datasourceFileSchema
+  dataSourceFileSchema,
+  type VespaDataSourceFileSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -24,6 +27,17 @@ import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+
+export const constructToolContext = (tool_schema: string) => {
+  const tool = JSON.parse(tool_schema)
+  const toolSchemaContext = Object.entries(tool).map(
+    ([key, value]) => `- ${key}: ${JSON.stringify(value)}`,
+  )
+  return `
+  Tool Schema:
+   ${toolSchemaContext.join("\n")}
+   `
+}
 
 // Function for handling file context
 const constructFileContext = (
@@ -356,6 +370,56 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 \n${pc.green("vespa relevance score")}: ${relevance}`
 }
 
+const constructDataSourceFileContext = (
+  fields: VespaDataSourceFileSearch,
+  relevance: number,
+  maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
+): string => {
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures && fields.chunks_summary) {
+    const summaryStrings = fields.chunks_summary.map((c) =>
+      typeof c === "string" ? c : c.chunk,
+    )
+    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+  } else if (fields.chunks_summary) {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: typeof chunk === "string" ? 0 : chunk.score,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  }
+
+  return `Title: ${fields.fileName || "N/A"}
+  App: ${fields.app || "N/A"}
+  ${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
+  Mime Type: ${fields.mimeType || "N/A"}
+  ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+  ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
+  ${content ? `Content: ${content}` : ""}
+  \nvespa relevance score: ${relevance}\n`
+}
+
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
@@ -446,10 +510,16 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
-    // later can be based on app
     return constructSlackMessageContext(
       searchResult.fields,
       searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
+    return constructDataSourceFileContext(
+      searchResult.fields as VespaDataSourceFileSearch,
+      searchResult.relevance,
+      maxSummaryChunks,
+      isSelectedFiles,
     )
   } else {
     throw new Error(
@@ -467,6 +537,7 @@ export const cleanColoredContext = (text: string): string => {
 }
 
 const cleanVespaHighlights = (text: string): string => {
+  if (!text) return ""
   const hiTagPattern = /<\/?hi>/g
   return text.replace(hiTagPattern, "").trim()
 }
@@ -534,12 +605,12 @@ export const userContext = ({
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
   return `My Name is ${user.name}
-Email: ${user.email}
-Company: ${workspace.name}
-Company domain: ${workspace.domain}
-Current Time: ${currentTime}
-Today is: ${currentDate}
-Timezone: IST`
+    Email: ${user.email}
+    Company: ${workspace.name}
+    Company domain: ${workspace.domain}
+    Current Time: ${currentTime}
+    Today is: ${currentDate}
+    Timezone: IST`
 }
 
 /**

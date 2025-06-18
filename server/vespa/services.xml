@@ -4,6 +4,7 @@
         <component id="hf-embedder" type="hugging-face-embedder">
             <transformer-model path="models/model.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
+            <gpu-device device-number="0" required="false"/>
         </component>
         <search />
         <document-api />
@@ -28,6 +29,8 @@
             <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
+            <document type="datasource" mode="index" global="true" />
+            <document type="datasource_file" mode="index" />
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

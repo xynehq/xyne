@@ -1,8 +1,16 @@
 import { levels, pino, type Logger } from "pino"
-import { Subsystem } from "@/types"
+import { Subsystem, type loggerChildSchema } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
+import {
+  appRequest,
+  appResponse,
+  requestResponseLatency,
+} from "@/metrics/app/app-metrics"
+import config from "@/config"
+
+const {JwtPayloadKey} = config;
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -27,7 +35,10 @@ export const getLogger = (loggerType: Subsystem) => {
   return pino({
     name: loggerType,
     ...(isProduction
-      ? { formatters: { level: (label) => ({ level: label }) } }
+      ? {
+          timestamp: pino.stdTimeFunctions.isoTime,
+          formatters: { level: (label) => ({ level: label }) },
+        }
       : {
           transport: {
             target: "pino-pretty",
@@ -61,16 +72,19 @@ const logRequest = (
   requestId: any,
   start: number,
   status: number,
+  sub: string
 ) => {
   const elapsed = time(start)
   const isError = status >= 400
   const isRedirect = status === 302
 
+  const email = sub ?? ""
   const logData = {
     requestId,
     status,
     elapsed,
     ...(isError ? { error: c.res.body } : {}),
+    email
   }
 
   if (isError) {
@@ -86,24 +100,70 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
+  const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
+  const sub = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
+  const email = sub
     const requestId = uuidv4()
     const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
     c.set("requestId", c_reqId)
 
     const { method } = c.req
     const path = getPath(c.req.raw)
+    const isMetrics = path.startsWith("/metrics")
 
-    logger.info({
+    if(!isMetrics) {
+      logger.info({
       requestId: c_reqId,
       method,
       path,
       query: c.req.query("query") || c.req.query("prompt") || null,
       message: "Incoming request",
+      email
     })
-
+  }
     const start = Date.now()
+
+    const offset = c.req.query('offset')?? ""
+
+    appRequest.inc(
+      {
+        app_endpoint: getPath(c.req.raw).includes('/api/v1/proxy') ? '/api/v1/proxy' : getPath(c.req.raw),
+        app_request_process_status: "received",
+        email: sub,
+        offset: offset
+      },
+      1,
+    )
     await next()
 
-    logRequest(logger, c, c_reqId, start, c.res.status)
+    const duration = (Date.now() - start) / 1000
+
+    const end = new Date().toISOString()
+    appResponse.inc({
+      app_endpoint: c.req.routePath,
+      app_response_status: String(c.res.status),
+      email: sub
+    })
+
+    requestResponseLatency.observe(
+      {
+        app_endpoint: c.req.routePath,
+        app_response_status: String(c.res.status),
+        email:sub
+      },
+      duration,
+    )
+    if(!isMetrics) {
+      logRequest(logger, c, c_reqId, start, c.res.status, sub) 
+     }
   }
 }
+
+export const getLoggerWithChild = (subsystem: Subsystem, child?:any) => {
+  const baseLogger = child? getLogger(subsystem).child(child) : getLogger(subsystem)
+
+  return (children:loggerChildSchema={email:"n/a"}): Logger => {
+    return baseLogger.child(children)
+  }
+}
+

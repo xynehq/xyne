@@ -1,9 +1,10 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, DriveEntity, SlackEntity } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
+import type { CalendarEntity, MailAttachmentEntity, MailEntity, PeopleEntity } from "./search/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -39,6 +40,7 @@ const baseSearchSchema = z.object({
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
     .optional(),
+  agentId: z.string().optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
@@ -87,6 +89,23 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export const addApiKeyMCPConnectorSchema = z.object({
+  apiKey: z.string(),
+  url: z.string(),
+  name: z.string(),
+})
+
+export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
+
+export const addStdioMCPConnectorSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  name: z.string(),
+  appType: z.string(),
+})
+
+export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
@@ -103,6 +122,15 @@ export const updateConnectorStatusSchema = z.object({
   status: z.nativeEnum(ConnectorStatus),
 })
 
+export const updateToolStatusSchema = z.object({
+  toolId: z.coerce.number(), // Try coercing to number
+  enabled: z.boolean(),
+})
+
+export const updateToolsStatusSchema = z.object({
+  tools: z.array(updateToolStatusSchema),
+})
+
 export const serviceAccountIngestMoreSchema = z.object({
   connectorId: z.string(),
   emailsToIngest: z.array(z.string().email()),
@@ -117,21 +145,33 @@ export const serviceAccountIngestMoreSchema = z.object({
   insertCalendar: z.boolean(),
 })
 
-export type OAuthProvider = z.infer<typeof createOAuthProvider>
+export const deleteUserDataSchema = z.object({
+  emailToClear: z
+    .string()
+    .email({ message: "Invalid email address to clear." }),
+  options: z
+    .object({
+      startDate: z
+        .string()
+        .regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+          message: "Start date must be in YYYY-MM-DD format or empty",
+        })
+        .optional(),
+      endDate: z
+        .string()
+        .regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+          message: "End date must be in YYYY-MM-DD format or empty",
+        })
+        .optional(),
+      servicesToClear: z.array(z.string()).optional(), // e.g., ["drive", "gmail", "calendar"]
+      deleteOnlyIfSoleOwnerInPermissions: z.boolean().optional(),
+    })
+    .optional(),
+})
 
-// Define an enum for connection types
-export enum ConnectorType {
-  // Google, Notion, Github
-  SaaS = "SaaS",
-  // DuckDB, Postgres, MySQL
-  Database = "Database",
-  // Weather api?
-  API = "Api",
-  // Manually uploaded data like pdf
-  File = "File",
-  // Where we can scrape and crawl
-  Website = "Website",
-}
+export type DeleteUserDataPayload = z.infer<typeof deleteUserDataSchema>
+
+export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 export type SaaSJob = {
   connectorId: number
@@ -274,6 +314,8 @@ export enum MessageTypes {
 export enum WorkerResponseTypes {
   Stats = "Stats",
   HistoryId = "HistoryId",
+  Error = "Error",
+  ProgressUpdate = "ProgressUpdate",
 }
 
 export enum Subsystem {
@@ -292,6 +334,8 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
+  AgentApi = "AgentApi",
+  Metric = "Metric",
 }
 
 export enum OperationStatus {
@@ -316,3 +360,36 @@ export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
 })
+
+export const MCPClientConfig = z.object({
+  url: z.string(),
+  version: z.string(),
+})
+
+export const MCPClientStdioConfig = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  version: z.string(),
+})
+
+export const ingestMoreChannelSchema = z.object({
+  connectorId: z.number(),
+  channelsToIngest: z.array(z.string()),
+  startDate: z.string(),
+  endDate: z.string(),
+})
+export const startSlackIngestionSchema = z.object({
+  connectorId: z.number(),
+})
+
+export type EntityType = DriveEntity|SlackEntity|MailEntity|MailAttachmentEntity|CalendarEntity|PeopleEntity
+export type OperationType = "ingestion" | "request" | "response" | "chat-create" | "chat-response" | "chat-response-error" | "search" | "search-response" | "ingest-more_user"
+
+export type loggerChildSchema = {
+  email: string,
+  appType?: Apps,
+  entityType?: EntityType,
+  responseCode?:string,
+  responseStatus?:string,
+  operationType?:OperationType
+}

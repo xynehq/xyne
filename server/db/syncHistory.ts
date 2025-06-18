@@ -5,7 +5,7 @@ import {
   syncHistory,
   type InsertSyncHistory,
   type SelectSyncHistory,
-} from "./schema"
+} from "@/db/schema"
 
 export const insertSyncHistory = async (
   trx: TxnOrClient,

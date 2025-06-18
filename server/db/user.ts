@@ -10,7 +10,7 @@ import {
   type InternalUserWorkspace,
   type PublicUserWorkspace,
   type SelectUser,
-} from "./schema"
+} from "@/db/schema"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"

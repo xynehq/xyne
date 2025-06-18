@@ -55,4 +55,6 @@ export interface Reference {
   entity?: string
   type: "citation" | "global"
   photoLink?: string
+  mailId?: string
+  userMap?: Record<string, string>
 }

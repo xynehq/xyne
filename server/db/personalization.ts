@@ -6,7 +6,7 @@ import {
   type SelectPersonalization,
   insertPersonalizationSchema,
   selectPersonalizationSchema,
-} from "./schema"
+} from "@/db/schema"
 import { eq, sql } from "drizzle-orm"
 import { type TxnOrClient } from "@/types"
 import { getLogger } from "@/logger"

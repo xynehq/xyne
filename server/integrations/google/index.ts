@@ -1,5 +1,6 @@
 import {
   admin_directory_v1,
+  Auth,
   calendar_v3,
   docs_v1,
   drive_v3,
@@ -16,6 +17,7 @@ import {
 import { chunkDocument } from "@/chunks"
 import {
   MessageTypes,
+  OperationStatus,
   Subsystem,
   SyncCron,
   WorkerResponseTypes,
@@ -55,7 +57,12 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
+import {
+  getAppSyncJobs,
+  getAppSyncJobsByEmail,
+  insertSyncJob,
+  updateSyncJob,
+} from "@/db/syncJob"
 import { GaxiosError, type GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, retryWithBackoff } from "@/utils"
@@ -67,7 +74,7 @@ import {
   getFile,
   toPermissionsList,
 } from "@/integrations/google/utils"
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   CalendarEntity,
   eventSchema,
@@ -114,13 +121,162 @@ import {
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
-import { blockedFilesTotal, contentFileSize, extractionDuration, fileExtractionErrorsTotal, ingestionErrorsTotal, totalDurationForFileExtraction, totalExtractedFiles, totalIngestedFiles } from "@/metrics/google/google-drive-file-metrics"
+import {
+  blockedFilesTotal,
+  contentFileSize,
+  extractionDuration,
+  fileExtractionErrorsTotal,
+  ingestionErrorsTotal,
+  totalDriveFilesToBeIngested,
+  totalDurationForFileExtraction,
+  totalExtractedFiles,
+  totalIngestedFiles,
+} from "@/metrics/google/google-drive-file-metrics"
+import { v4 as uuidv4 } from "uuid"
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
+// export const loggerWithChild = (email: string) => {
+//   return Logger.child({ email: email })
+// }
+
+export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations,{ module: "google" })
+
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 Logger.info("Gmail worker initialized")
+
+gmailWorker.onmessage
+// Map to store Tracker instances for active jobs, keyed by a unique jobId.
+const activeJobTrackers = new Map<string, Tracker>()
+
+// Pending requests for operations awaiting a direct response (e.g., historyId) from the worker
+const pendingRequests = new Map<
+  string,
+  {
+    resolve: (value: string) => void
+    reject: (reason?: any) => void
+    userEmail: string
+    jobId?: string
+  }
+>()
+
+// Initialize global handlers for the Gmail worker
+const initializeGmailWorker = () => {
+  gmailWorker.onmessage = (event: MessageEvent) => {
+    const result = event.data
+    if (!result || !result.type) {
+      Logger.warn(
+        "Received an undefined or typeless message from Gmail worker",
+        { result },
+      )
+      return
+    }
+
+    const jobIdFromResult = result.jobId // Stats, HistoryId, Error messages from worker now contain jobId
+
+    if (
+      result.type === WorkerResponseTypes.HistoryId ||
+      result.type === WorkerResponseTypes.Error
+    ) {
+      const msgId = result.msgId
+      const promiseHandlers = pendingRequests.get(msgId)
+      if (promiseHandlers) {
+        pendingRequests.delete(msgId)
+        if (result.type === WorkerResponseTypes.HistoryId) {
+          promiseHandlers.resolve(result.historyId)
+        } else {
+          // MessageTypes.Error
+          promiseHandlers.reject(new Error(result.errorMessage))
+        }
+      } else {
+        Logger.warn(
+          `No pending request found for msgId: ${msgId} (jobId: ${jobIdFromResult})`,
+        )
+      }
+    } else if (result.type === WorkerResponseTypes.Stats) {
+      loggerWithChild({email: result.userEmail}).info(
+        `Main Thread: Received stats for ${result.userEmail}, type: ${result.statType}, count: ${result.count}, jobId: ${jobIdFromResult}`,
+      ) // ADD THIS LOG
+      if (!jobIdFromResult) {
+        Logger.warn(
+          "Received Gmail stats message without a jobId. Discarding.",
+          { result },
+        )
+        return
+      }
+      const trackerInstance = activeJobTrackers.get(jobIdFromResult)
+      if (trackerInstance) {
+        trackerInstance.updateUserStats(
+          result.userEmail,
+          result.statType,
+          result.count,
+        )
+      } else {
+        loggerWithChild({email: result.userEmail}).warn(
+          `Main Thread: No active tracker found for jobId: ${jobIdFromResult} when trying to update stats. (User: ${result.userEmail}, StatType: ${result.statType}, Count: ${result.count})`,
+        )
+      }
+    } else if (result.type === WorkerResponseTypes.ProgressUpdate) {
+      Logger.info(
+        `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
+      )
+      totalIngestedMails.inc(
+        {
+          email: result.email,
+          account_type: AuthType.ServiceAccount,
+          status: OperationStatus.Success,
+        },
+        result.stats.messageCount,
+      )
+      totalAttachmentIngested.inc(
+        {
+          email: result.email,
+          account_type: AuthType.ServiceAccount,
+          status: OperationStatus.Success,
+        },
+        result.stats.attachmentCount,
+      )
+      ingestionMailErrorsTotal.inc(
+        {
+          email: result.email,
+          account_type: AuthType.ServiceAccount,
+          status: OperationStatus.Failure,
+        },
+        result.stats.failedMessageCount,
+      )
+      totalAttachmentError.inc(
+        {
+          email: result.email,
+          account_type: AuthType.ServiceAccount,
+          status: OperationStatus.Failure,
+        },
+        result.stats.failedAttachmentCount,
+      )
+    }
+  }
+
+  gmailWorker.onerror = (error: ErrorEvent) => {
+    Logger.error("Gmail worker error:", error)
+    // Reject all pending requests. If they have a jobId, include it in the log.
+    for (const [msgId, promiseHandlers] of pendingRequests.entries()) {
+      pendingRequests.delete(msgId)
+      let errorMessage = `Gmail worker error: ${error.message}`
+      if (promiseHandlers.userEmail) {
+        errorMessage += ` (User: ${promiseHandlers.userEmail}`
+        if (promiseHandlers.jobId) {
+          // Check if jobId was stored
+          errorMessage += `, JobID: ${promiseHandlers.jobId}`
+        }
+        errorMessage += `)`
+      }
+      promiseHandlers.reject(new Error(errorMessage))
+    }
+  }
+  Logger.info("Global Gmail worker handlers setup complete with jobId routing")
+}
+
+initializeGmailWorker()
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -143,7 +299,7 @@ export const listUsersByEmails = async (
         )
         users.push(res.data)
       } catch (error) {
-        Logger.warn(`User ${email} not found: ${error}`)
+        loggerWithChild({email: email}).warn(`User ${email} not found: ${error}`)
         // Skip if user doesn't exist
       }
     }
@@ -514,7 +670,7 @@ const insertCalendarEvents = async (
     // Check if the error is specifically the "notACalendarUser" error
     if (error?.response?.status === 403) {
       // Log the issue and return empty results
-      Logger.warn(
+      loggerWithChild({email: userEmail!}).warn(
         `User ${userEmail} is not signed up for Google Calendar. Returning empty event set.`,
       )
       return { events: [], calendarEventsToken: "" }
@@ -530,8 +686,11 @@ const insertCalendarEvents = async (
   const confirmedEvents = events.filter((e) => e.status === "confirmed")
   const cancelledEvents = events.filter((e) => e.status === "cancelled")
 
-
-  const totalDurationForEventIngestion = ingestionDuration.startTimer({file_type:"GOOGLE_CALENDAR_EVENT", mime_type:"google_calendar_events", email:userEmail})
+  const totalDurationForEventIngestion = ingestionDuration.startTimer({
+    file_type: CalendarEntity.Event,
+    mime_type: "google_calendar_events",
+    email: userEmail,
+  })
   // Insert confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
@@ -613,7 +772,7 @@ const insertCalendarEvents = async (
         }
       }
     } catch (error) {
-      Logger.error(
+      loggerWithChild({email: userEmail!}).error(
         error,
         `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
       )
@@ -629,13 +788,22 @@ const insertCalendarEvents = async (
   }
 
   totalDurationForEventIngestion()
-  metadataFiles.inc({file_type:"GOOGLE_CALENDAR_EVENT", mime_type:"google_calendar_events", status:"SUCCESS", email:userEmail}, events.length)
+  metadataFiles.inc(
+    {
+      file_type: CalendarEntity.Event,
+      mime_type: "google_calendar_events",
+      status: "SUCCESS",
+      email: userEmail,
+    },
+    events.length,
+  )
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
 export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // Logger.info("handleGoogleOauthIngestion", job.data)
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+  const logger = loggerWithChild({email: data.email})
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -678,10 +846,37 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       refresh_token: oauthTokens.refresh_token,
     })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
-    const [totalFiles, { messagesExcludingPromotions }] = await Promise.all([
-      countDriveFiles(oauth2Client),
-      getGmailCounts(oauth2Client),
-    ])
+    const [totalFiles, { messagesTotal, messagesExcludingPromotions }] =
+      await Promise.all([
+        countDriveFiles(oauth2Client, userEmail),
+        getGmailCounts(oauth2Client, userEmail),
+      ])
+
+    totalGmailToBeIngestedCount.inc(
+      {
+        email: userEmail,
+        account_type: AuthType.OAuth,
+        status: OperationStatus.Success,
+      },
+      messagesExcludingPromotions,
+    )
+    totalDriveFilesToBeIngested.inc(
+      {
+        email: userEmail,
+        status: OperationStatus.Success,
+        file_type: DriveEntity.Misc,
+      },
+      totalFiles,
+    )
+    totalSkippedMails.inc(
+      {
+        email: userEmail,
+        status: OperationStatus.Success,
+        account_type: AuthType.OAuth,
+      },
+      messagesTotal - messagesExcludingPromotions,
+    )
+
     tracker.updateTotal(userEmail, {
       totalDrive: totalFiles,
       totalMail: messagesExcludingPromotions,
@@ -765,12 +960,12 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
         status: SyncJobStatus.NotStarted,
       })
       // await boss.complete(SaaSQueue, job.id)
-      Logger.info("job completed")
+      logger.info("job completed")
       // wsConnections.get(connector.externalId)?.close(1000, "Job finished")
       closeWs(connector.externalId)
     })
   } catch (error) {
-    Logger.error(
+    logger.error(
       error,
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
@@ -806,7 +1001,21 @@ type IngestionMetadata = {
 
 import { z } from "zod"
 import { closeWs, sendWebsocketMessage } from "@/integrations/metricStream"
-import { ingestionDuration, metadataFiles } from "@/metrics/google/metadata_metrics"
+import {
+  ingestionDuration,
+  metadataFiles,
+} from "@/metrics/google/metadata_metrics"
+import type { Logger } from "pino"
+import {
+  totalGmailToBeIngestedCount,
+  totalSkippedMails,
+} from "@/metrics/google/gmail-metrics"
+import {
+  ingestionMailErrorsTotal,
+  totalAttachmentError,
+  totalAttachmentIngested,
+  totalIngestedMails,
+} from "@/metrics/google/gmail-metrics"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -817,6 +1026,7 @@ const stats = z.object({
 
 const historyId = z.object({
   type: z.literal(WorkerResponseTypes.HistoryId),
+  msgId: z.string(),
   historyId: z.string(),
   userEmail: z.string(),
 })
@@ -824,91 +1034,77 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
-gmailWorker.onerror = (error: ErrorEvent) => {
-  Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
-}
-
-const pendingRequests = new Map<
-  string,
-  { resolve: Function; reject: Function }
->()
-
-// // Set up a centralized `onmessage` handler
-// gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
-//   const { type, userEmail } = message.data
-
-//   if (type === WorkerResponseTypes.HistoryId) {
-//     const { historyId } = message.data
-//     const promiseHandlers = pendingRequests.get(userEmail)
-//     if (promiseHandlers) {
-//       promiseHandlers.resolve(historyId)
-//       pendingRequests.delete(userEmail)
-//     }
-//   } else if (message.data.type === WorkerResponseTypes.Stats) {
-//     const { userEmail, count, statType } = message.data
-//     tracker.updateUserStats(userEmail, statType, count)
-//   }
-
-const setupGmailWorkerHandler = (tracker: Tracker) => {
-  gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
-    const { type, userEmail } = message.data
-
-    if (type === WorkerResponseTypes.HistoryId) {
-      const { historyId } = message.data
-      const promiseHandlers = pendingRequests.get(userEmail)
-      if (promiseHandlers) {
-        promiseHandlers.resolve(historyId)
-        pendingRequests.delete(userEmail)
-      }
-    } else if (message.data.type === WorkerResponseTypes.Stats) {
-      const { userEmail, count, statType } = message.data
-      tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
-    }
-  }
-}
-
-// else if (type === WorkerResponseTypes.Error) {
-//     const { error } = message.data;
-//     const promiseHandlers = pendingRequests.get(userEmail);
-//     if (promiseHandlers) {
-//         promiseHandlers.reject(new Error(error));
-//         pendingRequests.delete(userEmail);
-//     }
-// }
-// }
-
 // Define a function to handle ingestion
 const handleGmailIngestionForServiceAccount = async (
   userEmail: string,
   serviceAccountKey: GoogleServiceAccount,
+  jobId: string, // Added jobId
   startDate?: string,
   endDate?: string,
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    pendingRequests.set(userEmail, { resolve, reject })
+    const msgId = `${userEmail}_${jobId}_${uuidv4()}` // Make msgId more unique with jobId
+    const timeout = setTimeout(() => {
+      loggerWithChild({email: userEmail!}).error(
+        `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId}, msgId: ${msgId})`,
+      )
+      const promiseHandlers = pendingRequests.get(msgId)
+      if (promiseHandlers) {
+        pendingRequests.delete(msgId)
+        reject(
+          new Error(
+            `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId})`,
+          ),
+        )
+      }
+    }, 60*60*60*1000)
+    // 60hrs timeout
+    pendingRequests.set(msgId, {
+      userEmail,
+      jobId, // Store jobId with the pending request
+      resolve: (historyId: string) => {
+        clearTimeout(timeout)
+        resolve(historyId)
+      },
+      reject: (error: Error) => {
+        clearTimeout(timeout)
+        reject(error)
+      },
+    })
     gmailWorker.postMessage({
       type: MessageTypes.JwtParams,
+      msgId,
+      jobId, // Pass jobId to the worker
       userEmail,
       serviceAccountKey,
       startDate,
       endDate,
     })
-    Logger.info(`Sent message to worker for ${userEmail}`)
+    loggerWithChild({email: userEmail!}).info(
+      `Sent message to worker for ${userEmail} (jobId: ${jobId}, msgId: ${msgId})`,
+    )
   })
 }
 
 // we make 2 sync jobs
 // one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
-  Logger.info("handleGoogleServiceAccountIngestion", data)
+  const jobId = uuidv4()
+  loggerWithChild({email: data.email!}).info(
+    `handleGoogleServiceAccountIngestion starting with jobId: ${jobId}`,
+    data,
+  )
+  const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
+  activeJobTrackers.set(jobId, tracker)
+
+  let connector: SelectConnector | null = null // Defined here for access in finally block if needed
+
   try {
-    const connector = await getConnector(db, data.connectorId)
+    connector = await getConnector(db, data.connectorId) // Assign to the outer scope connector
     const serviceAccountKey: GoogleServiceAccount = JSON.parse(
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
-    setupGmailWorkerHandler(tracker)
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({
       version: "directory_v1",
@@ -917,153 +1113,244 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
 
-    let users = []
+    let usersToQuery: admin_directory_v1.Schema$User[] = []
     const whiteListedEmails = data.whiteListedEmails || []
     if (whiteListedEmails.length) {
-      users = await listUsersByEmails(admin, whiteListedEmails)
+      usersToQuery = await listUsersByEmails(admin, whiteListedEmails)
     } else {
-      users = await listUsers(admin, workspace.domain)
+      usersToQuery = await listUsers(admin, workspace.domain)
     }
 
-    Logger.info(`Ingesting for ${users.length} users`)
-    tracker.setTotalUsers(users.length)
-    const ingestionMetadata: IngestionMetadata[] = []
+    // Deduplicate users based on the extracted valid email before further processing
+    const uniqueUsersMap = new Map<string, admin_directory_v1.Schema$User>()
+    for (const user of usersToQuery) {
+      const email = getValidUserEmailFromGoogleUser(user)
+      if (email && !uniqueUsersMap.has(email)) {
+        uniqueUsersMap.set(email, user)
+      }
+    }
+    const usersToProcess = Array.from(uniqueUsersMap.values())
 
-    // Use p-limit to handle concurrency
+    if (usersToProcess.length !== usersToQuery.length) {
+      loggerWithChild({email: data.email!}).warn(
+        `Removed ${usersToQuery.length - usersToProcess.length} duplicate or unidentifiable (no email) users from initial query (jobId: ${jobId})`,
+      )
+    }
+
+    if (usersToProcess.length === 0) {
+      loggerWithChild({email: data.email!}).warn(
+        `No users with valid emails to process for connectorId: ${data.connectorId} (jobId: ${jobId}). Aborting.`,
+      )
+      // Potentially update connector status to Failed or Connected if no users is an acceptable state.
+      // For now, just logging and exiting the main processing block.
+      if (connector.externalId) closeWs(connector.externalId)
+      return
+    }
+
+    loggerWithChild({email: data.email!}).info(
+      `Ingesting for ${usersToProcess.length} users (jobId: ${jobId})`,
+    )
+    tracker.setTotalUsers(usersToProcess.length)
+    const ingestionMetadataList: IngestionMetadata[] = []
+
     const limit = pLimit(ServiceAccountUserConcurrency)
 
     const interval = setInterval(() => {
-      sendWebsocketMessage(
-        JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getServiceAccountProgress().userStats,
-          startTime: tracker.getStartTime(),
-        }),
-        connector.externalId,
-      )
+      if (connector?.externalId) {
+        sendWebsocketMessage(
+          JSON.stringify({
+            progress: tracker.getProgress(),
+            userStats: tracker.getServiceAccountProgress().userStats,
+            startTime: tracker.getStartTime(),
+          }),
+          connector.externalId,
+        )
+      }
     }, 4000)
 
-    // Map each user to a promise but limit concurrent execution
-    const promises = users.map((user) =>
+    const userProcessingPromises = usersToProcess.map((googleUser) =>
       limit(async () => {
-        const userEmail = user.primaryEmail || user.emails[0]
-        Logger.info(`started for ${userEmail}`)
-        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
-        const driveClient = google.drive({ version: "v3", auth: jwtClient })
+        const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
-        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
-          [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
-        )
-
-        tracker.updateTotal(userEmail, {
-          totalMail: messagesExcludingPromotions,
-          totalDrive: totalFiles,
-        })
-
-        const { contacts, otherContacts, contactsToken, otherContactsToken } =
-          await listAllContacts(jwtClient)
-        await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
-
-        const { startPageToken }: drive_v3.Schema$StartPageToken = (
-          await driveClient.changes.getStartPageToken()
-        ).data
-        if (!startPageToken) {
-          throw new Error("Could not get start page token")
+        if (!userEmail) {
+          loggerWithChild({email: userEmail!}).error(
+            `handleGoogleServiceAccountIngestion: Could not determine a valid email for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping.`,
+          )
+          tracker.markUserComplete(
+            googleUser.id || `UNKNOWN_ID_${Math.random()}`,
+          )
+          return null
         }
 
-        const [_, historyId, { calendarEventsToken }] = await Promise.all([
-          insertFilesForUser(jwtClient, userEmail, connector, tracker),
-          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
-          insertCalendarEvents(jwtClient, userEmail, tracker),
+        loggerWithChild({email: userEmail!}).info(
+          `started for ${userEmail} (jobId: ${jobId})`,
+        )
+        const userJwtClient = createJwtClient(serviceAccountKey, userEmail) // Renamed
+        const userDriveClient = google.drive({
+          version: "v3",
+          auth: userJwtClient,
+        }) // Renamed for clarity
+
+        // Use more concise names for counts
+        const [driveFileCount, gmailCounts] = await Promise.all([
+          countDriveFiles(userJwtClient, userEmail),
+          getGmailCounts(userJwtClient, userEmail),
         ])
 
+        const mailCountExcludingPromotions =
+          gmailCounts.messagesExcludingPromotions
+
+        totalGmailToBeIngestedCount.inc(
+          {
+            email: userEmail,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Success,
+          },
+          gmailCounts.messagesTotal,
+        )
+        totalDriveFilesToBeIngested.inc(
+          {
+            email: userEmail,
+            status: OperationStatus.Success,
+            file_type: DriveEntity.Misc,
+          },
+          driveFileCount,
+        )
+        totalSkippedMails.inc(
+          {
+            email: userEmail,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Cancelled,
+          },
+          gmailCounts.messagesTotal - gmailCounts.messagesExcludingPromotions,
+        )
+        tracker.updateTotal(userEmail, {
+          totalMail: mailCountExcludingPromotions,
+          totalDrive: driveFileCount,
+        })
+        loggerWithChild({email: userEmail!}).info(
+          `Total files: ${driveFileCount}, Total mail: ${mailCountExcludingPromotions} for ${userEmail} (jobId: ${jobId})`,
+        )
+
+        const { contacts, otherContacts, contactsToken, otherContactsToken } =
+          await listAllContacts(userJwtClient)
+        await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
+
+        const { startPageToken } = (
+          await userDriveClient.changes.getStartPageToken()
+        ).data
+        if (!startPageToken) {
+          throw new Error(
+            `Could not get start page token for user ${userEmail} (jobId: ${jobId})`,
+          )
+        }
+
+        // Pass userJwtClient where appropriate if those functions use it directly, or serviceAccountKey
+        const [_, historyIdResult, calendarResult] = await Promise.all([
+          insertFilesForUser(userJwtClient, userEmail, connector!, tracker), // Assuming connector is valid here
+          handleGmailIngestionForServiceAccount(
+            userEmail,
+            serviceAccountKey,
+            jobId,
+          ),
+          insertCalendarEvents(userJwtClient, userEmail, tracker),
+        ])
+
+        loggerWithChild({email: userEmail!}).info(
+          `Ingestion completed for ${userEmail} (jobId: ${jobId})`,
+        )
         tracker.markUserComplete(userEmail)
         return {
           email: userEmail,
           driveToken: startPageToken,
           contactsToken,
           otherContactsToken,
-          historyId,
-          calendarEventsToken,
-        }
+          historyId: historyIdResult, // Use the result from the promise
+          calendarEventsToken: calendarResult.calendarEventsToken, // Use the result
+        } as IngestionMetadata
       }),
     )
 
-    // Wait for all promises to complete
-    const results = await Promise.all(promises)
-    ingestionMetadata.push(...results)
+    const results = (await Promise.all(
+      userProcessingPromises,
+    )) as (IngestionMetadata | null)[]
+    const successfulResults = results.filter(
+      (meta) => meta !== null,
+    ) as IngestionMetadata[]
+    ingestionMetadataList.push(...successfulResults)
 
-    await insertUsersForWorkspace(users)
+    // Filter users for workspace insert based on successful processing
+    const usersForWorkspaceInsert = usersToProcess.filter((u) =>
+      successfulResults.some(
+        (sr) => sr.email === getValidUserEmailFromGoogleUser(u),
+      ),
+    )
+    await insertUsersForWorkspace(usersForWorkspaceInsert)
 
     setTimeout(() => {
       clearInterval(interval)
     }, 8000)
+
     await db.transaction(async (trx) => {
-      for (const {
-        email,
-        driveToken,
-        contactsToken,
-        otherContactsToken,
-        historyId,
-        calendarEventsToken,
-      } of ingestionMetadata) {
+      for (const meta of ingestionMetadataList) {
+        // Iterate over successful results
         // drive and contacts per user
         await insertSyncJob(trx, {
-          workspaceId: connector.workspaceId,
-          workspaceExternalId: connector.workspaceExternalId,
+          workspaceId: connector!.workspaceId, // Assuming connector is valid
+          workspaceExternalId: connector!.workspaceExternalId,
           app: Apps.GoogleDrive,
-          connectorId: connector.id,
+          connectorId: connector!.id,
           authType: AuthType.ServiceAccount,
           config: {
-            driveToken,
-            contactsToken,
+            driveToken: meta.driveToken,
+            contactsToken: meta.contactsToken,
             type: "googleDriveChangeToken",
-            otherContactsToken,
+            otherContactsToken: meta.otherContactsToken,
             lastSyncedAt: new Date().toISOString(),
           },
-          email,
+          email: meta.email,
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
         })
         // gmail per user
         await insertSyncJob(trx, {
-          workspaceId: connector.workspaceId,
-          workspaceExternalId: connector.workspaceExternalId,
+          workspaceId: connector!.workspaceId,
+          workspaceExternalId: connector!.workspaceExternalId,
           app: Apps.Gmail,
-          connectorId: connector.id,
+          connectorId: connector!.id,
           authType: AuthType.ServiceAccount,
           config: {
-            historyId,
+            historyId: meta.historyId,
             type: "gmailChangeToken",
             lastSyncedAt: new Date().toISOString(),
           },
-          email,
+          email: meta.email,
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
         })
         // For inserting Google CalendarEvent Change Job
         await insertSyncJob(trx, {
-          workspaceId: connector.workspaceId,
-          workspaceExternalId: connector.workspaceExternalId,
+          workspaceId: connector!.workspaceId,
+          workspaceExternalId: connector!.workspaceExternalId,
           app: Apps.GoogleCalendar,
-          connectorId: connector.id,
+          connectorId: connector!.id,
           authType: AuthType.ServiceAccount,
           config: {
-            calendarEventsToken,
+            calendarEventsToken: meta.calendarEventsToken,
             type: "calendarEventsChangeToken",
             lastSyncedAt: new Date().toISOString(),
           },
-          email,
+          email: meta.email,
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
         })
       }
       // workspace sync for the Org
       await insertSyncJob(trx, {
-        workspaceId: connector.workspaceId,
-        workspaceExternalId: connector.workspaceExternalId,
+        workspaceId: connector!.workspaceId,
+        workspaceExternalId: connector!.workspaceExternalId,
         app: Apps.GoogleWorkspace,
-        connectorId: connector.id,
+        connectorId: connector!.id,
         authType: AuthType.ServiceAccount,
         config: { updatedAt: new Date().toISOString(), type: "updatedAt" },
         email: "",
@@ -1076,32 +1363,39 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         .set({
           status: ConnectorStatus.Connected,
         })
-        .where(eq(connectors.id, connector.id))
-      Logger.info("status updated")
-      // await boss.complete(SaaSQueue, job.id)
-      Logger.info("job completed")
+        .where(eq(connectors.id, connector!.id))
+      loggerWithChild({email: data.email!}).info(`status updated (jobId: ${jobId})`)
+      loggerWithChild({email: data.email!}).info(`job completed (jobId: ${jobId})`)
+      if (connector!.externalId) closeWs(connector!.externalId)
     })
   } catch (error) {
-    Logger.error(
+    loggerWithChild({email: data.email!}).error(
       error,
-      `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
-      error,
+      `handleGoogleServiceAccountIngestion (jobId: ${jobId}) failed: ${(error as Error).message}`,
     )
-    await db.transaction(async (trx) => {
-      trx
-        .update(connectors)
-        .set({
-          status: ConnectorStatus.Failed,
-        })
-        .where(eq(connectors.id, data.connectorId))
-      // await boss.fail(job.name, job.id)
-    })
+    // Ensure connector is defined for error handling if possible
+    if (connector && connector.externalId) {
+      // Check if connector was successfully fetched
+      closeWs(connector.externalId)
+    }
+    await db
+      .update(connectors)
+      .set({ status: ConnectorStatus.Failed })
+      .where(eq(connectors.id, data.connectorId))
     throw new CouldNotFinishJobSuccessfully({
-      message: "Could not finish Service Account ingestion",
+      message: `Could not finish Service Account ingestion (jobId: ${jobId})`,
       integration: Apps.GoogleWorkspace,
       entity: "files and users",
       cause: error as Error,
     })
+  } finally {
+    loggerWithChild({email: data.email!}).info(
+      `Main Thread: About to delete tracker for jobId: ${jobId} in handleGoogleServiceAccountIngestion`,
+    ) // ADD THIS LOG
+    activeJobTrackers.delete(jobId)
+    loggerWithChild({email: data.email!}).info(
+      `handleGoogleServiceAccountIngestion (jobId: ${jobId}) finished. Tracker removed.`,
+    )
   }
 }
 
@@ -1127,6 +1421,7 @@ export const deleteDocument = async (filePath: string) => {
 export const getPresentationToBeIngested = async (
   presentation: drive_v3.Schema$File,
   client: GoogleClient,
+  email: string,
 ) => {
   const slides = google.slides({ version: "v1", auth: client })
   try {
@@ -1171,7 +1466,7 @@ export const getPresentationToBeIngested = async (
 
     // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
     if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
-      Logger.error(
+      loggerWithChild({email: email}).error(
         `Text Length exceeded for ${presentation.name}, indexing with empty content`,
       )
       chunks = []
@@ -1211,7 +1506,7 @@ export const getPresentationToBeIngested = async (
 
     return presentationToBeIngested
   } catch (error) {
-    Logger.error(
+    loggerWithChild({email: email}).error(
       error,
       `Error in getting presentation data with id ${presentation?.id}`,
     )
@@ -1223,7 +1518,7 @@ const googleSlidesVespa = async (
   client: GoogleClient,
   presentationMetadata: drive_v3.Schema$File[],
   connectorId: string,
-  userEmail?:string
+  userEmail?: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   // sendWebsocketMessage(
   //   `Scanning ${presentationMetadata.length} Google Slides`,
@@ -1234,41 +1529,59 @@ const googleSlidesVespa = async (
   const total = presentationMetadata.length
   let count = 0
   for (const presentation of presentationMetadata) {
-      const endGoogleSlideExtractionDuration = extractionDuration.startTimer({file_id: presentation.id??"", mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", file_name:presentation.name??"",email:userEmail, file_type:"GOOGLE_DRIVE_SLIDE"})
+    const endGoogleSlideExtractionDuration = extractionDuration.startTimer({
+      mime_type:
+        presentation.mimeType ?? "application/vnd.google-apps.presentation",
+      email: userEmail,
+      file_type: DriveEntity.Slides,
+    })
     try {
       const presentationToBeIngested = await getPresentationToBeIngested(
         presentation,
         client,
+        userEmail!,
       )
       if (presentationToBeIngested) {
         presentationsList.push(presentationToBeIngested)
       }
       count += 1
-      totalExtractedFiles.inc({file_id:presentation.id??"", mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", file_name:presentation.name??"", status:"SUCCESS", file_type:"GOOGLE_DRIVE_SLIDE"}, 1)
+      totalExtractedFiles.inc(
+        {
+          mime_type:
+            presentation.mimeType ?? "application/vnd.google-apps.presentation",
+          status: "SUCCESS",
+          file_type: DriveEntity.Slides,
+        },
+        1,
+      )
       // if (count % 5 === 0) {
       //   sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
       // }
       endGoogleSlideExtractionDuration()
-      const sizeBytes = presentation.size ? parseInt(presentation.size, 10) : 0;
+      const sizeBytes = presentation.size ? parseInt(presentation.size, 10) : 0
 
-        contentFileSize.observe(
-          {
-            file_id: presentation.id ?? "",
-            mime_type: presentation.mimeType ?? "application/vnd.google-apps.presentation",
-            file_name: presentation.name ?? "",
-            email: userEmail ?? "",
-            file_type: "GOOGLE_DRIVE_SLIDE",
-          },
-          isNaN(sizeBytes) ? 0 : sizeBytes
-        );
-
+      contentFileSize.observe(
+        {
+          mime_type:
+            presentation.mimeType ?? "application/vnd.google-apps.presentation",
+          email: userEmail ?? "",
+          file_type: DriveEntity.Slides,
+        },
+        isNaN(sizeBytes) ? 0 : sizeBytes,
+      )
     } catch (error) {
-      Logger.error(
+      loggerWithChild({email: userEmail!}).error(
         error,
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
       )
-      fileExtractionErrorsTotal.inc({file_id:presentation.id??"", mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", file_name:presentation.name??"",error_type:"PRESENTATION_EXTRACTION_FAILED_ERROR", file_type:"GOOGLE_DRIVE_SLIDE", email:userEmail})
+      fileExtractionErrorsTotal.inc({
+        mime_type:
+          presentation.mimeType ?? "application/vnd.google-apps.presentation",
+        error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
+        file_type: DriveEntity.Slides,
+        email: userEmail,
+      })
       continue
     }
   }
@@ -1305,7 +1618,7 @@ const insertFilesForUser = async (
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
 
     for await (let pageFiles of iterator) {
-      Logger.info(
+      loggerWithChild({email: userEmail!}).info(
         `Processing page of ${pageFiles.length} files for user ${userEmail}`,
       )
       // Check existence and timestamps for all files in this page right away
@@ -1318,7 +1631,9 @@ const insertFilesForUser = async (
       if (skippedFilesCount > 0) {
         processedFiles += skippedFilesCount
         tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
-        Logger.info(`Skipped ${skippedFilesCount} unchanged Drive files`)
+        loggerWithChild({email: userEmail!}).info(
+          `Skipped ${skippedFilesCount} unchanged Drive files`,
+        )
       }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -1341,7 +1656,12 @@ const insertFilesForUser = async (
       )
 
       // Start timer for PDF file extraction duration
-      const pdfFileExtractionDuration =  totalDurationForFileExtraction.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf",email:userEmail})
+      const pdfFileExtractionDuration =
+        totalDurationForFileExtraction.startTimer({
+          file_type: DriveEntity.PDF,
+          mime_type: "google_pdf",
+          email: userEmail,
+        })
       const pdfs = (
         await googlePDFsVespa(
           googleClient,
@@ -1354,36 +1674,70 @@ const insertFilesForUser = async (
         return v
       })
 
-       // End timer for PDF file extraction duration
+      // End timer for PDF file extraction duration
       pdfFileExtractionDuration()
-      
+
       // Metrics for ingestion duration of pdfs in google drive
-      const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf", email:userEmail})
+      const totalTimeToIngestPDF = ingestionDuration.startTimer({
+        file_type: DriveEntity.PDF,
+        mime_type: "google_pdf",
+        email: userEmail,
+      })
+      let driveFilesInserted = 0
       for (const doc of pdfs) {
-        try{
-                  processedFiles += 1
-        await insertWithRetry(doc, fileSchema)
-        totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"})
-        tracker.updateUserStats(userEmail, StatType.Drive, 1)
-        }catch(error){
-          ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"",file_type:"GOOGLE_DRIVE_PDF", mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
+        try {
+          processedFiles += 1
+          await insertWithRetry(doc, fileSchema)
+          totalIngestedFiles.inc({
+            mime_type: doc.mimeType ?? "google_pdf",
+            status: "SUCCESS",
+            email: userEmail,
+            file_type: DriveEntity.PDF,
+          })
+          tracker.updateUserStats(userEmail, StatType.Drive, 1)
+          driveFilesInserted++
+          loggerWithChild({email: userEmail!}).info(`Inserted ${driveFilesInserted} PDFs`)
+        } catch (error) {
+          ingestionErrorsTotal.inc(
+            {
+              file_type: DriveEntity.PDF,
+              mime_type: doc.mimeType ?? "google_pdf",
+              email: doc.ownerEmail ?? userEmail,
+              error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
+              status: "FAILED",
+            },
+            1,
+          )
         }
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
+      loggerWithChild({email: userEmail}).info(
+        `Inserted ${driveFilesInserted} files of type ${DriveEntity.PDF}`,
+      )
 
-      const totalDurationOfDriveFileExtraction = totalDurationForFileExtraction.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file",email:userEmail})
+      const totalDurationOfDriveFileExtraction =
+        totalDurationForFileExtraction.startTimer({
+          file_type: DriveEntity.Misc,
+          mime_type: "application/vnd.google-apps.file",
+          email: userEmail,
+        })
       const [documents, slides, sheetsObj]: [
         VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
         { sheets: VespaFileWithDrivePermission[]; count: number },
       ] = await Promise.all([
-        googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId,userEmail),
+        googleDocsVespa(
+          googleClient,
+          googleDocsMetadata,
+          connector.externalId,
+          userEmail,
+        ),
         googleSlidesVespa(
           googleClient,
           googleSlidesMetadata,
           connector.externalId,
-          userEmail
+          userEmail,
         ),
         googleSheetsVespa(
           googleClient,
@@ -1396,7 +1750,7 @@ const insertFilesForUser = async (
       const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
         googleClient,
         rest,
-        userEmail
+        userEmail,
       )
 
       let allFiles: VespaFileWithDrivePermission[] = [
@@ -1409,43 +1763,84 @@ const insertFilesForUser = async (
         return v
       })
 
-      const totalIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail})
+      const totalIngestionDuration = ingestionDuration.startTimer({
+        file_type: DriveEntity.Misc,
+        mime_type: "application/vnd.google-apps.file",
+        email: userEmail,
+      })
+
       for (const doc of allFiles) {
-        Logger.info(
-          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
-        )
         // determine the  file type here so we can insert in metrics data
-       const fileType = (doc.mimeType===DriveMime.Docs)?"GOOGLE_DRIVE_DOC":(doc.mimeType===DriveMime.Sheets)?"GOOGLE_DRIVE_SHEET":(doc.mimeType===DriveMime.Slides)?"GOOGLE_DRIVE_SLIDE":"GOOGLE_DRIVE_FILE";
-       try{
+        const fileType =
+          doc.mimeType === DriveMime.Docs
+            ? DriveEntity.Docs
+            : doc.mimeType === DriveMime.Sheets
+              ? DriveEntity.Sheets
+              : doc.mimeType === DriveMime.Slides
+                ? DriveEntity.Slides
+                : DriveEntity.Misc
+
+        loggerWithChild({email: userEmail!}).info(
+          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType}, FileType: ${fileType}`,
+        )
+        try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
-          console.log(`Mime type: `,doc.mimeType)
-          totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"application/vnd.google-apps.file", status:"SUCCESS", email:userEmail, file_type:fileType })
+          driveFilesInserted++;
+          loggerWithChild({email: userEmail!}).info(`Mime type: ${doc.mimeType}`)
+
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
+            totalIngestedFiles.inc({
+              mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
+              status: "SUCCESS",
+              email: userEmail,
+              file_type: fileType,
+            })
           }
-            }catch(error) {
-              const errorMessage = getErrorMessage(error)
-              Logger.error(
-                error,
-                `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
-              )
-              ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"", file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `ERROR_INSERTING_${fileType}_file`,status:"FAILED"}, 1)
-            }
+          loggerWithChild({email: userEmail!}).info(
+            `Inserted file of type ${fileType} with ID: ${doc.docId} and Name: ${doc.title},`,
+          )
+        } catch (error) {
+          const errorMessage = getErrorMessage(error)
+          loggerWithChild({email: userEmail!}).error(
+            error,
+            `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
+          )
+          ingestionErrorsTotal.inc(
+            {
+              file_type: fileType,
+              mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
+              email: doc.ownerEmail ?? userEmail,
+              error_type: `ERROR_INSERTING_${fileType}_file`,
+              status: "FAILED",
+            },
+            1,
+          )
+        }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
+      totalIngestedFiles.inc(
+        {
+          mime_type: "application/vnd.google-apps.spreadsheet",
+          status: "SUCCESS",
+          email: userEmail,
+          file_type: DriveEntity.Sheets,
+        },
+        sheetsObj.count,
+      )
 
-      Logger.info(`finished ${initialCount} files`)
+      loggerWithChild({email: userEmail!}).info(`finished ${initialCount} files`)
+      loggerWithChild({email: userEmail!}).info(`Inserted a total of ${driveFilesInserted} drive files`)
       totalIngestionDuration()
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(
+    loggerWithChild({email: userEmail!}).error(
       error,
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
-
   }
 }
 
@@ -1491,6 +1886,7 @@ export const getAllSheetsFromSpreadSheet = async (
   spreadsheet: sheets_v4.Schema$Spreadsheet,
   spreadsheetId: string,
   client: GoogleClient,
+  email: string,
 ) => {
   const allSheets = []
 
@@ -1535,7 +1931,7 @@ export const getAllSheetsFromSpreadSheet = async (
         }
       }
     } catch (error) {
-      Logger.error(
+      loggerWithChild({email: email}).error(
         error,
         `Failed to fetch sheets '${ranges.join(", ")}' from spreadsheet: ${(error as Error).message}`,
       )
@@ -1551,6 +1947,7 @@ export const getSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   id: string,
   client: GoogleClient,
+  email: string,
 ): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null> => {
   try {
     return retryWithBackoff(
@@ -1562,16 +1959,18 @@ export const getSpreadsheet = async (
     )
   } catch (error) {
     if (error instanceof GaxiosError) {
-      Logger.error(
+      loggerWithChild({email: email}).error(
         `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
           `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
       )
     } else if (error instanceof Error) {
-      Logger.error(
+      loggerWithChild({email: email}).error(
         `Unexpected error while fetching drive changes: ${error.message}`,
       )
     } else {
-      Logger.error(`An unknown error occurred while fetching drive changes.`)
+      loggerWithChild({email: email}).error(
+        `An unknown error occurred while fetching drive changes.`,
+      )
     }
     return null
   }
@@ -1631,6 +2030,7 @@ export const getSheetsListFromOneSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   client: GoogleClient,
   spreadsheet: drive_v3.Schema$File,
+  userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const sheetsArr = []
   try {
@@ -1638,6 +2038,7 @@ export const getSheetsListFromOneSpreadsheet = async (
       sheets,
       spreadsheet.id!,
       client,
+      userEmail,
     )
 
     if (spreadSheetData) {
@@ -1647,6 +2048,7 @@ export const getSheetsListFromOneSpreadsheet = async (
         spreadSheetData.data,
         spreadsheet.id!,
         client,
+        userEmail,
       )
 
       // There can be multiple parents
@@ -1721,7 +2123,7 @@ export const getSheetsListFromOneSpreadsheet = async (
       return []
     }
   } catch (error) {
-    Logger.error(
+    loggerWithChild({email: userEmail}).error(
       error,
       `Error getting all sheets list from spreadhseet with id ${spreadsheet.id}`,
     )
@@ -1749,25 +2151,48 @@ const googleSheetsVespa = async (
   for (const spreadsheet of spreadsheetsMetadata) {
     const sheetSize = spreadsheet.size ? parseInt(spreadsheet.size) : 0
 
-    contentFileSize.observe({file_id: spreadsheet.id??"", mime_type: spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_type:"GOOGLE_DRIVE_SHEET", email: userEmail, file_name:spreadsheet.name??""}, sheetSize)
+    contentFileSize.observe(
+      {
+        mime_type:
+          spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
+        file_type: DriveEntity.Sheets,
+        email: userEmail,
+      },
+      sheetSize,
+    )
     try {
-      const endSheetExtractionDuration = extractionDuration.startTimer({file_id: spreadsheet.id??"", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_name:spreadsheet.name??"", email:userEmail,file_type:"GOOGLE_DRIVE_SHEET"})
+      const endSheetExtractionDuration = extractionDuration.startTimer({
+        mime_type:
+          spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
+        email: userEmail,
+        file_type: DriveEntity.Sheets,
+      })
       const sheetsListFromOneSpreadsheet =
-        await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet)
+        await getSheetsListFromOneSpreadsheet(
+          sheets,
+          client,
+          spreadsheet,
+          userEmail,
+        )
       sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
       endSheetExtractionDuration()
-       totalExtractedFiles.inc({file_id:spreadsheet.id??"", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", status:"SUCCESS", file_name:spreadsheet.name??"", email:userEmail, file_type:"GOOGLE_DRIVE_SHEET"}, 1)
       // if (count % 5 === 0) {
       //   sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
       // }
     } catch (error) {
-      Logger.error(
+      loggerWithChild({email: userEmail!}).error(
         error,
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
         error,
       )
-      fileExtractionErrorsTotal.inc({file_id: spreadsheet.id??"", error_type:"SPREADSHEET_EXTRACTION_FAILED_ERROR", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_name:spreadsheet.name??"",email:userEmail, file_type:"GOOGLE_DRIVE_SHEET"})
+      fileExtractionErrorsTotal.inc({
+        error_type: "SPREADSHEET_EXTRACTION_FAILED_ERROR",
+        mime_type:
+          spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
+        email: userEmail,
+        file_type: DriveEntity.Sheets,
+      })
       // throw new DownloadDocumentError({
       //   message: "Error in the catch of getting sheet files",
       //   cause: error as Error,
@@ -1784,6 +2209,15 @@ const googleSheetsVespa = async (
   //   await insertDocument(doc)
   //   updateUserStats(userEmail, StatType.Drive, 1)
   // }
+  totalExtractedFiles.inc(
+    {
+      mime_type: "application/vnd.google-apps.spreadsheet",
+      status: "SUCCESS",
+      email: userEmail,
+      file_type: DriveEntity.Sheets,
+    },
+    count,
+  )
   return { sheets: sheetsList, count }
 }
 
@@ -1860,7 +2294,7 @@ export const googlePDFsVespa = async (
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
-  Logger.info(
+  loggerWithChild({email: userEmail!}).info(
     `Starting PDF processing for ${pdfsMetadata.length} files for user ${userEmail}`,
   )
   // a flag just for the error to know
@@ -1868,29 +2302,47 @@ export const googlePDFsVespa = async (
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
-      Logger.info(
+      loggerWithChild({email: userEmail!}).info(
         `Processing PDF: ID: ${pdf.id}, Name: ${pdf.name} for user ${userEmail}`,
       )
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-        Logger.warn(
+        loggerWithChild({email: userEmail!}).warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
-        blockedFilesTotal.inc({file_id:pdf.id??"", mime_type:pdf.mimeType??"google_pdf",file_name:pdf.name??"", blocked_type:"MAX_PDF_SIZE_EXCEEDED", email:userEmail, file_type:"GOOGLE_DRIVE_PDF",status:"BLOCKED" })
+        blockedFilesTotal.inc({
+          mime_type: pdf.mimeType ?? "google_pdf",
+          blocked_type: "MAX_PDF_SIZE_EXCEEDED",
+          email: userEmail,
+          file_type: DriveEntity.PDF,
+          status: "BLOCKED",
+        })
         return null
       }
-      console.log(`PDF SIZE : `,pdfSizeInMB)
-      contentFileSize.observe({file_id:pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??"", file_type:"GOOGLE_DRIVE_PDF", email:userEmail}, pdf.size?parseInt(pdf.size):0)
+
+      console.log(`PDF SIZE : `, pdfSizeInMB)
+      contentFileSize.observe(
+        {
+          mime_type: pdf.mimeType ?? "google_pdf",
+          file_type: DriveEntity.PDF,
+          email: userEmail,
+        },
+        pdf.size ? parseInt(pdf.size) : 0,
+      )
       const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
-        Logger.debug(
+        loggerWithChild({email: userEmail!}).debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
-        const endExtractionTimer = extractionDuration.startTimer({file_id: pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdfFileName??"", file_type:"GOOGLE_DRIVE_PDF", email:userEmail})
+        const endExtractionTimer = extractionDuration.startTimer({
+          mime_type: pdf.mimeType ?? "google_pdf",
+          file_type: DriveEntity.PDF,
+          email: userEmail,
+        })
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
-       
+
         const docs: Document[] = await safeLoadPDF(pdfPath)
         if (!docs || docs.length === 0) {
           await deleteDocument(pdfPath)
@@ -1911,7 +2363,15 @@ export const googlePDFsVespa = async (
         // Cleanup immediately after processing
         await deleteDocument(pdfPath)
         endExtractionTimer()
-        totalExtractedFiles.inc({file_id:pdf.id??"", mime_type:pdf.mimeType??"google_pdf", status:"SUCCESS", file_name:pdf.name??"", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"}, 1)
+        totalExtractedFiles.inc(
+          {
+            mime_type: pdf.mimeType ?? "google_pdf",
+            status: "SUCCESS",
+            email: userEmail,
+            file_type: DriveEntity.PDF,
+          },
+          1,
+        )
         return {
           title: pdf.name!,
           url: pdf.webViewLink ?? "",
@@ -1929,7 +2389,7 @@ export const googlePDFsVespa = async (
           updatedAt: new Date(pdf.modifiedTime!).getTime(),
         }
       } catch (error) {
-        Logger.error(
+        loggerWithChild({email: userEmail!}).error(
           error,
           `Error getting PDF files: ${error} ${(error as Error).stack}`,
           error,
@@ -1941,7 +2401,12 @@ export const googlePDFsVespa = async (
             // Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
           }
         }
-        fileExtractionErrorsTotal.inc({file_id:pdf.id??"", error_type:"PDF_EXTRACTION_FAILED_ERROR", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??pdfFileName, file_type:"GOOGLE_DRIVE_PDF",email:userEmail})
+        fileExtractionErrorsTotal.inc({
+          error_type: "PDF_EXTRACTION_FAILED_ERROR",
+          mime_type: pdf.mimeType ?? "google_pdf",
+          file_type: DriveEntity.PDF,
+          email: userEmail,
+        })
         // we cannot break the whole pdf pipeline for one error
         return null
       }
@@ -2004,7 +2469,7 @@ type ContactsResponse = {
 }
 
 // get both contacts and other contacts and return the sync tokens
-const listAllContacts = async (
+export const listAllContacts = async (
   client: GoogleClient,
 ): Promise<ContactsResponse> => {
   const peopleService = google.people({ version: "v1", auth: client })
@@ -2103,7 +2568,7 @@ export const insertContact = async (
 ) => {
   const docId = contact.resourceName || ""
   if (!docId) {
-    Logger.error(`Id does not exist for ${entity}`)
+    loggerWithChild({email: owner}).error(`Id does not exist for ${entity}`)
     return
     // throw new ContactMappingError({
     //   integration: Apps.GoogleDrive,
@@ -2188,12 +2653,18 @@ const insertContactsToVespa = async (
   owner: string,
   tracker: Tracker,
 ): Promise<void> => {
-  const contactIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_CONTACT", mime_type:"google_people", email: owner})
-  try {    
+  const contactIngestionDuration = ingestionDuration.startTimer({
+    file_type: GooglePeopleEntity.Contacts,
+    mime_type: "google_people",
+    email: owner,
+  })
+  try {
+    loggerWithChild({email: owner}).info(`Inserting Contacts`)
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts, owner)
       tracker.updateUserStats(owner, StatType.Contacts, 1)
     }
+    loggerWithChild({email: owner}).info(`Inserting Other Contacts`)
     for (const contact of otherContacts) {
       await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
       tracker.updateUserStats(owner, StatType.Contacts, 1)
@@ -2201,10 +2672,13 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error(error, `Could not insert contact: ${(error as Error).stack}`)
+      loggerWithChild({email: owner!}).error(
+        error,
+        `Could not insert contact: ${(error as Error).stack}`,
+      )
       throw error
     } else {
-      Logger.error(
+      loggerWithChild({email: owner!}).error(
         error,
         `Error mapping contact: ${error} ${(error as Error).stack}`,
         error,
@@ -2216,11 +2690,17 @@ const insertContactsToVespa = async (
         cause: error as Error,
       })
     }
-  }finally{
+  } finally {
     contactIngestionDuration()
-    metadataFiles.inc({file_type:"GOOGLE_CONTACT", mime_type:"google_people", email:owner}, (contacts.length+otherContacts.length))
+    metadataFiles.inc(
+      {
+        file_type: GooglePeopleEntity.Contacts,
+        mime_type: "google_people",
+        email: owner,
+      },
+      contacts.length + otherContacts.length,
+    )
   }
-  
 }
 
 export async function* listFiles(
@@ -2275,20 +2755,13 @@ export async function* listFiles(
   } while (nextPageToken)
 }
 
-// const sendWebsocketMessage = (message: string, connectorId: string) => {
-//   const ws: WSContext = wsConnections.get(connectorId)
-//   if (ws) {
-//     ws.send(JSON.stringify({ message }))
-//   }
-// }
-
 export const googleDocsVespa = async (
   client: GoogleClient,
   docsMetadata: drive_v3.Schema$File[],
   connectorId: string,
-  userEmail?:string
+  userEmail?: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  Logger.info(
+  loggerWithChild({email: userEmail!}).info(
     `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
   )
   // sendWebsocketMessage(
@@ -2301,10 +2774,14 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
-      Logger.info(
+      loggerWithChild({email: userEmail!}).info(
         `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
       )
-      const endDownloadDuration = extractionDuration.startTimer({file_id:doc.id??"", mime_type: doc.mimeType??"application/vnd.google-apps.document", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
+      const endDownloadDuration = extractionDuration.startTimer({
+        mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
+        file_type: DriveEntity.Docs,
+        email: userEmail,
+      })
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(
@@ -2336,13 +2813,14 @@ export const googleDocsVespa = async (
         )
 
         const sizeInBytes = Buffer.byteLength(cleanedTextContent, "utf8")
-        contentFileSize.observe({
-          file_id: doc.id ?? "",
-          mime_type: doc.mimeType ?? "",
-          file_name:doc.name??"",
-          file_type:"GOOGLE_DRIVE_DOC",
-          email:userEmail
-        }, sizeInBytes)
+        contentFileSize.observe(
+          {
+            mime_type: doc.mimeType ?? "",
+            file_type: DriveEntity.Docs,
+            email: userEmail,
+          },
+          sizeInBytes,
+        )
         const chunks = chunkDocument(cleanedTextContent)
 
         const parentsForMetadata = []
@@ -2378,15 +2856,28 @@ export const googleDocsVespa = async (
         //   sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
         // }
         endDownloadDuration()
-        totalExtractedFiles.inc({file_id:doc.id??"", mime_type:doc.mimeType??"", status:"SUCCESS", file_name:doc.name??"", email:userEmail,file_type:"GOOGLE_DRIVE_DOC"}, 1)
+        totalExtractedFiles.inc(
+          {
+            mime_type: doc.mimeType ?? "",
+            status: "SUCCESS",
+            email: userEmail,
+            file_type: DriveEntity.Docs,
+          },
+          1,
+        )
         return result
       } catch (error) {
         const errorMessage = getErrorMessage(error)
-        Logger.error(
+        loggerWithChild({email: userEmail!}).error(
           error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
-        fileExtractionErrorsTotal.inc({file_id:doc.id??"",error_type:"DOCUMENT_EXTRACTION_FAILED_ERROR", mime_type:doc.mimeType??"", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
+        fileExtractionErrorsTotal.inc({
+          error_type: "DOCUMENT_EXTRACTION_FAILED_ERROR",
+          mime_type: doc.mimeType ?? "",
+          file_type: DriveEntity.Docs,
+          email: userEmail,
+        })
         return null
       }
     }),
@@ -2399,7 +2890,7 @@ export const googleDocsVespa = async (
 export const driveFilesToDoc = async (
   client: GoogleClient,
   rest: drive_v3.Schema$File[],
-  userEmail?:string
+  userEmail?: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   let results: VespaFileWithDrivePermission[] = []
   for (const doc of rest) {
@@ -2408,12 +2899,12 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
-  metadataFiles.inc({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail}, rest.length)
   return results
 }
 
 export async function getGmailCounts(
   client: GoogleClient,
+  email?: string,
   startDate?: string,
   endDate?: string,
 ): Promise<{
@@ -2421,78 +2912,181 @@ export async function getGmailCounts(
   messagesExcludingPromotions: number
 }> {
   const gmail = google.gmail({ version: "v1", auth: client })
-
-  // Build query with date filters
-  let query = ""
-  const dateFilters: string[] = []
-
-  if (startDate) {
-    const startDateObj = new Date(startDate)
-    const formattedStartDate = startDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`after:${formattedStartDate}`)
-  }
-  if (endDate) {
-    const endDateObj = new Date(endDate)
-    const formattedEndDate = endDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`before:${formattedEndDate}`)
-  }
-
-  if (dateFilters.length > 0) {
-    query = dateFilters.join(" ")
-  }
-
-  // Get total messages with date filter if provided
-  const messages = await retryWithBackoff(
-    () =>
-      gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: 1,
-      }),
-    "Fetching Gmail messages count",
-    Apps.Gmail,
-    0,
-    client,
-  )
-  const messagesTotal = messages.data.resultSizeEstimate ?? 0
-
-  // Get Promotions category count
+  let messagesTotal = 0
   let promotionMessages = 0
-  try {
-    const promoMessages = await retryWithBackoff(
-      () =>
-        gmail.users.messages.list({
-          userId: "me",
-          q: `label:promotions ${query}`,
-          maxResults: 1,
-        }),
-      "Fetching Promotions messages count",
-      Apps.Gmail,
-      0,
-      client,
+
+  if (!startDate && !endDate) {
+    // No date filters: Use direct profile and label counts for overall totals
+    loggerWithChild({email: email??""}).info(
+      "Gmail count: No date filters provided. Fetching overall totals.",
     )
-    promotionMessages = promoMessages.data.resultSizeEstimate ?? 0
-  } catch (error: any) {
-    if (error.code === 404) {
-      Logger.warn("Promotions label not found, assuming 0 promotion messages")
-    } else {
-      Logger.error(error, `Error fetching Promotions count: ${error.message}`)
+    try {
+      const profile = await retryWithBackoff(
+        () => gmail.users.getProfile({ userId: "me", fields: "messagesTotal" }),
+        "Fetching Gmail profile for total count",
+        Apps.Gmail,
+        0,
+        client,
+      )
+      messagesTotal = profile.data.messagesTotal ?? 0
+      loggerWithChild({email: email??""}).info(
+        `Gmail count: Overall messagesTotal from profile: ${messagesTotal}`,
+      )
+    } catch (error) {
+      loggerWithChild({email: email??""}).error(
+        error,
+        `Error fetching Gmail profile for total count: ${(error as Error).message}`,
+      )
+      // Fallback or rethrow depending on desired error handling for overall count failure
+      messagesTotal = 0 // Or throw error
     }
-    promotionMessages = 0 // Default to 0 on error
+
+    try {
+      const promoLabel = await retryWithBackoff(
+        () =>
+          gmail.users.labels.get({
+            userId: "me",
+            id: "CATEGORY_PROMOTIONS",
+            fields: "messagesTotal",
+          }),
+        "Fetching Promotions label count (overall)",
+        Apps.Gmail,
+        0,
+        client,
+      )
+      promotionMessages = promoLabel.data.messagesTotal ?? 0
+      loggerWithChild({email: email??""}).info(
+        `Gmail count: Overall promotionMessages from label: ${promotionMessages}`,
+      )
+    } catch (error: any) {
+      if (error.code === 404) {
+        loggerWithChild({email: email??""}).warn(
+          "Promotions label (CATEGORY_PROMOTIONS) not found, assuming 0 promotion messages for overall count.",
+        )
+      } else {
+        loggerWithChild({email: email??""}).error(
+          error,
+          `Error fetching Promotions label count (overall): ${error.message}`,
+        )
+      }
+      promotionMessages = 0 // Default to 0 on error
+    }
+  } else {
+    // Date filters are present: Use messages.list with queries
+    loggerWithChild({email: email??""}).info(
+      `Gmail count: Date filters present (startDate: ${startDate}, endDate: ${endDate}). Using query-based counts.`,
+    )
+    const dateFilters: string[] = []
+    let baseQuery = ""
+
+    if (startDate) {
+      const startDateObj = new Date(startDate)
+      const formattedStartDate = startDateObj
+        .toISOString()
+        .split("T")[0]
+        .replace(/-/g, "/")
+      dateFilters.push(`after:${formattedStartDate}`)
+    }
+    if (endDate) {
+      const endDateObj = new Date(endDate)
+      // To make endDate inclusive, we query for messages *before* the day after endDate.
+      endDateObj.setDate(endDateObj.getDate() + 1)
+      const formattedExclusiveEndDate = endDateObj
+        .toISOString()
+        .split("T")[0]
+        .replace(/-/g, "/")
+      dateFilters.push(`before:${formattedExclusiveEndDate}`)
+    }
+
+    if (dateFilters.length > 0) {
+      baseQuery = dateFilters.join(" AND ")
+    }
+
+    loggerWithChild({email: email??""}).info(
+      `Gmail count query: Final query string for total: "${baseQuery}"`,
+    )
+    let nextPageToken: any = null
+    try {
+      do {
+        const messagesResponse = await retryWithBackoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: baseQuery,
+              maxResults: 500,
+              pageToken: nextPageToken || undefined, // Pass the current page token
+            }),
+          "Fetching Gmail messages count (date-filtered)",
+          Apps.Gmail,
+          0,
+          client,
+        )
+
+        // Count the actual messages in this page
+        const messagesInThisPage = messagesResponse.data.messages?.length ?? 0
+        messagesTotal += messagesInThisPage
+
+        // Get the token for the next page
+        nextPageToken = messagesResponse.data.nextPageToken || null
+      } while (nextPageToken)
+
+      loggerWithChild({email: email??""}).info(
+        `Gmail count query: resultSizeEstimate for total (date-filtered): ${messagesTotal}`,
+      )
+    } catch (error) {
+      loggerWithChild({email: email??""}).error(
+        error,
+        `Error fetching date-filtered Gmail messages count: ${(error as Error).message}`,
+      )
+      messagesTotal = 0 // Or throw
+    }
+
+    const promoQuery =
+      dateFilters.length > 0
+        ? `category:promotions AND ${dateFilters.join(" AND ")}`
+        : "category:promotions"
+    loggerWithChild({email: email??""}).info(
+      `Gmail count query: Promotions query string (date-filtered): "${promoQuery}"`,
+    )
+    try {
+      nextPageToken = null // Reset for promotions query
+      do {
+        const promoMessagesResponse = await retryWithBackoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: promoQuery,
+              maxResults: 500,
+            }),
+          "Fetching Promotions messages count (date-filtered)",
+          Apps.Gmail,
+          0,
+          client,
+        )
+        promotionMessages += promoMessagesResponse.data.resultSizeEstimate ?? 0
+        nextPageToken = promoMessagesResponse.data.nextPageToken || null
+      } while (nextPageToken)
+      loggerWithChild({email: email??""}).info(
+        `Gmail count query: resultSizeEstimate for promotions (date-filtered): ${promotionMessages}`,
+      )
+    } catch (error: any) {
+      // Check if the error is specifically the "notACalendarUser" error (though this is gmail, the pattern might be similar for disabled services or specific errors)
+      // For Gmail, a 404 on promotions with a query might just mean no results, or an invalid query component if not handled carefully.
+      // The `category:promotions` is standard; a 404 here is less likely than with labels.get if the category itself is "missing"
+      loggerWithChild({email: email??""}).error(
+        error,
+        `Error fetching Promotions count (date-filtered): ${error.message}`,
+      )
+      promotionMessages = 0 // Default to 0 on error
+    }
   }
 
   const messagesExcludingPromotions = Math.max(
     0,
     messagesTotal - promotionMessages,
   )
-  Logger.info(
-    `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions}`,
+  loggerWithChild({email: email??""}).info(
+    `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions} (startDate: ${startDate}, endDate: ${endDate})`,
   )
   return { messagesTotal, messagesExcludingPromotions }
 }
@@ -2500,15 +3094,16 @@ export async function getGmailCounts(
 // Count Drive Files
 export async function countDriveFiles(
   client: GoogleClient,
+  email?: string,
   startDate?: string,
   endDate?: string,
 ): Promise<number> {
   const drive = google.drive({ version: "v3", auth: client })
   let fileCount = 0
   let nextPageToken: string | undefined
-
   const dateFilters: string[] = []
 
+  loggerWithChild({email: email??""}).info(`Started Counting Files`)
   if (startDate) {
     const startDateObj = new Date(startDate)
     const formattedStartDate = startDateObj.toISOString().split("T")[0]
@@ -2545,7 +3140,7 @@ export async function countDriveFiles(
     nextPageToken = res.data.nextPageToken as string | undefined
   } while (nextPageToken)
 
-  Logger.info(`Counted ${fileCount} Drive files`)
+  loggerWithChild({email: email??""}).info(`Counted ${fileCount} Drive files`)
   return fileCount
 }
 
@@ -2554,7 +3149,33 @@ export type IngestMoreGoogleServiceAccountUsersPayload = {
   emailsToIngest: string[]
 }
 
-// Add the new function as provided by the user
+// Helper function to get a valid user email
+const getValidUserEmailFromGoogleUser = (
+  googleUser: admin_directory_v1.Schema$User,
+): string | undefined => {
+  let userEmailAddress: string | undefined =
+    googleUser.primaryEmail || undefined
+
+  if (
+    !userEmailAddress &&
+    googleUser.emails &&
+    Array.isArray(googleUser.emails) &&
+    googleUser.emails.length > 0
+  ) {
+    const firstEmailObject = googleUser.emails.find(
+      (emailEntry: any) =>
+        emailEntry &&
+        typeof emailEntry.address === "string" &&
+        emailEntry.address,
+    )
+    if (firstEmailObject) {
+      userEmailAddress = firstEmailObject.address
+    }
+  }
+  // Ensure empty string is treated as undefined
+  return userEmailAddress === "" ? undefined : userEmailAddress
+}
+
 export const ServiceAccountIngestMoreUsers = async (
   payload: IngestMoreGoogleServiceAccountUsersPayload & {
     startDate: string
@@ -2565,6 +3186,7 @@ export const ServiceAccountIngestMoreUsers = async (
   },
   userId: number,
 ) => {
+  const jobId = uuidv4()
   const {
     connectorId,
     emailsToIngest,
@@ -2574,18 +3196,20 @@ export const ServiceAccountIngestMoreUsers = async (
     insertGmail,
     insertCalendar,
   } = payload
-  const Logger = getLogger(Subsystem.Integrations)
+
   Logger.info(
-    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}. Date range: ${startDate} to ${endDate}. Services: Drive & Contacts=${insertDriveAndContacts}, Gmail=${insertGmail}, Calendar=${insertCalendar}`,
+    `ServiceAccountIngestMoreUsers called with jobId: ${jobId} for connector externalId: ${connectorId} ...`,
   )
 
   let connector: SelectConnector | null = null
+  const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
+  activeJobTrackers.set(jobId, tracker)
+
   try {
     connector = await getConnectorByExternalId(db, connectorId, userId)
-
     if (!connector) {
       throw new Error(
-        `Connector with externalID ${connectorId} for user ${userId} not found.`,
+        `Connector with externalID ${connectorId} for authorizing user ${userId} not found or access denied.`,
       )
     }
 
@@ -2593,8 +3217,6 @@ export const ServiceAccountIngestMoreUsers = async (
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
-    setupGmailWorkerHandler(tracker)
 
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({
@@ -2602,11 +3224,13 @@ export const ServiceAccountIngestMoreUsers = async (
       auth: adminJwtClient,
     })
 
-    const users = await listUsersByEmails(admin, emailsToIngest)
+    const usersToProcess = await listUsersByEmails(admin, emailsToIngest)
 
-    if (users.length === 0) {
+    if (usersToProcess.length === 0) {
       Logger.warn(
-        `No valid users found for the provided emails: ${emailsToIngest.join(", ")}. Aborting ingest more operation.`,
+        `No valid Google users found for the provided emails: ${emailsToIngest.join(
+          ", ",
+        )} (jobId: ${jobId}). Aborting ingest more operation.`,
       )
       if (connector.externalId) {
         sendWebsocketMessage(
@@ -2621,9 +3245,46 @@ export const ServiceAccountIngestMoreUsers = async (
       return
     }
 
-    Logger.info(`Ingesting for ${users.length} additional users.`)
-    tracker.setTotalUsers(users.length)
-    const ingestionMetadata: IngestionMetadata[] = []
+    // Deduplicate users based on the extracted valid email
+    const uniqueUsersMap = new Map<string, admin_directory_v1.Schema$User>()
+    for (const user of usersToProcess) {
+      const email = getValidUserEmailFromGoogleUser(user)
+      if (email && !uniqueUsersMap.has(email)) {
+        uniqueUsersMap.set(email, user)
+      }
+    }
+    const uniqueUsersToProcess = Array.from(uniqueUsersMap.values())
+
+    if (uniqueUsersToProcess.length !== usersToProcess.length) {
+      Logger.warn(
+        `Removed ${usersToProcess.length - uniqueUsersToProcess.length} duplicate or unidentifiable (no email) users from processing list (jobId: ${jobId})`,
+      )
+    }
+    if (uniqueUsersToProcess.length === 0) {
+      Logger.warn(
+        `No users with valid emails found after deduplication for emails: ${emailsToIngest.join(
+          ", ",
+        )} (jobId: ${jobId}). Aborting ingest more operation.`,
+      )
+      if (connector.externalId) {
+        sendWebsocketMessage(
+          JSON.stringify({
+            message:
+              "No valid users with identifiable emails found for ingestion.",
+            error: true,
+          }),
+          connector.externalId,
+        )
+        closeWs(connector.externalId)
+      }
+      return
+    }
+
+    Logger.info(
+      `Ingesting for ${uniqueUsersToProcess.length} additional users (jobId: ${jobId}).`,
+    )
+    tracker.setTotalUsers(uniqueUsersToProcess.length)
+    const ingestionMetadataList: IngestionMetadata[] = []
 
     const limit = pLimit(ServiceAccountUserConcurrency)
     const interval = setInterval(() => {
@@ -2640,128 +3301,242 @@ export const ServiceAccountIngestMoreUsers = async (
       }
     }, 4000)
 
-    const promises = users.map((user) =>
+    const userProcessingPromises = uniqueUsersToProcess.map((googleUser) =>
       limit(async () => {
-        const userEmail = user.primaryEmail || user.emails![0].address!
-        Logger.info(`Started ingestion for additional user: ${userEmail}`)
-        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
-        const driveClient = google.drive({ version: "v3", auth: jwtClient })
+        const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
-        let totalFiles = 0
-        if (insertDriveAndContacts) {
-          totalFiles = await countDriveFiles(jwtClient, startDate, endDate)
-        }
-
-        let messagesExcludingPromotions = 0
-        if (insertGmail) {
-          const gmailCounts = await getGmailCounts(
-            jwtClient,
-            startDate,
-            endDate,
+        if (!userEmail) {
+          Logger.error(
+            `ServiceAccountIngestMoreUsers: Could not determine a valid email address for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping this user's detailed processing.`,
           )
-          messagesExcludingPromotions = gmailCounts.messagesExcludingPromotions
+          tracker.markUserComplete(
+            googleUser.id || `UNKNOWN_ID_${Math.random()}`,
+          )
+          return null // Return null for skipped users
         }
 
-        tracker.updateTotal(userEmail, {
-          totalMail: messagesExcludingPromotions,
-          totalDrive: totalFiles,
+        loggerWithChild({email: userEmail}).info(
+          `Started ingestion for additional user: ${userEmail} (jobId: ${jobId})`,
+        )
+
+        const userJwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const userDriveClient = google.drive({
+          version: "v3",
+          auth: userJwtClient,
         })
 
-        // Process Drive and Contacts if insertDriveAndContacts is true
-        let contactsToken = ""
-        let otherContactsToken = ""
-        let startPageToken = ""
-
+        let driveFileCount = 0
         if (insertDriveAndContacts) {
-          // Contacts processing
-          const contactData = await listAllContacts(jwtClient)
-          contactsToken = contactData.contactsToken
-          otherContactsToken = contactData.otherContactsToken
-          await insertContactsToVespa(
-            contactData.contacts,
-            contactData.otherContacts,
+          driveFileCount = await countDriveFiles(
+            userJwtClient,
             userEmail,
-            tracker,
+            startDate,
+            endDate,
           )
+        }
 
-          // Drive processing (token and files)
-          const driveStartPageTokenData =
-            await driveClient.changes.getStartPageToken()
-          if (!driveStartPageTokenData.data.startPageToken) {
-            throw new Error(
-              `Could not get start page token for Drive for user ${userEmail}`,
+        totalDriveFilesToBeIngested.inc(
+          {
+            email: userEmail,
+            file_type: DriveEntity.Misc,
+            status: OperationStatus.Success,
+          },
+          driveFileCount,
+        )
+        let mailCountExcludingPromotions = 0
+        let totalMails = 0
+        if (insertGmail) {
+          try {
+            loggerWithChild({email: userEmail}).info(
+              `Getting Gmail counts for user: ${userEmail} (jobId: ${jobId}) with date range: ${startDate} to ${endDate}`,
+            )
+            const gmailCounts = await getGmailCounts(
+              userJwtClient,
+              userEmail,
+              startDate,
+              endDate,
+            )
+            mailCountExcludingPromotions =
+              gmailCounts.messagesExcludingPromotions
+            totalMails = gmailCounts.messagesTotal
+            loggerWithChild({email: userEmail}).info(
+              `Gmail counts for ${userEmail} (jobId: ${jobId}): Total=${gmailCounts.messagesTotal}, Excluding Promotions=${mailCountExcludingPromotions}`,
+            )
+          } catch (error) {
+            loggerWithChild({email: userEmail}).error(
+              error,
+              `Failed to get Gmail counts for user ${userEmail} (jobId: ${jobId}): ${getErrorMessage(error)}`,
             )
           }
-          startPageToken = driveStartPageTokenData.data.startPageToken
-
-          await insertFilesForUser(
-            jwtClient,
-            userEmail,
-            connector!,
-            tracker,
-            startDate,
-            endDate,
-          )
         }
 
-        // Only process Gmail if insertGmail is true
-        let historyId = ""
+        totalGmailToBeIngestedCount.inc(
+          {
+            email: userEmail,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Success,
+          },
+          mailCountExcludingPromotions,
+        )
+        totalSkippedMails.inc(
+          {
+            email: userEmail,
+            status: OperationStatus.Success,
+            account_type: AuthType.ServiceAccount,
+          },
+          totalMails - mailCountExcludingPromotions,
+        )
+
+        tracker.updateTotal(userEmail, {
+          totalMail: mailCountExcludingPromotions,
+          totalDrive: driveFileCount,
+        })
+
+        const servicePromises: Promise<any>[] = []
+        let contactsTokenVal = ""
+        let otherContactsTokenVal = ""
+        let driveStartPageTokenVal = ""
+        let capturedGmailHistoryId: string | undefined = undefined
+        let capturedCalendarToken: string | undefined = undefined
+
+        if (insertDriveAndContacts) {
+          servicePromises.push(
+            (async () => {
+              const contactData = await listAllContacts(userJwtClient)
+              contactsTokenVal = contactData.contactsToken
+              otherContactsTokenVal = contactData.otherContactsToken
+              await insertContactsToVespa(
+                contactData.contacts,
+                contactData.otherContacts,
+                userEmail,
+                tracker,
+              )
+
+              const driveStartPageTokenData =
+                await userDriveClient.changes.getStartPageToken()
+              if (!driveStartPageTokenData.data.startPageToken) {
+                throw new Error(
+                  `Could not get start page token for Drive for user ${userEmail} (jobId: ${jobId})`,
+                )
+              }
+              driveStartPageTokenVal =
+                driveStartPageTokenData.data.startPageToken
+
+              await insertFilesForUser(
+                userJwtClient,
+                userEmail,
+                connector!,
+                tracker,
+                startDate,
+                endDate,
+              )
+              return "drive-contacts-completed"
+            })(),
+          )
+        } else {
+          servicePromises.push(Promise.resolve("drive-contacts-skipped"))
+        }
+
         if (insertGmail) {
-          historyId = await handleGmailIngestionForServiceAccount(
-            userEmail,
-            serviceAccountKey,
-            startDate,
-            endDate,
+          servicePromises.push(
+            handleGmailIngestionForServiceAccount(
+              userEmail,
+              serviceAccountKey,
+              jobId,
+              startDate,
+              endDate,
+            ).then((historyIdResult) => {
+              // Renamed historyId to historyIdResult
+              capturedGmailHistoryId = historyIdResult
+              return historyIdResult
+            }),
           )
+        } else {
+          servicePromises.push(Promise.resolve("gmail-skipped"))
         }
 
-        // Only process Calendar if insertCalendar is true
-        let calendarEventsToken = ""
         if (insertCalendar) {
-          const { calendarEventsToken: cet } = await insertCalendarEvents(
-            jwtClient,
-            userEmail,
-            tracker,
-            startDate,
-            endDate,
+          servicePromises.push(
+            insertCalendarEvents(
+              userJwtClient,
+              userEmail,
+              tracker,
+              startDate,
+              endDate,
+            ).then((result) => {
+              capturedCalendarToken = result.calendarEventsToken
+              return result.calendarEventsToken
+            }),
           )
-          calendarEventsToken = cet
+        } else {
+          servicePromises.push(Promise.resolve("calendar-skipped"))
         }
+
+        await Promise.all(servicePromises)
 
         tracker.markUserComplete(userEmail)
         return {
           email: userEmail,
-          driveToken: startPageToken,
-          contactsToken,
-          otherContactsToken,
-          historyId,
-          calendarEventsToken,
+          driveToken: driveStartPageTokenVal,
+          contactsToken: contactsTokenVal,
+          otherContactsToken: otherContactsTokenVal,
+          historyId: capturedGmailHistoryId || "",
+          calendarEventsToken: capturedCalendarToken || "",
         } as IngestionMetadata
       }),
     )
 
-    const results = await Promise.all(promises)
-    ingestionMetadata.push(...results)
+    const results = (await Promise.all(
+      userProcessingPromises,
+    )) as (IngestionMetadata | null)[]
+    const successfulResults = results.filter(
+      (r) => r !== null,
+    ) as IngestionMetadata[]
+    ingestionMetadataList.push(...successfulResults)
 
-    await insertUsersForWorkspace(users)
+    if (uniqueUsersToProcess.length !== successfulResults.length) {
+      Logger.info(
+        `Adjusting tracker: ${uniqueUsersToProcess.length - successfulResults.length} users were skipped due to missing emails.`,
+      )
+    }
+
+    // Only insert workspace users if they were successfully processed (had an email)
+    const usersForWorkspaceInsert = uniqueUsersToProcess.filter((u) =>
+      successfulResults.some(
+        (sr) => sr.email === getValidUserEmailFromGoogleUser(u),
+      ),
+    )
+    await insertUsersForWorkspace(usersForWorkspaceInsert)
 
     setTimeout(() => {
       clearInterval(interval)
     }, 8000)
 
     await db.transaction(async (trx) => {
-      for (const {
-        email,
-        driveToken,
-        contactsToken,
-        otherContactsToken,
-        historyId: metaHistoryId,
-        calendarEventsToken,
-      } of ingestionMetadata) {
-        // Create Drive & Contacts sync job if the combined flag was true and tokens were generated
+      for (const meta of ingestionMetadataList) {
+        // using email we will check that does the service account sync job for this
+        // user alredy exist or not
+        const apps = [
+          { name: "Drive", app: Apps.GoogleDrive },
+          { name: "Gmail", app: Apps.Gmail },
+          { name: "Calendar", app: Apps.GoogleCalendar },
+        ]
+
+        const jobExists: Record<string, boolean> = {}
+        for (const { name, app } of apps) {
+          const jobs = await getAppSyncJobsByEmail(
+            db,
+            app,
+            AuthType.ServiceAccount,
+            meta.email,
+          )
+          jobExists[`${name}JobExist`] = jobs && jobs.length > 0
+        }
+
         if (
+          !jobExists.DriveJobExist &&
           insertDriveAndContacts &&
-          (driveToken || contactsToken || otherContactsToken)
+          (meta.driveToken || meta.contactsToken || meta.otherContactsToken)
         ) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
@@ -2770,20 +3545,19 @@ export const ServiceAccountIngestMoreUsers = async (
             connectorId: connector!.id,
             authType: AuthType.ServiceAccount,
             config: {
-              driveToken,
-              contactsToken,
+              driveToken: meta.driveToken,
+              contactsToken: meta.contactsToken,
               type: "googleDriveChangeToken",
-              otherContactsToken,
+              otherContactsToken: meta.otherContactsToken,
               lastSyncedAt: new Date().toISOString(),
             },
-            email,
+            email: meta.email,
             type: SyncCron.ChangeToken,
             status: SyncJobStatus.NotStarted,
           })
         }
 
-        // Only create Gmail sync job if Gmail was processed
-        if (insertGmail && metaHistoryId) {
+        if (!jobExists.GmailJobExist && insertGmail && meta.historyId) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
             workspaceExternalId: connector!.workspaceExternalId,
@@ -2791,18 +3565,21 @@ export const ServiceAccountIngestMoreUsers = async (
             connectorId: connector!.id,
             authType: AuthType.ServiceAccount,
             config: {
-              historyId: metaHistoryId,
+              historyId: meta.historyId,
               type: "gmailChangeToken",
               lastSyncedAt: new Date().toISOString(),
             },
-            email,
+            email: meta.email,
             type: SyncCron.ChangeToken,
             status: SyncJobStatus.NotStarted,
           })
         }
 
-        // Only create Calendar sync job if Calendar was processed
-        if (insertCalendar && calendarEventsToken) {
+        if (
+          !jobExists.CalendarJobExist &&
+          insertCalendar &&
+          meta.calendarEventsToken
+        ) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
             workspaceExternalId: connector!.workspaceExternalId,
@@ -2810,11 +3587,11 @@ export const ServiceAccountIngestMoreUsers = async (
             connectorId: connector!.id,
             authType: AuthType.ServiceAccount,
             config: {
-              calendarEventsToken,
+              calendarEventsToken: meta.calendarEventsToken,
               type: "calendarEventsChangeToken",
               lastSyncedAt: new Date().toISOString(),
             },
-            email,
+            email: meta.email,
             type: SyncCron.ChangeToken,
             status: SyncJobStatus.NotStarted,
           })
@@ -2828,15 +3605,11 @@ export const ServiceAccountIngestMoreUsers = async (
     if (payload.insertGmail) servicesProcessed.push("Gmail")
     if (payload.insertCalendar) servicesProcessed.push("Calendar")
 
-    if (servicesProcessed.length > 0) {
-      Logger.info(
-        `Successfully ingested additional users for connectorId: ${connectorId}. Processed services: ${servicesProcessed.join(", ")}. Sync job creation/update attempted accordingly.`,
-      )
-    } else {
-      Logger.info(
-        `Successfully ingested additional users for connectorId: ${connectorId}. No specific services (Drive/Contacts, Gmail, Calendar) were selected for data processing or sync job creation.`,
-      )
-    }
+    Logger.info(
+      `Successfully ingested additional users (jobId: ${jobId}). Processed services: ${servicesProcessed.join(
+        ", ",
+      )}. Sync job creation attempted.`,
+    )
 
     if (connector.externalId) {
       sendWebsocketMessage(
@@ -2853,7 +3626,7 @@ export const ServiceAccountIngestMoreUsers = async (
   } catch (error) {
     Logger.error(
       error,
-      `Could not finish ingesting more users for connectorId ${connectorId}: ${(error as Error).message} ${(error as Error).stack}`,
+      `ServiceAccountIngestMoreUsers (jobId: ${jobId}) failed for connector ${connectorId}: ${(error as Error).message}`,
     )
     if (connector?.externalId) {
       sendWebsocketMessage(
@@ -2866,11 +3639,13 @@ export const ServiceAccountIngestMoreUsers = async (
       )
       closeWs(connector.externalId)
     }
-    throw new CouldNotFinishJobSuccessfully({
-      message: `Could not finish Service Account ingestion for additional users for connector ${connectorId}`,
-      integration: Apps.GoogleWorkspace,
-      entity: "users",
-      cause: error as Error,
-    })
+  } finally {
+    Logger.info(
+      `Main Thread: About to delete tracker for jobId: ${jobId} in ServiceAccountIngestMoreUsers`,
+    ) // ADD THIS LOG
+    activeJobTrackers.delete(jobId)
+    Logger.info(
+      `ServiceAccountIngestMoreUsers (jobId: ${jobId}) for connector ${connectorId} finished. Tracker removed.`,
+    )
   }
 }

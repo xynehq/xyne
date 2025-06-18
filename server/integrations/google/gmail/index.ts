@@ -12,7 +12,7 @@ import {
   type MailAttachment,
   type VespaMailAttachment,
 } from "@/search/types"
-import { insert } from "@/search/vespa"
+import { ifMailDocumentsExist, insert, IfMailDocExist } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
@@ -27,7 +27,16 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
+import {
+  ingestionMailErrorsTotal,
+  totalAttachmentError,
+  totalAttachmentIngested,
+  totalIngestedMails,
+} from "@/metrics/google/gmail-metrics"
+
+import { skipMailExistCheck } from "@/integrations/google/config"
+import type { Logger } from "pino"
+import { AuthType } from "@/shared/types"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -81,6 +90,14 @@ export const handleGmailIngestion = async (
         limit(async () => {
           let msgResp
           try {
+            let mailExists = false
+            if (message.id && !skipMailExistCheck)
+              mailExists = await IfMailDocExist(email, message.id)
+            if (mailExists) {
+              Logger.info(`skipping mail with mailid: ${message.id}`)
+              return
+            }
+
             msgResp = await retryWithBackoff(
               () =>
                 gmail.users.messages.get({
@@ -93,18 +110,41 @@ export const handleGmailIngestion = async (
               0,
               client,
             )
-            await insert(
-              await parseMail(msgResp.data, gmail, email, client, tracker),
-              mailSchema,
+            const { mailData } = await parseMail(
+              msgResp.data,
+              gmail,
+              email,
+              client,
+              tracker,
             )
-            totalIngestedMails.inc({mail_id:message.id??"", mail_title:message.payload?.filename??"", mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
+
+            await insert(mailData, mailSchema)
+
+            totalIngestedMails.inc(
+              {
+                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                status: "GMAIL_INGEST_SUCCESS",
+                email: email,
+                account_type: AuthType.OAuth,
+              },
+              1,
+            )
+
             tracker.updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
-            Logger.error(
+            Logger.child({ email: email }).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mail_id:message.id??"",mail_title:message.payload?.filename??"",mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED", error_type:"ERROR_IN_GMAIL_INGESTION"},1)
+            ingestionMailErrorsTotal.inc(
+              {
+                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                status: "FAILED",
+                error_type: "ERROR_IN_GMAIL_INGESTION",
+                account_type: AuthType.OAuth,
+              },
+              1,
+            )
           } finally {
             // release from memory
             msgResp = null
@@ -122,15 +162,13 @@ export const handleGmailIngestion = async (
     }
   } while (nextPageToken)
 
-  Logger.info(`Inserted ${totalMails} mails`)
+  Logger.child({ email: email }).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 
 const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
-
   // Regular expression to match anything inside angle brackets
-  const emailRegex = /<([^>]+)>/g
 
   const addresses: string[] = []
   let match
@@ -141,6 +179,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
     .filter(Boolean)
   for (const emailWithName of emailWithNames) {
     // it's not in the name <emai> format
+    const emailRegex = /<([^>]+)>/
     if (emailWithName.indexOf("<") == -1) {
       addresses.push(emailWithName)
       continue
@@ -160,7 +199,7 @@ export const parseMail = async (
   userEmail: string,
   client: GoogleClient,
   tracker?: Tracker,
-): Promise<Mail> => {
+): Promise<{ mailData: Mail }> => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
@@ -191,7 +230,28 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-
+  const mailId =
+    getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let docId = messageId
+  let userMap: Record<string, string> = {}
+  let mailExist = false
+  if (mailId) {
+    try {
+      const res = await ifMailDocumentsExist([mailId])
+      // console.log(res)
+      if (res[mailId]?.exists) {
+        mailExist = true
+        userMap = res[mailId].userMap
+        docId = res[mailId].docId
+        // console.log("userMap->",userMap," \ndocId->",docId," \n userMail->",userEmail)
+      }
+    } catch (error) {
+      Logger.warn(
+        error,
+        `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
+      )
+    }
+  }
   // Handle timestamp from Date header if available
   const dateHeader = getHeader("Date")
   if (dateHeader) {
@@ -223,7 +283,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload) {
+  if (payload && !mailExist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -275,7 +335,16 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+
+            totalAttachmentIngested.inc(
+              {
+                mime_type: mimeType,
+                status: "SUCCESS",
+                account_type: AuthType.OAuth,
+                email: userEmail,
+              },
+              1,
+            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -284,20 +353,31 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc({mail_id:messageId, mime_type:mimeType, attachment_id:body.attachmentId??"", status:"FAILED",email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
+            totalAttachmentError.inc(
+              {
+                mime_type: mimeType,
+                status: "FAILED",
+                email: userEmail,
+                error_type: "ERROR_INSERTING_ATTACHMENT",
+                account_type: AuthType.OAuth,
+              },
+              1,
+            )
           }
         }
       }
     }
   }
-
+  userMap[userEmail] = messageId
   const emailData: Mail = {
-    docId: messageId,
+    docId: docId!,
     threadId: threadId,
+    mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
     app: Apps.Gmail,
+    userMap: userMap,
     entity: MailEntity.Email,
     permissions: permissions,
     from: from,
@@ -310,7 +390,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return emailData
+  return { mailData: emailData }
 }
 
 const getBody = (payload: any): string => {
