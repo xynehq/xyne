@@ -153,8 +153,7 @@ import { activeStreams } from "./stream"
 import {
   AgentMessageApi,
   MessageWithToolsApi,
-  CombinedAgentSlackApi,
-} from "./agents" // Added CombinedAgentSlackApi
+} from "@/api/chat/agents"
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
