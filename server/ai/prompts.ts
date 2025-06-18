@@ -846,7 +846,7 @@ export const SearchQueryToolContextPrompt = (
      ${toolContext}
 
      **Internal Tool Context:**
-     1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use 'excludedIds'.
+     1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed.
      2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts',    'contacts', or 'users'.
        Params: item_type (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc')).
      3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt)).
@@ -890,7 +890,6 @@ export const SearchQueryToolContextPrompt = (
     2.  **Decide the Next Action:**
             * You MUST call another tool to gather more information.
             * **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
-            *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
     3.  **Handle Errors:** If the previous tool call resulted in an error, analyze the error message and adjust your approach. Choose a different tool that is more appropriate for the query, or use the same tool with corrected arguments that address the specific error encountered.
     
     **ANSWER POPULATION RULES:**

@@ -1220,7 +1220,7 @@ class VespaClient {
     }
   }
 
-  async getChatContainerIdByChannelName(channelName: string): Promise<string> {
+  async getChatContainerIdByChannelName(channelName: string): Promise<VespaSearchResponse> {
     const yqlQuery = `select docId from sources ${chatContainerSchema} where name contains '${channelName}'`
     const url = `${this.vespaEndpoint}/search/`
     try {

@@ -2135,10 +2135,12 @@ export const getThreadItems = async (
 
   // Handle timestamp range normalization
   if (timestampRange) {
-    if(timestampRange.from && timestampRange.to) {
+    if (timestampRange.from) {
       timestampRange.from = dateToUnixTimestamp(timestampRange.from, false)
+    }
+    if (timestampRange.to) {
       timestampRange.to = dateToUnixTimestamp(timestampRange.to, true)
-    }  
+    }
   }
 
   // Get channel ID if channelName is provided
@@ -2270,8 +2272,9 @@ export const getThreadItems = async (
   }
 }
 
-
-export const getSlackUserDetails =  async (userEmail: string): Promise<VespaSearchResponse> => {
+export const getSlackUserDetails = async (
+  userEmail: string,
+): Promise<VespaSearchResponse> => {
   try {
     const resp = await vespa.getChatUserByEmail(userEmail)
     return resp
