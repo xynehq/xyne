@@ -144,7 +144,10 @@ import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalIdWithPermissionCheck, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalIdWithPermissionCheck,
+  type SelectAgent,
+} from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
@@ -348,7 +351,7 @@ export const MessageWithToolsApi = async (c: Context) => {
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
 
-  let email=""
+  let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
@@ -363,8 +366,11 @@ export const MessageWithToolsApi = async (c: Context) => {
       modelId,
       toolExternalIds,
       isReasoningEnabled,
+      toolsList,
     }: MessageReqType = body
-    loggerWithChild({email: sub}).info(`getting mcp create with body: ${JSON.stringify(body)}`)
+    loggerWithChild({ email: sub }).info(
+      `getting mcp create with body: ${JSON.stringify(body)}`,
+    )
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -432,7 +438,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           const params = Object.entries(step.parameters)
             .map(
               ([key, value]) =>
-                `• ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+                `• ${key}: ${
+                  typeof value === "object"
+                    ? JSON.stringify(value)
+                    : String(value)
+                }`,
             )
             .join("\n")
           return `Parameters:\n${params} \n`
@@ -515,7 +525,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           const fragments = children.map((r) => {
             const citation = searchToCitation(r as any)
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}-${Date.now()}-${Math.random()
+                .toString(36)
+                .substring(7)}`,
               content: answerContextMap(r as any, maxDefaultSummary),
               source: citation,
               confidence: r.relevance || 0.7,
@@ -637,7 +649,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           const fragments = children.map((r) => {
             const citation = searchToCitation(r as any)
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}-${Date.now()}-${Math.random()
+                .toString(36)
+                .substring(7)}`,
               content: answerContextMap(r as any, maxDefaultSummary),
               source: citation,
               confidence: r.relevance || 0.7,
@@ -750,7 +764,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           const fragments = children.map((r) => {
             const citation = searchToCitation(r as any)
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}-${Date.now()}-${Math.random()
+                .toString(36)
+                .substring(7)}`,
               content: answerContextMap(r as any, maxDefaultSummary),
               source: citation,
               confidence: r.relevance || 0.7,
@@ -941,7 +957,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               return { result: unknownItemMsg, error: `Unknown item_type` }
           }
           console.log(
-            `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
+            `[metadata_retrieval] Derived from item_type '${
+              params.item_type
+            }': schema='${schema.toString()}', initial_entity='${
+              entity ? entity.toString() : "null"
+            }', timestampField='${timestampField}', inferred_appToUse='${
+              appToUse ? appToUse.toString() : "null"
+            }'`,
           )
 
           // Initialize finalEntity with the entity derived from item_type (often null for documents)
@@ -1049,7 +1071,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
           console.log(
-            `[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`,
+            `[metadata_retrieval] Final determined values before Vespa call: appToUse='${
+              appToUse ? appToUse.toString() : "null"
+            }', schema='${schema.toString()}', finalEntity='${
+              finalEntity ? finalEntity.toString() : "null"
+            }'`,
           )
 
           execSpan?.setAttribute("derived_schema", schema.toString())
@@ -1194,17 +1220,21 @@ export const MessageWithToolsApi = async (c: Context) => {
             const fragments: MinimalAgentFragment[] = children.map(
               (item: VespaSearchResults): MinimalAgentFragment => {
                 const citation = searchToCitation(item)
-                loggerWithChild({email: sub}).debug(
+                loggerWithChild({ email: sub }).debug(
                   { item },
                   "Processing item in metadata_retrieval tool",
                 )
 
                 const content = item.fields
                   ? answerContextMap(item, maxDefaultSummary)
-                  : `Context unavailable for ${citation.title || citation.docId}`
+                  : `Context unavailable for ${
+                      citation.title || citation.docId
+                    }`
 
                 return {
-                  id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                  id: `${citation.docId}-${Date.now()}-${Math.random()
+                    .toString(36)
+                    .substring(7)}`,
                   content: content,
                   source: citation,
                   confidence: item.relevance || 0.7, // Use item.relevance if available
@@ -1226,7 +1256,9 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
             if (params.offset && params.offset > 0) {
               const currentOffset = params.offset || 0
-              responseText += ` (showing items ${currentOffset + 1} to ${currentOffset + fragments.length})`
+              responseText += ` (showing items ${currentOffset + 1} to ${
+                currentOffset + fragments.length
+              })`
             }
             const topItemsList = fragments
               .slice(0, 3)
@@ -1258,7 +1290,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         } catch (error) {
           const errMsg = getErrorMessage(error)
           execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({email: sub}).error(error, `Metadata retrieval tool error: ${errMsg}`)
+          loggerWithChild({ email: sub }).error(
+            error,
+            `Metadata retrieval tool error: ${errMsg}`,
+          )
           // Ensure this return type matches the interface
           return {
             result: `Error retrieving metadata: ${errMsg}`,
@@ -1299,7 +1334,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         } catch (error) {
           const errMsg = getErrorMessage(error)
           execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({email: sub}).error(error, `Error in get_user_info tool: ${errMsg}`)
+          loggerWithChild({ email: sub }).error(
+            error,
+            `Error in get_user_info tool: ${errMsg}`,
+          )
           return {
             result: `Error retrieving user context: ${errMsg}`,
             error: errMsg,
@@ -1361,7 +1399,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
-      loggerWithChild({email: sub}).info(
+      loggerWithChild({ email: sub }).info(
         "First mesage of the conversation, successfully created the chat",
       )
       chat = insertedChat
@@ -1390,7 +1428,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      loggerWithChild({email: sub}).info("Existing conversation, fetched previous messages")
+      loggerWithChild({ email: sub }).info(
+        "Existing conversation, fetched previous messages",
+      )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
       chatCreationSpan.end()
@@ -1415,7 +1455,9 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
-        loggerWithChild({email: sub}).info(`Added stream ${streamKey} to active streams map.`)
+        loggerWithChild({ email: sub }).info(
+          `Added stream ${streamKey} to active streams map.`,
+        )
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", chat.externalId)
         let wasStreamClosedPrematurely = false
@@ -1429,7 +1471,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             titleUpdateSpan.end()
           }
 
-          loggerWithChild({email: sub}).info("Chat stream started")
+          loggerWithChild({ email: sub }).info("Chat stream started")
           // we do not set the message Id as we don't have it
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1447,7 +1489,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             }))
 
           console.log(messagesWithNoErrResponse)
-          loggerWithChild({email: sub}).info(
+          loggerWithChild({ email: sub }).info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
           const finalToolsList: Record<
@@ -1498,7 +1540,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const filteredTools = tools.filter((tool) => {
               const isIncluded = toolExternalIds.includes(tool.externalId!)
               if (!isIncluded) {
-                loggerWithChild({email: sub}).info(
+                loggerWithChild({ email: sub }).info(
                   `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
                 )
               }
@@ -1521,6 +1563,97 @@ export const MessageWithToolsApi = async (c: Context) => {
             //   })),
             // )
           }
+          if (toolsList && toolsList.length > 0) {
+            for (const item of toolsList) {
+              const { connectorId, tools: toolNames } = item
+              // Fetch connector info and create client
+              const connector = await getConnectorByExternalId(
+                db,
+                connectorId,
+                user.id,
+              )
+              const client = new Client({
+                name: `connector-${connectorId}`,
+                version: connector.config.version,
+              })
+              if ("url" in connector.config) {
+                // MCP SSE
+                const config = connector.config as MCPClientConfig
+                Logger.info(
+                  `invoking client initialize for url: ${new URL(config.url)} ${
+                    config.url
+                  }`,
+                )
+                await client.connect(
+                  new SSEClientTransport(new URL(config.url)),
+                )
+              } else {
+                // MCP Stdio
+                const config = connector.config as MCPClientStdioConfig
+                Logger.info(
+                  `invoking client initialize for command: ${new URL(
+                    config.command,
+                  )}`,
+                )
+                await client.connect(
+                  new StdioClientTransport({
+                    command: config.command,
+                    args: config.args,
+                  }),
+                )
+              }
+
+              // Fetch all available tools from the client
+              // TODO: look in the DB. cache logic has to be discussed.
+              const respone = await client.listTools()
+              const clientTools = response.tools
+
+              // Update tool definitions in the database for future use
+              await syncConnectorTools(
+                db,
+                workspace.id,
+                connector.id,
+                clientTools.map((tool) => ({
+                  toolName: tool.name,
+                  toolSchema: JSON.stringify(tool),
+                  description: tool.description,
+                })),
+              )
+              // Create a map for quick lookup
+              const toolSchemaMap = new Map(
+                clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
+              )
+              // Filter to only the requested tools, or use all tools if toolNames is empty
+              const filteredTools = []
+              if (toolNames.length === 0) {
+                // If toolNames is empty, add all tools
+                for (const [toolName, schema] of toolSchemaMap.entries()) {
+                  filteredTools.push({
+                    name: toolName,
+                    schema: schema || "",
+                  })
+                }
+              } else {
+                // Otherwise, filter to only the requested tools
+                for (const toolName of toolNames) {
+                  if (toolSchemaMap.has(toolName)) {
+                    filteredTools.push({
+                      name: toolName,
+                      schema: toolSchemaMap.get(toolName) || "",
+                    })
+                  } else {
+                    Logger.info(
+                      `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
+                    )
+                  }
+                }
+              }
+              finalToolsList[connectorId] = {
+                tools: filteredTools,
+                client: client,
+              }
+            }
+          }
           let answer = ""
           let currentAnswer = ""
           let citations = []
@@ -1535,7 +1668,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
-              loggerWithChild({email: sub}).info(
+              loggerWithChild({ email: sub }).info(
                 "[MessageApi] Stream closed during conversation search loop. Breaking.",
               )
               wasStreamClosedPrematurely = true
@@ -1563,7 +1696,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   gatheredFragments
                     .map(
                       (f, i) =>
-                        `[Fragment ${i + 1}] (Source Doc ID: ${f.source.docId})\n` +
+                        `[Fragment ${i + 1}] (Source Doc ID: ${
+                          f.source.docId
+                        })\n` +
                         `  - Title: ${f.source.title || "Untitled"}\n` +
                         // Truncate content in the scratchpad to keep the prompt concise.
                         // The full content is available in `planningContext` for the final answer.
@@ -1575,7 +1710,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
-                   **Critique Past Actions:** You have already called some tools ${previousToolCalls.map((toolCall, idx) => `[Iteration-${idx}] Tool: ${toolCall.tool}, Args: ${JSON.stringify(toolCall.args)}`).join("\n")}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
+                   **Critique Past Actions:** You have already called some tools ${previousToolCalls
+                     .map(
+                       (toolCall, idx) =>
+                         `[Iteration-${idx}] Tool: ${
+                           toolCall.tool
+                         }, Args: ${JSON.stringify(toolCall.args)}`,
+                     )
+                     .join(
+                       "\n",
+                     )}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
                  You **MUST** change your strategy.
                   For example: 
                     1.  Choose a **DIFFERENT TOOL**.
@@ -1603,7 +1747,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   for (const tool of tools) {
                     const parsedTool = selectToolSchema.safeParse(tool)
                     if (parsedTool.success && parsedTool.data.toolSchema) {
-                      toolsPrompt += `${constructToolContext(parsedTool.data.toolSchema)}\n\n`
+                      toolsPrompt += `${constructToolContext(
+                        parsedTool.data.toolSchema,
+                      )}\n\n`
                     }
                   }
                 }
@@ -1626,7 +1772,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
             for await (const chunk of getToolOrAnswerIterator) {
               if (stream.closed) {
-                loggerWithChild({email: sub}).info(
+                loggerWithChild({ email: sub }).info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -1668,7 +1814,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     parsed = jsonParseLLMOutput(buffer) || {}
                     if (parsed.answer && currentAnswer !== parsed.answer) {
                       if (currentAnswer === "") {
-                        loggerWithChild({email: sub}).info(
+                        loggerWithChild({ email: sub }).info(
                           "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
                         )
                         stream.writeSSE({
@@ -1694,7 +1840,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   } catch (err) {
                     const errMessage = (err as Error).message
-                    loggerWithChild({email: sub}).error(
+                    loggerWithChild({ email: sub }).error(
                       err,
                       `Error while parsing LLM output ${errMessage}`,
                     )
@@ -1722,7 +1868,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 tool: toolName,
                 args: toolParams,
               })
-              loggerWithChild({email: sub}).info(
+              loggerWithChild({ email: sub }).info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
                   toolParams,
                 )}`,
@@ -1771,7 +1917,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
-                  loggerWithChild({email: sub}).error(
+                  loggerWithChild({ email: sub }).error(
                     error,
                     `Critical error executing internal agent tool ${toolName}: ${errMessage}`,
                   )
@@ -1804,7 +1950,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 if (!foundClient || !connectorId) {
                   const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available tool.`
-                  loggerWithChild({email: sub}).error(errorMsg)
+                  loggerWithChild({ email: sub }).error(errorMsg)
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.ValidationError,
                     details: errorMsg,
@@ -1872,7 +2018,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
                       }
                     } catch (parsingError) {
-                      loggerWithChild({email: sub}).error(
+                      loggerWithChild({ email: sub }).error(
                         parsingError,
                         `Could not parse response from MCP tool ${toolName} as JSON.`,
                       )
@@ -1882,12 +2028,15 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     // Populate the unified response object for the MCP tool
                     toolExecutionResponse = {
-                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(0, 200)}...`,
+                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(
+                        0,
+                        200,
+                      )}...`,
                       contexts: newFragments,
                     }
                   } catch (error) {
                     const errMessage = getErrorMessage(error)
-                    loggerWithChild({email: sub}).error(
+                    loggerWithChild({ email: sub }).error(
                       error,
                       `Error invoking external tool ${toolName}: ${errMessage}`,
                     )
@@ -1937,9 +2086,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ? gatheredFragments
                     .map(
                       (f, i) =>
-                        `[${i + 1}] ${f.source.title || `Source ${f.source.docId}`}: ${
-                          f.content
-                        }...`,
+                        `[${i + 1}] ${
+                          f.source.title || `Source ${f.source.docId}`
+                        }: ${f.content}...`,
                     )
                     .join("\n")
                 : ""
@@ -1982,7 +2131,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         !parseSynthesisOutput ||
                         !parseSynthesisOutput.synthesisState
                       ) {
-                        loggerWithChild({email: sub}).error(
+                        loggerWithChild({ email: sub }).error(
                           "Synthesis response was valid JSON but missing 'synthesisState' key.",
                         )
                         // Default to partial to force another iteration, which is safer
@@ -1992,7 +2141,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         }
                       }
                     } catch (jsonError) {
-                      loggerWithChild({email: sub}).error(
+                      loggerWithChild({ email: sub }).error(
                         jsonError,
                         "Failed to parse synthesis LLM output as JSON.",
                       )
@@ -2003,14 +2152,16 @@ export const MessageWithToolsApi = async (c: Context) => {
                       }
                     }
                   } else {
-                    loggerWithChild({email: sub}).error("Synthesis LLM call returned no text.")
+                    loggerWithChild({ email: sub }).error(
+                      "Synthesis LLM call returned no text.",
+                    )
                     parseSynthesisOutput = {
                       synthesisState: ContextSysthesisState.Partial,
                       answer: "",
                     }
                   }
                 } catch (synthesisError) {
-                  loggerWithChild({email: sub}).error(
+                  loggerWithChild({ email: sub }).error(
                     synthesisError,
                     "Error during synthesis LLM call.",
                   )
@@ -2031,7 +2182,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                 })
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: ` Synthesis: ${parseSynthesisOutput.answer || "No Synthesis details"}`,
+                  message: ` Synthesis: ${
+                    parseSynthesisOutput.answer || "No Synthesis details"
+                  }`,
                 })
                 const isContextSufficient =
                   parseSynthesisOutput.synthesisState ===
@@ -2050,7 +2203,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   if (iterationCount < maxIterations) {
                     await logAndStreamReasoning({
                       type: AgentReasoningStepType.BroadeningSearch,
-                      details: `Context is insufficient. Planning iteration ${iterationCount + 1}.`,
+                      details: `Context is insufficient. Planning iteration ${
+                        iterationCount + 1
+                      }.`,
                     })
                     continue
                   } else {
@@ -2084,7 +2239,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
               for await (const chunk of continuationIterator) {
                 if (stream.closed) {
-                  loggerWithChild({email: sub}).info(
+                  loggerWithChild({ email: sub }).info(
                     "[MessageApi] Stream closed during conversation search loop. Breaking.",
                   )
                   wasStreamClosedPrematurely = true
@@ -2116,7 +2271,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   const { index, item } = chunk.citation
                   citations.push(item)
                   citationMap[index] = citations.length - 1
-                  loggerWithChild({email: sub}).info(
+                  loggerWithChild({ email: sub }).info(
                     `Found citations and sending it, current count: ${citations.length}`,
                   )
                   stream.writeSSE({
@@ -2177,7 +2332,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               messageExternalId: msg.externalId,
               traceJson,
             })
-            loggerWithChild({email: sub}).info(
+            loggerWithChild({ email: sub }).info(
               `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
             )
 
@@ -2259,7 +2414,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             data: "",
             event: ChatSSEvents.End,
           })
-          loggerWithChild({email: sub}).error(
+          loggerWithChild({ email: sub }).error(
             error,
             `Streaming Error: ${(error as Error).message} ${
               (error as Error).stack
@@ -2272,7 +2427,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
-            loggerWithChild({email: sub}).info(`Removed stream ${streamKey} from active streams map.`)
+            loggerWithChild({ email: sub }).info(
+              `Removed stream ${streamKey} from active streams map.`,
+            )
           }
         }
       },
@@ -2316,14 +2473,14 @@ export const MessageWithToolsApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-        loggerWithChild({email: sub}).error(
+        loggerWithChild({ email: sub }).error(
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          loggerWithChild({email: sub}).info(
+          loggerWithChild({ email: sub }).info(
             `Removed stream ${streamKey} from active streams map in error callback.`,
           )
         }
@@ -2332,7 +2489,10 @@ export const MessageWithToolsApi = async (c: Context) => {
       },
     )
   } catch (error) {
-    loggerWithChild({email: email}).error(error, `MessageApi Error occurred.. ${error}`)
+    loggerWithChild({ email: email }).error(
+      error,
+      `MessageApi Error occurred.. ${error}`,
+    )
     const errorSpan = rootSpan.startSpan("handle_top_level_error")
     errorSpan.addEvent("error", {
       message: getErrorMessage(error),
@@ -2362,7 +2522,10 @@ export const MessageWithToolsApi = async (c: Context) => {
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        loggerWithChild({email: email}).error(error, "You exceeded your current quota")
+        loggerWithChild({ email: email }).error(
+          error,
+          "You exceeded your current quota",
+        )
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -2371,7 +2534,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
       }
     } else {
-      loggerWithChild({email: email}).error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
+      loggerWithChild({ email: email }).error(
+        error,
+        `Message Error: ${errMsg} ${(error as Error).stack}`,
+      )
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -2379,7 +2545,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     // Ensure stream is removed from the map in the top-level catch block
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Removed stream ${streamKey} from active streams map in top-level catch.`,
       )
     }
@@ -2630,7 +2796,9 @@ export const AgentMessageApi = async (c: Context) => {
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                    data: `Skipping last ${
+                      totalValidFileIdsFromLinkCount - maxValidLinks
+                    } links as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
                 if (reasoning && chunk.reasoning) {
@@ -2807,7 +2975,7 @@ export const AgentMessageApi = async (c: Context) => {
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             // Limit messages to last 5 for the first LLM call if it's a new chat
-            const limitedMessages = messagesWithNoErrResponse.slice(-8);
+            const limitedMessages = messagesWithNoErrResponse.slice(-8)
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:
@@ -3176,7 +3344,9 @@ export const AgentMessageApi = async (c: Context) => {
           })
           Logger.error(
             error,
-            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+            `Streaming Error: ${(error as Error).message} ${
+              (error as Error).stack
+            }`,
           )
           streamErrorSpan.end()
           streamSpan.end()
