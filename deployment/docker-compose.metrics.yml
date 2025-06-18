@@ -4,6 +4,7 @@ services:
   prometheus:
     image: "prom/prometheus"
     container_name: xyne-prometheus
+    user: "65534:65534"
     volumes:
       - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
     ports:
@@ -14,9 +15,29 @@ services:
       - xyne
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  vespa-init:
+    image: busybox
+    container_name: vespa-init
+    user: root
+    volumes:
+      - ../server/vespa-data:/opt/vespa/var
+      # No separate logs volume mounted for Vespa in this file's vespa service
+      # - ../server/vespa-logs:/opt/vespa/logs 
+    command: sh -c "chown -R 1000:1000 /opt/vespa/var && touch /tmp/init_done && sleep infinity"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/init_done"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 0s
+    networks:
+      - xyne
+
   grafana:
     image: grafana/grafana
     container_name: xyne-grafana
+    user: "472:472"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/grafana-storage:/var/lib/grafana 
@@ -27,7 +48,11 @@ services:
   vespa:
     image: vespaengine/vespa
     container_name: vespa
+    user: "1000:1000"
     hostname: vespa-container
+    depends_on:
+      vespa-init:
+        condition: service_healthy
     ports:
       - "8080:8080"
       - "19071:19071"
@@ -60,6 +85,7 @@ services:
   loki:
     image: grafana/loki:3.4.1
     container_name: loki
+    user: "10001:10001"
     ports:
       - "3100:3100"
     volumes:
@@ -77,6 +103,4 @@ volumes:
   vespa-data:
     driver: local
   grafana-storage:  
-    driver: local
-  loki_data:
     driver: local
