@@ -37,8 +37,9 @@ import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
-const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {module: 'google'})
-
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
+  module: "google",
+})
 
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
@@ -234,7 +235,7 @@ export const handleGmailIngestion = async (
   if (dateFilters.length > 0) {
     query = `${query} ${dateFilters.join(" AND ")}`
   }
-  loggerWithChild({email: email}).info(`query: ${query}`)
+  loggerWithChild({ email: email }).info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -295,7 +296,7 @@ export const handleGmailIngestion = async (
             insertedMessagesInBatch++
             insertedPdfAttachmentsInBatch += insertedPdfCount
           } catch (error) {
-            loggerWithChild({email: email}).error(
+            loggerWithChild({ email: email }).error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -312,14 +313,14 @@ export const handleGmailIngestion = async (
 
       // Post stats based on successful operations in this batch
       // Always post Gmail count, even if it's zero for this batch, to confirm processing.
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${totalMails}, jobId: ${jobId}`,
       )
       sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
 
       // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
         )
         sendStatsUpdate(
@@ -347,7 +348,7 @@ export const handleGmailIngestion = async (
 
   failedAttachmentCount = 0
   failedMessageCount = 0
-  loggerWithChild({email: email}).info(`Inserted ${totalMails} mails`)
+  loggerWithChild({ email: email }).info(`Inserted ${totalMails} mails`)
   return historyId
 }
 

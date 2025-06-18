@@ -1,10 +1,21 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType, ConnectorStatus, DriveEntity, SlackEntity } from "@/shared/types"
+import {
+  Apps,
+  AuthType,
+  ConnectorStatus,
+  DriveEntity,
+  SlackEntity,
+} from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
-import type { CalendarEntity, MailAttachmentEntity, MailEntity, PeopleEntity } from "./search/types"
+import type {
+  CalendarEntity,
+  MailAttachmentEntity,
+  MailEntity,
+  PeopleEntity,
+} from "./search/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -382,14 +393,29 @@ export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })
 
-export type EntityType = DriveEntity|SlackEntity|MailEntity|MailAttachmentEntity|CalendarEntity|PeopleEntity
-export type OperationType = "ingestion" | "request" | "response" | "chat-create" | "chat-response" | "chat-response-error" | "search" | "search-response" | "ingest-more_user"
+export type EntityType =
+  | DriveEntity
+  | SlackEntity
+  | MailEntity
+  | MailAttachmentEntity
+  | CalendarEntity
+  | PeopleEntity
+export type OperationType =
+  | "ingestion"
+  | "request"
+  | "response"
+  | "chat-create"
+  | "chat-response"
+  | "chat-response-error"
+  | "search"
+  | "search-response"
+  | "ingest-more_user"
 
 export type loggerChildSchema = {
-  email: string,
-  appType?: Apps,
-  entityType?: EntityType,
-  responseCode?:string,
-  responseStatus?:string,
-  operationType?:OperationType
+  email: string
+  appType?: Apps
+  entityType?: EntityType
+  responseCode?: string
+  responseStatus?: string
+  operationType?: OperationType
 }

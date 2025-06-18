@@ -3,10 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import {
-  Subsystem,
-  type SaaSJob,
-} from "@/types" // ConnectorType removed
+import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
 import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
 import config from "@/config"

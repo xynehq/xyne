@@ -79,8 +79,9 @@ import {
 } from "@/metrics/slack/slack-metrics"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
-const loggerWithChild = getLoggerWithChild(Subsystem.Integrations,{ module: "slack" })
-
+const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
+  module: "slack",
+})
 
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
@@ -123,7 +124,7 @@ export async function getAllConversations(
   let cursor: string | undefined = undefined
   do {
     if (abortController.signal.aborted) {
-      loggerWithChild({email: email}).info("Aborted fetching conversations")
+      loggerWithChild({ email: email }).info("Aborted fetching conversations")
       break
     }
     const response = await client.conversations.list({
@@ -391,7 +392,10 @@ export async function insertChannelMessages(
               email: email,
             })
           } catch (error) {
-            loggerWithChild({email: email}).error(error, `Error inserting chat message`)
+            loggerWithChild({ email: email }).error(
+              error,
+              `Error inserting chat message`,
+            )
           }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
@@ -481,7 +485,7 @@ export async function insertChannelMessages(
                   email: email,
                 })
               } catch (error) {
-                loggerWithChild({email: email}).error(
+                loggerWithChild({ email: email }).error(
                   error,
                   `Error inserting chat message`,
                 )
@@ -606,7 +610,7 @@ export async function getConversationUsers(
   conversation: Channel,
   email: string,
 ): Promise<string[]> {
-  loggerWithChild({email: email}).info("fetching users from conversation")
+  loggerWithChild({ email: email }).info("fetching users from conversation")
 
   if (conversation.is_im) {
     if (!conversation.user) {
@@ -636,7 +640,10 @@ export async function getConversationUsers(
 
     return allMembers
   } catch (error) {
-    loggerWithChild({email: email}).error(error, "Error fetching channel users:")
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error fetching channel users:",
+    )
     return []
   }
 }
@@ -784,7 +791,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         status: OperationStatus.Success,
       })
     } catch (error) {
-      loggerWithChild({email: data.email}).info(`Error inserting team`)
+      loggerWithChild({ email: data.email }).info(`Error inserting team`)
       ingestedTeamErrorTotalCount.inc({
         email_domain: team.email_domain,
         enterprise_id: team.enterprise_id,
@@ -832,7 +839,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           !existenceMap[conversation.id!].exists) ||
         !existenceMap[conversation.id!],
     )
-    loggerWithChild({email: data.email}).info(
+    loggerWithChild({ email: data.email }).info(
       `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
     )
     totalConversationsSkipped.inc(
@@ -888,7 +895,10 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
               status: OperationStatus.Success,
             })
           } catch (error) {
-            loggerWithChild({email: data.email}).error(error, `Error inserting member`)
+            loggerWithChild({ email: data.email }).error(
+              error,
+              `Error inserting member`,
+            )
             ingestedTeamErrorTotalCount.inc({
               email_domain: teamResp.team!.email_domain,
               enterprise_id: teamResp.team!.enterprise_id,
@@ -906,7 +916,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           })
           tracker.updateUserStats(data.email, StatType.Slack_User, 1)
         } catch (error) {
-          loggerWithChild({email: data.email}).error(
+          loggerWithChild({ email: data.email }).error(
             `Error inserting member ${member.id}: ${error}`,
           )
           ingestedMembersErrorTotalCount.inc({
@@ -957,7 +967,9 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         })
         tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
       } catch (error) {
-        loggerWithChild({email: data.email}).error("Error inserting Channel Messages")
+        loggerWithChild({ email: data.email }).error(
+          "Error inserting Channel Messages",
+        )
         insertChannelMessagesErrorCount.inc({
           conversation_id: conversation.id ?? "",
           team_id: team.id ?? "",
@@ -983,7 +995,9 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         conversationIndex++
         tracker.setCurrent(conversationIndex)
       } catch (error) {
-        loggerWithChild({email: data.email}).error(`Error inserting Conversation`)
+        loggerWithChild({ email: data.email }).error(
+          `Error inserting Conversation`,
+        )
         insertConversationErrorCount.inc({
           conversation_id: conversationWithPermission.id ?? "",
           team_id: conversationWithPermission.context_team_id ?? "",
@@ -1018,7 +1032,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       })
     })
   } catch (error) {
-    loggerWithChild({email: data.email}).error(error)
+    loggerWithChild({ email: data.email }).error(error)
   }
 }
 

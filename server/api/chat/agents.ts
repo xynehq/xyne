@@ -144,7 +144,10 @@ import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalIdWithPermissionCheck, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalIdWithPermissionCheck,
+  type SelectAgent,
+} from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
@@ -348,7 +351,7 @@ export const MessageWithToolsApi = async (c: Context) => {
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
 
-  let email=""
+  let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
@@ -364,7 +367,9 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolExternalIds,
       isReasoningEnabled,
     }: MessageReqType = body
-    loggerWithChild({email: sub}).info(`getting mcp create with body: ${JSON.stringify(body)}`)
+    loggerWithChild({ email: sub }).info(
+      `getting mcp create with body: ${JSON.stringify(body)}`,
+    )
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -1194,7 +1199,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const fragments: MinimalAgentFragment[] = children.map(
               (item: VespaSearchResults): MinimalAgentFragment => {
                 const citation = searchToCitation(item)
-                loggerWithChild({email: sub}).debug(
+                loggerWithChild({ email: sub }).debug(
                   { item },
                   "Processing item in metadata_retrieval tool",
                 )
@@ -1258,7 +1263,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         } catch (error) {
           const errMsg = getErrorMessage(error)
           execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({email: sub}).error(error, `Metadata retrieval tool error: ${errMsg}`)
+          loggerWithChild({ email: sub }).error(
+            error,
+            `Metadata retrieval tool error: ${errMsg}`,
+          )
           // Ensure this return type matches the interface
           return {
             result: `Error retrieving metadata: ${errMsg}`,
@@ -1299,7 +1307,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         } catch (error) {
           const errMsg = getErrorMessage(error)
           execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({email: sub}).error(error, `Error in get_user_info tool: ${errMsg}`)
+          loggerWithChild({ email: sub }).error(
+            error,
+            `Error in get_user_info tool: ${errMsg}`,
+          )
           return {
             result: `Error retrieving user context: ${errMsg}`,
             error: errMsg,
@@ -1361,7 +1372,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
-      loggerWithChild({email: sub}).info(
+      loggerWithChild({ email: sub }).info(
         "First mesage of the conversation, successfully created the chat",
       )
       chat = insertedChat
@@ -1390,7 +1401,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      loggerWithChild({email: sub}).info("Existing conversation, fetched previous messages")
+      loggerWithChild({ email: sub }).info(
+        "Existing conversation, fetched previous messages",
+      )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
       chatCreationSpan.end()
@@ -1415,7 +1428,9 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
-        loggerWithChild({email: sub}).info(`Added stream ${streamKey} to active streams map.`)
+        loggerWithChild({ email: sub }).info(
+          `Added stream ${streamKey} to active streams map.`,
+        )
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", chat.externalId)
         let wasStreamClosedPrematurely = false
@@ -1429,7 +1444,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             titleUpdateSpan.end()
           }
 
-          loggerWithChild({email: sub}).info("Chat stream started")
+          loggerWithChild({ email: sub }).info("Chat stream started")
           // we do not set the message Id as we don't have it
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1447,7 +1462,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             }))
 
           console.log(messagesWithNoErrResponse)
-          loggerWithChild({email: sub}).info(
+          loggerWithChild({ email: sub }).info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
           const finalToolsList: Record<
@@ -1498,7 +1513,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const filteredTools = tools.filter((tool) => {
               const isIncluded = toolExternalIds.includes(tool.externalId!)
               if (!isIncluded) {
-                loggerWithChild({email: sub}).info(
+                loggerWithChild({ email: sub }).info(
                   `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
                 )
               }
@@ -1535,7 +1550,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
-              loggerWithChild({email: sub}).info(
+              loggerWithChild({ email: sub }).info(
                 "[MessageApi] Stream closed during conversation search loop. Breaking.",
               )
               wasStreamClosedPrematurely = true
@@ -1626,7 +1641,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
             for await (const chunk of getToolOrAnswerIterator) {
               if (stream.closed) {
-                loggerWithChild({email: sub}).info(
+                loggerWithChild({ email: sub }).info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -1668,7 +1683,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     parsed = jsonParseLLMOutput(buffer) || {}
                     if (parsed.answer && currentAnswer !== parsed.answer) {
                       if (currentAnswer === "") {
-                        loggerWithChild({email: sub}).info(
+                        loggerWithChild({ email: sub }).info(
                           "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
                         )
                         stream.writeSSE({
@@ -1694,7 +1709,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   } catch (err) {
                     const errMessage = (err as Error).message
-                    loggerWithChild({email: sub}).error(
+                    loggerWithChild({ email: sub }).error(
                       err,
                       `Error while parsing LLM output ${errMessage}`,
                     )
@@ -1722,7 +1737,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 tool: toolName,
                 args: toolParams,
               })
-              loggerWithChild({email: sub}).info(
+              loggerWithChild({ email: sub }).info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
                   toolParams,
                 )}`,
@@ -1771,7 +1786,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
-                  loggerWithChild({email: sub}).error(
+                  loggerWithChild({ email: sub }).error(
                     error,
                     `Critical error executing internal agent tool ${toolName}: ${errMessage}`,
                   )
@@ -1804,7 +1819,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 if (!foundClient || !connectorId) {
                   const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available tool.`
-                  loggerWithChild({email: sub}).error(errorMsg)
+                  loggerWithChild({ email: sub }).error(errorMsg)
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.ValidationError,
                     details: errorMsg,
@@ -1872,7 +1887,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
                       }
                     } catch (parsingError) {
-                      loggerWithChild({email: sub}).error(
+                      loggerWithChild({ email: sub }).error(
                         parsingError,
                         `Could not parse response from MCP tool ${toolName} as JSON.`,
                       )
@@ -1887,7 +1902,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   } catch (error) {
                     const errMessage = getErrorMessage(error)
-                    loggerWithChild({email: sub}).error(
+                    loggerWithChild({ email: sub }).error(
                       error,
                       `Error invoking external tool ${toolName}: ${errMessage}`,
                     )
@@ -1982,7 +1997,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         !parseSynthesisOutput ||
                         !parseSynthesisOutput.synthesisState
                       ) {
-                        loggerWithChild({email: sub}).error(
+                        loggerWithChild({ email: sub }).error(
                           "Synthesis response was valid JSON but missing 'synthesisState' key.",
                         )
                         // Default to partial to force another iteration, which is safer
@@ -1992,7 +2007,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         }
                       }
                     } catch (jsonError) {
-                      loggerWithChild({email: sub}).error(
+                      loggerWithChild({ email: sub }).error(
                         jsonError,
                         "Failed to parse synthesis LLM output as JSON.",
                       )
@@ -2003,14 +2018,16 @@ export const MessageWithToolsApi = async (c: Context) => {
                       }
                     }
                   } else {
-                    loggerWithChild({email: sub}).error("Synthesis LLM call returned no text.")
+                    loggerWithChild({ email: sub }).error(
+                      "Synthesis LLM call returned no text.",
+                    )
                     parseSynthesisOutput = {
                       synthesisState: ContextSysthesisState.Partial,
                       answer: "",
                     }
                   }
                 } catch (synthesisError) {
-                  loggerWithChild({email: sub}).error(
+                  loggerWithChild({ email: sub }).error(
                     synthesisError,
                     "Error during synthesis LLM call.",
                   )
@@ -2084,7 +2101,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
               for await (const chunk of continuationIterator) {
                 if (stream.closed) {
-                  loggerWithChild({email: sub}).info(
+                  loggerWithChild({ email: sub }).info(
                     "[MessageApi] Stream closed during conversation search loop. Breaking.",
                   )
                   wasStreamClosedPrematurely = true
@@ -2116,7 +2133,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   const { index, item } = chunk.citation
                   citations.push(item)
                   citationMap[index] = citations.length - 1
-                  loggerWithChild({email: sub}).info(
+                  loggerWithChild({ email: sub }).info(
                     `Found citations and sending it, current count: ${citations.length}`,
                   )
                   stream.writeSSE({
@@ -2177,7 +2194,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               messageExternalId: msg.externalId,
               traceJson,
             })
-            loggerWithChild({email: sub}).info(
+            loggerWithChild({ email: sub }).info(
               `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
             )
 
@@ -2259,7 +2276,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             data: "",
             event: ChatSSEvents.End,
           })
-          loggerWithChild({email: sub}).error(
+          loggerWithChild({ email: sub }).error(
             error,
             `Streaming Error: ${(error as Error).message} ${
               (error as Error).stack
@@ -2272,7 +2289,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
-            loggerWithChild({email: sub}).info(`Removed stream ${streamKey} from active streams map.`)
+            loggerWithChild({ email: sub }).info(
+              `Removed stream ${streamKey} from active streams map.`,
+            )
           }
         }
       },
@@ -2316,14 +2335,14 @@ export const MessageWithToolsApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-        loggerWithChild({email: sub}).error(
+        loggerWithChild({ email: sub }).error(
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          loggerWithChild({email: sub}).info(
+          loggerWithChild({ email: sub }).info(
             `Removed stream ${streamKey} from active streams map in error callback.`,
           )
         }
@@ -2332,7 +2351,10 @@ export const MessageWithToolsApi = async (c: Context) => {
       },
     )
   } catch (error) {
-    loggerWithChild({email: email}).error(error, `MessageApi Error occurred.. ${error}`)
+    loggerWithChild({ email: email }).error(
+      error,
+      `MessageApi Error occurred.. ${error}`,
+    )
     const errorSpan = rootSpan.startSpan("handle_top_level_error")
     errorSpan.addEvent("error", {
       message: getErrorMessage(error),
@@ -2362,7 +2384,10 @@ export const MessageWithToolsApi = async (c: Context) => {
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        loggerWithChild({email: email}).error(error, "You exceeded your current quota")
+        loggerWithChild({ email: email }).error(
+          error,
+          "You exceeded your current quota",
+        )
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -2371,7 +2396,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
       }
     } else {
-      loggerWithChild({email: email}).error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
+      loggerWithChild({ email: email }).error(
+        error,
+        `Message Error: ${errMsg} ${(error as Error).stack}`,
+      )
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -2379,7 +2407,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     // Ensure stream is removed from the map in the top-level catch block
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Removed stream ${streamKey} from active streams map in top-level catch.`,
       )
     }
@@ -2807,7 +2835,7 @@ export const AgentMessageApi = async (c: Context) => {
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             // Limit messages to last 5 for the first LLM call if it's a new chat
-            const limitedMessages = messagesWithNoErrResponse.slice(-8);
+            const limitedMessages = messagesWithNoErrResponse.slice(-8)
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:

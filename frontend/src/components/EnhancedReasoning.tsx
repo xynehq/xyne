@@ -140,9 +140,13 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
     let iterationNumber: number | undefined = undefined
 
     // Clean up synthesis-related prefixes
-    if (stepContent.toLowerCase().startsWith('synthesis:') || 
-        stepContent.toLowerCase().startsWith('synthesis result:')) {
-      stepContent = stepContent.replace(/^synthesis(\s+result)?\s*:\s*/i, '').trim()
+    if (
+      stepContent.toLowerCase().startsWith("synthesis:") ||
+      stepContent.toLowerCase().startsWith("synthesis result:")
+    ) {
+      stepContent = stepContent
+        .replace(/^synthesis(\s+result)?\s*:\s*/i, "")
+        .trim()
     }
 
     // Find matching step type configuration
@@ -205,24 +209,22 @@ const textToCitationIndex = /\[(\d+)\]/g
 const processReasoningWithCitations = (
   text: string,
   citations?: Citation[],
-  citationMap?: Record<number, number>
+  citationMap?: Record<number, number>,
 ): string => {
   if (!text) return text
-  
+
   // Split grouped citations like [1,2,3] into [1] [2] [3]
   text = splitGroupedCitationsWithSpaces(text)
   // If no citations provided, return text as-is
   if (!citations?.length) return text
-  
+
   const citationUrls = citations.map((c: Citation) => c.url)
 
   if (citationMap) {
     return text.replace(textToCitationIndex, (match, num) => {
       const index = citationMap[num]
       const url = citationUrls[index]
-      return typeof index === "number" && url
-        ? `[[${index + 1}]](${url})`
-        : "" // Remove citation if no mapping found
+      return typeof index === "number" && url ? `[[${index + 1}]](${url})` : "" // Remove citation if no mapping found
     })
   } else {
     return text.replace(textToCitationIndex, (match, num) => {
@@ -236,7 +238,12 @@ const processReasoningWithCitations = (
 const getStepTypeDisplay = (type: AgentReasoningStepType | string) => {
   const displays: Record<
     string,
-    { icon: string | React.ReactElement; label: string; color: string; isError?: boolean }
+    {
+      icon: string | React.ReactElement
+      label: string
+      color: string
+      isError?: boolean
+    }
   > = {
     [AgentReasoningStepType.Iteration]: {
       icon: "→",
@@ -308,7 +315,15 @@ const ReasoningStepComponent: React.FC<{
   depth?: number
   citations?: Citation[]
   citationMap?: Record<number, number>
-}> = ({ step, index, isStreaming, isLastStep, depth = 0, citations, citationMap }) => {
+}> = ({
+  step,
+  index,
+  isStreaming,
+  isLastStep,
+  depth = 0,
+  citations,
+  citationMap,
+}) => {
   const [isExpanded, setIsExpanded] = useState(true)
   const { theme } = useTheme()
   const display = getStepTypeDisplay(step.type)
@@ -336,9 +351,12 @@ const ReasoningStepComponent: React.FC<{
                 <ChevronRight className="w-3 h-3" />
               )}
               <span
-                className={cn("text-sm font-mono w-4 text-center flex items-center justify-center", display.color)}
+                className={cn(
+                  "text-sm font-mono w-4 text-center flex items-center justify-center",
+                  display.color,
+                )}
               >
-                {typeof display.icon === 'string' ? display.icon : display.icon}
+                {typeof display.icon === "string" ? display.icon : display.icon}
               </span>
               <span className={cn("text-sm font-medium", display.color)}>
                 {display.label}
@@ -347,9 +365,12 @@ const ReasoningStepComponent: React.FC<{
             </button>
           ) : (
             <span
-              className={cn("text-sm font-mono w-4 text-center flex items-center justify-center", display.color)}
+              className={cn(
+                "text-sm font-mono w-4 text-center flex items-center justify-center",
+                display.color,
+              )}
             >
-              {typeof display.icon === 'string' ? display.icon : display.icon}
+              {typeof display.icon === "string" ? display.icon : display.icon}
             </span>
           )}
         </div>
@@ -357,7 +378,11 @@ const ReasoningStepComponent: React.FC<{
           {!isIteration && (
             <div className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed w-full break-words">
               <MarkdownPreview
-                source={processReasoningWithCitations(step.content, citations, citationMap)}
+                source={processReasoningWithCitations(
+                  step.content,
+                  citations,
+                  citationMap,
+                )}
                 wrapperElement={{
                   "data-color-mode": theme,
                 }}

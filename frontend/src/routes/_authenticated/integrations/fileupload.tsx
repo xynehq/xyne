@@ -172,9 +172,9 @@ function FileUploadIntegration() {
                   <h3 className="text-lg font-medium mb-4 dark:text-gray-200">
                     Files in {activeDataSource}
                   </h3>
-                  <FileAccordion 
-                  activeDataSourceName={activeDataSource} 
-                  refreshKey={refreshKey}
+                  <FileAccordion
+                    activeDataSourceName={activeDataSource}
+                    refreshKey={refreshKey}
                   />
                 </div>
               </div>
