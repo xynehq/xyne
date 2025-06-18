@@ -1020,7 +1020,7 @@
       "type": "row"
     },
     {
-      "collapsed": false,
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1028,880 +1028,881 @@
         "y": 1
       },
       "id": 36,
-      "panels": [],
-      "title": "Google Metrics",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 14,
-        "w": 12,
-        "x": 0,
-        "y": 2
-      },
-      "id": 52,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
+      "panels": [
         {
-          "editorMode": "code",
-          "expr": "sum by (service) (\n  ceil(rate(google_drive_ingested_total{email=~\"$email\"}[$__rate_interval])) \n)",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Rate of Drive File Ingestion",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "hue",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "fieldMinMax": true,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
               },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "xyne-metrics"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
                   "legend": false,
                   "tooltip": false,
-                  "viz": true
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
                 }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 14,
-        "w": 12,
-        "x": 12,
-        "y": 2
-      },
-      "id": 51,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "sum by (service) (\n  ceil(rate(gmail_ingested_total{email=~\"$email\"}[$__rate_interval]))\n)",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Rate of Gmail Ingestion",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
               },
-              {
-                "color": "super-light-green",
-                "value": 80
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
               }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 11,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "id": 44,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "100 * sum(max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) / sum(max_over_time(total_files_to_be_inserted{email=~\"$email\"}[$__range]))",
-          "format": "time_series",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "% of Google Drive Files Ingested",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 300
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 11,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 45,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "100 * sum(gmail_ingested_total{email=~\"$email\"}) / (sum(gmail_to_be_ingested_total_count{email=~\"$email\"}))",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "% of Gmail Ingested",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 27
-      },
-      "id": 18,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "sum by(account_type) ( max_over_time(gmail_ingested_total{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "instant": true,
-          "legendFormat": "__auto",
-          "range": false,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "aemke2r9jwmbka"
-          },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "__auto",
-          "range": false,
-          "refId": "B"
-        }
-      ],
-      "title": "Gmail Ingest",
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #A$",
-            "renamePattern": "count:mail_success"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #B$",
-            "renamePattern": "count:mail_attachment_success"
-          }
-        }
-      ],
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 45,
-            "gradientMode": "hue",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
             },
-            "lineWidth": 3,
-            "scaleDistribution": {
-              "type": "linear"
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 14,
+            "w": 12,
+            "x": 0,
+            "y": 2
+          },
+          "id": 52,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
             },
-            "thresholdsStyle": {
-              "mode": "off"
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
             }
           },
-          "fieldMinMax": false,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum by (service) (\n  ceil(rate(google_drive_ingested_total{email=~\"$email\"}[$__rate_interval])) \n)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Rate of Drive File Ingestion",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
               },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "pointSize": 3,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "fieldMinMax": true,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": [
               {
-                "color": "red",
-                "value": 80
+                "__systemRef": "hideSeriesFrom",
+                "matcher": {
+                  "id": "byNames",
+                  "options": {
+                    "mode": "exclude",
+                    "names": [
+                      "xyne-metrics"
+                    ],
+                    "prefix": "All except:",
+                    "readOnly": true
+                  }
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom",
+                    "value": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": true
+                    }
+                  }
+                ]
               }
             ]
           },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 36
-      },
-      "id": 16,
-      "interval": "30",
-      "maxDataPoints": 150000,
-      "options": {
-        "barRadius": 0.45,
-        "barWidth": 0.37,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true
-        },
-        "orientation": "horizontal",
-        "showValue": "always",
-        "stacking": "none",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 200
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadat{email=~\"$email\"}[$__range]))\n",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "SUCCESS",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "title": "Google Entity Ingestion",
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value$",
-            "renamePattern": "count:entity_ingest_success"
-          }
-        }
-      ],
-      "type": "barchart"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
+          "gridPos": {
+            "h": 14,
+            "w": 12,
+            "x": 12,
+            "y": 2
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Count",
-            "axisPlacement": "auto",
-            "fillOpacity": 45,
-            "gradientMode": "hue",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
+          "id": 51,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
             },
-            "lineWidth": 2,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
             }
           },
-          "mappings": [],
-          "noValue": "0",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "extract:success"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ingest:failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ingest:blocked"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "extract:failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ingest_failed:calculated"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "extract_failed_calculated"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "semi-dark-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ingest:success"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 46
-      },
-      "id": 17,
-      "options": {
-        "barRadius": 0.5,
-        "barWidth": 1,
-        "fullHighlight": false,
-        "groupWidth": 0.64,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadata{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "SUCCESS",
-          "range": false,
-          "refId": "A"
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum by (service) (\n  ceil(rate(gmail_ingested_total{email=~\"$email\"}[$__rate_interval]))\n)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Rate of Gmail Ingestion",
+          "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "eemje5wh24vswb"
+            "uid": "P442C0F3243930FD5"
           },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "# Query C: sum ingestion errors by file_type\nsum by(file_type) (max_over_time(google_drive_ingestion_errors_total{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "FAILED",
-          "range": false,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "aemjj76fhna4ga"
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "super-light-green",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
           },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "# Query D: sum EXTRACTED files by file_type\nsum by(file_type) ( max_over_time(google_drive_files_extracted_total{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "__auto",
-          "range": false,
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "eemje5wh24vswb"
+          "gridPos": {
+            "h": 11,
+            "w": 12,
+            "x": 0,
+            "y": 16
           },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "# Query B: sum blocked files by file_type\nsum by(file_type) (max_over_time(google_drive_blocked_files_total{email=~\"$email\"}[$__range]))\n",
-          "format": "table",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "BLOCKED",
-          "range": false,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "aemjj76fhna4ga"
-          },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "# Query E: sum EXTRACTED ERROR files by file_type\nsum by(file_type) ( max_over_time(google_drive_file_extraction_errors_total{email=~\"$email\"}[$__range]))",
-          "format": "table",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "__auto",
-          "range": false,
-          "refId": "E"
-        }
-      ],
-      "title": "Google Drive Entity Metric",
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "renameByRegex",
+          "id": 44,
           "options": {
-            "regex": "^Value #A$",
-            "renamePattern": "ingest:success"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #B$",
-            "renamePattern": "ingest:blocked"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #C$",
-            "renamePattern": "ingest:failed"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #D$",
-            "renamePattern": "extract:success"
-          }
-        },
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "^Value #E$",
-            "renamePattern": "extract:failed"
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "ingest_failed:calculated",
-            "mode": "reduceRow",
-            "reduce": {
-              "include": [
-                "INGEST_FAILED"
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
               ],
-              "reducer": "sum"
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "100 * sum(max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) / sum(max_over_time(total_files_to_be_inserted{email=~\"$email\"}[$__range]))",
+              "format": "time_series",
+              "fullMetaSearch": false,
+              "includeNullMetadata": true,
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A",
+              "useBackend": false
             }
-          }
+          ],
+          "title": "% of Google Drive Files Ingested",
+          "type": "gauge"
         },
         {
-          "id": "calculateField",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "green",
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 300
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 11,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "id": 45,
           "options": {
-            "alias": "extract_failed_calculated",
-            "mode": "reduceRow",
-            "reduce": {
-              "include": [
-                "EXTRACT_FAILED"
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
               ],
-              "reducer": "sum"
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "100 * sum(gmail_ingested_total{email=~\"$email\"}) / (sum(gmail_to_be_ingested_total_count{email=~\"$email\"}))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
             }
-          }
+          ],
+          "title": "% of Gmail Ingested",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 27
+          },
+          "id": 18,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "sum by(account_type) ( max_over_time(gmail_ingested_total{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "fullMetaSearch": false,
+              "includeNullMetadata": true,
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "A",
+              "useBackend": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "aemke2r9jwmbka"
+              },
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "sum by(account_type) ( max_over_time(gmail_attachment_ingested_total{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "hide": false,
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "B"
+            }
+          ],
+          "title": "Gmail Ingest",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #A$",
+                "renamePattern": "count:mail_success"
+              }
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #B$",
+                "renamePattern": "count:mail_attachment_success"
+              }
+            }
+          ],
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "fillOpacity": 45,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineWidth": 3,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "fieldMinMax": false,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "id": 16,
+          "interval": "30",
+          "maxDataPoints": 150000,
+          "options": {
+            "barRadius": 0.45,
+            "barWidth": 0.37,
+            "fullHighlight": false,
+            "groupWidth": 0.7,
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "right",
+              "showLegend": true
+            },
+            "orientation": "horizontal",
+            "showValue": "always",
+            "stacking": "none",
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "multi",
+              "sort": "none"
+            },
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 200
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadat{email=~\"$email\"}[$__range]))\n",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "SUCCESS",
+              "range": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Google Entity Ingestion",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value$",
+                "renamePattern": "count:entity_ingest_success"
+              }
+            }
+          ],
+          "type": "barchart"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "Count",
+                "axisPlacement": "auto",
+                "fillOpacity": 45,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineWidth": 2,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "extract:success"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "light-blue",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ingest:failed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-red",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ingest:blocked"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "light-yellow",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "extract:failed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-orange",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ingest_failed:calculated"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "light-red",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "extract_failed_calculated"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "semi-dark-red",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ingest:success"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-green",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 46
+          },
+          "id": 17,
+          "options": {
+            "barRadius": 0.5,
+            "barWidth": 1,
+            "fullHighlight": false,
+            "groupWidth": 0.64,
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "orientation": "auto",
+            "showValue": "auto",
+            "stacking": "none",
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            },
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 0
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "sum by(file_type) (( max_over_time(google_drive_ingested_total{email=~\"$email\"}[$__range])) or max_over_time(google_entity_metadata{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "SUCCESS",
+              "range": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "eemje5wh24vswb"
+              },
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "# Query C: sum ingestion errors by file_type\nsum by(file_type) (max_over_time(google_drive_ingestion_errors_total{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "hide": false,
+              "instant": true,
+              "legendFormat": "FAILED",
+              "range": false,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "aemjj76fhna4ga"
+              },
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "# Query D: sum EXTRACTED files by file_type\nsum by(file_type) ( max_over_time(google_drive_files_extracted_total{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "hide": false,
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "eemje5wh24vswb"
+              },
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "# Query B: sum blocked files by file_type\nsum by(file_type) (max_over_time(google_drive_blocked_files_total{email=~\"$email\"}[$__range]))\n",
+              "format": "table",
+              "hide": false,
+              "instant": true,
+              "legendFormat": "BLOCKED",
+              "range": false,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "aemjj76fhna4ga"
+              },
+              "editorMode": "code",
+              "exemplar": false,
+              "expr": "# Query E: sum EXTRACTED ERROR files by file_type\nsum by(file_type) ( max_over_time(google_drive_file_extraction_errors_total{email=~\"$email\"}[$__range]))",
+              "format": "table",
+              "hide": false,
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "E"
+            }
+          ],
+          "title": "Google Drive Entity Metric",
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #A$",
+                "renamePattern": "ingest:success"
+              }
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #B$",
+                "renamePattern": "ingest:blocked"
+              }
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #C$",
+                "renamePattern": "ingest:failed"
+              }
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #D$",
+                "renamePattern": "extract:success"
+              }
+            },
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^Value #E$",
+                "renamePattern": "extract:failed"
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "ingest_failed:calculated",
+                "mode": "reduceRow",
+                "reduce": {
+                  "include": [
+                    "INGEST_FAILED"
+                  ],
+                  "reducer": "sum"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "extract_failed_calculated",
+                "mode": "reduceRow",
+                "reduce": {
+                  "include": [
+                    "EXTRACT_FAILED"
+                  ],
+                  "reducer": "sum"
+                }
+              }
+            }
+          ],
+          "type": "barchart"
         }
       ],
-      "type": "barchart"
+      "title": "Google Metrics",
+      "type": "row"
     },
     {
       "collapsed": true,
@@ -1909,78 +1910,107 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 2
       },
       "id": 35,
       "panels": [
-      {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "P442C0F3243930FD5"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 13,
-        "w": 24,
-        "x": 0,
-        "y": 3
-      },
-      "id": 51,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
         {
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "sum by (service) (\n  rate(insert_chat_message_count{email=~\"$email\"}[$__range])\n)",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Rate of Slack Message Ingestion",
-      "type": "stat"
-    },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 13,
+            "w": 24,
+            "x": 0,
+            "y": 59
+          },
+          "id": 53,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "12.0.2",
+          "targets": [
+            {
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "expr": "sum by (service) (\n  rate(insert_chat_message_count{email=~\"$email\"}[$__rate_interval])\n)",
+              "fullMetaSearch": false,
+              "includeNullMetadata": true,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A",
+              "useBackend": false
+            }
+          ],
+          "title": "Rate of Slack Message Ingestion",
+          "type": "timeseries"
+        },
         {
           "datasource": {
             "type": "prometheus",
@@ -2011,7 +2041,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 179
+            "y": 72
           },
           "id": 32,
           "options": {
@@ -2074,7 +2104,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 179
+            "y": 72
           },
           "id": 30,
           "options": {
@@ -2141,7 +2171,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 187
+            "y": 80
           },
           "id": 29,
           "options": {
@@ -2204,7 +2234,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 187
+            "y": 80
           },
           "id": 31,
           "options": {
@@ -2268,7 +2298,7 @@
             "h": 12,
             "w": 12,
             "x": 0,
-            "y": 195
+            "y": 88
           },
           "id": 49,
           "options": {
@@ -2330,7 +2360,7 @@
             "h": 12,
             "w": 12,
             "x": 12,
-            "y": 195
+            "y": 88
           },
           "id": 50,
           "options": {
@@ -2415,7 +2445,7 @@
             "h": 12,
             "w": 6,
             "x": 0,
-            "y": 207
+            "y": 100
           },
           "id": 41,
           "options": {
@@ -2523,7 +2553,7 @@
             "h": 12,
             "w": 6,
             "x": 6,
-            "y": 207
+            "y": 100
           },
           "id": 40,
           "options": {
@@ -2631,7 +2661,7 @@
             "h": 12,
             "w": 6,
             "x": 12,
-            "y": 207
+            "y": 100
           },
           "id": 42,
           "options": {
@@ -2739,7 +2769,7 @@
             "h": 12,
             "w": 6,
             "x": 18,
-            "y": 207
+            "y": 100
           },
           "id": 43,
           "options": {
@@ -2808,7 +2838,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 219
+            "y": 112
           },
           "id": 28,
           "options": {
@@ -2875,7 +2905,7 @@
             "h": 12,
             "w": 12,
             "x": 0,
-            "y": 232
+            "y": 125
           },
           "id": 26,
           "options": {
@@ -2942,7 +2972,7 @@
             "h": 12,
             "w": 12,
             "x": 12,
-            "y": 232
+            "y": 125
           },
           "id": 27,
           "options": {
@@ -3008,7 +3038,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 244
+            "y": 137
           },
           "id": 24,
           "options": {
@@ -3073,7 +3103,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 244
+            "y": 137
           },
           "id": 25,
           "options": {
@@ -3149,5 +3179,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 48
+  "version": 50
 }
