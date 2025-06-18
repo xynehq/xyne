@@ -147,7 +147,7 @@ function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
 //     event: { app: "event", entity: "event_default" },
 //   }
 
-interface ChatPageProps {
+export interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
   agentWhiteList: boolean
