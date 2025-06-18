@@ -46,6 +46,8 @@ services:
     restart: always
     networks:
       - xyne
+    environment:
+      - POSTGRES_PASSWORD=xyne
 
   vespa:
     image: vespaengine/vespa
