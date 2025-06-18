@@ -2,6 +2,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { UserRole } from "shared/types"
 import SlackSvg from "@/assets/slack.svg"
 import GoogleSvg from "@/assets/google-logo.svg"
+import GithubSvg from "@/assets/github.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
 import { Upload } from "lucide-react"
 
@@ -64,7 +65,7 @@ export const IntegrationsSidebar = ({
                 })
               }}
             >
-              <img width={16} src={SlackSvg} className="ml-[8px]" />
+              <img width={16} src={GithubSvg} className="ml-[8px]" />
               <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
                 Github
               </span>
