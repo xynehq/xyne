@@ -286,4 +286,56 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
       answer: text,
     })
   })
+
+  test("should handle escaped JSON response from AI model", () => {
+    const input = `\\n{\\n  \\"answer\\": \\"Based on the Euler onboarding resources, here are the structured next steps in the Juspay onboarding process:\\n\\n## **Module 0: Prerequisites**\\n- **Express Checkout and Payment Orchestration** - Understanding Euler flow and payment orchestration [27]\\n- **Key Terminology and Concepts** - Learning payment flow diagrams and core concepts [27]\\"\\n}`
+    const result = jsonParseLLMOutput(input)
+    expect(result).toEqual({
+      answer:
+        "Based on the Euler onboarding resources, here are the structured next steps in the Juspay onboarding process:\n\n## **Module 0: Prerequisites**\n- **Express Checkout and Payment Orchestration** - Understanding Euler flow and payment orchestration [27]\n- **Key Terminology and Concepts** - Learning payment flow diagrams and core concepts [27]",
+    })
+  })
+
+  test('should handle escaped JSON with \\"answer\\" pattern', () => {
+    const input = `{\\"answer\\": \\"This is a test with escaped quotes and\\nnewlines\\"}`
+    const result = jsonParseLLMOutput(input)
+    expect(result).toEqual({
+      answer: "This is a test with escaped quotes and\nnewlines",
+    })
+  })
+
+  test("should handle JSON response with escaped quotes and literal newlines from AI model", () => {
+    const response = `\`\`\`json\n{\n  \"answer\": \"Based on the Euler onboarding resources, here are the structured next steps in the Juspay onboarding process:\n\n## **Module 0: Prerequisites**\n- **Express Checkout and Payment Orchestration** - Understanding Euler flow and payment orchestration [27]\n- **Key Terminology and Concepts** - Learning payment flow diagrams and core concepts [27]\n\n## **Module A: Getting Ready with Tools**\n- **Setting Up Euler PS** - Clone the Euler PS project from Bitbucket [27]\n- **Dashboard Access** - Get access to Grafana, EC Ops (Production & Sandbox), and Kibana [27]\n- **SQL and Data Access Tools** - Set up MySQL Web and BigQuery access [27]\n- **Postman Collection Setup** - Download Postman and import Euler API collections [27]\n\n## **Module D: System Operations**\n- **Monitoring with Grafana and EC Ops Dashboard** - Learn system monitoring [27]\n- **Log Analysis with Kibana** - Understanding log analysis and debugging [27]\n- **Debugging Transaction Issues** - Using Process Tracker and Sentry [27]\n\n## **Module E: Domain-Specific Flows**\n- **UPI Variants** - Understanding Intent and Collect flows [27]\n\n## **Module F: Code Architecture**\n- **PureScript and Haskell Introduction** - Learning the core programming languages [27]\n- **Merchant Integration Patterns** - Understanding integration approaches [27]\n- **Code Structure and Organization** - System walkthrough sessions [27]\n\nThe onboarding appears to follow a progressive structure from basic setup to advanced domain knowledge. You should start with Module 0 prerequisites and work through the modules systematically.\"\n}\n\`\`\``
+
+    const result = jsonParseLLMOutput(response)
+
+    expect(result).toEqual({
+      answer: `Based on the Euler onboarding resources, here are the structured next steps in the Juspay onboarding process:
+
+## **Module 0: Prerequisites**
+- **Express Checkout and Payment Orchestration** - Understanding Euler flow and payment orchestration [27]
+- **Key Terminology and Concepts** - Learning payment flow diagrams and core concepts [27]
+
+## **Module A: Getting Ready with Tools**
+- **Setting Up Euler PS** - Clone the Euler PS project from Bitbucket [27]
+- **Dashboard Access** - Get access to Grafana, EC Ops (Production & Sandbox), and Kibana [27]
+- **SQL and Data Access Tools** - Set up MySQL Web and BigQuery access [27]
+- **Postman Collection Setup** - Download Postman and import Euler API collections [27]
+
+## **Module D: System Operations**
+- **Monitoring with Grafana and EC Ops Dashboard** - Learn system monitoring [27]
+- **Log Analysis with Kibana** - Understanding log analysis and debugging [27]
+- **Debugging Transaction Issues** - Using Process Tracker and Sentry [27]
+
+## **Module E: Domain-Specific Flows**
+- **UPI Variants** - Understanding Intent and Collect flows [27]
+
+## **Module F: Code Architecture**
+- **PureScript and Haskell Introduction** - Learning the core programming languages [27]
+- **Merchant Integration Patterns** - Understanding integration approaches [27]
+- **Code Structure and Organization** - System walkthrough sessions [27]
+
+The onboarding appears to follow a progressive structure from basic setup to advanced domain knowledge. You should start with Module 0 prerequisites and work through the modules systematically.`,
+    })
+  })
 })
