@@ -1089,32 +1089,7 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "xyne-metrics"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 14,
@@ -1140,7 +1115,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (service) (\n  ceil(rate(google_drive_ingested_total{email=~\"$email\"}[$__range])) \n)",
+          "expr": "sum by (service) (\n  ceil(rate(google_drive_ingested_total{email=~\"$email\"}[$__rate_interval])) \n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -1208,7 +1183,32 @@
           },
           "unit": "none"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "xyne-metrics"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 14,
@@ -1234,7 +1234,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (service) (\n  rate(gmail_ingested_total{email=~\"$email\"}[$__range])\n)",
+          "expr": "sum by (service) (\n  ceil(rate(gmail_ingested_total{email=~\"$email\"}[$__rate_interval]))\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -3081,5 +3081,5 @@
   "timezone": "browser",
   "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 39
+  "version": 44
 }
