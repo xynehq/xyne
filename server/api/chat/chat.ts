@@ -150,7 +150,11 @@ import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { ragPipelineConfig, RagPipelineStages, type Citation } from "./types"
 import { activeStreams } from "./stream"
-import { AgentMessageApi, MessageWithToolsApi, CombinedAgentSlackApi } from "./agents" // Added CombinedAgentSlackApi
+import {
+  AgentMessageApi,
+  MessageWithToolsApi,
+  CombinedAgentSlackApi,
+} from "./agents" // Added CombinedAgentSlackApi
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -178,11 +182,10 @@ const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 export const GetChatTraceApi = async (c: Context) => {
-  
   let email = ""
   try {
-  const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
-  email = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
+    const jwtPayload = (c.get(JwtPayloadKey) ?? {}) as Record<string, unknown>
+    email = typeof jwtPayload.sub === "string" ? jwtPayload.sub : ""
 
     // @ts-ignore - Assume validation is handled by middleware in server.ts
     const { chatId, messageId } = c.req.valid("query")
@@ -207,7 +210,7 @@ export const GetChatTraceApi = async (c: Context) => {
       // Re-throw HTTPExceptions to let Hono handle them
       throw error
     }
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Get Chat Trace Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -222,7 +225,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
-  email?:string
+  email?: string,
 ) => {
   if (!text) {
     return ""
@@ -243,7 +246,7 @@ const checkAndYieldCitations = function* (
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
-  email: string
+  email: string,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
@@ -265,7 +268,7 @@ const checkAndYieldCitations = function* (
         }
         yieldedCitations.add(citationIndex)
       } else {
-        loggerWithChild({email: email}).error(
+        loggerWithChild({ email: email }).error(
           "Found a citation index but could not find it in the search result ",
           citationIndex,
           results.length,
@@ -280,7 +283,7 @@ async function* processIterator(
   results: VespaSearchResult[],
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
-  email?: string
+  email?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -303,7 +306,7 @@ async function* processIterator(
             yieldedCitations,
             results,
             previousResultsLength,
-            email!
+            email!,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -327,7 +330,7 @@ async function* processIterator(
               yieldedCitations,
               results,
               previousResultsLength,
-              email!
+              email!,
             )
             yield { text: token, reasoning }
           }
@@ -362,7 +365,7 @@ async function* processIterator(
               yieldedCitations,
               results,
               previousResultsLength,
-              email!
+              email!,
             )
             currentAnswer = parsed.answer
           }
@@ -381,10 +384,10 @@ async function* processIterator(
 }
 
 export const GetChatApi = async (c: Context) => {
-  let email=""
+  let email = ""
   try {
-      const {sub} = c.get(JwtPayloadKey)??{}
-      email = sub || "";
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
     // @ts-ignore
     const body: z.infer<typeof chatSchema> = c.req.valid("json")
     const { chatId } = body
@@ -398,7 +401,7 @@ export const GetChatApi = async (c: Context) => {
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Get Chat and Messages Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -411,15 +414,15 @@ export const GetChatApi = async (c: Context) => {
 export const ChatRenameApi = async (c: Context) => {
   let email = ""
   try {
-    const { sub } = c.get(JwtPayloadKey)??{}
-    email = sub||""
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
     // @ts-ignore
     const { title, chatId } = c.req.valid("json")
     await updateChatByExternalId(db, chatId, { title })
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Chat Rename Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -432,8 +435,8 @@ export const ChatRenameApi = async (c: Context) => {
 export const ChatDeleteApi = async (c: Context) => {
   let email = ""
   try {
-    const { sub } = c.get(JwtPayloadKey)??{}
-    email = sub||""
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
@@ -446,7 +449,7 @@ export const ChatDeleteApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Chat Delete Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -467,7 +470,7 @@ export const ChatHistory = async (c: Context) => {
     return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Chat History Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -478,10 +481,10 @@ export const ChatHistory = async (c: Context) => {
 }
 
 export const ChatBookmarkApi = async (c: Context) => {
-  let email =""
+  let email = ""
   try {
-    const { sub } = c.get(JwtPayloadKey)??{}
-    email = sub||""
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
     // @ts-ignore
     const body = c.req.valid("json")
     const { chatId, bookmark } = body
@@ -489,7 +492,7 @@ export const ChatBookmarkApi = async (c: Context) => {
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -504,9 +507,9 @@ export const replaceDocIdwithUserDocId = async (
 ) => {
   const res = await GetDocument(mailSchema, docId)
   // Check if userMap exists in fields and cast to any to access it
-  const userMap = (res.fields as any)?.userMap ?? {};
+  const userMap = (res.fields as any)?.userMap ?? {}
 
-  return userMap[email] ?? docId;
+  return userMap[email] ?? docId
 }
 
 function buildContext(
@@ -563,7 +566,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     try {
       agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
-      loggerWithChild({email: email}).warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+      loggerWithChild({ email: email }).warn(
+        "Failed to parse agentPrompt JSON",
+        { error, agentPrompt },
+      )
     }
 
     if (
@@ -614,21 +620,21 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                   agentAppEnums.push(Apps.Slack)
                 break
               default:
-                loggerWithChild({email: email}).warn(
+                loggerWithChild({ email: email }).warn(
                   `Unknown integration type in agent prompt: ${integration}`,
                 )
                 break
             }
           }
         } else {
-          loggerWithChild({email: email}).warn(
+          loggerWithChild({ email: email }).warn(
             `Invalid integration item in agent prompt (not a string): ${integration}`,
           )
         }
       }
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         "agentPromptData.appIntegrations is not an array or is missing",
         { agentPromptData },
       )
@@ -645,24 +651,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         personalization.parameters?.[SearchModes.NativeRank]
       if (nativeRankParams?.alpha !== undefined) {
         userAlpha = nativeRankParams.alpha
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           { email, alpha: userAlpha },
           "Using personalized alpha for iterative RAG",
         )
       } else {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           { email },
           "No personalized alpha found in settings, using default for iterative RAG",
         )
       }
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         { email },
         "User personalization settings not found, using default alpha for iterative RAG",
       )
     }
   } catch (err) {
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       err,
       "Failed to fetch personalization for iterative RAG, using default alpha",
       { email },
@@ -907,7 +913,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
         contextSpan?.setAttribute("number_of_chunks", totalResults.length)
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
         )
         contextSpan?.end()
@@ -934,7 +940,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           totalResults,
           previousResultsLength,
           config.isReasoning && userRequestsReasoning,
-          email
+          email,
         )
         if (answer) {
           ragSpan?.setAttribute("answer_found", true)
@@ -1069,7 +1075,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       "number_of_chunks",
       results?.root?.children?.length || 0,
     )
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       `[Main Search Path] Number of contextual chunks being passed: ${
         results?.root?.children?.length || 0
       }`,
@@ -1091,7 +1097,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results?.root?.children,
       previousResultsLength,
       config.isReasoning && userRequestsReasoning,
-      email
+      email,
     )
 
     if (answer) {
@@ -1139,24 +1145,24 @@ async function* generateAnswerFromGivenContext(
         personalization.parameters?.[SearchModes.NativeRank]
       if (nativeRankParams?.alpha !== undefined) {
         userAlpha = nativeRankParams.alpha
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           { email, alpha: userAlpha },
           "Using personalized alpha for iterative RAG",
         )
       } else {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           { email },
           "No personalized alpha found in settings, using default for iterative RAG",
         )
       }
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         { email },
         "User personalization settings not found, using default alpha for iterative RAG",
       )
     }
   } catch (err) {
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       err,
       "Failed to fetch personalization for iterative RAG, using default alpha",
       { email },
@@ -1198,7 +1204,7 @@ async function* generateAnswerFromGivenContext(
   )
   initialContextSpan?.end()
 
-  loggerWithChild({email: email}).info(
+  loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
       results?.root?.children?.length || 0
     }`,
@@ -1226,7 +1232,7 @@ async function* generateAnswerFromGivenContext(
     results?.root?.children,
     previousResultsLength,
     userRequestsReasoning,
-    email
+    email,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
@@ -1234,7 +1240,7 @@ async function* generateAnswerFromGivenContext(
     return
   } else if (!answer) {
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
     let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
@@ -1267,7 +1273,7 @@ async function* generateAnswerFromGivenContext(
         )
         ?.join("\n"),
     )
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       `[Selected Context Path] Number of contextual chunks being passed: ${
         results?.root?.children?.length || 0
       }`,
@@ -1297,7 +1303,7 @@ async function* generateAnswerFromGivenContext(
       results?.root?.children,
       previousResultsLength,
       userRequestsReasoning,
-      email
+      email,
     )
     if (answer) {
       searchVespaSpan?.setAttribute("answer_found", true)
@@ -1442,7 +1448,9 @@ async function* generatePointQueryTimeExpansion(
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
-  loggerWithChild({email: email}).debug(`Started rootSpan at ${new Date().toISOString()}`)
+  loggerWithChild({ email: email }).debug(
+    `Started rootSpan at ${new Date().toISOString()}`,
+  )
   rootSpan?.setAttribute("input", input)
   rootSpan?.setAttribute("email", email)
   rootSpan?.setAttribute("alpha", alpha)
@@ -1457,7 +1465,10 @@ async function* generatePointQueryTimeExpansion(
     try {
       agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
-      loggerWithChild({email: email}).warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+      loggerWithChild({ email: email }).warn(
+        "Failed to parse agentPrompt JSON",
+        { error, agentPrompt },
+      )
     }
 
     if (
@@ -1513,14 +1524,14 @@ async function* generatePointQueryTimeExpansion(
             }
           }
         } else {
-          loggerWithChild({email: email}).warn(
+          loggerWithChild({ email: email }).warn(
             `Invalid integration item in agent prompt (not a string): ${integration}`,
           )
         }
       }
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         "agentPromptData.appIntegrations is not an array or is missing",
         { agentPromptData },
       )
@@ -1560,7 +1571,7 @@ async function* generatePointQueryTimeExpansion(
     if (direction === "prev") {
       // If we have both the from and to time range we search only for that range
       if (fromDate && toDate) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
         )
       }
@@ -1572,7 +1583,7 @@ async function* generatePointQueryTimeExpansion(
       }
     } else {
       if (fromDate && toDate) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
         )
       }
@@ -1584,7 +1595,7 @@ async function* generatePointQueryTimeExpansion(
       }
     }
 
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(
         to,
       )}`,
@@ -1750,7 +1761,9 @@ async function* generatePointQueryTimeExpansion(
     combineSpan?.end()
 
     if (!combinedResults.root.children.length) {
-      loggerWithChild({email: email}).info("No gmail or calendar events found")
+      loggerWithChild({ email: email }).info(
+        "No gmail or calendar events found",
+      )
       iterationSpan?.end()
       continue
     }
@@ -1774,7 +1787,7 @@ async function* generatePointQueryTimeExpansion(
 
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
-    loggerWithChild({email: email}).info("Using meetingPromptJsonStream")
+    loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
@@ -1787,13 +1800,15 @@ async function* generatePointQueryTimeExpansion(
       combinedResults?.root?.children,
       previousResultsLength,
       config.isReasoning && userRequestsReasoning,
-      email
+      email,
     )
     ragSpan?.end()
     if (answer) {
       ragSpan?.setAttribute("answer_found", true)
       iterationSpan?.end()
-      loggerWithChild({email: email}).debug(`Ending rootSpan at ${new Date().toISOString()}`)
+      loggerWithChild({ email: email }).debug(
+        `Ending rootSpan at ${new Date().toISOString()}`,
+      )
       rootSpan?.end()
       eventRagSpan?.end()
       return
@@ -1864,11 +1879,13 @@ async function* processResultsForMetadata(
   chunksCount: number | undefined,
   userRequestsReasoning?: boolean,
   span?: Span,
-  email?:string
+  email?: string,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
-    loggerWithChild({email: email??""}).info(`Google Drive, Chunk size: ${chunksCount}`)
+    loggerWithChild({ email: email ?? "" }).info(
+      `Google Drive, Chunk size: ${chunksCount}`,
+    )
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
 
@@ -1887,10 +1904,10 @@ async function* processResultsForMetadata(
 
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app === Apps.Gmail) {
-    loggerWithChild({email: email??""}).info(`Using mailPromptJsonStream `)
+    loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
     iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
   } else {
-    loggerWithChild({email: email??""}).info(`Using baselineRAGJsonStream`)
+    loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
     iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
   }
 
@@ -1934,7 +1951,10 @@ async function* generateMetadataQueryAnswer(
     try {
       agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
-      loggerWithChild({email: email}).warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+      loggerWithChild({ email: email }).warn(
+        "Failed to parse agentPrompt JSON",
+        { error, agentPrompt },
+      )
     }
 
     if (
@@ -1983,21 +2003,21 @@ async function* generateMetadataQueryAnswer(
                   agentAppEnums.push(Apps.Slack)
                 break
               default:
-                loggerWithChild({email: email}).warn(
+                loggerWithChild({ email: email }).warn(
                   `Unknown integration type in agent prompt: ${integration}`,
                 )
                 break
             }
           }
         } else {
-          loggerWithChild({email: email}).warn(
+          loggerWithChild({ email: email }).warn(
             `Invalid integration item in agent prompt (not a string): ${integration}`,
           )
         }
       }
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         "agentPromptData.appIntegrations is not an array or is missing",
         { agentPromptData },
       )
@@ -2029,7 +2049,7 @@ async function* generateMetadataQueryAnswer(
   )
   const directionText = direction === "prev" ? "going back" : "up to"
 
-  loggerWithChild({email: email}).info(
+  loggerWithChild({ email: email }).info(
     `App : "${app}" , Entity : "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
@@ -2053,7 +2073,7 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       "User requested recent metadata retrieval without specifying app or entity",
     )
 
@@ -2067,7 +2087,7 @@ async function* generateMetadataQueryAnswer(
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       const pageSpan = span?.startSpan(`search_iteration_${iteration}`)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
 
@@ -2102,7 +2122,7 @@ async function* generateMetadataQueryAnswer(
 
       items = searchResults.root.children || []
 
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `iteration-${iteration} retrieved documents length - ${items.length}`,
       )
       pageSpan?.setAttribute("offset", pageSize * iteration)
@@ -2119,7 +2139,7 @@ async function* generateMetadataQueryAnswer(
 
       pageSpan?.setAttribute("context", buildContext(items, 20))
       if (!items.length) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
             hasValidTimeRange
               ? " within time range."
@@ -2140,7 +2160,7 @@ async function* generateMetadataQueryAnswer(
         undefined,
         userRequestsReasoning,
         span,
-        email
+        email,
       )
 
       if (answer == null) {
@@ -2150,7 +2170,9 @@ async function* generateMetadataQueryAnswer(
           yield { text: "null" }
           return
         } else {
-          loggerWithChild({email: email}).info(`no answer found for iteration - ${iteration}`)
+          loggerWithChild({ email: email }).info(
+            `no answer found for iteration - ${iteration}`,
+          )
           continue
         }
       } else {
@@ -2161,7 +2183,9 @@ async function* generateMetadataQueryAnswer(
     }
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
-    loggerWithChild({email: email}).info(`Rank Profile : ${SearchModes.GlobalSorted}`)
+    loggerWithChild({ email: email }).info(
+      `Rank Profile : ${SearchModes.GlobalSorted}`,
+    )
   } else if (isGenericItemFetch && isValidAppOrEntity) {
     const userSpecifiedCountLimit = count
       ? Math.min(count, config.maxUserRequestCount)
@@ -2172,9 +2196,11 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    loggerWithChild({email: email}).info(`Search Type : ${QueryType.GetItems}`)
+    loggerWithChild({ email: email }).info(
+      `Search Type : ${QueryType.GetItems}`,
+    )
     if (!schema) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
       )
       span?.setAttribute("error", "Schema determination failed")
@@ -2222,11 +2248,15 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("context", buildContext(items, 20))
     span?.end()
-    loggerWithChild({email: email}).info(`Retrieved Documents : ${QueryType.GetItems} - ${items.length}`)
+    loggerWithChild({ email: email }).info(
+      `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
+    )
     // Early return if no documents found
     if (!items.length) {
       span?.end()
-      loggerWithChild({email: email}).info("No documents found for unspecific metadata retrieval")
+      loggerWithChild({ email: email }).info(
+        "No documents found for unspecific metadata retrieval",
+      )
       yield { text: METADATA_NO_DOCUMENTS_FOUND }
       return
     }
@@ -2241,7 +2271,7 @@ async function* generateMetadataQueryAnswer(
       maxSummaryCount,
       userRequestsReasoning,
       span,
-      email
+      email,
     )
     return
   } else if (
@@ -2256,7 +2286,9 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    loggerWithChild({email: email}).info(`Search Type : ${QueryType.SearchWithFilters}`)
+    loggerWithChild({ email: email }).info(
+      `Search Type : ${QueryType.SearchWithFilters}`,
+    )
 
     const { filterQuery } = classification
     const query = filterQuery
@@ -2275,7 +2307,7 @@ async function* generateMetadataQueryAnswer(
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       const iterationSpan = span?.startSpan(`search_iteration_${iteration}`)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
       )
 
@@ -2308,7 +2340,7 @@ async function* generateMetadataQueryAnswer(
 
       items = searchResults.root.children || []
 
-      loggerWithChild({email: email}).info(`Rank Profile : ${rankProfile}`)
+      loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
 
       iterationSpan?.setAttribute("offset", pageSize * iteration)
       iterationSpan?.setAttribute("rank_profile", rankProfile)
@@ -2326,11 +2358,11 @@ async function* generateMetadataQueryAnswer(
       iterationSpan?.setAttribute(`context`, buildContext(items, 20))
       iterationSpan?.end()
 
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
       )
       if (!items.length) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
             hasValidTimeRange
               ? " within time range."
@@ -2351,7 +2383,7 @@ async function* generateMetadataQueryAnswer(
         undefined,
         userRequestsReasoning,
         span,
-        email
+        email,
       )
 
       if (answer == null) {
@@ -2361,7 +2393,9 @@ async function* generateMetadataQueryAnswer(
           yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
-          loggerWithChild({email: email}).info(`no answer found for iteration - ${iteration}`)
+          loggerWithChild({ email: email }).info(
+            `no answer found for iteration - ${iteration}`,
+          )
           continue
         }
       } else {
@@ -2460,7 +2494,7 @@ export async function* UnderstandMessageAndAnswer(
     classification.filters.sortDirection === "desc"
 
   if (isGenericItemFetch || isFilteredItemSearch) {
-    loggerWithChild({email: email}).info("Metadata Retrieval")
+    loggerWithChild({ email: email }).info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
@@ -2493,7 +2527,7 @@ export async function* UnderstandMessageAndAnswer(
           )}. Would you like to try a different search?`,
         }
       } else if (answer.text === METADATA_FALLBACK_TO_RAG) {
-        loggerWithChild({email: email}).info(
+        loggerWithChild({ email: email }).info(
           "No context found for metadata retrieval, moving to iterative RAG",
         )
         hasYieldedAnswer = false
@@ -2512,7 +2546,9 @@ export async function* UnderstandMessageAndAnswer(
     classification.filters.app === Apps.GoogleCalendar
   ) {
     // user is talking about an event
-    loggerWithChild({email: email}).info(`Direction : ${classification.direction}`)
+    loggerWithChild({ email: email }).info(
+      `Direction : ${classification.direction}`,
+    )
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
@@ -2529,7 +2565,9 @@ export async function* UnderstandMessageAndAnswer(
       agentPrompt,
     )
   } else {
-    loggerWithChild({email: email}).info("Iterative Rag : Query rewriting and time filtering")
+    loggerWithChild({ email: email }).info(
+      "Iterative Rag : Query rewriting and time filtering",
+    )
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
     // default case
@@ -2690,7 +2728,7 @@ export const MessageApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
-    loggerWithChild({email: email}).info("MessageApi..")
+    loggerWithChild({ email: email }).info("MessageApi..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -2705,24 +2743,28 @@ export const MessageApi = async (c: Context) => {
       agentId,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+    if (isAgentic) {
+      Logger.info(
+        `Routing to MessageWithToolsApi as isAgentic is true and no agentId provided.`,
+      )
+      return MessageWithToolsApi(c)
+    }
 
     if (agentPromptValue) {
-      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(db, workspaceId, email)
-      const agentDetails = await getAgentByExternalId(db, agentPromptValue, userAndWorkspaceCheck.workspace.id)
-
-      if (isAgentic && agentDetails) {
-        Logger.info(`Routing to CombinedAgentSlackApi for agent ${agentPromptValue} with Slack integration.`)
-        // CombinedAgentSlackApi expects `agentId` in the body, which `c` provides.
-        return CombinedAgentSlackApi(c)
-      } else {
-        // Agent exists but no Slack, or agent not found, or agentId was invalid initially.
-        // AgentMessageApi handles the agentPrompt (which is agentId from request body).
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
+        db,
+        workspaceId,
+        email,
+      )
+      const agentDetails = await getAgentByExternalId(
+        db,
+        agentPromptValue,
+        userAndWorkspaceCheck.workspace.id,
+      )
+      if (!isAgentic && agentDetails) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
-    } else if (isAgentic) { // No valid agentId, but isAgentic is true
-      Logger.info(`Routing to MessageWithToolsApi as isAgentic is true and no agentId provided.`)
-      return MessageWithToolsApi(c)
     }
 
     // If none of the above, proceed with default RAG flow
@@ -2761,15 +2803,21 @@ export const MessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      loggerWithChild({email: email}).info(`MessageApi before the span.. ${chatId}`)
+      loggerWithChild({ email: email }).info(
+        `MessageApi before the span.. ${chatId}`,
+      )
       const titleSpan = chatCreationSpan.startSpan("generate_title")
-      loggerWithChild({email: email}).info(`MessageApi after the span.. ${titleSpan}`)
+      loggerWithChild({ email: email }).info(
+        `MessageApi after the span.. ${titleSpan}`,
+      )
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
         modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
         stream: false,
       })
-      loggerWithChild({email: email}).info(`MessageApi after the titleResp.. ${titleResp}`)
+      loggerWithChild({ email: email }).info(
+        `MessageApi after the titleResp.. ${titleResp}`,
+      )
       title = titleResp.title
       const cost = titleResp.cost
       if (cost) {
@@ -2779,7 +2827,9 @@ export const MessageApi = async (c: Context) => {
       titleSpan.setAttribute("title", title)
       titleSpan.end()
 
-      loggerWithChild({email: email}).info(`MessageApi before the first message.. ${titleSpan}`)
+      loggerWithChild({ email: email }).info(
+        `MessageApi before the first message.. ${titleSpan}`,
+      )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -2807,7 +2857,7 @@ export const MessageApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         "First mesage of the conversation, successfully created the chat",
       )
       chat = insertedChat
@@ -2836,18 +2886,22 @@ export const MessageApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      loggerWithChild({email: email}).info("Existing conversation, fetched previous messages")
+      loggerWithChild({ email: email }).info(
+        "Existing conversation, fetched previous messages",
+      )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
       chatCreationSpan.end()
     }
-    loggerWithChild({email: email}).info("starting the streaming..")
+    loggerWithChild({ email: email }).info("starting the streaming..")
     return streamSSE(
       c,
       async (stream) => {
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
-        loggerWithChild({email: email}).info(`Added stream ${streamKey} to active streams map.`)
+        loggerWithChild({ email: email }).info(
+          `Added stream ${streamKey} to active streams map.`,
+        )
         let wasStreamClosedPrematurely = false
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", chat.externalId)
@@ -2861,7 +2915,7 @@ export const MessageApi = async (c: Context) => {
             titleUpdateSpan.end()
           }
 
-          loggerWithChild({email: email}).info("Chat stream started")
+          loggerWithChild({ email: email }).info("Chat stream started")
           // we do not set the message Id as we don't have it
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -2871,7 +2925,7 @@ export const MessageApi = async (c: Context) => {
           })
 
           if (isMsgWithContext && fileIds && fileIds?.length > 0) {
-            loggerWithChild({email: email}).info(
+            loggerWithChild({ email: email }).info(
               "User has selected some context with query, answering only based on that given context",
             )
             let answer = ""
@@ -2912,7 +2966,7 @@ export const MessageApi = async (c: Context) => {
             let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -2965,7 +3019,7 @@ export const MessageApi = async (c: Context) => {
                 }
                 citations.push(item)
                 citationMap[index] = citations.length - 1
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   `Found citations and sending it, current count: ${citations.length}`,
                 )
                 stream.writeSSE({
@@ -3028,7 +3082,7 @@ export const MessageApi = async (c: Context) => {
                 messageExternalId: msg.externalId,
                 traceJson,
               })
-              loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
               )
               await stream.writeSSE({
@@ -3090,7 +3144,7 @@ export const MessageApi = async (c: Context) => {
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
               )
 
-            loggerWithChild({email: email}).info(
+            loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
@@ -3113,8 +3167,8 @@ export const MessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: llmFormattedMessages,
                 // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
-                                          // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
-                                          // For this non-agent RAG path, we don't pass an agent prompt.
+                // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
+                // For this non-agent RAG path, we don't pass an agent prompt.
               })
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -3151,7 +3205,7 @@ export const MessageApi = async (c: Context) => {
             const conversationSpan = streamSpan.startSpan("conversation_search")
             for await (const chunk of searchOrAnswerIterator) {
               if (stream.closed) {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -3192,7 +3246,7 @@ export const MessageApi = async (c: Context) => {
                     parsed = jsonParseLLMOutput(buffer) || {}
                     if (parsed.answer && currentAnswer !== parsed.answer) {
                       if (currentAnswer === "") {
-                        loggerWithChild({email: email}).info(
+                        loggerWithChild({ email: email }).info(
                           "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
                         )
                         stream.writeSSE({
@@ -3218,7 +3272,7 @@ export const MessageApi = async (c: Context) => {
                     }
                   } catch (err) {
                     const errMessage = (err as Error).message
-                    loggerWithChild({email: email}).error(
+                    loggerWithChild({ email: email }).error(
                       err,
                       `Error while parsing LLM output ${errMessage}`,
                     )
@@ -3257,19 +3311,21 @@ export const MessageApi = async (c: Context) => {
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
                 )
                 message = parsed.queryRewrite
-                loggerWithChild({email: email}).info(`Rewritten query: ${message}`)
+                loggerWithChild({ email: email }).info(
+                  `Rewritten query: ${message}`,
+                )
                 ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
               } else {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
 
-              loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
@@ -3296,13 +3352,15 @@ export const MessageApi = async (c: Context) => {
                   selectMessageSchema.safeParse(lastUserMessage)
 
                 if (parsedMessage.error) {
-                  loggerWithChild({email: email}).error(`Error while parsing last user message`)
+                  loggerWithChild({ email: email }).error(
+                    `Error while parsing last user message`,
+                  )
                 } else if (
                   parsedMessage.success &&
                   Array.isArray(parsedMessage.data.fileIds) &&
                   parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
                 ) {
-                  loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
                   )
                   iterator = UnderstandMessageAndAnswerForGivenContext(
@@ -3319,7 +3377,7 @@ export const MessageApi = async (c: Context) => {
                   Object.keys(parsedMessage.data.queryRouterClassification)
                     .length > 2
                 ) {
-                  loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Reusing previous message classification for follow-up query ${JSON.stringify(
                       lastUserMessage.queryRouterClassification,
                     )}`,
@@ -3328,7 +3386,7 @@ export const MessageApi = async (c: Context) => {
                   classification = parsedMessage.data
                     .queryRouterClassification as QueryRouterLLMResponse
                 } else {
-                  loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     "Follow-up query detected, but no classification found in previous message.",
                   )
                 }
@@ -3358,7 +3416,7 @@ export const MessageApi = async (c: Context) => {
               })
               for await (const chunk of iterator) {
                 if (stream.closed) {
-                  loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     "[MessageApi] Stream closed during conversation search loop. Breaking.",
                   )
                   wasStreamClosedPrematurely = true
@@ -3400,7 +3458,7 @@ export const MessageApi = async (c: Context) => {
                   }
                   citations.push(item)
                   citationMap[index] = citations.length - 1
-                  loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Found citations and sending it, current count: ${citations.length}`,
                   )
                   stream.writeSSE({
@@ -3426,7 +3484,7 @@ export const MessageApi = async (c: Context) => {
               const answerSpan = ragSpan.startSpan("process_final_answer")
               answerSpan.setAttribute(
                 "final_answer",
-                processMessage(answer, citationMap,email),
+                processMessage(answer, citationMap, email),
               )
               answerSpan.setAttribute("actual_answer", answer)
               answerSpan.setAttribute("final_answer_length", answer.length)
@@ -3457,7 +3515,7 @@ export const MessageApi = async (c: Context) => {
               }
 
               if (queryRouterClassification) {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   `Updating queryRouter classification for last user message: ${JSON.stringify(
                     queryRouterClassification,
                   )}`,
@@ -3467,7 +3525,7 @@ export const MessageApi = async (c: Context) => {
                   queryRouterClassification,
                 })
               } else {
-                loggerWithChild({email: email}).warn(
+                loggerWithChild({ email: email }).warn(
                   "queryRouterClassification is undefined, skipping update.",
                 )
               }
@@ -3506,7 +3564,7 @@ export const MessageApi = async (c: Context) => {
                 messageExternalId: msg.externalId,
                 traceJson,
               })
-              loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
               )
 
@@ -3589,7 +3647,7 @@ export const MessageApi = async (c: Context) => {
             data: "",
             event: ChatSSEvents.End,
           })
-          loggerWithChild({email: email}).error(
+          loggerWithChild({ email: email }).error(
             error,
             `Streaming Error: ${(error as Error).message} ${
               (error as Error).stack
@@ -3602,7 +3660,9 @@ export const MessageApi = async (c: Context) => {
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
-            loggerWithChild({email: email}).info(`Removed stream ${streamKey} from active streams map.`)
+            loggerWithChild({ email: email }).info(
+              `Removed stream ${streamKey} from active streams map.`,
+            )
           }
         }
       },
@@ -3646,14 +3706,14 @@ export const MessageApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-        loggerWithChild({email: email}).error(
+        loggerWithChild({ email: email }).error(
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          loggerWithChild({email: email}).info(
+          loggerWithChild({ email: email }).info(
             `Removed stream ${streamKey} from active streams map in error callback.`,
           )
         }
@@ -3662,7 +3722,9 @@ export const MessageApi = async (c: Context) => {
       },
     )
   } catch (error) {
-    loggerWithChild({email: email}).info(`MessageApi Error occurred.. {error}`)
+    loggerWithChild({ email: email }).info(
+      `MessageApi Error occurred.. {error}`,
+    )
     const errorSpan = rootSpan.startSpan("handle_top_level_error")
     errorSpan.addEvent("error", {
       message: getErrorMessage(error),
@@ -3692,7 +3754,10 @@ export const MessageApi = async (c: Context) => {
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        loggerWithChild({email: email}).error(error, "You exceeded your current quota")
+        loggerWithChild({ email: email }).error(
+          error,
+          "You exceeded your current quota",
+        )
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -3701,7 +3766,10 @@ export const MessageApi = async (c: Context) => {
         }
       }
     } else {
-      loggerWithChild({email: email}).error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
+      loggerWithChild({ email: email }).error(
+        error,
+        `Message Error: ${errMsg} ${(error as Error).stack}`,
+      )
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -3709,7 +3777,7 @@ export const MessageApi = async (c: Context) => {
     // Ensure stream is removed from the map in the top-level catch block
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `Removed stream ${streamKey} from active streams map in top-level catch.`,
       )
     }
@@ -3738,7 +3806,7 @@ export const MessageRetryApi = async (c: Context) => {
     const { messageId, isReasoningEnabled }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
-    email = sub??""
+    email = sub ?? ""
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
@@ -3837,7 +3905,9 @@ export const MessageRetryApi = async (c: Context) => {
 
     // Set stream key before streaming
     streamKey = originalMessage.chatExternalId
-      loggerWithChild({email: email}).info(`[MessageRetryApi] Constructed streamKey: ${streamKey}`)
+    loggerWithChild({ email: email }).info(
+      `[MessageRetryApi] Constructed streamKey: ${streamKey}`,
+    )
 
     return streamSSE(
       c,
@@ -3850,7 +3920,7 @@ export const MessageRetryApi = async (c: Context) => {
         try {
           let message = prevUserMessage.message
           if (fileIds && fileIds?.length > 0) {
-            loggerWithChild({email: email}).info(
+            loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
 
@@ -3892,7 +3962,7 @@ export const MessageRetryApi = async (c: Context) => {
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -3933,7 +4003,7 @@ export const MessageRetryApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
-                loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   `Found citations and sending it, current count: ${citations.length}`,
                 )
                 stream.writeSSE({
@@ -3969,7 +4039,7 @@ export const MessageRetryApi = async (c: Context) => {
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
             if (wasStreamClosedPrematurely) {
-               loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
               )
               if (isUserMessage) {
@@ -4033,7 +4103,7 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                   relevantMessageId = msg.externalId
                 } else {
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Updated trace for message ${originalMessage.externalId}`,
                   )
                   insertSpan.setAttribute(
@@ -4050,7 +4120,7 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                 }
               } else {
-                 loggerWithChild({email: email}).error(
+                loggerWithChild({ email: email }).error(
                   `[MessageRetryApi] Stream finished but no answer generated.`,
                 )
                 const failureErrorMsg =
@@ -4118,7 +4188,7 @@ export const MessageRetryApi = async (c: Context) => {
                         ),
                     ),
                 )
-             loggerWithChild({email: email}).info(
+            loggerWithChild({ email: email }).info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             const searchSpan = streamSpan.startSpan("conversation_search")
@@ -4161,7 +4231,7 @@ export const MessageRetryApi = async (c: Context) => {
             let buffer = ""
             for await (const chunk of searchOrAnswerIterator) {
               if (stream.closed) {
-                 loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
@@ -4202,7 +4272,7 @@ export const MessageRetryApi = async (c: Context) => {
                     parsed = jsonParseLLMOutput(buffer) || {}
                     if (parsed.answer && currentAnswer !== parsed.answer) {
                       if (currentAnswer === "") {
-                         loggerWithChild({email: email}).info(
+                        loggerWithChild({ email: email }).info(
                           "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
                         )
                         stream.writeSSE({
@@ -4227,7 +4297,7 @@ export const MessageRetryApi = async (c: Context) => {
                       currentAnswer = parsed.answer
                     }
                   } catch (err) {
-                     loggerWithChild({email: email}).error(
+                    loggerWithChild({ email: email }).error(
                       err,
                       `Error while parsing LLM output ${
                         (err as Error).message
@@ -4249,13 +4319,13 @@ export const MessageRetryApi = async (c: Context) => {
             if (parsed.answer === null) {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
-                 loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "retry: The query is ambiguous and requires a mandatory query rewrite from the existing conversation / recent messages",
                 )
                 message = parsed.queryRewrite
                 ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
               } else {
-                 loggerWithChild({email: email}).info(
+                loggerWithChild({ email: email }).info(
                   "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
@@ -4276,7 +4346,7 @@ export const MessageRetryApi = async (c: Context) => {
                 },
               } as QueryRouterLLMResponse
 
-               loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
@@ -4287,7 +4357,7 @@ export const MessageRetryApi = async (c: Context) => {
                 const lastUserMessage = conversation[conversation.length - 3] // Assistant is at -2, last user is at -3
 
                 if (lastUserMessage?.queryRouterClassification) {
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Reusing previous message classification for follow-up query ${JSON.stringify(
                       lastUserMessage.queryRouterClassification,
                     )}`,
@@ -4296,7 +4366,7 @@ export const MessageRetryApi = async (c: Context) => {
                   classification =
                     lastUserMessage.queryRouterClassification as any
                 } else {
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     "Follow-up query detected, but no classification found in previous message.",
                   )
                 }
@@ -4326,7 +4396,7 @@ export const MessageRetryApi = async (c: Context) => {
               let citationValues: Record<number, string> = {}
               for await (const chunk of iterator) {
                 if (stream.closed) {
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     "[MessageRetryApi] Stream closed during RAG loop. Breaking.",
                   )
                   wasStreamClosedPrematurely = true
@@ -4355,7 +4425,7 @@ export const MessageRetryApi = async (c: Context) => {
                   const { index, item } = chunk.citation
                   citations.push(item)
                   citationMap[index] = citations.length - 1
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `retry: Found citations and sending it, current count: ${citations.length}`,
                   )
                   stream.writeSSE({
@@ -4394,7 +4464,7 @@ export const MessageRetryApi = async (c: Context) => {
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
             if (wasStreamClosedPrematurely) {
-               loggerWithChild({email: email}).info(
+              loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
               )
               if (isUserMessage) {
@@ -4460,7 +4530,7 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                   relevantMessageId = msg.externalId
                 } else {
-                   loggerWithChild({email: email}).info(
+                  loggerWithChild({ email: email }).info(
                     `Updated trace for message ${originalMessage.externalId}`,
                   )
                   insertSpan.setAttribute(
@@ -4477,7 +4547,7 @@ export const MessageRetryApi = async (c: Context) => {
                   })
                 }
               } else {
-                 loggerWithChild({email: email}).error(
+                loggerWithChild({ email: email }).error(
                   `[MessageRetryApi] Stream finished but no answer generated.`,
                 )
                 const failureErrorMsg =
@@ -4538,7 +4608,7 @@ export const MessageRetryApi = async (c: Context) => {
             data: "",
             event: ChatSSEvents.End,
           })
-           loggerWithChild({email: email}).error(
+          loggerWithChild({ email: email }).error(
             error,
             `Streaming Error: ${(error as Error).message} ${
               (error as Error).stack
@@ -4550,7 +4620,7 @@ export const MessageRetryApi = async (c: Context) => {
         } finally {
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
-             loggerWithChild({email: email}).info(
+            loggerWithChild({ email: email }).info(
               `[MessageRetryApi] Removed stream ${streamKey} from active streams map.`,
             )
           }
@@ -4582,7 +4652,7 @@ export const MessageRetryApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-         loggerWithChild({email: email}).error(
+        loggerWithChild({ email: email }).error(
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
@@ -4590,7 +4660,7 @@ export const MessageRetryApi = async (c: Context) => {
         rootSpan.end()
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-           loggerWithChild({email: email}).info(
+          loggerWithChild({ email: email }).info(
             `[MessageRetryApi] Removed stream ${streamKey} from active streams map in error callback.`,
           )
         }
@@ -4603,13 +4673,13 @@ export const MessageRetryApi = async (c: Context) => {
       stack: (error as Error).stack || "",
     })
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Message Retry Error: ${errMsg} ${(error as Error).stack}`,
     )
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
-      loggerWithChild({email: email}).info(
+      loggerWithChild({ email: email }).info(
         `[MessageRetryApi] Removed stream ${streamKey} from active streams map in top-level catch.`,
       )
     }
@@ -4621,17 +4691,17 @@ export const MessageRetryApi = async (c: Context) => {
 
 // New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey)??{}
+  const { sub } = c.get(JwtPayloadKey) ?? {}
   let email = sub || ""
   try {
     // @ts-ignore - Assuming validation middleware handles this
     const { chatId } = c.req.valid("json")
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       `[StopStreamingApi] Received stop request. ChatId from client: ${chatId}`,
     )
 
     if (!chatId) {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         "[StopStreamingApi] Received stop request with missing chatId.",
       )
       throw new HTTPException(400, { message: "chatId is required." })
@@ -4641,11 +4711,13 @@ export const StopStreamingApi = async (c: Context) => {
     const stream = activeStreams.get(streamKey)
 
     if (stream) {
-      loggerWithChild({email: email}).info(`[StopStreamingApi] Closing active stream: ${streamKey}.`)
+      loggerWithChild({ email: email }).info(
+        `[StopStreamingApi] Closing active stream: ${streamKey}.`,
+      )
       try {
         await stream.close()
       } catch (closeError) {
-        loggerWithChild({email: email}).error(
+        loggerWithChild({ email: email }).error(
           closeError,
           `[StopStreamingApi] Error closing stream ${streamKey}: ${getErrorMessage(
             closeError,
@@ -4655,7 +4727,7 @@ export const StopStreamingApi = async (c: Context) => {
         activeStreams.delete(streamKey!)
       }
     } else {
-      loggerWithChild({email: email}).warn(
+      loggerWithChild({ email: email }).warn(
         `[StopStreamingApi] Stop request for non-existent or already finished stream with key: ${streamKey}. No action taken.`,
       )
     }
@@ -4664,12 +4736,12 @@ export const StopStreamingApi = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     if (error instanceof HTTPException) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `[StopStreamingApi] HTTP Exception: ${error.status} - ${error.message}`,
       )
       throw error
     }
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `[StopStreamingApi] Unexpected Error: ${errMsg} ${
         (error as Error).stack
@@ -4704,17 +4776,17 @@ export const MessageFeedbackApi = async (c: Context) => {
       updatedAt: new Date(), // Update the updatedAt timestamp
     })
 
-    loggerWithChild({email: email}).info(
+    loggerWithChild({ email: email }).info(
       `Feedback ${
         feedback ? `'${feedback}'` : "removed"
       } for message ${messageId} by user ${email}`,
     )
-    likeDislikeCount.inc({email: email, feedback: feedback})
+    likeDislikeCount.inc({ email: email, feedback: feedback })
     return c.json({ success: true, messageId, feedback })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    
-    loggerWithChild({email: email}).error(
+
+    loggerWithChild({ email: email }).error(
       error,
       `Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
     )

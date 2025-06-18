@@ -13,12 +13,12 @@ import {
   getThreadItems,
   type GetThreadItemsParams,
   searchVespaAgent,
+  getSlackUserDetails,
 } from "@/search/vespa"
 import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
-  datasourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -29,9 +29,11 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatUser,
   type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
@@ -1570,7 +1572,7 @@ export const getSlackRelatedMessages: AgentTool = {
     }
 
     try {
-      // Validate that at least one scope parameter is provided for efficiency
+      // Validate that at least one scope parameter is provided
       const hasScope =
         params.channel_name ||
         params.user_email ||
@@ -1670,6 +1672,7 @@ export const getSlackRelatedMessages: AgentTool = {
             content: content,
             source: citation,
             confidence: item.relevance || 0.7,
+            
           }
         },
       )
@@ -1716,6 +1719,92 @@ export const getSlackRelatedMessages: AgentTool = {
 
       return {
         result: `Error retrieving Slack messages: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
+
+export const getUserSlackProfile: AgentTool = {
+  name: "get_user_slack_profile",
+  description: "Get a user's Slack profile details by their email address.",
+  parameters: {
+    user_email: {
+      type: "string",
+      description: "Email address of the user whose Slack profile to retrieve.",
+      required: true,
+    },
+  },
+  execute: async (params: { user_email: string }, span?: Span, invokingUserEmail?: string) => {
+    const execSpan = span?.startSpan("get_user_slack_profile_tool")
+    execSpan?.setAttribute("target_user_email", params.user_email)
+    if (!params.user_email) {
+      const errorMsg = "Target user_email parameter is required to retrieve the Slack profile."
+      execSpan?.setAttribute("error", errorMsg)
+      return { result: errorMsg, error: "Missing target_user_email parameter" }
+    }
+
+    try {
+      const searchResponse = await getSlackUserDetails(params.user_email)
+      const children = searchResponse?.root?.children || []
+      execSpan?.setAttribute("retrieved_profiles_count", children.length)
+
+      if (children.length === 0) {
+        return {
+          result: `No Slack profile found for email: ${params.user_email}`,
+          contexts: [],
+        }
+      }
+
+      const userProfileDoc = children[0] as VespaSearchResults 
+      if (!userProfileDoc.fields) {
+         Logger.warn("Couldn't retrieve user profile", { docId: userProfileDoc.id, fields: userProfileDoc.fields });
+        return { result: `Found a document for ${params.user_email}, but it's not a valid Slack user profile. Expected sddocname 'chat_user'.`, contexts: [] };
+      }
+
+      const profileData = userProfileDoc.fields as VespaChatUser;
+
+      let profileSummary = `Slack Profile for ${profileData.name || params.user_email}:\n`
+      if (profileData.email) profileSummary += `- Email: ${profileData.email}\n`
+      // Use docId for User ID as it's the Slack User ID from chat_user schema
+      if (profileData.docId) profileSummary += `- User ID: ${profileData.docId}\n`
+      if (profileData.name) profileSummary += `- Name: ${profileData.name}\n`
+      if (profileData.image) profileSummary += `- Image URL: ${profileData.image}\n` // Use 'image'
+      if (profileData.statusText) profileSummary += `- Status: ${profileData.statusText}\n`
+      if (profileData.title) profileSummary += `- Title: ${profileData.title}\n` // 'title' field from VespaChatUser
+      if (profileData.teamId) profileSummary += `- Team ID: ${profileData.teamId}\n`
+      if (profileData.isAdmin !== undefined) profileSummary += `- Is Admin: ${profileData.isAdmin}\n`
+      if (profileData.deleted !== undefined) profileSummary += `- Is Deleted: ${profileData.deleted}\n`
+
+
+      const profileUrl = `https://app.slack.com/client/${profileData.teamId}/${profileData.docId}`;
+
+      const userFragment: MinimalAgentFragment = {
+        id: userProfileDoc.id || `slack-profile-${params.user_email}-${Date.now()}`,
+        content: profileSummary,
+        source: {
+          docId: userProfileDoc.id || profileData.docId || params.user_email, 
+          title: `Slack Profile: ${profileData.name || params.user_email}`,
+          app: Apps.Slack,
+          entity: SlackEntity.User,
+          url: profileUrl, 
+        },
+        confidence: userProfileDoc.relevance || 0.98, 
+      }
+
+      return {
+        result: `Successfully retrieved Slack profile for ${params.user_email}.`,
+        contexts: [userFragment],
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Error in get_my_slack_profile tool: ${errMsg}`)
+      return {
+        result: `Error retrieving Slack profile for ${params.user_email}: ${errMsg}`,
         error: errMsg,
       }
     } finally {
@@ -2094,4 +2183,5 @@ export const agentTools: Record<string, AgentTool> = {
   time_search: timeSearchTool,
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
+  get_user_slack_profile: getUserSlackProfile
 }

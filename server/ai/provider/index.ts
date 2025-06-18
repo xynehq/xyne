@@ -1282,26 +1282,11 @@ export function generateToolSelectionOutput(
   params.json = true
 
   let defaultReasoning = isReasoning
-
-  if (!isAgentPromptEmpty(agentContext)) {
-    const parsedAgentPrompt = parseAgentPrompt(agentContext)
-    // Prepend agent's custom prompt if it exists, otherwise use default
-    const defaultSystemPrompt = SearchQueryToolContextPrompt(
-      userContext,
-      toolContext,
-      initialPlanning,
-    )
-    params.systemPrompt = parsedAgentPrompt.prompt
-      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
-      : defaultSystemPrompt
-  } else {
-    // No agent context, use default
-    params.systemPrompt = SearchQueryToolContextPrompt(
-      userContext,
-      toolContext,
-      initialPlanning,
-    )
-  }
+  params.systemPrompt = SearchQueryToolContextPrompt(
+    userContext,
+    toolContext,
+    initialPlanning,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1410,23 +1395,12 @@ export function generateSynthesisBasedOnToolOutput(
   agentContext?: string,
 ): Promise<ConverseResponse> {
   params.json = true
-  if (!isAgentPromptEmpty(agentContext)) {
-    const parsedAgentPrompt = parseAgentPrompt(agentContext)
-    const defaultSystemPrompt = synthesisContextPrompt(
-      userCtx,
-      currentMessage,
-      gatheredFragments,
-    )
-    params.systemPrompt = parsedAgentPrompt.prompt
-      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
-      : defaultSystemPrompt
-  } else {
+
     params.systemPrompt = synthesisContextPrompt(
       userCtx,
       currentMessage,
       gatheredFragments,
     )
-  }
 
   const baseMessage = {
     role: ConversationRole.USER,

@@ -1189,7 +1189,7 @@ class VespaClient {
     }
   }
 
-  async getChatUserByEmail(email: string): Promise<string> {
+  async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
     const yqlQuery = `select docId from sources ${chatUserSchema} where email contains '${email}'`
     const url = `${this.vespaEndpoint}/search/`
     try {

@@ -822,14 +822,18 @@ export const SearchQueryToolContextPrompt = (
 
     **TOOL SELECTION CRITERIA:**
      First, analyze the user query to determine which tool it can to use:
-    **Use MCP Tool Context when:**
+     **Use MCP Tool Context when:**
      - Query explicitly mentions external platforms (e.g., GitHub, repositories, external APIs)
      - Query involves operations on external development platforms or tools
 
-     **Use Internal Tool Context when:**
+     **Use Internal Tool Constext when:**
      - Query is about retrieving enterprise data: files, documents, emails, calendar events, meetings, contacts, users, attachments
      - Query involves searching within company/organizational systems (Gmail, Google Drive, Google Calendar, Google Workspace)
      - Query involves content search across internal sources
+
+     **Use Slack Tool Context when:**
+     - Query is about retrieving slack related data: messages, user profiles
+     - Query involves searching within slack
 
     **Tool Calling Rules:**   
     You have tools at your disposal to solve tasks. Follow these rules:  
@@ -837,12 +841,6 @@ export const SearchQueryToolContextPrompt = (
     2. NEVER call tools that are not explicitly provided. Ignore references to unavailable tools in the conversation history.  
     3. NEVER refer to tool names when responding to the user. For example, say "I will edit your file" instead of "I need to use the edit_file tool."  
     4. Only call tools when necessary. If the task is general or you already know the answer, respond without calling tools.  
-
-    **Searching and Reading Rules:**  
-    You have tools to search the codebase and read files. Follow these rules:  
-    1. Prefer the semantic search tool over grep search, file search, or list dir tools when available.  
-    2. When reading a file, prefer reading larger sections at once over multiple smaller calls.  
-    3. If you have sufficient information to answer, do not continue calling tools. Respond with the information found.  
 
      **MCP Tool Context:**  
      ${toolContext}
@@ -862,7 +860,8 @@ export const SearchQueryToolContextPrompt = (
 
       2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
    Params: channel_name (req: channel name), filter_query (opt: keywords), user_email (opt: user email), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), date_from (opt: YYYY-MM-DD), date_to (opt: YYYY-MM-DD), excludedIds (opt: string[]).
-
+      3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
+       Params: user_email (req: Email address of the user whose Slack profile to retrieve.).
      ---
 
       Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -871,7 +870,7 @@ export const SearchQueryToolContextPrompt = (
 
       **Response Format (JSON ONLY):**
     {
-      "answer": "<string or null>",
+      "answer": "<conversation-based response or null>",
       "tool": <"ACTUAL_TOOL_NAME" or null>,
       "arguments": < {
         "param1_name": "param1_value",
@@ -888,34 +887,26 @@ export const SearchQueryToolContextPrompt = (
     **Your Task:**
 
     1.  **Analyze the Scratchpad:** Review the history of thoughts, tool calls, and results.
-    2.  **Assess Sufficiency:** Determine if the information gathered so far (in the scratchpad and context fragments) is sufficient to answer the user's query.
-    3.  **Decide the Next Action:**
-        *   **If SUFFICIENT:** Formulate a final answer. Set "tool" and "arguments" to null and provide the comprehensive answer in the "answer" field.
-        *   **If INSUFFICIENT:** You MUST call another tool to gather more information.
-            *   **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
+    2.  **Decide the Next Action:**
+            * You MUST call another tool to gather more information.
+            * **Critique Past Actions:** If a previous tool call returned no results or irrelevant information, **do not use the same tool with the same arguments**. Choose a *different tool* (e.g., switch from a specific metadata_retrieval to a broader search) or use the *same tool with different arguments* (e.g., broaden a time range, change keywords).
             *   **Avoid Redundancy:** When calling any search-related tool, you MUST use the \`excludedIds\` parameter to avoid retrieving documents that have already been seen. The scratchpad will show which documents were found previously.
-    4.  **Handle Errors:** If the previous tool call resulted in an error, analyze the error message and adjust your approach. Choose a different tool     that is more appropriate for the query, or use the same tool with corrected arguments that address the specific error encountered.
+    3.  **Handle Errors:** If the previous tool call resulted in an error, analyze the error message and adjust your approach. Choose a different tool that is more appropriate for the query, or use the same tool with corrected arguments that address the specific error encountered.
+    
+    **ANSWER POPULATION RULES:**
+    - **ONLY populate "answer" in these specific cases:**
+      * Simple greetings: "hi", "hello", "how are you", "good morning", etc.
+      * Pure conversational messages that don't require any information retrieval
+      * Acknowledgments or thank you messages within the conversation history
+    - **NEVER populate "answer" for:**
+      * Any query that requires retrieving, searching, or accessing enterprise data
+      * Questions about files, documents, emails, meetings, contacts, users, or any business information
+      * Any request for specific information, even if you think you have sufficient context
+    - **For ALL enterprise search queries:** Set "answer" to null and call the appropriate tool
 
-    **CRITICAL RULES FOR ANSWER DETERMINATION:**
-    
-    **ONLY provide an answer if ALL of the following conditions are met:**
-    1. **Direct Relevance:** The context must DIRECTLY address the specific question asked, not just contain tangentially related information
-    2. **Completeness:** The context must contain enough information to provide a comprehensive answer to the user's query
-    3. **Accuracy:** You can answer the question accurately based on the retrieved context without making assumptions or filling gaps
-    4. **Specificity Match:** If the user asks for specific details (dates, names, amounts, etc.), the context must contain those exact details
-    
-    **ALWAYS set "answer" to null if:**
-    - The context is only tangentially related to the query
-    - The context contains partial information that doesn't fully answer the question
-    - You would need to make assumptions or inferences beyond what's explicitly stated in the context
-    - The context is about a similar topic but doesn't address the specific question asked
-    - The retrieved information is outdated or doesn't match the timeframe requested
-    - You cannot provide a complete and accurate answer based solely on the available context
-    
-    
     **Final Decision Logic:**
-    - If you have a final answer that COMPLETELY and ACCURATELY addresses the user's query, populate "answer" and set "tool" and "arguments" to null.
-    - If you must use a tool to get more information OR the current context is insufficient/irrelevant, set "answer" to null, and populate "tool" and "arguments" with your new, non-repetitive plan.
+    - If the user query is a simple greeting or purely conversational message, populate "answer" with an appropriate response
+    - For ALL other queries (including any that involve enterprise data, search, or information retrieval), set "answer" to null and select the appropriate tool
     - **Your primary goal is to resolve the user's query by strategically calling tools until you have enough information that DIRECTLY and COMPLETELY answers their question.**
 
     REMEMBER: Always first check the agent Scratchpad if a tool has already been invoked, select a different appropriate tool. Respond strictly using the required JSON format.
@@ -1756,8 +1747,8 @@ Instruction:
 - The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that..
 - Your response MUST be a JSON object with only one keys: "synthesisState" (string).
 - The "synthesisState" key must be one of the following values:
-    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide a full and comprehensive answer to the "User Query".
-    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but do not fully answer the "User Query", or if you have to make significant inferences.
+    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information to fully answer the "User Query".
+    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information only. 
     - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the "User Query".
 
 - Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.

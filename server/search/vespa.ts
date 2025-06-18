@@ -2270,3 +2270,17 @@ export const getThreadItems = async (
     }
   }
 }
+
+
+export const getSlackUserDetails =  async (userEmail: string): Promise<VespaSearchResponse> => {
+  try {
+    const resp = await vespa.getChatUserByEmail(userEmail)
+    return resp
+  } catch (error) {
+    Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: chatUserSchema,
+    })
+  }
+}

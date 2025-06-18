@@ -480,6 +480,7 @@ export enum XyneTools {
   TimeSearch = "time_search",
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",
+  getUserSlackProfile = "get_user_slack_profile"
 }
 
 export enum IngestionType {
