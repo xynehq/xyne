@@ -2708,7 +2708,7 @@ const insertContactsToVespa = async (
   otherContacts: people_v1.Schema$Person[],
   owner: string,
   tracker: Tracker,
-): Promise<number> => {
+): Promise<void> => {
   const contactIngestionDuration = ingestionDuration.startTimer({
     file_type: GooglePeopleEntity.Contacts,
     mime_type: "google_people",
