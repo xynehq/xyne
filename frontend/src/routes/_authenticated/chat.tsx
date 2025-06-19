@@ -408,9 +408,9 @@ export const ChatPage = ({
           if (
             citation.url &&
             citation.title &&
-            !newCitations.has(citation.url)
+            !newCitations?.has(citation?.docId)
           ) {
-            newCitations.set(citation.url, citation)
+            newCitations.set(citation?.docId, citation)
             changed = true
           }
         })
@@ -1489,38 +1489,41 @@ const Code = ({
     )
   }
 
-  // For regular code blocks, improve styling
+  // For regular code blocks, render as plain text without boxing
   if (!inline) {
     return (
-      <div className="relative group mb-4 w-full max-w-full">
-        <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
-          {className ? className.replace("language-", "") : "code"}
-        </div>
-        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto w-full max-w-full min-w-0">
-          <code
-            className={`${className || ""} text-sm block w-full`}
-            style={{
-              fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
-              whiteSpace: "pre",
-              overflowWrap: "break-word",
-              wordBreak: "break-all",
-              maxWidth: "100%",
-            }}
-          >
-            {children}
-          </code>
-        </pre>
-      </div>
+      <pre
+        className="text-sm block w-full my-2"
+        style={{
+          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+          maxWidth: "100%",
+          color: "inherit",
+          background: "none",
+          border: "none",
+          padding: 0,
+          margin: 0,
+        }}
+      >
+        <code style={{ background: "none", color: "inherit" }}>
+          {children}
+        </code>
+      </pre>
     )
   }
 
   return (
     <code
-      className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+      className={`${className || ""} font-mono`}
       style={{
         overflowWrap: "break-word",
-        wordBreak: "break-all",
+        wordBreak: "break-word",
         maxWidth: "100%",
+        background: "none",
+        padding: 0,
+        color: "inherit",
       }}
     >
       {children}
@@ -1570,7 +1573,7 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-
+  console.log(message, "message in chat message component")
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
 
