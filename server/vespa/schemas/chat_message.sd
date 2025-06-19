@@ -332,6 +332,7 @@ schema chat_message {
     summary mentions {}
     summary attachmentIds {}
     summary domain {}
+    summary channelName {}
     summary isPrivate {}
     # summary reactions {}
   }

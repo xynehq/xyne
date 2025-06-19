@@ -11,3 +11,4 @@ datasources:
   # jsonData:
   #   httpMethod: POST # Example if your prometheus needs it
   # basicAuth: false
+
