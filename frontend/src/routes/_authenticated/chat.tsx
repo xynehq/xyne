@@ -1573,7 +1573,6 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-  console.log(message, "message in chat message component")
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
 
