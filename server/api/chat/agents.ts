@@ -1564,7 +1564,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           }
           if (toolsList && toolsList.length > 0) {
             for (const item of toolsList) {
-              const { connectorId, tools: toolNames } = item
+              const { connectorId, tools: toolExternalIds } = item
               // Fetch connector info and create client
               const connector = await getConnectorByExternalId(
                 db,
@@ -1601,56 +1601,75 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }),
                 )
               }
-
-              // Fetch all available tools from the client
-              // TODO: look in the DB. cache logic has to be discussed.
-              const respone = await client.listTools()
-              const clientTools = response.tools
-
-              // Update tool definitions in the database for future use
-              await syncConnectorTools(
+              const tools = await getToolsByConnectorId(
                 db,
                 workspace.id,
                 connector.id,
-                clientTools.map((tool) => ({
-                  toolName: tool.name,
-                  toolSchema: JSON.stringify(tool),
-                  description: tool.description,
-                })),
               )
-              // Create a map for quick lookup
-              const toolSchemaMap = new Map(
-                clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
-              )
-              // Filter to only the requested tools, or use all tools if toolNames is empty
-              const filteredTools = []
-              if (toolNames.length === 0) {
-                // If toolNames is empty, add all tools
-                for (const [toolName, schema] of toolSchemaMap.entries()) {
-                  filteredTools.push({
-                    name: toolName,
-                    schema: schema || "",
-                  })
+
+              const filteredTools = tools.filter((tool) => {
+                const isIncluded = toolExternalIds.includes(tool.externalId!)
+                if (!isIncluded) {
+                  loggerWithChild({ email: sub }).info(
+                    `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                  )
                 }
-              } else {
-                // Otherwise, filter to only the requested tools
-                for (const toolName of toolNames) {
-                  if (toolSchemaMap.has(toolName)) {
-                    filteredTools.push({
-                      name: toolName,
-                      schema: toolSchemaMap.get(toolName) || "",
-                    })
-                  } else {
-                    Logger.info(
-                      `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
-                    )
-                  }
-                }
-              }
-              finalToolsList[connectorId] = {
+                return isIncluded
+              })
+
+              finalToolsList[connector.id] = {
                 tools: filteredTools,
                 client: client,
               }
+              // Fetch all available tools from the client
+              // TODO: look in the DB. cache logic has to be discussed.
+              // const respone = await client.listTools()
+              // const clientTools = response.tools
+
+              // // Update tool definitions in the database for future use
+              // await syncConnectorTools(
+              //   db,
+              //   workspace.id,
+              //   connector.id,
+              //   clientTools.map((tool) => ({
+              //     toolName: tool.name,
+              //     toolSchema: JSON.stringify(tool),
+              //     description: tool.description,
+              //   })),
+              // )
+              // // Create a map for quick lookup
+              // const toolSchemaMap = new Map(
+              //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
+              // )
+              // // Filter to only the requested tools, or use all tools if toolNames is empty
+              // const filteredTools = []
+              // if (toolNames.length === 0) {
+              //   // If toolNames is empty, add all tools
+              //   for (const [toolName, schema] of toolSchemaMap.entries()) {
+              //     filteredTools.push({
+              //       name: toolName,
+              //       schema: schema || "",
+              //     })
+              //   }
+              // } else {
+              //   // Otherwise, filter to only the requested tools
+              //   for (const toolName of toolNames) {
+              //     if (toolSchemaMap.has(toolName)) {
+              //       filteredTools.push({
+              //         name: toolName,
+              //         schema: toolSchemaMap.get(toolName) || "",
+              //       })
+              //     } else {
+              //       Logger.info(
+              //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
+              //       )
+              //     }
+              //   }
+              // }
+              // finalToolsList[connectorId] = {
+              //   tools: filteredTools,
+              //   client: client,
+              // }
             }
           }
           let answer = ""
