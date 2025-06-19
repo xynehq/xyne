@@ -18,7 +18,7 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
 } from "@/ai/provider"
-import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
+import { getConnectorByExternalId, getConnectorByApp, getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -68,7 +68,7 @@ import {
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, MCPClientConfig, MCPClientStdioConfig } from "@/types"
 import {
   delay,
   getErrorMessage,
@@ -1510,9 +1510,9 @@ export const MessageWithToolsApi = async (c: Context) => {
             for (const item of toolsList) {
               const { connectorId, tools: toolExternalIds } = item
               // Fetch connector info and create client
-              const connector = await getConnectorByExternalId(
+              const connector = await getConnectorById(
                 db,
-                connectorId,
+                parseInt(connectorId, 10),
                 user.id,
               )
               const client = new Client({
@@ -1521,7 +1521,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               if ("url" in connector.config) {
                 // MCP SSE
-                const config = connector.config as MCPClientConfig
+                const config = connector.config as z.infer<typeof MCPClientConfig>
                 Logger.info(
                   `invoking client initialize for url: ${new URL(config.url)} ${
                     config.url
@@ -1532,11 +1532,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                 )
               } else {
                 // MCP Stdio
-                const config = connector.config as MCPClientStdioConfig
+                const config = connector.config as z.infer<typeof MCPClientStdioConfig>
                 Logger.info(
-                  `invoking client initialize for command: ${new URL(
-                    config.command,
-                  )}`,
+                  `invoking client initialize for command: ${config.command}`,
                 )
                 await client.connect(
                   new StdioClientTransport({

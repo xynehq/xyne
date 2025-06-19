@@ -287,6 +287,42 @@ export const getConnectorByExternalId = async (
   }
 }
 
+export const getConnectorById = async (
+  trx: TxnOrClient,
+  connectorId: number,
+  userId: number,
+): Promise<SelectConnector> => {
+  const res = await trx
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.userId, userId),
+      ),
+    )
+    .limit(1)
+  if (res.length) {
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    if (!parsedRes.success) {
+      Logger.error(
+        `Failed to parse connector data for id ${connectorId}: ${parsedRes.error.toString()}`,
+      )
+      throw new NoConnectorsFound({
+        message: `Could not parse connector data for id: ${connectorId}`,
+      })
+    }
+    return parsedRes.data
+  } else {
+    Logger.error(
+      `Connector not found for ID ${connectorId} and user ID ${userId}`,
+    )
+    throw new NoConnectorsFound({
+      message: `Connector not found for ID ${connectorId} and user ID ${userId}`,
+    })
+  }
+}
+
 export const getConnectorByAppAndEmailId = async (
   trx: TxnOrClient,
   app: Apps,
