@@ -34,3 +34,21 @@ export const encryptedText = (encryption: Encryption) => {
     },
   })
 }
+/**
+ * Custom type for binary data (bytea) using Buffer.
+ * This is a simple passthrough type for binary data.
+ */
+export const bytea = customType<{
+  data: Buffer
+  driverData: Buffer
+}>({
+  dataType() {
+    return "bytea"
+  },
+  toDriver(value: Buffer): Buffer {
+    return value
+  },
+  fromDriver(value: Buffer): Buffer {
+    return value
+  },
+})
