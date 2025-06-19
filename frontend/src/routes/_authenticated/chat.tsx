@@ -533,7 +533,7 @@ export const ChatPage = ({
         messageToSend,
         sourcesArray,
         chatParams.agentId,
-        chatParams.toolExternalIds,
+        chatParams.toolsList,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -544,7 +544,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
-          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
+          toolsList: undefined, // Clear toolsList from URL after processing
         }),
         replace: true,
       })
@@ -554,7 +554,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
-    chatParams.toolExternalIds,
+    chatParams.toolsList,
     router,
   ])
 
@@ -562,7 +562,7 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
-    toolExternalIds?: string[],
+    toolsList?: Array<{ connectorId: string; tools: string[] }>,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
     
@@ -587,7 +587,7 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, toolExternalIds || [], agentIdToUse)
+    await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, agentIdToUse, toolsList)
   }
 
   const handleFeedback = async (
@@ -1885,17 +1885,24 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
-  toolExternalIds: z
-    .string()
+  toolsList: z
+    .any()
     .optional()
-    .transform((val) =>
-      val
-        ? val
-            .split(",")
-            .map((id) => id.trim())
-            .filter((id) => id.length > 0)
-        : undefined,
-    ),
+    .transform((val) => {
+      if (!val) return undefined
+      // If it's already an array, return it
+      if (Array.isArray(val)) return val
+      // If it's a string, try to parse it as JSON
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val)
+          return Array.isArray(parsed) ? parsed : undefined
+        } catch (e) {
+          return undefined
+        }
+      }
+      return undefined
+    }),
 })
 
 type XyneChat = z.infer<typeof chatParams>

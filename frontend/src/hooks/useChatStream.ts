@@ -140,11 +140,11 @@ export const startStream = async (
   selectedSources: string[] = [],
   isReasoningActive: boolean = true,
   isAgenticMode: boolean = false,
-  toolExternalIds: string[] = [],
   queryClient?: any,
   router?: any,
   onTitleUpdate?: (title: string) => void,
-  agentIdFromChatParams?: string | null
+  agentIdFromChatParams?: string | null,
+  toolsList?: Array<{ connectorId: string; tools: string[] }>
 ): Promise<void> => {
   if (!messageToSend) return
   
@@ -185,10 +185,10 @@ export const startStream = async (
   if (isReasoningActive) {
     url.searchParams.append("isReasoningEnabled", "true")
   }
-  if (toolExternalIds && toolExternalIds.length > 0) {
-    toolExternalIds.forEach((toolId) => {
-      url.searchParams.append("toolExternalIds", toolId)
-    })
+  
+  // Add toolsList parameter if provided
+  if (toolsList && toolsList.length > 0) {
+    url.searchParams.append("toolsList", JSON.stringify(toolsList))
   }
 
   const agentIdToUse = agentIdFromChatParams;
@@ -450,8 +450,8 @@ export const useChatStream = (
     selectedSources: string[] = [],
     isReasoningActive: boolean = true,
     isAgenticMode: boolean = false,
-    toolExternalIds: string[] = [],
-    agentIdFromChatParams?: string | null
+    agentIdFromChatParams?: string | null,
+    toolsList?: Array<{ connectorId: string; tools: string[] }>
   ) => {
     const streamKey = currentStreamKey
     
@@ -461,11 +461,11 @@ export const useChatStream = (
       selectedSources,
       isReasoningActive,
       isAgenticMode,
-      toolExternalIds,
       queryClient,
       router,
       onTitleUpdate,
-      agentIdFromChatParams
+      agentIdFromChatParams,
+      toolsList
     )
     
     setStreamInfo(getStreamState(streamKey))

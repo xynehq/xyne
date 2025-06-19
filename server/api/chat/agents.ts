@@ -364,7 +364,6 @@ export const MessageWithToolsApi = async (c: Context) => {
       message,
       chatId,
       modelId,
-      toolExternalIds,
       isReasoningEnabled,
       toolsList,
     }: MessageReqType = body

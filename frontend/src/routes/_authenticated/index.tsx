@@ -133,7 +133,7 @@ const Index = () => {
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
-    toolExternalIds?: string[],
+    toolsList?: Array<{ connectorId: string; tools: string[] }>,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -141,7 +141,7 @@ const Index = () => {
         reasoning?: boolean
         sources?: string
         agentId?: string
-        toolExternalIds?: string[]
+        toolsList?: Array<{ connectorId: string; tools: string[] }>
         agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
@@ -162,8 +162,9 @@ const Index = () => {
         searchParams.agentic = true
       }
 
-      if (toolExternalIds && toolExternalIds.length > 0) {
-        searchParams.toolExternalIds = toolExternalIds
+      // Use toolsList as array instead of JSON string
+      if (toolsList && toolsList.length > 0) {
+        searchParams.toolsList = toolsList
       }
 
       navigate({
