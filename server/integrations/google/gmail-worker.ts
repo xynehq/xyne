@@ -425,9 +425,9 @@ export const parseMail = async (
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
-      if (res[mailId]?.exists) {
+      if (res[mailId] && res[mailId]?.exists) {
         mailExist = true
-        userMap = res[mailId].userMap
+        userMap = res[mailId].userMap || {}
         docId = res[mailId].docId
       }
     } catch (error) {
