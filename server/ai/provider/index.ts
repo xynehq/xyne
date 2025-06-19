@@ -462,41 +462,14 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-
-    // Handle case where the response starts with literal \n{ pattern (escaped JSON)
-    if (text.startsWith("\\n{")) {
-      text = text
-        .replace(/^\\n/, "\n")
-        .replace(/\\"/g, '"')
-        .replace(/\\n/g, "\n")
-    }
-
-    // Handle case where the entire response is escaped JSON string
-    if (text.includes('\\"answer\\"') && text.includes("\\n")) {
-      // This looks like an escaped JSON string, unescape it
-      text = text
-        .replace(/\\"/g, '"')
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "\r")
-        .replace(/\\\\/g, "\\")
-    }
-
-    // Handle JSON code blocks
-    if (
-      !jsonKey &&
-      (text.includes("```json") || (text.includes("```") && text.includes("{")))
-    ) {
-      const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/)
+    if (!jsonKey && (text.includes('```json') || (text.includes('```') && text.includes('{')))) {
+      const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/);
       if (jsonCodeBlockMatch) {
-        text = jsonCodeBlockMatch[1].trim()
+        text = jsonCodeBlockMatch[1].trim();
       }
     }
-
-    if (
-      text.indexOf("{") === -1 &&
-      nullCloseBraceRegex.test(text) &&
-      !jsonKey
-    ) {
+    
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text) && !jsonKey) {
       text = text.replaceAll(/[\n"}:`]/g, "")
     }
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -506,10 +479,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const endBrace = text.lastIndexOf("}")
 
     // Only extract brace content if we don't have a jsonKey or if the text properly starts with a brace
-    if (
-      (startBrace !== -1 || endBrace !== -1) &&
-      (!jsonKey || text.startsWith("{"))
-    ) {
+    if ((startBrace !== -1 || endBrace !== -1) && (!jsonKey || text.startsWith("{"))) {
       if (startBrace !== -1) {
         if (startBrace !== 0) {
           text = text.substring(startBrace)
@@ -528,10 +498,10 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       } else {
         // Properly escape quotes and newlines in the text content
         const escapedText = text
-          .replace(/\\/g, "\\\\") // Escape backslashes first
-          .replace(/"/g, '\\"') // Escape quotes
-          .replace(/\n/g, "\\n") // Escape newlines
-          .replace(/\r/g, "\\r") // Escape carriage returns
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/"/g, '\\"')   // Escape quotes
+          .replace(/\n/g, '\\n')  // Escape newlines
+          .replace(/\r/g, '\\r')  // Escape carriage returns
         text = `{${jsonKey} "${escapedText}"}`
       }
     }
