@@ -134,10 +134,10 @@ export async function up(): Promise<void> {
 async function main() {
   try {
     await up();
-    console.log("Migration script '202405241920_migrate_tracejson_to_bytea.ts' finished successfully.");
+    console.log("Migration script 'migrate_tracejson_to_bytea.ts' finished successfully.");
     process.exit(0);
   } catch (error) {
-    console.error("Migration script '202405241920_migrate_tracejson_to_bytea.ts' failed:", error);
+    console.error("Migration script 'migrate_tracejson_to_bytea.ts' failed:", error);
     process.exit(1);
   }
 }
