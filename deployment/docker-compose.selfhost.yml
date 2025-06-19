@@ -66,6 +66,8 @@ services:
     restart: always
     networks:
       - xyne
+    env_file: 
+      - ../server/.env
 
   vespa:
     image: vespaengine/vespa
