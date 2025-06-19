@@ -982,6 +982,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         })
         conversationIndex++
         tracker.setCurrent(conversationIndex)
+        loggerWithChild({email: data.email}).info(`Inserted conversation with id : ${conversation.id??"N/A"}`)
       } catch (error) {
         loggerWithChild({email: data.email}).error(`Error inserting Conversation`)
         insertConversationErrorCount.inc({

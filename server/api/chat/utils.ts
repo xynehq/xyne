@@ -35,7 +35,11 @@ import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
 import type { UserQuery } from "@/ai/types"
-import { OpenAIError } from "@/shared/types"
+import {
+  AgentReasoningStepType,
+  OpenAIError,
+  type AgentReasoningStep,
+} from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
 const { maxValidLinks } = config
 
@@ -218,4 +222,48 @@ export const handleError = (error: any) => {
     errorMessage = "Input context is too large."
   }
   return errorMessage
+}
+
+export const convertReasoningStepToText = (
+  step: AgentReasoningStep,
+): string => {
+  switch (step.type) {
+    case AgentReasoningStepType.AnalyzingQuery:
+      return step.details
+    case AgentReasoningStepType.Iteration:
+      return `### Iteration ${step.iteration} \n`
+    case AgentReasoningStepType.Planning:
+      return step.details + "\n" // e.g., "Planning next step..."
+    case AgentReasoningStepType.ToolSelected:
+      return `Tool selected: ${step.toolName} \n`
+    case AgentReasoningStepType.ToolParameters:
+      const params = Object.entries(step.parameters)
+        .map(
+          ([key, value]) =>
+            `• ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+        )
+        .join("\n")
+      return `Parameters:\n${params} \n`
+    case AgentReasoningStepType.ToolExecuting:
+      return `Executing tool: ${step.toolName}...\n`
+    case AgentReasoningStepType.ToolResult:
+      let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
+      if (step.itemsFound !== undefined) {
+        resultText += ` (Found ${step.itemsFound} item(s))`
+      }
+      if (step.error) {
+        resultText += `\nError: ${step.error}\n`
+      }
+      return resultText + "\n"
+    case AgentReasoningStepType.Synthesis:
+      return step.details + "\n" // e.g., "Synthesizing answer from X fragments..."
+    case AgentReasoningStepType.ValidationError:
+      return `Validation Error: ${step.details} \n`
+    case AgentReasoningStepType.BroadeningSearch:
+      return `Broadening Search: ${step.details}\n`
+    case AgentReasoningStepType.LogMessage:
+      return step.message + "\n"
+    default:
+      return "Unknown reasoning step"
+  }
 }
