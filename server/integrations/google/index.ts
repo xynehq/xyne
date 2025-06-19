@@ -134,8 +134,22 @@ import {
 } from "@/metrics/google/google-drive-file-metrics"
 import { v4 as uuidv4 } from "uuid"
 
+let isScriptRunning = false;
+
+const {host} = config
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+const METRICS_SERVER_URL = host ?? "http://localhost:3000"
+let totalMailsToBeIngested=0
+let totalDriveflesToBeIngested = 0
+let totalMailsSkipped= 0  
+let insertedContactsCount = 0
+let insertedEventCount = 0
+let insertedpdfCount = 0
+let insertedDocCount = 0
+let insertedSheetCount = 0
+let insertedSlideCount = 0
+let insertedDriveFileCount = 0
 
 // export const loggerWithChild = (email: string) => {
 //   return Logger.child({ email: email })
@@ -218,6 +232,26 @@ const initializeGmailWorker = () => {
         )
       }
     } else if (result.type === WorkerResponseTypes.ProgressUpdate) {
+      if(isScriptRunning) {
+        loggerWithChild({email: result.email}).info(`Updating Progress for Script`)
+        fetch(`${METRICS_SERVER_URL}/update-metrics`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: result.email,
+            messageCount: result.stats.messageCount,
+            attachmentCount: result.stats.attachmentCount,
+            failedMessages: result.stats.failedMessageCount,
+            failedAttachments: result.stats.failedAttottachmentCount,
+            totalMails: 0,
+            skippedMail: 0,
+            eventsCount: 0,
+            contactsCount: 0
+          }),
+        }).catch((err) => {
+          Logger.warn("Failed to send metrics to server", { err })
+        })
+      } else {
       Logger.info(
         `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
       )
@@ -254,6 +288,7 @@ const initializeGmailWorker = () => {
         result.stats.failedAttachmentCount,
       )
     }
+   }
   }
 
   gmailWorker.onerror = (error: ErrorEvent) => {
@@ -797,6 +832,7 @@ const insertCalendarEvents = async (
     },
     events.length,
   )
+  insertedEventCount = events.length
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
@@ -876,6 +912,10 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       },
       messagesTotal - messagesExcludingPromotions,
     )
+
+    totalDriveflesToBeIngested = totalFiles
+    totalMailsToBeIngested = messagesExcludingPromotions
+    totalMailsSkipped = (messagesTotal - messagesExcludingPromotions)
 
     tracker.updateTotal(userEmail, {
       totalDrive: totalFiles,
@@ -1613,6 +1653,7 @@ const insertFilesForUser = async (
 ) => {
   try {
     let processedFiles = 0
+
     const iterator = listFiles(googleClient, startDate, endDate)
     const startTimestamp = startDate ? new Date(startDate).getTime() : undefined
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
@@ -1684,31 +1725,34 @@ const insertFilesForUser = async (
         email: userEmail,
       })
       let driveFilesInserted = 0
+      let pdfsInserted = 0
       for (const doc of pdfs) {
         try {
           processedFiles += 1
           await insertWithRetry(doc, fileSchema)
           totalIngestedFiles.inc({
-            mime_type: doc.mimeType ?? "google_pdf",
-            status: "SUCCESS",
+            mime_type: doc.mimeType ??  DriveMime.PDF,
+            status: OperationStatus.Success,
             email: userEmail,
             file_type: DriveEntity.PDF,
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
           driveFilesInserted++
+          pdfsInserted++
           loggerWithChild({email: userEmail!}).info(`Inserted ${driveFilesInserted} PDFs`)
         } catch (error) {
           ingestionErrorsTotal.inc(
             {
               file_type: DriveEntity.PDF,
-              mime_type: doc.mimeType ?? "google_pdf",
+              mime_type: doc.mimeType ?? DriveMime.PDF,
               email: doc.ownerEmail ?? userEmail,
               error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
-              status: "FAILED",
+              status: OperationStatus.Failure,
             },
             1,
           )
         }
+        insertedpdfCount = pdfsInserted;
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
@@ -1798,6 +1842,16 @@ const insertFilesForUser = async (
               email: userEmail,
               file_type: fileType,
             })
+              if(fileType == DriveEntity.Docs) {
+                insertedDocCount++
+              }
+              if(fileType == DriveEntity.Slides) {
+                insertedSlideCount++
+              }
+              if(fileType == DriveEntity.Misc) {
+                insertedDriveFileCount++
+              }
+  
           }
           loggerWithChild({email: userEmail!}).info(
             `Inserted file of type ${fileType} with ID: ${doc.docId} and Name: ${doc.title},`,
@@ -1830,6 +1884,8 @@ const insertFilesForUser = async (
         },
         sheetsObj.count,
       )
+      
+      insertedSheetCount=sheetsObj.count
 
       loggerWithChild({email: userEmail!}).info(`finished ${initialCount} files`)
       loggerWithChild({email: userEmail!}).info(`Inserted a total of ${driveFilesInserted} drive files`)
@@ -2652,7 +2708,7 @@ const insertContactsToVespa = async (
   otherContacts: people_v1.Schema$Person[],
   owner: string,
   tracker: Tracker,
-): Promise<void> => {
+): Promise<number> => {
   const contactIngestionDuration = ingestionDuration.startTimer({
     file_type: GooglePeopleEntity.Contacts,
     mime_type: "google_people",
@@ -2700,6 +2756,7 @@ const insertContactsToVespa = async (
       },
       contacts.length + otherContacts.length,
     )
+    insertedContactsCount =  contacts.length + otherContacts.length
   }
 }
 
@@ -3185,7 +3242,9 @@ export const ServiceAccountIngestMoreUsers = async (
     insertCalendar: boolean
   },
   userId: number,
+  isScript?: boolean,
 ) => {
+  isScriptRunning = isScript!;
   const jobId = uuidv4()
   const {
     connectorId,
@@ -3201,6 +3260,9 @@ export const ServiceAccountIngestMoreUsers = async (
     `ServiceAccountIngestMoreUsers called with jobId: ${jobId} for connector externalId: ${connectorId} ...`,
   )
 
+  if(isScript) {
+    initializeGmailWorker()
+  }
   let connector: SelectConnector | null = null
   const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
   activeJobTrackers.set(jobId, tracker)
@@ -3475,6 +3537,32 @@ export const ServiceAccountIngestMoreUsers = async (
         await Promise.all(servicePromises)
 
         tracker.markUserComplete(userEmail)
+       if(isScriptRunning) {
+        Logger.info(`Updating Progress for Script`)
+          fetch(`${METRICS_SERVER_URL}/update-metrics`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: userEmail,
+            messageCount: 0,
+            attachmentCount: 0,
+            failedMessages: 0,
+            failedAttachments: 0,
+            totalMails: totalMailsToBeIngested,
+            skippedMail: totalMailsSkipped,
+            eventsCount: insertedEventCount,
+            contactsCount: insertedContactsCount,
+            pdfCount: insertedpdfCount,
+            docCount: insertedDocCount,
+            sheetsCount: insertedSheetCount,
+            slidesCount: insertedSlideCount,
+            fileCount: insertedDriveFileCount,
+            totalDriveFiles: totalDriveflesToBeIngested
+          }),
+        }).catch((err) => {
+          Logger.warn("Failed to send metrics to server", { err })
+        })
+      } 
         return {
           email: userEmail,
           driveToken: driveStartPageTokenVal,
@@ -3484,6 +3572,7 @@ export const ServiceAccountIngestMoreUsers = async (
           calendarEventsToken: capturedCalendarToken || "",
         } as IngestionMetadata
       }),
+
     )
 
     const results = (await Promise.all(

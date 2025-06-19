@@ -109,6 +109,7 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+import { updateMetricsFromThread } from "@/metrics/utils"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -204,6 +205,44 @@ const LogOut = async (c: Context) => {
   return c.json({ ok: true })
 }
 
+// Update Metrics From Script
+const handleUpdatedMetrics = async (c: Context) => {
+   const body = await c.req.json()
+  const { email, 
+    messageCount, 
+    attachmentCount, 
+    failedMessages, 
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount, 
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles
+   } = body
+  await updateMetricsFromThread(
+    email, 
+    messageCount, 
+    attachmentCount, 
+    failedMessages, 
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount, 
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles
+  )
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
@@ -264,6 +303,7 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
+  .post("/update-metrics", handleUpdatedMetrics)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -342,6 +382,7 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
+  
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
