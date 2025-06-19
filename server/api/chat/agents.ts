@@ -1506,62 +1506,6 @@ export const MessageWithToolsApi = async (c: Context) => {
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
           })
-          // once we start getting toolsList will remove the above code
-          if (toolExternalIds && toolExternalIds.length > 0) {
-            // Fetch connector info and create client
-            const connector = await getConnectorByApp(
-              db,
-              user.id,
-              Apps.GITHUB_MCP,
-            )
-
-            const config = connector.config as any
-            const client = new Client({
-              name: `connector-${connector.id}`,
-              version: config.version,
-            })
-            await client.connect(
-              new StdioClientTransport({
-                command: config.command,
-                args: config.args,
-              }),
-            )
-
-            // Fetch all available tools from the client
-            // TODO: look in the DB. cache logic has to be discussed.
-
-            const tools = await getToolsByConnectorId(
-              db,
-              workspace.id,
-              connector.id,
-            )
-            // Filter to only the requested tools, or use all tools if toolNames is empty
-            const filteredTools = tools.filter((tool) => {
-              const isIncluded = toolExternalIds.includes(tool.externalId!)
-              if (!isIncluded) {
-                loggerWithChild({ email: sub }).info(
-                  `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
-                )
-              }
-              return isIncluded
-            })
-
-            finalToolsList[connector.id] = {
-              tools: filteredTools,
-              client: client,
-            }
-            // Update tool definitions in the database for future use
-            // await syncConnectorTools(
-            //   db,
-            //   workspace.id,
-            //   connector.id,
-            //   filteredTools.map((tool) => ({
-            //     toolName: tool.tool_name,
-            //     toolSchema: JSON.stringify(tool),
-            //     description: tool.description ?? "",
-            //   })),
-            // )
-          }
           if (toolsList && toolsList.length > 0) {
             for (const item of toolsList) {
               const { connectorId, tools: toolExternalIds } = item
