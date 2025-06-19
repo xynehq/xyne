@@ -1971,3 +1971,332 @@ export const getDataSourceFilesByName = async (
     })
   }
 }
+
+export const SlackHybridProfile = (
+  hits: number,
+  entity: Entity | null,
+  profile: SearchModes = SearchModes.NativeRank,
+  timestampRange?: { to: number | null; from: number | null } | null,
+  channelId?: string,
+  userId?: string,
+): YqlProfile => {
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
+
+  // Helper function to build entity filter
+  const buildEntityFilter = () => {
+    return entity ? "and entity contains @entity" : ""
+  }
+
+  // Helper function to build channel filter
+  const buildChannelFilter = () => {
+    return channelId ? "and channelId contains @channelId" : ""
+  }
+
+  // Helper function to build user filter
+  const buildUserFilter = () => {
+    return userId ? "and userId contains @userId" : ""
+  }
+
+  // Build Slack YQL
+  const buildSlackYQL = () => {
+    const timestampCondition = timestampRange
+      ? buildTimestampConditions("createdAt", "createdAt")
+      : ""
+    const entityFilter = buildEntityFilter()
+    const channelFilter = buildChannelFilter()
+    const userFilter = buildUserFilter()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${timestampCondition ? `and (${timestampCondition})` : ""}
+        and permissions contains @email
+        ${entityFilter}
+        ${channelFilter}
+        ${userFilter}
+      )`
+  }
+
+  const combinedQuery = buildSlackYQL()
+  const sources = [chatMessageSchema] // Only chat message schema for Slack
+
+  return {
+    profile: profile,
+    yql: `
+    select *
+    from sources ${sources.join(", ")} 
+    where
+    (
+      (
+        ${combinedQuery}
+      )
+    )
+    ;
+    `,
+  }
+}
+
+export const dateToUnixTimestamp = (
+  dateString: string,
+  endOfDay: boolean = false,
+): string => {
+  const date = new Date(dateString)
+
+  if (isNaN(date.getTime())) {
+    throw new Error(
+      `Invalid date format: ${dateString}. Expected format: YYYY-MM-DD`,
+    )
+  }
+
+  if (endOfDay) {
+    date.setHours(23, 59, 59, 999)
+  } else {
+    date.setHours(0, 0, 0, 0)
+  }
+
+  const timestampMs = date.getTime()
+
+  const seconds = Math.floor(timestampMs / 1000)
+  const microseconds = (timestampMs % 1000) * 1000
+
+  return `${seconds}.${microseconds.toString().padStart(6, "0")}`
+}
+
+export const SearchVespaThreads = async (
+  threadIdsInput: string[],
+  generateAnswerSpan: Span,
+): Promise<VespaSearchResponse> => {
+  const validThreadIds = threadIdsInput.filter(
+    (id) => typeof id === "string" && id.length > 0,
+  )
+
+  if (validThreadIds.length === 0) {
+    Logger.warn("SearchVespaThreads called with no valid threadIds.")
+    return {
+      root: {
+        id: "nullss",
+        relevance: 0,
+        fields: { totalCount: 0 },
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: true,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0,
+        },
+        children: [],
+      },
+    }
+  }
+
+  try {
+    return vespa.getDocumentsBythreadId(validThreadIds)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
+    )
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
+  }
+}
+
+export interface GetThreadItemsParams {
+  entity?: Entity | null
+  timestampRange?: { from: any; to: any } | null
+  limit?: number
+  offset?: number
+  email: string
+  userEmail?: string
+  asc?: boolean
+  channelName?: string
+  filterQuery?: string
+}
+// Enhanced getThreadItems function
+export const getThreadItems = async (
+  params: GetThreadItemsParams & { filterQuery?: string }, // Add filterQuery to params
+): Promise<VespaSearchResponse> => {
+  let {
+    entity = SlackEntity.Message,
+    timestampRange = null,
+    limit = config.page,
+    offset = 0,
+    email,
+    userEmail = null,
+    asc = "asc",
+    channelName = null,
+    filterQuery = null, // New parameter
+  } = params
+
+  // Common setup for both search types
+  let channelId = undefined
+  let userId = undefined
+
+  // Handle timestamp range normalization
+  if (timestampRange) {
+    if (timestampRange.from) {
+      timestampRange.from = dateToUnixTimestamp(timestampRange.from, false)
+    }
+    if (timestampRange.to) {
+      timestampRange.to = dateToUnixTimestamp(timestampRange.to, true)
+    }
+  }
+
+  // Get channel ID if channelName is provided
+  if (channelName) {
+    try {
+      const resp = await vespa.getChatContainerIdByChannelName(channelName)
+      // console.log(resp.root.children[0].fields.docId)
+      // @ts-ignore
+      channelId = resp.root.children[0].fields.docId
+    } catch (error) {
+      Logger.error(
+        `Could not fetch the channelId with channel name ${channelName}`,
+      )
+    }
+  }
+
+  // Get user ID if userEmail is provided
+  if (userEmail) {
+    try {
+      const resp = await vespa.getChatUserByEmail(userEmail)
+      // @ts-ignore
+      userId = resp.root.children[0].fields.docId
+    } catch (error) {
+      Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    }
+  }
+
+  // If filterQuery is present, use hybrid search
+  if (filterQuery) {
+    const { yql, profile } = SlackHybridProfile(
+      limit,
+      SlackEntity.Message,
+      SearchModes.NativeRank, // or your desired ranking profile
+      timestampRange,
+      channelId || undefined,
+      userId || undefined,
+    )
+
+    const hybridDefaultPayload = {
+      yql,
+      query: filterQuery,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": 0.5, // Default alpha value
+      "input.query(recency_decay_rate)": 0.1, // Default recency decay rate
+      maxHits: limit,
+      hits: limit,
+      ...(offset ? { offset } : {}),
+      ...(entity ? { entity } : {}),
+      ...(channelId ? { channelId } : {}),
+      ...(userId ? { userId } : {}),
+    }
+
+    try {
+      return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    } catch (error) {
+      console.error("Vespa hybrid search error:", error)
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: "chat_message",
+      })
+    }
+  } else {
+    // Continue with normal search flow
+    let conditions: string[] = []
+
+    if (entity) {
+      conditions.push(`entity contains "${entity}"`)
+    }
+
+    if (email) {
+      conditions.push(`permissions contains "${email}"`)
+    }
+
+    if (channelId) {
+      conditions.push(`channelId contains "${channelId}"`)
+    }
+
+    if (userId) {
+      conditions.push(`userId contains "${userId}"`)
+    }
+
+    let timestampField = "createdAt"
+
+    const buildTimestampConditions = (fromField: string, toField: string) => {
+      const timestampConditions: string[] = []
+      if (timestampRange?.from) {
+        timestampConditions.push(`${fromField} >= '${timestampRange.from}'`)
+      }
+      if (timestampRange?.to) {
+        timestampConditions.push(`${toField} <= '${timestampRange.to}'`)
+      }
+      return timestampConditions
+    }
+
+    if (timestampRange) {
+      const timestampConditions = buildTimestampConditions(
+        timestampField,
+        timestampField,
+      )
+      conditions.push(...timestampConditions)
+    }
+
+    const chatMessageSchema = "chat_message"
+
+    const whereClause =
+      conditions.length > 0 ? `where ${conditions.join(" and ")}` : ""
+    const orderByClause = timestampField
+      ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
+      : ""
+    const yql = `select * from sources ${chatMessageSchema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
+
+    const searchPayload = {
+      yql,
+      "ranking.profile": "unranked",
+    }
+
+    try {
+      let result = await vespa.getItems(searchPayload)
+      return result
+    } catch (error) {
+      console.error("Vespa search error:", error)
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatMessageSchema,
+      })
+    }
+  }
+}
+
+export const getSlackUserDetails = async (
+  userEmail: string,
+): Promise<VespaSearchResponse> => {
+  try {
+    const resp = await vespa.getChatUserByEmail(userEmail)
+    return resp
+  } catch (error) {
+    Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: chatUserSchema,
+    })
+  }
+}

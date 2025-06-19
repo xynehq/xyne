@@ -1277,11 +1277,11 @@ export function generateToolSelectionOutput(
   toolContext: string,
   initialPlanning: string,
   params: ModelParams,
+  agentContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
 
   let defaultReasoning = isReasoning
-
   params.systemPrompt = SearchQueryToolContextPrompt(
     userContext,
     toolContext,
@@ -1350,13 +1350,26 @@ export function generateAnswerBasedOnToolOutput(
   params: ModelParams,
   toolContext: string,
   toolOutput: string,
+  agentContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
-  params.systemPrompt = withToolQueryPrompt(
-    userContext,
-    toolContext,
-    toolOutput,
-  )
+  if (!isAgentPromptEmpty(agentContext)) {
+    const parsedAgentPrompt = parseAgentPrompt(agentContext)
+    const defaultSystemPrompt = withToolQueryPrompt(
+      userContext,
+      toolContext,
+      toolOutput,
+    )
+    params.systemPrompt = parsedAgentPrompt.prompt
+      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
+      : defaultSystemPrompt
+  } else {
+    params.systemPrompt = withToolQueryPrompt(
+      userContext,
+      toolContext,
+      toolOutput,
+    )
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1379,13 +1392,15 @@ export function generateSynthesisBasedOnToolOutput(
   currentMessage: string,
   gatheredFragments: string,
   params: ModelParams,
+  agentContext?: string,
 ): Promise<ConverseResponse> {
   params.json = true
-  params.systemPrompt = synthesisContextPrompt(
-    userCtx,
-    currentMessage,
-    gatheredFragments,
-  )
+
+    params.systemPrompt = synthesisContextPrompt(
+      userCtx,
+      currentMessage,
+      gatheredFragments,
+    )
 
   const baseMessage = {
     role: ConversationRole.USER,
