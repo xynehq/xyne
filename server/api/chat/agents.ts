@@ -96,6 +96,7 @@ import {
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
+  SearchVespaThreads,
 } from "@/search/vespa"
 import {
   Apps,
@@ -113,21 +114,6 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
-  userSchema,
-  type Entity,
-  type VespaChatMessage,
-  type VespaEvent,
-  type VespaEventSearch,
-  type VespaFile,
-  type VespaMail,
-  type VespaMailAttachment,
-  type VespaMailSearch,
-  type VespaSchema,
-  type VespaSearchResponse,
-  type VespaSearchResult,
-  type VespaSearchResults,
-  type VespaSearchResultsSchema,
-  type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -136,15 +122,10 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
-import {
-  getUserPersonalizationByEmail,
-  getUserPersonalizationAlpha,
-} from "@/db/personalization"
-import { entityToSchemaMapper } from "@/search/mappers"
-import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
+
 import { isCuid } from "@paralleldrive/cuid2"
 import {
+  getAgentByExternalId,
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
@@ -153,9 +134,11 @@ import { activeStreams } from "./stream"
 import {
   ragPipelineConfig,
   RagPipelineStages,
+  type AgentTool,
   type MinimalAgentFragment,
 } from "./types"
 import {
+  convertReasoningStepToText,
   extractFileIdsFromMessage,
   flattenObject,
   handleError,
@@ -171,6 +154,7 @@ import {
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
+import { agentTools } from "./tools"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -197,7 +181,6 @@ const checkAndYieldCitationsForAgent = function* (
   let match
   while ((match = textToCitationIndex.exec(text)) !== null) {
     const citationIndex = parseInt(match[1], 10)
-    console.log(citationIndex, "citations index")
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
       if (item.source.docId) {
@@ -225,6 +208,7 @@ async function* getToolContinuationIterator(
   toolsPrompt: string,
   toolOutput: string,
   results: MinimalAgentFragment[],
+  agentPrompt?: string, // New optional parameter
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -239,6 +223,7 @@ async function* getToolContinuationIterator(
     },
     toolsPrompt,
     toolOutput ?? "",
+    agentPrompt, // Pass agentPrompt
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -355,21 +340,22 @@ export const MessageWithToolsApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
+    loggerWithChild({ email: email }).info("MessageApi..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     // @ts-ignore
     const body = c.req.valid("query")
+    const isAgentic = c.req.query("agentic") === "true"
     let {
       message,
       chatId,
       modelId,
       isReasoningEnabled,
       toolsList,
+      agentId,
     }: MessageReqType = body
-    loggerWithChild({ email: sub }).info(
-      `getting mcp create with body: ${JSON.stringify(body)}`,
-    )
+    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -402,959 +388,24 @@ export const MessageWithToolsApi = async (c: Context) => {
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
-    interface AgentTool {
-      name: string
-      description: string
-      parameters: Record<
-        string,
-        {
-          type: string
-          description: string
-          required: boolean
-        }
-      >
-      execute: (
-        params: any,
-        span?: Span,
-      ) => Promise<{
-        result: string // Human-readable summary of action/result
-        contexts?: MinimalAgentFragment[] // Data fragments found
-        error?: string // Error message if failed
-      }>
-    }
-
-    const convertReasoningStepToText = (step: AgentReasoningStep): string => {
-      switch (step.type) {
-        case AgentReasoningStepType.AnalyzingQuery:
-          return step.details
-        case AgentReasoningStepType.Iteration:
-          return `### Iteration ${step.iteration} \n`
-        case AgentReasoningStepType.Planning:
-          return step.details + "\n" // e.g., "Planning next step..."
-        case AgentReasoningStepType.ToolSelected:
-          return `Tool selected: ${step.toolName} \n`
-        case AgentReasoningStepType.ToolParameters:
-          const params = Object.entries(step.parameters)
-            .map(
-              ([key, value]) =>
-                `• ${key}: ${
-                  typeof value === "object"
-                    ? JSON.stringify(value)
-                    : String(value)
-                }`,
-            )
-            .join("\n")
-          return `Parameters:\n${params} \n`
-        case AgentReasoningStepType.ToolExecuting:
-          return `Executing tool: ${step.toolName}...\n`
-        case AgentReasoningStepType.ToolResult:
-          let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
-          if (step.itemsFound !== undefined) {
-            resultText += ` (Found ${step.itemsFound} item(s))`
-          }
-          if (step.error) {
-            resultText += `\nError: ${step.error}\n`
-          }
-          return resultText + "\n"
-        case AgentReasoningStepType.Synthesis:
-          return step.details + "\n" // e.g., "Synthesizing answer from X fragments..."
-        case AgentReasoningStepType.ValidationError:
-          return `Validation Error: ${step.details} \n`
-        case AgentReasoningStepType.BroadeningSearch:
-          return `Broadening Search: ${step.details}\n`
-        case AgentReasoningStepType.LogMessage:
-          return step.message + "\n"
-        default:
-          return "Unknown reasoning step"
+    let agentPromptForLLM: string | undefined = undefined
+    let agentForDb: SelectAgent | null = null
+    if (agentId && isCuid(agentId)) {
+      // Use the numeric workspace.id for the database query with permission check
+      agentForDb = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        agentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentForDb) {
+        throw new HTTPException(403, {
+          message: "Access denied: You don't have permission to use this agent",
+        })
       }
+      agentPromptForLLM = JSON.stringify(agentForDb)
     }
-    // Search Tool (existing)
-    const searchTool: AgentTool = {
-      name: "search",
-      description:
-        "Search for general information across all data sources (Gmail, Calendar, Drive) using keywords.",
-      parameters: {
-        query: {
-          type: "string",
-          description: "The keywords or question to search for.",
-          required: true,
-        },
-        limit: {
-          type: "number",
-          description: "Maximum number of results (default: 10).",
-          required: false,
-        },
-        excludedIds: {
-          type: "array",
-          description: "Optional list of document IDs to exclude from results.",
-          required: false,
-        },
-      },
-      execute: async (
-        params: { query: string; limit?: number; excludedIds?: string[] },
-        span?: Span,
-      ) => {
-        const execSpan = span?.startSpan("execute_search_tool")
-        try {
-          const searchLimit = params.limit || 10
-          execSpan?.setAttribute("query", params.query)
-          execSpan?.setAttribute("limit", searchLimit)
-          if (params.excludedIds && params.excludedIds.length > 0) {
-            execSpan?.setAttribute(
-              "excludedIds",
-              JSON.stringify(params.excludedIds),
-            )
-          }
-          const searchResults = await searchVespa(
-            params.query,
-            email,
-            null,
-            null,
-            {
-              limit: searchLimit,
-              alpha: 0.5,
-              excludedIds: params.excludedIds, // Pass excludedIds
-              span: execSpan?.startSpan("vespa_search"),
-            },
-          )
-          const children = searchResults?.root?.children || []
-          execSpan?.setAttribute("results_count", children.length)
-          if (children.length === 0)
-            return { result: "No results found.", contexts: [] }
-          const fragments = children.map((r) => {
-            const citation = searchToCitation(r as any)
-            return {
-              id: `${citation.docId}-${Date.now()}-${Math.random()
-                .toString(36)
-                .substring(7)}`,
-              content: answerContextMap(r as any, maxDefaultSummary),
-              source: citation,
-              confidence: r.relevance || 0.7,
-            }
-          })
-          const topItemsList = fragments
-            .slice(0, 3)
-            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-            .join("\n")
-          const summaryText = `Found ${fragments.length} results matching '${params.query}'.\nTop items:\n${topItemsList}`
-          return { result: summaryText, contexts: fragments }
-        } catch (error) {
-          const errMsg = getErrorMessage(error)
-          execSpan?.setAttribute("error", errMsg)
-          return { result: `Search error: ${errMsg}`, error: errMsg }
-        } finally {
-          execSpan?.end()
-        }
-      },
-    }
-
-    // Filtered Search Tool (existing)
-    const filteredSearchTool: AgentTool = {
-      name: "filtered_search",
-      description:
-        "Search for information using keywords within a specific application. The 'app' parameter MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'.",
-      parameters: {
-        query: {
-          type: "string",
-          description: "The keywords or question to search for.",
-          required: true,
-        },
-        app: {
-          type: "string",
-          description:
-            "The app to search in (MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'). Case-insensitive.",
-          required: true,
-        },
-        limit: {
-          type: "number",
-          description: "Maximum number of results (default: 10).",
-          required: false,
-        },
-        excludedIds: {
-          type: "array",
-          description: "Optional list of document IDs to exclude from results.",
-          required: false,
-        },
-      },
-      execute: async (
-        params: {
-          query: string
-          app: string
-          limit?: number
-          excludedIds?: string[]
-        },
-        span?: Span,
-      ) => {
-        const execSpan = span?.startSpan("execute_filtered_search_tool")
-        const lowerCaseApp = params.app.toLowerCase()
-        try {
-          const searchLimit = params.limit || 10
-          execSpan?.setAttribute("query", params.query)
-          execSpan?.setAttribute("app_original", params.app)
-          execSpan?.setAttribute("app_processed", lowerCaseApp)
-          execSpan?.setAttribute("limit", searchLimit)
-          if (params.excludedIds && params.excludedIds.length > 0) {
-            execSpan?.setAttribute(
-              "excludedIds",
-              JSON.stringify(params.excludedIds),
-            )
-          }
-
-          let appEnum: Apps | null = null
-          if (lowerCaseApp === "gmail") appEnum = Apps.Gmail
-          else if (lowerCaseApp === "googlecalendar")
-            appEnum = Apps.GoogleCalendar
-          else if (lowerCaseApp === "googledrive") appEnum = Apps.GoogleDrive
-          else {
-            const errorMsg = `Error: Invalid app specified: '${params.app}'. Valid apps are 'gmail', 'googlecalendar', 'googledrive'.`
-            execSpan?.setAttribute("error", errorMsg)
-            return { result: errorMsg, error: "Invalid app" }
-          }
-
-          const vespaOptions: any = {
-            limit: searchLimit,
-            offset: 0,
-            excludedIds: params.excludedIds,
-            span: execSpan,
-          }
-
-          // Use lowerCaseApp in the error message
-          if (!appEnum) {
-            // Use correct app names in error message
-            const errorMsg = `Invalid app specified: ${params.app}. Valid apps: gmail, google-calendar, google-drive.`
-            execSpan?.setAttribute("error", errorMsg)
-            return { result: errorMsg, error: "Invalid app" }
-          }
-          const searchResults = await searchVespa(
-            params.query,
-            email,
-            appEnum,
-            null,
-            {
-              limit: searchLimit,
-              alpha: 0.5,
-              excludedIds: params.excludedIds, // Pass excludedIds
-              span: execSpan?.startSpan("vespa_search"),
-            },
-          )
-          const children = searchResults?.root?.children || []
-          execSpan?.setAttribute("results_count", children.length)
-          // Use lowerCaseApp in the success message
-          if (children.length === 0)
-            return {
-              result: `No results found in ${lowerCaseApp}.`,
-              contexts: [],
-            }
-          const fragments = children.map((r) => {
-            const citation = searchToCitation(r as any)
-            return {
-              id: `${citation.docId}-${Date.now()}-${Math.random()
-                .toString(36)
-                .substring(7)}`,
-              content: answerContextMap(r as any, maxDefaultSummary),
-              source: citation,
-              confidence: r.relevance || 0.7,
-            }
-          })
-          // Use lowerCaseApp in the summary
-          const topItemsList = fragments
-            .slice(0, 3)
-            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-            .join("\n")
-          const summaryText = `Found ${fragments.length} results in \`${lowerCaseApp}\`.\nTop items:\n${topItemsList}`
-          return { result: summaryText, contexts: fragments }
-        } catch (error) {
-          const errMsg = getErrorMessage(error)
-          execSpan?.setAttribute("error", errMsg)
-          // Use lowerCaseApp (now in scope) in the error message
-          return {
-            result: `Search error in ${lowerCaseApp}: ${errMsg}`,
-            error: errMsg,
-          }
-        } finally {
-          execSpan?.end()
-        }
-      },
-    }
-
-    // Time Search Tool (existing)
-    const timeSearchTool: AgentTool = {
-      name: "time_search",
-      description:
-        "Search for information using keywords within a specific time range (relative to today).",
-      parameters: {
-        query: {
-          type: "string",
-          description: "The keywords or question to search for.",
-          required: true,
-        },
-        from_days_ago: {
-          type: "number",
-          description: "Start search N days ago.",
-          required: true,
-        },
-        to_days_ago: {
-          type: "number",
-          description: "End search N days ago (0 means today).",
-          required: true,
-        },
-        limit: {
-          type: "number",
-          description: "Maximum number of results (default: 10).",
-          required: false,
-        },
-        excludedIds: {
-          type: "array",
-          description: "Optional list of document IDs to exclude from results.",
-          required: false,
-        },
-      },
-      execute: async (
-        params: {
-          query: string
-          from_days_ago: number
-          to_days_ago: number
-          limit?: number
-          excludedIds?: string[]
-        },
-        span?: Span,
-      ) => {
-        const execSpan = span?.startSpan("execute_time_search_tool")
-        try {
-          const searchLimit = params.limit || 10
-          execSpan?.setAttribute("query", params.query)
-          execSpan?.setAttribute("from_days_ago", params.from_days_ago)
-          execSpan?.setAttribute("to_days_ago", params.to_days_ago)
-          execSpan?.setAttribute("limit", searchLimit)
-          if (params.excludedIds && params.excludedIds.length > 0) {
-            execSpan?.setAttribute(
-              "excludedIds",
-              JSON.stringify(params.excludedIds),
-            )
-          }
-          const DAY_MS = 24 * 60 * 60 * 1000
-          const now = Date.now()
-          const fromTime = now - params.from_days_ago * DAY_MS
-          const toTime = now - params.to_days_ago * DAY_MS
-          const from = Math.min(fromTime, toTime)
-          const to = Math.max(fromTime, toTime)
-          execSpan?.setAttribute("from_date", new Date(from).toISOString())
-          execSpan?.setAttribute("to_date", new Date(to).toISOString())
-          const searchResults = await searchVespa(
-            params.query,
-            email,
-            null,
-            null,
-            {
-              limit: searchLimit,
-              alpha: 0.5,
-              timestampRange: { from, to },
-              excludedIds: params.excludedIds, // Pass excludedIds
-              span: execSpan?.startSpan("vespa_search"),
-            },
-          )
-          const children = searchResults?.root?.children || []
-          execSpan?.setAttribute("results_count", children.length)
-          if (children.length === 0)
-            return {
-              result: `No results found in the specified time range.`,
-              contexts: [],
-            }
-          const fragments = children.map((r) => {
-            const citation = searchToCitation(r as any)
-            return {
-              id: `${citation.docId}-${Date.now()}-${Math.random()
-                .toString(36)
-                .substring(7)}`,
-              content: answerContextMap(r as any, maxDefaultSummary),
-              source: citation,
-              confidence: r.relevance || 0.7,
-            }
-          })
-          const topItemsList = fragments
-            .slice(0, 3)
-            .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-            .join("\n")
-          const summaryText = `Found ${fragments.length} results in time range (\`${params.from_days_ago}\` to \`${params.to_days_ago}\` days ago).\nTop items:\n${topItemsList}`
-          return { result: summaryText, contexts: fragments }
-        } catch (error) {
-          const errMsg = getErrorMessage(error)
-          execSpan?.setAttribute("error", errMsg)
-          return { result: `Time search error: ${errMsg}`, error: errMsg }
-        } finally {
-          execSpan?.end()
-        }
-      },
-    }
-
-    // === NEW Metadata Retrieval Tool ===
-    const metadataRetrievalTool: AgentTool = {
-      name: "metadata_retrieval",
-      description:
-        "Retrieves a list of items (e.g., emails, calendar events, drive files) based on type and time. Use for 'list my recent emails', 'show my first documents about X', 'find uber receipts'.",
-      parameters: {
-        item_type: {
-          type: "string",
-          description:
-            "Type of item (e.g., 'meeting', 'event', 'email', 'notification', 'document', 'file'). For receipts or specific service-related items in email, use 'email'.",
-          required: true,
-        },
-        app: {
-          type: "string",
-          description:
-            "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
-          required: false,
-        },
-        entity: {
-          type: "string",
-          description:
-            "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
-          required: false,
-        },
-        filter_query: {
-          type: "string",
-          description:
-            "Optional keywords to filter the items (e.g., 'uber trip', 'flight confirmation').",
-          required: false,
-        },
-        limit: {
-          type: "number",
-          description: "Maximum number of items to retrieve (default: 10).",
-          required: false,
-        },
-        offset: {
-          type: "number",
-          description: "Number of items to skip for pagination (default: 0).",
-          required: false,
-        },
-        order_direction: {
-          type: "string",
-          description:
-            "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
-          required: false,
-        },
-        excludedIds: {
-          type: "array",
-          description: "Optional list of document IDs to exclude from results.",
-          required: false,
-        },
-      },
-      execute: async (
-        params: {
-          item_type: string
-          app?: string
-          entity?: string
-          filter_query?: string
-          limit?: number
-          offset?: number
-          order_direction?: "asc" | "desc"
-          excludedIds?: string[]
-        },
-        span?: Span,
-      ) => {
-        const execSpan = span?.startSpan("execute_metadata_retrieval_tool")
-        console.log(
-          "[metadata_retrieval] Input Parameters:",
-          JSON.stringify(params, null, 2) +
-            " EXCLUDED_IDS: " +
-            JSON.stringify(params.excludedIds),
-        )
-        execSpan?.setAttribute("item_type", params.item_type)
-        if (params.app) execSpan?.setAttribute("app_param_original", params.app)
-        if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
-        if (params.filter_query)
-          execSpan?.setAttribute("filter_query", params.filter_query)
-        execSpan?.setAttribute("limit", params.limit || 10)
-        execSpan?.setAttribute("offset", params.offset || 0)
-        if (params.order_direction)
-          execSpan?.setAttribute(
-            "order_direction_param",
-            params.order_direction,
-          )
-
-        try {
-          let schema: VespaSchema
-          let entity: Entity | null = null
-          let appToUse: Apps | null = null
-          let timestampField: string
-
-          const lowerCaseProvidedApp = params.app?.toLowerCase()
-
-          // 1. Validate and set appToUse if params.app is provided
-          if (lowerCaseProvidedApp) {
-            if (lowerCaseProvidedApp === "gmail") appToUse = Apps.Gmail
-            else if (lowerCaseProvidedApp === "googlecalendar")
-              appToUse = Apps.GoogleCalendar
-            else if (lowerCaseProvidedApp === "googledrive")
-              appToUse = Apps.GoogleDrive
-            else {
-              const errorMsg = `Error: Invalid app '${params.app}' specified. Valid apps are 'gmail', 'googlecalendar', 'googledrive', or omit to infer from item_type.`
-              execSpan?.setAttribute("error", errorMsg)
-              console.error(
-                "[metadata_retrieval] Invalid app parameter:",
-                errorMsg,
-              )
-              return { result: errorMsg, error: "Invalid app" }
-            }
-            execSpan?.setAttribute(
-              "app_from_user_validated",
-              appToUse.toString(),
-            )
-          }
-
-          // 2. Map item_type to schema, entity, timestampField, and default appToUse if not already set by user
-          switch (params.item_type.toLowerCase()) {
-            case "meeting":
-            case "event":
-              schema = eventSchema
-              entity = CalendarEntity.Event
-              timestampField = "startTime"
-              if (!appToUse) appToUse = Apps.GoogleCalendar
-              break
-            case "email":
-            case "message":
-            case "notification": // 'notification' often implies email
-              schema = mailSchema
-              entity = MailEntity.Email
-              timestampField = "timestamp"
-              if (!appToUse) appToUse = Apps.Gmail
-              break
-            case "document":
-            case "file":
-              schema = fileSchema
-              entity = null
-              timestampField = "updatedAt" // Default entity to null for broader file searches
-              if (!appToUse) appToUse = Apps.GoogleDrive
-              break
-            case "mail_attachment": // New case for mail attachments
-            case "attachment": // New case for mail attachments
-              schema = mailAttachmentSchema
-              entity = null // No specific MailEntity for attachments, rely on schema
-              timestampField = "timestamp" // Assuming 'timestamp' for recency
-              if (!appToUse) appToUse = Apps.Gmail
-              break
-            case "user":
-            case "person":
-              schema = userSchema
-              entity = null
-              timestampField = "creationTime"
-              if (!appToUse) appToUse = Apps.GoogleWorkspace // Default to Google Workspace users
-              break
-            case "contact":
-              schema = userSchema
-              entity = null
-              timestampField = "creationTime"
-              if (!appToUse) appToUse = null // Default to null app to target personal contacts via owner field in getItems
-              break
-            default:
-              const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
-              execSpan?.setAttribute("error", unknownItemMsg)
-              console.error(
-                "[metadata_retrieval] Unknown item_type:",
-                unknownItemMsg,
-              )
-              return { result: unknownItemMsg, error: `Unknown item_type` }
-          }
-          console.log(
-            `[metadata_retrieval] Derived from item_type '${
-              params.item_type
-            }': schema='${schema.toString()}', initial_entity='${
-              entity ? entity.toString() : "null"
-            }', timestampField='${timestampField}', inferred_appToUse='${
-              appToUse ? appToUse.toString() : "null"
-            }'`,
-          )
-
-          // Initialize finalEntity with the entity derived from item_type (often null for documents)
-          let finalEntity: Entity | null = entity
-          execSpan?.setAttribute(
-            "initial_entity_from_item_type",
-            finalEntity ? finalEntity.toString() : "null",
-          )
-
-          // If LLM provides an entity string, and it's for a Drive document/file, try to map it to a DriveEntity enum
-          if (
-            params.entity &&
-            (params.item_type.toLowerCase() === "document" ||
-              params.item_type.toLowerCase() === "file") &&
-            appToUse === Apps.GoogleDrive
-          ) {
-            const llmEntityString = params.entity.toLowerCase().trim()
-            execSpan?.setAttribute(
-              "llm_provided_entity_string_for_drive",
-              llmEntityString,
-            )
-
-            let mappedToDriveEntity: DriveEntity | null = null
-            switch (llmEntityString) {
-              case "sheets":
-              case "spreadsheet":
-                mappedToDriveEntity = DriveEntity.Sheets
-                break
-              case "slides":
-                mappedToDriveEntity = DriveEntity.Slides
-                break
-              case "presentation":
-              case "powerpoint":
-                mappedToDriveEntity = DriveEntity.Presentation
-                break
-              case "pdf":
-                mappedToDriveEntity = DriveEntity.PDF
-                break
-              case "doc":
-              case "docs":
-                mappedToDriveEntity = DriveEntity.Docs
-                break
-              case "folder":
-                mappedToDriveEntity = DriveEntity.Folder
-                break
-              case "drawing":
-                mappedToDriveEntity = DriveEntity.Drawing
-                break
-              case "form":
-                mappedToDriveEntity = DriveEntity.Form
-                break
-              case "script":
-                mappedToDriveEntity = DriveEntity.Script
-                break
-              case "site":
-                mappedToDriveEntity = DriveEntity.Site
-                break
-              case "map":
-                mappedToDriveEntity = DriveEntity.Map
-                break
-              case "audio":
-                mappedToDriveEntity = DriveEntity.Audio
-                break
-              case "video":
-                mappedToDriveEntity = DriveEntity.Video
-                break
-              case "photo":
-                mappedToDriveEntity = DriveEntity.Photo
-                break
-              case "image":
-                mappedToDriveEntity = DriveEntity.Image
-                break
-              case "zip":
-                mappedToDriveEntity = DriveEntity.Zip
-                break
-              case "word":
-              case "word_document":
-                mappedToDriveEntity = DriveEntity.WordDocument
-                break
-              case "excel":
-              case "excel_spreadsheet":
-                mappedToDriveEntity = DriveEntity.ExcelSpreadsheet
-                break
-              case "text":
-                mappedToDriveEntity = DriveEntity.Text
-                break
-              case "csv":
-                mappedToDriveEntity = DriveEntity.CSV
-                break
-              // default: // No default, if not mapped, mappedToDriveEntity remains null
-            }
-
-            if (mappedToDriveEntity) {
-              finalEntity = mappedToDriveEntity // Override with the more specific DriveEntity
-              execSpan?.setAttribute(
-                "mapped_llm_entity_to_drive_enum",
-                finalEntity.toString(),
-              )
-            } else {
-              execSpan?.setAttribute(
-                "llm_entity_string_not_mapped_to_drive_enum",
-                llmEntityString,
-              )
-              // finalEntity remains as initially set (e.g., null if item_type was 'document')
-            }
-          }
-          console.log(
-            `[metadata_retrieval] Final determined values before Vespa call: appToUse='${
-              appToUse ? appToUse.toString() : "null"
-            }', schema='${schema.toString()}', finalEntity='${
-              finalEntity ? finalEntity.toString() : "null"
-            }'`,
-          )
-
-          execSpan?.setAttribute("derived_schema", schema.toString())
-          if (entity)
-            execSpan?.setAttribute("derived_entity", entity.toString())
-          execSpan?.setAttribute(
-            "final_app_to_use",
-            appToUse ? appToUse.toString() : "null",
-          )
-
-          // 3. Sanity check: if user specified an app, ensure it's compatible with the item_type's inferred schema and app
-          if (params.app) {
-            // Only if user explicitly provided an app
-            let expectedAppForType: Apps | null = null
-            if (schema === mailSchema) expectedAppForType = Apps.Gmail
-            else if (schema === eventSchema)
-              expectedAppForType = Apps.GoogleCalendar
-            else if (schema === fileSchema)
-              expectedAppForType = Apps.GoogleDrive
-
-            if (expectedAppForType && appToUse !== expectedAppForType) {
-              const mismatchMsg = `Error: Item type '${params.item_type}' (typically in ${expectedAppForType}) is incompatible with specified app '${params.app}'.`
-              execSpan?.setAttribute("error", mismatchMsg)
-              return { result: mismatchMsg, error: `App/Item type mismatch` }
-            }
-          }
-
-          const orderByString: string | undefined = params.order_direction
-            ? `${timestampField} ${params.order_direction}`
-            : undefined
-          if (orderByString)
-            execSpan?.setAttribute("orderBy_constructed", orderByString)
-          console.log(
-            `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
-          )
-
-          // --- Vespa Call ---
-          let searchResults: VespaSearchResponse | null = null
-          let children: VespaSearchResults[] = []
-          const searchOptionsVespa: {
-            limit: number
-            offset: number
-            excludedIds: string[] | undefined
-            span: Span | undefined
-          } = {
-            limit: params.limit || 10,
-            offset: params.offset || 0,
-            excludedIds: params.excludedIds,
-            span: execSpan,
-          }
-
-          console.log(
-            "[metadata_retrieval] Common Vespa searchOptions:",
-            JSON.stringify(
-              {
-                limit: searchOptionsVespa.limit,
-                offset: searchOptionsVespa.offset,
-                excludedIds: searchOptionsVespa.excludedIds,
-              },
-              null,
-              2,
-            ),
-          )
-
-          if (params.filter_query) {
-            const searchQuery = params.filter_query
-            console.log(
-              `[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`,
-            )
-
-            if (params.order_direction) {
-              execSpan?.setAttribute(
-                "vespa_call_type",
-                "searchVespa_GlobalSorted",
-              )
-              // TODO: let rank profile global sorted also respect the direction
-              // currently it's hardcoded to desc
-              searchResults = await searchVespa(
-                searchQuery,
-                email,
-                appToUse,
-                entity,
-                {
-                  limit: searchOptionsVespa.limit,
-                  offset: searchOptionsVespa.offset,
-                  excludedIds: searchOptionsVespa.excludedIds,
-                  rankProfile: SearchModes.GlobalSorted,
-                  span: execSpan?.startSpan(
-                    "vespa_search_filtered_sorted_globalsorted",
-                  ),
-                },
-              )
-            } else {
-              execSpan?.setAttribute(
-                "vespa_call_type",
-                "searchVespa_filter_no_sort",
-              )
-              searchResults = await searchVespa(
-                searchQuery,
-                email,
-                appToUse,
-                entity,
-                {
-                  limit: searchOptionsVespa.limit,
-                  offset: searchOptionsVespa.offset,
-                  excludedIds: searchOptionsVespa.excludedIds,
-                  rankProfile: SearchModes.NativeRank,
-                  span: execSpan?.startSpan("vespa_search_metadata_filtered"),
-                },
-              )
-            }
-            children = (searchResults?.root?.children || []).filter(
-              (item): item is VespaSearchResults =>
-                !!(item.fields && "sddocname" in item.fields),
-            )
-          } else {
-            execSpan?.setAttribute(
-              "vespa_call_type",
-              "getItems_no_keyword_filter",
-            )
-            searchResults = await getItems({
-              schema,
-              app: appToUse,
-              entity: finalEntity, // Use finalEntity here
-              timestampRange: null,
-              limit: searchOptionsVespa.limit,
-              offset: searchOptionsVespa.offset,
-              email,
-              asc: params.order_direction === "asc",
-              excludedIds: params.excludedIds, // Pass excludedIds from params directly
-            })
-            children = (searchResults?.root?.children || []).filter(
-              (item): item is VespaSearchResults =>
-                !!(item.fields && "sddocname" in item.fields),
-            )
-          }
-
-          execSpan?.setAttribute("retrieved_items_count", children.length)
-
-          // --- Format Result ---
-          if (children.length > 0) {
-            const fragments: MinimalAgentFragment[] = children.map(
-              (item: VespaSearchResults): MinimalAgentFragment => {
-                const citation = searchToCitation(item)
-                loggerWithChild({ email: sub }).debug(
-                  { item },
-                  "Processing item in metadata_retrieval tool",
-                )
-
-                const content = item.fields
-                  ? answerContextMap(item, maxDefaultSummary)
-                  : `Context unavailable for ${
-                      citation.title || citation.docId
-                    }`
-
-                return {
-                  id: `${citation.docId}-${Date.now()}-${Math.random()
-                    .toString(36)
-                    .substring(7)}`,
-                  content: content,
-                  source: citation,
-                  confidence: item.relevance || 0.7, // Use item.relevance if available
-                }
-              },
-            )
-
-            let responseText = `Found ${fragments.length} ${params.item_type}(s)`
-            if (params.filter_query) {
-              responseText += ` matching '${params.filter_query}'`
-            }
-            // Use the processed app name if available
-            const appNameForText =
-              lowerCaseProvidedApp ||
-              (appToUse ? appToUse.toString() : null) ||
-              "any app"
-            if (params.app) {
-              responseText += ` in \`${appNameForText}\``
-            }
-            if (params.offset && params.offset > 0) {
-              const currentOffset = params.offset || 0
-              responseText += ` (showing items ${currentOffset + 1} to ${
-                currentOffset + fragments.length
-              })`
-            }
-            const topItemsList = fragments
-              .slice(0, 3)
-              .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-              .join("\n")
-            responseText += `.\nTop items:\n${topItemsList}`
-
-            const successResult: {
-              result: string
-              contexts: MinimalAgentFragment[]
-            } = {
-              result: responseText,
-              contexts: fragments,
-            }
-            return successResult
-          } else {
-            let notFoundMsg = `Could not find the ${params.item_type}`
-            if (params.filter_query)
-              notFoundMsg += ` matching '${params.filter_query}'`
-            // Use the processed app name if available
-            const appNameForText =
-              lowerCaseProvidedApp ||
-              (appToUse ? appToUse.toString() : null) ||
-              "any app"
-            if (params.app) notFoundMsg += ` in ${appNameForText}`
-            notFoundMsg += `.`
-            return { result: notFoundMsg, contexts: [] }
-          }
-        } catch (error) {
-          const errMsg = getErrorMessage(error)
-          execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({ email: sub }).error(
-            error,
-            `Metadata retrieval tool error: ${errMsg}`,
-          )
-          // Ensure this return type matches the interface
-          return {
-            result: `Error retrieving metadata: ${errMsg}`,
-            error: errMsg,
-          }
-        } finally {
-          execSpan?.end()
-        }
-      },
-    }
-    const userInfoTool: AgentTool = {
-      name: "get_user_info",
-      description:
-        "Retrieves basic information about the current user and their environment, such as their name, email, company, current date, and time. Use this tool when the user's query directly asks for personal details (e.g., 'What is my name?', 'My email?', 'What time is it?', 'Who am I?') that can be answered from this predefined context.",
-      parameters: {}, // No parameters needed from the LLM
-      execute: async (_params: any, span?: Span) => {
-        const execSpan = span?.startSpan("execute_get_user_info_tool")
-        try {
-          // userCtxObject is already available in the outer scope
-          const userFragment: MinimalAgentFragment = {
-            id: `user_info_context-${Date.now()}`,
-            content: ctx, // The string generated by userContext()
-            source: {
-              docId: "user_info_context",
-              title: "User and System Information", // Optional
-              app: Apps.Xyne, // Use Apps.Xyne as per feedback
-              url: "", // Optional
-              entity: SystemEntity.UserProfile, // Use the new SystemEntity.UserProfile
-            },
-            confidence: 1.0,
-          }
-          execSpan?.setAttribute("user_context_retrieved", true)
-          return {
-            result:
-              "User and system context information retrieved successfully.",
-            contexts: [userFragment],
-          }
-        } catch (error) {
-          const errMsg = getErrorMessage(error)
-          execSpan?.setAttribute("error", errMsg)
-          loggerWithChild({ email: sub }).error(
-            error,
-            `Error in get_user_info tool: ${errMsg}`,
-          )
-          return {
-            result: `Error retrieving user context: ${errMsg}`,
-            error: errMsg,
-          }
-        } finally {
-          execSpan?.end()
-        }
-      },
-    }
-
-    const agentTools: Record<string, AgentTool> = {
-      get_user_info: userInfoTool, // Add the new user info tool
-      metadata_retrieval: metadataRetrievalTool,
-      search: searchTool,
-      filtered_search: filteredSearchTool,
-      time_search: timeSearchTool,
-    }
-
+    const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
@@ -1381,6 +432,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            ...(agentId ? { agentId: agentIdToStore } : {}),
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -1487,7 +539,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               content: [{ text: m.message }],
             }))
 
-          console.log(messagesWithNoErrResponse)
           loggerWithChild({ email: sub }).info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
@@ -1498,7 +549,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
-          const maxIterations = 10
+          const maxIterations = 9
           let iterationCount = 0
           let answered = false
 
@@ -1662,7 +713,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         `  - Title: ${f.source.title || "Untitled"}\n` +
                         // Truncate content in the scratchpad to keep the prompt concise.
                         // The full content is available in `planningContext` for the final answer.
-                        `  - Content Snippet: "${f.content}"`,
+                        `  - Content Snippet: "${f.content.substring(0, 100)}..."`,
                     )
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"
@@ -1729,7 +780,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: messagesWithNoErrResponse,
               },
+              agentPromptForLLM,
             )
+
             for await (const chunk of getToolOrAnswerIterator) {
               if (stream.closed) {
                 loggerWithChild({ email: sub }).info(
@@ -1874,6 +927,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   toolExecutionResponse = await agentTools[toolName].execute(
                     toolParams,
                     toolExecutionSpan,
+                    email,
+                    ctx,
+                    agentPromptForLLM,
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
@@ -1886,7 +942,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     error: errMessage,
                   }
                 }
-              } else {
+              } else if (Object.keys(finalToolsList).length > 0) {
                 let foundClient: Client | null = null
                 let connectorId: string | null = null
 
@@ -2007,39 +1063,68 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   }
                 }
+              } else {
+                // This case handles when a tool was specified by the LLM,
+                // but it's not an internal tool AND (finalToolsList is empty OR the tool is not in finalToolsList)
+                const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available or configured tool.`
+                loggerWithChild({ email: sub }).error(errorMsg)
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ValidationError,
+                  details: errorMsg,
+                })
+                toolExecutionResponse = {
+                  result: `Error: Could not find the specified tool '${toolName}'.`,
+                  error: "Tool not found or not configured",
+                }
               }
               toolExecutionSpan.end()
 
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.ToolResult,
-                toolName: toolName as AgentToolName,
-                resultSummary: toolExecutionResponse.result,
-                itemsFound: toolExecutionResponse.contexts?.length || 0,
-                error: toolExecutionResponse.error,
-              })
+              if (toolExecutionResponse) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ToolResult,
+                  toolName: toolName as AgentToolName,
+                  resultSummary: toolExecutionResponse.result,
+                  itemsFound: toolExecutionResponse.contexts?.length || 0,
+                  error: toolExecutionResponse.error,
+                })
 
-              if (toolExecutionResponse.error) {
-                if (iterationCount < maxIterations) {
-                  continue // Continue to the next iteration to re-plan
-                } else {
-                  // If we fail on the last iteration, we have to stop.
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message:
-                      "Tool failed on the final iteration. Generating answer with available context.",
-                  })
+                if (toolExecutionResponse.error) {
+                  if (iterationCount < maxIterations) {
+                    continue // Continue to the next iteration to re-plan
+                  } else {
+                    // If we fail on the last iteration, we have to stop.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Tool failed on the final iteration. Generating answer with available context.",
+                    })
+                  }
                 }
-              }
 
-              if (
-                toolExecutionResponse.contexts &&
-                toolExecutionResponse.contexts.length > 0
-              ) {
-                const newFragments = toolExecutionResponse.contexts
-                gatheredFragments.push(...newFragments)
+                if (
+                  toolExecutionResponse.contexts &&
+                  toolExecutionResponse.contexts.length > 0
+                ) {
+                  const newFragments = toolExecutionResponse.contexts
+                  gatheredFragments.push(...newFragments)
 
-                const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
-                excludedIds = [...new Set([...excludedIds, ...newIds])]
+                  const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
+                  excludedIds = [...new Set([...excludedIds, ...newIds])]
+                }
+              } else {
+                // This case should ideally not be reached if the logic above correctly sets toolExecutionResponse.
+                // However, as a fallback, log an error and potentially continue or break.
+                const criticalErrorMsg = `Critical error: toolExecutionResponse is null after attempting tool execution for "${toolName}".`
+                loggerWithChild({ email: sub }).error(criticalErrorMsg)
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ValidationError,
+                  details: criticalErrorMsg,
+                })
+                // Decide if we should continue to re-plan or break the loop.
+                // For now, let's assume we should try to re-plan if not max iterations.
+                if (iterationCount < maxIterations) {
+                  continue
+                }
               }
 
               const planningContext = gatheredFragments.length
@@ -2075,7 +1160,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       message,
                       planningContext,
                       {
-                        modelId: defaultBestModel,
+                        modelId: defaultFastModel,
                         stream: false,
                         json: true,
                         reasoning: false,
@@ -2196,6 +1281,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 toolsPrompt,
                 planningContext ?? "",
                 gatheredFragments,
+                agentPromptForLLM,
               )
               for await (const chunk of continuationIterator) {
                 if (stream.closed) {
@@ -2513,6 +1599,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     rootSpan.end()
   }
 }
+
+// END OF AgentMessageApi
+// The new CombinedAgentSlackApi function will be inserted after this comment.
 
 export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch

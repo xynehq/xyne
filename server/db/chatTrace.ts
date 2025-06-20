@@ -1,48 +1,86 @@
 import { db } from "./client"
 import { chatTrace } from "@/db/schema"
-import type { InferInsertModel, InferSelectModel } from "drizzle-orm"
+import type { InferInsertModel, InferSelectModel} from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
+import { compressTraceJson, decompressTraceJson } from "@/utils/compression"
 import type { TxnOrClient } from "@/types"
 
-// Infer the schema, including workspaceId, userId, external IDs, and non-null traceJson
-export const insertChatTraceSchema = createInsertSchema(chatTrace).omit({
-  id: true,
-  createdAt: true,
-})
+export const insertChatTraceSchema = createInsertSchema(chatTrace, {
+  traceJson: z.string().transform(compressTraceJson),
+}).omit({ id: true, createdAt: true })
 
 export type InsertChatTrace = z.infer<typeof insertChatTraceSchema>
+export type SelectChatTrace = Omit<
+  InferSelectModel<typeof chatTrace>,
+  "traceJson"
+> & {
+  traceJson: string
+}
 
-/**
- * Inserts a new chat trace record into the database.
- * @param traceData - The data for the new chat trace record.
- * @returns The newly created chat trace record.
- */
 export async function insertChatTrace(
-  traceData: InsertChatTrace,
-): Promise<InferInsertModel<typeof chatTrace>> {
-  const [newTrace] = await db.insert(chatTrace).values(traceData).returning()
+  traceData: Omit<InsertChatTrace, "traceJson"> & { traceJson: string },
+): Promise<SelectChatTrace> {
+  const validated = insertChatTraceSchema.parse(traceData)
+  const [inserted] = await db.insert(chatTrace).values(validated).returning()
 
-  if (!newTrace) {
-    throw new Error("Failed to insert chat trace")
+  if (!inserted) throw new Error("Failed to insert chat trace")
+  return {
+    ...inserted,
+    traceJson: JSON.parse(decompressTraceJson(inserted.traceJson as Buffer)),
   }
-
-  return newTrace
 }
 
 export async function getChatTraceByExternalId(
   chatExternalId: string,
   messageExternalId: string,
-): Promise<InferSelectModel<typeof chatTrace> | undefined> {
+): Promise<SelectChatTrace | null> {
   const [trace] = await db
     .select()
     .from(chatTrace)
     .where(
-      eq(chatTrace.chatExternalId, chatExternalId) &&
+      and(
+        eq(chatTrace.chatExternalId, chatExternalId),
         eq(chatTrace.messageExternalId, messageExternalId),
+      ),
     )
-  return trace
+
+  if (!trace || !trace.traceJson) return null
+
+  try {
+    return {
+      ...trace,
+      traceJson: JSON.parse(decompressTraceJson(trace.traceJson as Buffer)),
+    }
+  } catch (err) {
+    return null
+  }
+}
+
+export async function updateChatTrace(
+  chatExternalId: string,
+  messageExternalId: string,
+  traceJsonString: string,
+): Promise<SelectChatTrace | null> {
+  const compressed = compressTraceJson(traceJsonString)
+  const [updated] = await db
+    .update(chatTrace)
+    .set({ traceJson: compressed })
+    .where(
+      and(
+        eq(chatTrace.chatExternalId, chatExternalId),
+        eq(chatTrace.messageExternalId, messageExternalId),
+      ),
+    )
+    .returning()
+
+  if (!updated || !updated.traceJson) return null
+
+return {
+    ...updated,
+   traceJson: JSON.parse(decompressTraceJson(updated.traceJson as Buffer)),
+  }
 }
 
 export const deleteChatTracesByChatExternalId = async (
@@ -50,21 +88,4 @@ export const deleteChatTracesByChatExternalId = async (
   chatExternalId: string,
 ): Promise<void> => {
   await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId))
-}
-
-export async function updateChatTrace(
-  chatExternalId: string,
-  messageExternalId: string,
-  traceJson: string,
-): Promise<InferSelectModel<typeof chatTrace> | undefined> {
-  const [updatedTrace] = await db
-    .update(chatTrace)
-    .set({ traceJson })
-    .where(
-      eq(chatTrace.chatExternalId, chatExternalId) &&
-        eq(chatTrace.messageExternalId, messageExternalId),
-    )
-    .returning()
-
-  return updatedTrace
 }
