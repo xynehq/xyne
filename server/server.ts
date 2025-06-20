@@ -209,7 +209,7 @@ const LogOut = async (c: Context) => {
 const handleUpdatedMetrics = async (c: Context) => {
   console.log(`Started Adding Metrics`)
 
-  const authHeader = c.req.header("authorization") ?? ""
+  const authHeader = c.req.header("METRICS_SECRET") ?? ""
 
   const secret = authHeader.replace(/^Bearer\s+/i, "").trim()
 
