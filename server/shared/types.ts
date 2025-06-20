@@ -357,6 +357,13 @@ export enum UserRole {
   SuperAdmin = "SuperAdmin", // Admin level changes
 }
 
+export enum UserAgentRole {
+  Owner = "owner", // User who owns/created the agent
+  Editor = "editor", // User who can edit the agent
+  Viewer = "viewer", // User who can only view/use the agent
+  Shared = "shared", // User who has been shared the agent (general access)
+}
+
 export enum MessageFeedback {
   Like = "like",
   Dislike = "dislike",
@@ -471,6 +478,11 @@ export enum XyneTools {
   Search = "search",
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
+
+  // slack tools
+  getSlackRelatedMessages = "get_slack_related_messages",
+  getSlackThreads = "get_slack_threads",
+  getUserSlackProfile = "get_user_slack_profile"
 }
 
 export enum IngestionType {

@@ -1,6 +1,7 @@
 import config from "@/config"
 import { messageFeedbackEnum } from "@/db/schema"
 import { Apps, entitySchema } from "@/search/types"
+import type { Span } from "@/tracer"
 import { z } from "zod"
 
 const {
@@ -82,3 +83,27 @@ export const messageFeedbackSchema = z.object({
   messageId: z.string(),
   feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
 })
+
+export interface AgentTool {
+  name: string
+  description: string
+  parameters: Record<
+    string,
+    {
+      type: string
+      description: string
+      required: boolean
+    }
+  >
+  execute: (
+    params: any,
+    span?: Span,
+    email?: string,
+    userCtx?: string,
+    agentPrompt?: string,
+  ) => Promise<{
+    result: string // Human-readable summary of action/result
+    contexts?: MinimalAgentFragment[] // Data fragments found
+    error?: string // Error message if failed
+  }>
+}

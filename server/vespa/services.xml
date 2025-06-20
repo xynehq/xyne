@@ -4,6 +4,7 @@
         <component id="hf-embedder" type="hugging-face-embedder">
             <transformer-model path="models/model.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
+            <gpu-device device-number="0" required="false"/>
         </component>
         <search />
         <document-api />

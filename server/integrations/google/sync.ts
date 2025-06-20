@@ -22,6 +22,7 @@ import {
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
   insertWithRetry,
+  IfMailDocExist,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -74,6 +75,7 @@ import {
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
 import { GaxiosError } from "gaxios"
+import { skipMailExistCheck } from "./config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1162,6 +1164,13 @@ const handleGmailChanges = async (
           if (history.messagesAdded) {
             for (const { message } of history.messagesAdded) {
               try {
+                let mailExists = false
+                if (message && message.id && !skipMailExistCheck)
+                  mailExists = await IfMailDocExist(userEmail, message.id)
+                if (mailExists && message) {
+                  Logger.info(`skipping mail with mailid: ${message.id}`)
+                  continue
+                }
                 const msgResp = await retryWithBackoff(
                   () =>
                     gmail.users.messages.get({
@@ -1175,20 +1184,16 @@ const handleGmailChanges = async (
                   client,
                 )
 
-                const { mailData, exist } = await parseMail(
+                const { mailData } = await parseMail(
                   msgResp.data,
                   gmail,
                   userEmail,
                   client!,
                 )
-                if (!exist) {
-                  await insert(mailData, mailSchema)
-                  stats.added += 1
-                  changesExist = true
-                } else {
-                  // we are inserting with updated userMap
-                  await insert(mailData, mailSchema)
-                }
+
+                await insert(mailData, mailSchema)
+                stats.added += 1
+                changesExist = true
               } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(

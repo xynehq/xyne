@@ -66,7 +66,7 @@ import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
-import { setCookieByEnv } from "@/utils"
+import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -99,6 +99,8 @@ import {
   ListAgentsApi,
   UpdateAgentApi,
   DeleteAgentApi,
+  GetWorkspaceUsersApi,
+  GetAgentPermissionsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -192,6 +194,16 @@ export const WsApp = app.get(
   }),
 )
 
+const LogOut = async (c: Context) => {
+  deleteCookieByEnv(c, CookieName, {
+    secure: true,
+    path: "/",
+    httpOnly: true,
+  })
+  Logger.info("Cookie deleted, logged out")
+  return c.json({ ok: true })
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
@@ -243,12 +255,15 @@ export const AppRoutes = app
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/workspace/users", GetWorkspaceUsersApi)
+  .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
     UpdateAgentApi,
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
+  .post("/auth/logout", LogOut)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -421,7 +436,11 @@ app.get(
         existingUser.role,
         existingUser.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken)
+      setCookieByEnv(c, CookieName, jwtToken, {
+        secure: true,
+        path: "/",
+        httpOnly: true,
+      })
       return c.redirect(postOauthRedirect)
     }
 
@@ -445,7 +464,11 @@ app.get(
         user.role,
         user.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken)
+      setCookieByEnv(c, CookieName, jwtToken, {
+        secure: true,
+        path: "/",
+        httpOnly: true,
+      })
       return c.redirect(postOauthRedirect)
     }
 
@@ -472,7 +495,11 @@ app.get(
       userAcc.role,
       userAcc.workspaceExternalId,
     )
-    setCookieByEnv(c, CookieName, jwtToken)
+    setCookieByEnv(c, CookieName, jwtToken, {
+      secure: true,
+      path: "/",
+      httpOnly: true,
+    })
     return c.redirect(postOauthRedirect)
   },
 )
