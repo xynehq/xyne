@@ -209,8 +209,10 @@ const LogOut = async (c: Context) => {
 const handleUpdatedMetrics = async (c: Context) => {
   console.log(`Started Adding Metrics`)
 
-  const authHeader = c.req.header("METRICS_SECRET") ?? ""
+  const authHeader = c.req.raw.headers.get("METRICS_SECRET") ?? ""
   const secret = authHeader.trim()
+
+  console.log(`secret ${secret} : ${process.env.METRICS_SECRET}`)
 
   if (secret !== process.env.METRICS_SECRET) {
     console.warn("Unauthorized metrics update attempt")
