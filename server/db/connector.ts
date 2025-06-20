@@ -88,6 +88,7 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
     .select({
       id: connectors.externalId,
       cId: connectors.id,
+      name: connectors.name,
       app: connectors.app,
       authType: connectors.authType,
       type: connectors.type,

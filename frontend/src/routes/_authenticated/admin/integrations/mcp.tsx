@@ -611,7 +611,7 @@ const MCPClientsList = ({
           {clients.map((client) => (
             <TableRow key={client.id}>
               <TableCell className="font-medium">
-                {client.config?.name || client.name || client.app || "Unnamed"}
+                {client.name || client.config?.name || client.app || "Unnamed"}
               </TableCell>
               <TableCell>
                 {client.type === ConnectorType.MCP

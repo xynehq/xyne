@@ -485,7 +485,7 @@ export const ChatBox = ({
         if (Array.isArray(data)) {
           processedConnectors = data.map((conn: any) => ({
             ...conn,
-            displayName: conn.config?.name || conn.app || conn.id,
+            displayName: conn.name || conn.config?.name || conn.app || conn.id,
           }))
         } else {
           console.error("Fetched connectors data is not an array:", data)
