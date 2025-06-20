@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
+import { ToolsListItem } from "@/types"
 
 enum Tabs {
   Search = "search",
@@ -133,7 +134,7 @@ const Index = () => {
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
-    toolsList?: Array<{ connectorId: string; tools: string[] }>,
+    toolsList?: ToolsListItem[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -141,7 +142,7 @@ const Index = () => {
         reasoning?: boolean
         sources?: string
         agentId?: string
-        toolsList?: Array<{ connectorId: string; tools: string[] }>
+        toolsList?: ToolsListItem[]
         agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),

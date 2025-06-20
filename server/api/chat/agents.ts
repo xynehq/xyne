@@ -18,7 +18,11 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
 } from "@/ai/provider"
-import { getConnectorByExternalId, getConnectorByApp, getConnectorById } from "@/db/connector"
+import {
+  getConnectorByExternalId,
+  getConnectorByApp,
+  getConnectorById,
+} from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -68,7 +72,12 @@ import {
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
-import { MessageRole, Subsystem, MCPClientConfig, MCPClientStdioConfig } from "@/types"
+import {
+  MessageRole,
+  Subsystem,
+  MCPClientConfig,
+  MCPClientStdioConfig,
+} from "@/types"
 import {
   delay,
   getErrorMessage,
@@ -489,6 +498,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     return streamSSE(
       c,
       async (stream) => {
+        // Store MCP clients for cleanup to prevent memory leaks
+        const mcpClients: Client[] = []
         let finalReasoningLogString = ""
         let agentLog: string[] = [] // For building the prompt context
         let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
@@ -566,34 +577,54 @@ export const MessageWithToolsApi = async (c: Context) => {
                 parseInt(connectorId, 10),
                 user.id,
               )
+              if (!connector) {
+                loggerWithChild({ email: sub }).warn(
+                  `Connector not found or access denied for connectorId: ${connectorId}`,
+                )
+                continue
+              }
               const client = new Client({
                 name: `connector-${connectorId}`,
                 version: connector.config.version,
               })
-              if ("url" in connector.config) {
-                // MCP SSE
-                const config = connector.config as z.infer<typeof MCPClientConfig>
-                Logger.info(
-                  `invoking client initialize for url: ${new URL(config.url)} ${
-                    config.url
-                  }`,
+              try {
+                if ("url" in connector.config) {
+                  // MCP SSE
+                  const config = connector.config as z.infer<
+                    typeof MCPClientConfig
+                  >
+                  Logger.info(
+                    `invoking client initialize for url: ${new URL(config.url)} ${
+                      config.url
+                    }`,
+                  )
+                  await client.connect(
+                    new SSEClientTransport(new URL(config.url)),
+                  )
+                } else {
+                  // MCP Stdio
+                  const config = connector.config as z.infer<
+                    typeof MCPClientStdioConfig
+                  >
+                  Logger.info(
+                    `invoking client initialize for command: ${config.command}`,
+                  )
+                  await client.connect(
+                    new StdioClientTransport({
+                      command: config.command,
+                      args: config.args,
+                    }),
+                  )
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  `Failed to connect to MCP client for connector ${connectorId}`,
                 )
-                await client.connect(
-                  new SSEClientTransport(new URL(config.url)),
-                )
-              } else {
-                // MCP Stdio
-                const config = connector.config as z.infer<typeof MCPClientStdioConfig>
-                Logger.info(
-                  `invoking client initialize for command: ${config.command}`,
-                )
-                await client.connect(
-                  new StdioClientTransport({
-                    command: config.command,
-                    args: config.args,
-                  }),
-                )
+                continue
               }
+              // Store client for cleanup
+              mcpClients.push(client)
               const tools = await getToolsByConnectorId(
                 db,
                 workspace.id,
@@ -1470,6 +1501,17 @@ export const MessageWithToolsApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
+          // Cleanup MCP clients to prevent memory leaks
+          for (const client of mcpClients) {
+            try {
+              await client.close()
+            } catch (error) {
+              loggerWithChild({ email: sub }).error(
+                error,
+                "Failed to close MCP client",
+              )
+            }
+          }
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
