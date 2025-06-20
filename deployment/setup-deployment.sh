@@ -40,7 +40,7 @@ GRAFANA_GID=472
 # Assuming script is run from project root for now, so compose files are in 'deployment/'
 
 echo "Looking for Docker Compose files in ./deployment/ ..."
-COMPOSE_FILES=( $(find ./deployment -maxdepth 1 -name 'docker-compose*.yml' -printf "%f\n") )
+COMPOSE_FILES=( $(find ./deployment -maxdepth 1 -name 'docker-compose*.yml' -exec basename {} \;) )
 
 if [ ${#COMPOSE_FILES[@]} -eq 0 ]; then
     echo "No Docker Compose files (docker-compose*.yml) found in ./deployment/."
@@ -170,10 +170,12 @@ echo "Stopping services for the selected configuration..."
 # Check if Loki service is in the selected compose file
 if grep -q -E "^[[:space:]]*loki:" "$SELECTED_COMPOSE_FILE"; then
     echo "Setting up directory for Loki: $LOKI_DIR_RELATIVE"
-    sudo mkdir -p "$LOKI_DIR_RELATIVE"
-    sudo chown "$LOKI_UID:$LOKI_GID" "$LOKI_DIR_RELATIVE"
-    sudo chmod 755 "$LOKI_DIR_RELATIVE"
-    echo "Loki directory setup complete."
+    mkdir -p "$LOKI_DIR_RELATIVE" # Attempting without sudo
+    # The following chown will likely fail without sudo and is critical for Docker permissions.
+    # If you lack sudo, ensure $LOKI_DIR_RELATIVE is writable by UID $LOKI_UID from within Docker.
+    # sudo chown "$LOKI_UID:$LOKI_GID" "$LOKI_DIR_RELATIVE"
+    chmod 755 "$LOKI_DIR_RELATIVE" # Attempting without sudo
+    echo "Loki directory setup complete (ran mkdir/chmod without sudo, chown skipped)."
 else
     echo "Loki service not found in $SELECTED_COMPOSE_FILE. Skipping Loki directory setup."
 fi
@@ -183,21 +185,25 @@ if grep -q -E "^[[:space:]]*vespa:" "$SELECTED_COMPOSE_FILE"; then
     echo "Setting up directories for Vespa..."
     # Vespa Data Directory
     echo "Setting up Vespa data directory: $VESPA_DATA_DIR_RELATIVE"
-    sudo mkdir -p "$VESPA_DATA_DIR_RELATIVE"
-    sudo chown "$VESPA_UID:$VESPA_GID" "$VESPA_DATA_DIR_RELATIVE"
-    sudo chmod 755 "$VESPA_DATA_DIR_RELATIVE"
+    mkdir -p "$VESPA_DATA_DIR_RELATIVE" # Attempting without sudo
+    # The following chown will likely fail without sudo and is critical for Docker permissions.
+    # If you lack sudo, ensure $VESPA_DATA_DIR_RELATIVE is writable by UID $VESPA_UID from within Docker.
+    # sudo chown "$VESPA_UID:$VESPA_GID" "$VESPA_DATA_DIR_RELATIVE"
+    chmod 755 "$VESPA_DATA_DIR_RELATIVE" # Attempting without sudo
 
     # Vespa Logs Directory - check if it's used in the selected file
     # Some configurations might not use a separate logs volume on host
     if grep -q "$VESPA_LOGS_DIR_RELATIVE" "$SELECTED_COMPOSE_FILE"; then
         echo "Setting up Vespa logs directory: $VESPA_LOGS_DIR_RELATIVE"
-        sudo mkdir -p "$VESPA_LOGS_DIR_RELATIVE"
-        sudo chown "$VESPA_UID:$VESPA_GID" "$VESPA_LOGS_DIR_RELATIVE"
-        sudo chmod 755 "$VESPA_LOGS_DIR_RELATIVE"
+        mkdir -p "$VESPA_LOGS_DIR_RELATIVE" # Attempting without sudo
+        # The following chown will likely fail without sudo and is critical for Docker permissions.
+        # If you lack sudo, ensure $VESPA_LOGS_DIR_RELATIVE is writable by UID $VESPA_UID from within Docker.
+        # sudo chown "$VESPA_UID:$VESPA_GID" "$VESPA_LOGS_DIR_RELATIVE"
+        chmod 755 "$VESPA_LOGS_DIR_RELATIVE" # Attempting without sudo
     else
         echo "Vespa logs directory ($VESPA_LOGS_DIR_RELATIVE) not explicitly found in $SELECTED_COMPOSE_FILE volumes. Skipping specific setup for it."
     fi
-    echo "Vespa directories setup complete."
+    echo "Vespa directories setup complete (ran mkdir/chmod without sudo, chown skipped)."
 else
     echo "Vespa service not found in $SELECTED_COMPOSE_FILE. Skipping Vespa directory setup."
 fi
@@ -205,10 +211,12 @@ fi
 # Check if Grafana service is in the selected compose file
 if grep -q -E "^[[:space:]]*grafana:" "$SELECTED_COMPOSE_FILE"; then
     echo "Setting up directory for Grafana: $GRAFANA_STORAGE_DIR_RELATIVE"
-    sudo mkdir -p "$GRAFANA_STORAGE_DIR_RELATIVE"
-    sudo chown "$GRAFANA_UID:$GRAFANA_GID" "$GRAFANA_STORAGE_DIR_RELATIVE"
-    sudo chmod 755 "$GRAFANA_STORAGE_DIR_RELATIVE" # Grafana might need 775 if it runs processes as different group members, but 755 is usually fine.
-    echo "Grafana directory setup complete."
+    mkdir -p "$GRAFANA_STORAGE_DIR_RELATIVE" # Attempting without sudo
+    # The following chown will likely fail without sudo and is critical for Docker permissions.
+    # If you lack sudo, ensure $GRAFANA_STORAGE_DIR_RELATIVE is writable by UID $GRAFANA_UID from within Docker.
+    # sudo chown "$GRAFANA_UID:$GRAFANA_GID" "$GRAFANA_STORAGE_DIR_RELATIVE"
+    chmod 755 "$GRAFANA_STORAGE_DIR_RELATIVE" # Attempting without sudo. Grafana might need 775 if it runs processes as different group members.
+    echo "Grafana directory setup complete (ran mkdir/chmod without sudo, chown skipped)."
 else
     echo "Grafana service not found in $SELECTED_COMPOSE_FILE. Skipping Grafana directory setup."
 fi
