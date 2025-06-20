@@ -236,7 +236,10 @@ const initializeGmailWorker = () => {
         loggerWithChild({email: result.email}).info(`Updating Progress for Script`)
         fetch(`${METRICS_SERVER_URL}/update-metrics`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
+          },
           body: JSON.stringify({
             email: result.email,
             messageCount: result.stats.messageCount,
@@ -3256,7 +3259,7 @@ export const ServiceAccountIngestMoreUsers = async (
     insertCalendar,
   } = payload
 
-  Logger.info(
+  console.log(
     `ServiceAccountIngestMoreUsers called with jobId: ${jobId} for connector externalId: ${connectorId} ...`,
   )
 
@@ -3289,7 +3292,7 @@ export const ServiceAccountIngestMoreUsers = async (
     const usersToProcess = await listUsersByEmails(admin, emailsToIngest)
 
     if (usersToProcess.length === 0) {
-      Logger.warn(
+      console.log(
         `No valid Google users found for the provided emails: ${emailsToIngest.join(
           ", ",
         )} (jobId: ${jobId}). Aborting ingest more operation.`,
@@ -3318,12 +3321,12 @@ export const ServiceAccountIngestMoreUsers = async (
     const uniqueUsersToProcess = Array.from(uniqueUsersMap.values())
 
     if (uniqueUsersToProcess.length !== usersToProcess.length) {
-      Logger.warn(
+      console.log(
         `Removed ${usersToProcess.length - uniqueUsersToProcess.length} duplicate or unidentifiable (no email) users from processing list (jobId: ${jobId})`,
       )
     }
     if (uniqueUsersToProcess.length === 0) {
-      Logger.warn(
+      console.log(
         `No users with valid emails found after deduplication for emails: ${emailsToIngest.join(
           ", ",
         )} (jobId: ${jobId}). Aborting ingest more operation.`,
@@ -3342,7 +3345,7 @@ export const ServiceAccountIngestMoreUsers = async (
       return
     }
 
-    Logger.info(
+    console.log(
       `Ingesting for ${uniqueUsersToProcess.length} additional users (jobId: ${jobId}).`,
     )
     tracker.setTotalUsers(uniqueUsersToProcess.length)
@@ -3368,7 +3371,7 @@ export const ServiceAccountIngestMoreUsers = async (
         const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
         if (!userEmail) {
-          Logger.error(
+          console.log(
             `ServiceAccountIngestMoreUsers: Could not determine a valid email address for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping this user's detailed processing.`,
           )
           tracker.markUserComplete(
@@ -3541,7 +3544,10 @@ export const ServiceAccountIngestMoreUsers = async (
         Logger.info(`Updating Progress for Script`)
           fetch(`${METRICS_SERVER_URL}/update-metrics`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+            headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
+          },
           body: JSON.stringify({
             email: userEmail,
             messageCount: 0,

@@ -37,4 +37,5 @@ export const updateMetricsFromThread = (
     totalIngestedFiles.inc({mime_type: DriveMime.Slides, status: OperationStatus.Success,email: email,file_type: DriveEntity.Slides,}, slidesCount)
     totalIngestedFiles.inc({mime_type: "application/vnd.google-apps.file", status: OperationStatus.Success,email: email,file_type: DriveEntity.Misc,}, fileCount)
     totalDriveFilesToBeIngested.inc({email: email, file_type: DriveEntity.Misc, status: OperationStatus.Success}, totalDriveFiles)
+    console.log(`Completed Adding Metrics`)
 }

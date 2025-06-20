@@ -207,7 +207,18 @@ const LogOut = async (c: Context) => {
 
 // Update Metrics From Script
 const handleUpdatedMetrics = async (c: Context) => {
-   const body = await c.req.json()
+  console.log(`Started Adding Metrics`)
+
+  const authHeader = c.req.header("authorization") ?? ""
+
+  const secret = authHeader.replace(/^Bearer\s+/i, "").trim()
+
+  if (secret !== process.env.METRICS_SECRET) {
+    console.warn("Unauthorized metrics update attempt")
+    return c.text("Unauthorized", 401)
+  }
+
+  const body = await c.req.json()
   const { email, 
     messageCount, 
     attachmentCount, 
@@ -242,6 +253,10 @@ const handleUpdatedMetrics = async (c: Context) => {
     totalDriveFiles
   )
 }
+const updateApp = new Hono()
+
+updateApp.post("/update-metrics", handleUpdatedMetrics)
+app.route("/", updateApp)
 
 export const AppRoutes = app
   .basePath("/api/v1")
@@ -303,7 +318,6 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
-  .post("/update-metrics", handleUpdatedMetrics)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
