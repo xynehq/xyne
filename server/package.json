@@ -8,7 +8,7 @@
     "@faker-js/faker": "^9.3.0",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
-    "drizzle-kit": "^0.24.2",
+    "drizzle-kit": "^0.31.0",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1"
   },
