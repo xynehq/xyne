@@ -37,7 +37,7 @@ import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
-import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+import { createOAuthProvider, getAppGlobalOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
@@ -207,11 +207,31 @@ export const CreateOAuthProvider = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")
-  const clientId = form.clientId
-  const clientSecret = form.clientSecret
-  const scopes = form.scopes
-  const app = form.app
+  const isUsingGlobalCred= form.isUsingGlobalCred
 
+  let clientId = undefined
+  let scopes = undefined
+  let clientSecret = undefined
+  if(isUsingGlobalCred){
+    // get the global connector where the isGlobal flag is true
+    try{
+      const globalProviders = await getAppGlobalOAuthProvider(db, Apps.Slack)
+      if (globalProviders.length > 0) {
+        const globalProvider = globalProviders[0] // Take the first global provider
+        clientId = globalProvider.clientId
+        scopes = globalProvider.oauthScopes // Use oauthScopes instead of scopes to match the schema
+        clientSecret = globalProvider.clientSecret
+      }
+    }
+    catch(error){
+      loggerWithChild({email: sub}).error(`Error fetching global OAuth provider: ${getErrorMessage(error)}`)
+    }
+  }
+   clientId = form.clientId
+   clientSecret = form.clientSecret
+   scopes = form.scopes
+  const app = form.app
+  
   return await db.transaction(async (trx) => {
     const connector = await insertConnector(
       trx, // Pass the transaction object
