@@ -193,18 +193,15 @@ export async function up(): Promise<void> {
   console.log(`✅ Data migration completed. Updated: ${updated}, Failed: ${failed}`);
 
   // Step 3: Final Schema Cleanup
-  if (migrationStatus.hasOldColumn && (totalRecords > 0 || updated > 0)) {
-    console.log("🔧 Performing final schema cleanup...");
-    await db.execute(
-      sql`ALTER TABLE "chat_trace" ALTER COLUMN "trace_json" SET NOT NULL`
-    );
-    await db.execute(
-      sql`ALTER TABLE "chat_trace" DROP COLUMN "trace_json_old_jsonb"`
-    );
-    console.log("✅ Schema cleanup completed.");
-  } else {
-    console.log("⏭️  Skipping schema cleanup as no data was migrated or old column doesn't exist.");
-  }
+  console.log("🔧 Performing final schema cleanup...");
+  await db.execute(
+    sql`ALTER TABLE "chat_trace" ALTER COLUMN "trace_json" SET NOT NULL`
+  );
+  await db.execute(
+    sql`ALTER TABLE "chat_trace" DROP COLUMN "trace_json_old_jsonb"`
+  );
+  console.log("✅ Schema cleanup completed.");
+ 
 }
 
 async function main() {
