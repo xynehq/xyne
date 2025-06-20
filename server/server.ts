@@ -210,8 +210,7 @@ const handleUpdatedMetrics = async (c: Context) => {
   console.log(`Started Adding Metrics`)
 
   const authHeader = c.req.header("METRICS_SECRET") ?? ""
-
-  const secret = authHeader.replace(/^Bearer\s+/i, "").trim()
+  const secret = authHeader.trim()
 
   if (secret !== process.env.METRICS_SECRET) {
     console.warn("Unauthorized metrics update attempt")
