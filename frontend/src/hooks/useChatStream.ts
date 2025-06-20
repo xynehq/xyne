@@ -4,6 +4,7 @@ import { useRouter } from "@tanstack/react-router"
 import { api } from "@/api"
 import { ChatSSEvents, Citation } from "shared/types"
 import { toast } from "@/hooks/use-toast"
+import { ToolsListItem } from "@/types"
 
 // Module-level storage for persistent EventSource connections
 interface StreamState {
@@ -37,16 +38,16 @@ const activeStreams = new Map<string, StreamState>()
 const parseMessageInput = (htmlString: string) => {
   // Create a DOMParser instance for safer parsing
   const parser = new DOMParser()
-  
+
   // Parse the HTML string as XML to avoid script execution
-  const doc = parser.parseFromString(htmlString, 'text/html')
-  
+  const doc = parser.parseFromString(htmlString, "text/html")
+
   // Check if parsing failed
-  if (doc.querySelector('parsererror')) {
+  if (doc.querySelector("parsererror")) {
     // If parsing failed, treat as plain text
     return [{ type: "text" as const, value: htmlString }]
   }
-  
+
   const parts: Array<{ type: "text" | "pill" | "link"; value: any }> = []
 
   const walk = (node: Node) => {
@@ -56,15 +57,25 @@ const parseMessageInput = (htmlString: string) => {
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
-      
+
       // Only process safe elements and ignore potentially dangerous ones
       const tagName = el.tagName.toLowerCase()
-      
+
       // Skip dangerous elements completely
-      if (['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'].includes(tagName)) {
+      if (
+        [
+          "script",
+          "style",
+          "iframe",
+          "object",
+          "embed",
+          "form",
+          "input",
+        ].includes(tagName)
+      ) {
         return
       }
-      
+
       if (
         tagName === "a" &&
         el.classList.contains("reference-pill") &&
@@ -78,7 +89,13 @@ const parseMessageInput = (htmlString: string) => {
         if (imgElement) {
           // Validate image source to prevent javascript: URLs
           const src = imgElement.getAttribute("src")
-          if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:image/') || src.startsWith('/'))) {
+          if (
+            src &&
+            (src.startsWith("http://") ||
+              src.startsWith("https://") ||
+              src.startsWith("data:image/") ||
+              src.startsWith("/"))
+          ) {
             imgSrc = src
           }
         }
@@ -96,7 +113,13 @@ const parseMessageInput = (htmlString: string) => {
       } else if (tagName === "a" && el.getAttribute("href")) {
         const href = el.getAttribute("href")
         // Validate href to prevent javascript: URLs and other dangerous protocols
-        if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('/') || href.startsWith('mailto:'))) {
+        if (
+          href &&
+          (href.startsWith("http://") ||
+            href.startsWith("https://") ||
+            href.startsWith("/") ||
+            href.startsWith("mailto:"))
+        ) {
           if (
             !(
               el.classList.contains("reference-pill") &&
@@ -129,7 +152,7 @@ const parseMessageInput = (htmlString: string) => {
 const notifySubscribers = (streamId: string) => {
   const stream = activeStreams.get(streamId)
   if (stream) {
-    stream.subscribers.forEach(callback => callback())
+    stream.subscribers.forEach((callback) => callback())
   }
 }
 
@@ -140,23 +163,26 @@ export const startStream = async (
   selectedSources: string[] = [],
   isReasoningActive: boolean = true,
   isAgenticMode: boolean = false,
-  toolExternalIds: string[] = [],
   queryClient?: any,
   router?: any,
   onTitleUpdate?: (title: string) => void,
-  agentIdFromChatParams?: string | null
+  agentIdFromChatParams?: string | null,
+  toolsList?: ToolsListItem[],
 ): Promise<void> => {
   if (!messageToSend) return
-  
+
   // Check if stream already exists and is active
-  if (activeStreams.has(streamKey) && activeStreams.get(streamKey)?.isStreaming) {
+  if (
+    activeStreams.has(streamKey) &&
+    activeStreams.get(streamKey)?.isStreaming
+  ) {
     return
   }
 
   // Parse message content
   const parsedMessageParts = parseMessageInput(messageToSend)
   const hasRichContent = parsedMessageParts.some(
-    (part) => part.type === "pill" || part.type === "link"
+    (part) => part.type === "pill" || part.type === "link",
   )
 
   let finalMessagePayload: string
@@ -169,7 +195,7 @@ export const startStream = async (
       .join("")
   }
 
-  const isNewChat = streamKey.length === 36 && streamKey.includes('-')
+  const isNewChat = streamKey.length === 36 && streamKey.includes("-")
   const chatId = isNewChat ? null : streamKey
 
   const url = new URL(`/api/v1/message/create`, window.location.origin)
@@ -185,15 +211,15 @@ export const startStream = async (
   if (isReasoningActive) {
     url.searchParams.append("isReasoningEnabled", "true")
   }
-  if (toolExternalIds && toolExternalIds.length > 0) {
-    toolExternalIds.forEach((toolId) => {
-      url.searchParams.append("toolExternalIds", toolId)
-    })
+
+  // Add toolsList parameter if provided
+  if (toolsList && toolsList.length > 0) {
+    url.searchParams.append("toolsList", JSON.stringify(toolsList))
   }
 
-  const agentIdToUse = agentIdFromChatParams;
+  const agentIdToUse = agentIdFromChatParams
   if (agentIdToUse) {
-    url.searchParams.append("agentId", agentIdToUse);
+    url.searchParams.append("agentId", agentIdToUse)
   }
 
   const eventSource = new EventSource(url.toString(), {
@@ -236,13 +262,14 @@ export const startStream = async (
     const { chatId: realId, messageId } = JSON.parse(event.data)
     streamState.messageId = messageId
     streamState.chatId = realId
-      
+
     if (realId && streamKey !== realId && !streamKey.match(/^[a-z0-9]+$/)) {
       activeStreams.delete(streamKey)
       activeStreams.set(realId, streamState)
-      
+
       if (router && router.state.location.pathname === "/chat") {
-        const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
+        const isGlobalDebugMode =
+          import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
         router.navigate({
           to: "/chat/$chatId",
           params: { chatId: realId },
@@ -272,7 +299,7 @@ export const startStream = async (
   streamState.es.addEventListener(ChatSSEvents.End, () => {
     streamState.isStreaming = false
     streamState.es.close()
-    
+
     if (streamKey && queryClient) {
       queryClient.invalidateQueries({ queryKey: ["chatHistory", streamKey] })
     }
@@ -283,7 +310,7 @@ export const startStream = async (
     console.error(`Stream error:`, event.data)
     streamState.isStreaming = false
     streamState.es.close()
-    
+
     toast({
       title: "Error",
       description: event.data,
@@ -296,7 +323,7 @@ export const startStream = async (
     console.error(`EventSource error:`, error)
     streamState.isStreaming = false
     streamState.es.close()
-    
+
     toast({
       title: "Error",
       description: "Connection error. Please try again.",
@@ -307,29 +334,35 @@ export const startStream = async (
 }
 
 // Stop a specific stream
-export const stopStream = async (streamKey: string, queryClient?: any, setRetryIsStreaming?: (isRetrying: boolean) => void): Promise<void> => {
+export const stopStream = async (
+  streamKey: string,
+  queryClient?: any,
+  setRetryIsStreaming?: (isRetrying: boolean) => void,
+): Promise<void> => {
   const stream = activeStreams.get(streamKey)
-  
+
   if (!stream) return
 
   if (setRetryIsStreaming) {
     setRetryIsStreaming(false)
     stream.isRetrying = false
   }
-  
+
   stream.isStreaming = false
   stream.es.close()
-  
+
   const currentChatId = stream.chatId || streamKey
   if (currentChatId) {
     try {
       await api.chat.stop.$post({
         json: { chatId: currentChatId },
       })
-      
+
       if (queryClient) {
-        await new Promise(resolve => setTimeout(resolve, 500))
-        await queryClient.refetchQueries({ queryKey: ["chatHistory", currentChatId] })
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        await queryClient.refetchQueries({
+          queryKey: ["chatHistory", currentChatId],
+        })
       }
     } catch (error) {
       console.error("Failed to send stop request:", error)
@@ -348,7 +381,7 @@ export const stopStream = async (streamKey: string, queryClient?: any, setRetryI
 // Get current stream state (for hook consumers)
 export const getStreamState = (streamKey: string): StreamInfo => {
   const stream = activeStreams.get(streamKey)
-  
+
   if (!stream) {
     return {
       partial: "",
@@ -360,7 +393,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       isStreaming: false,
     }
   }
-  
+
   return {
     partial: stream.partial,
     thinking: stream.thinking,
@@ -376,26 +409,28 @@ export const getStreamState = (streamKey: string): StreamInfo => {
 export const useChatStream = (
   chatId: string | null,
   onTitleUpdate?: (title: string) => void,
-  setRetryIsStreaming?: (isRetrying: boolean) => void
+  setRetryIsStreaming?: (isRetrying: boolean) => void,
 ) => {
   const queryClient = useQueryClient()
   const router = useRouter()
-  
+
   const streamKeyRef = useRef<string | null>(null)
   const lastChatIdRef = useRef<string | null>(null)
-  
+
   if (chatId !== lastChatIdRef.current) {
     streamKeyRef.current = chatId ?? crypto.randomUUID()
     lastChatIdRef.current = chatId
   }
-  
+
   if (!streamKeyRef.current) {
     streamKeyRef.current = chatId ?? crypto.randomUUID()
   }
-  
+
   const currentStreamKey = chatId ?? streamKeyRef.current
-  
-  const [streamInfo, setStreamInfo] = useState<StreamInfo>(() => getStreamState(currentStreamKey))
+
+  const [streamInfo, setStreamInfo] = useState<StreamInfo>(() =>
+    getStreamState(currentStreamKey),
+  )
   const subscriberRef = useRef<(() => void) | null>(null)
   const currentStreamKeyRef = useRef<string>(currentStreamKey)
 
@@ -404,15 +439,17 @@ export const useChatStream = (
   }, [currentStreamKey])
 
   useEffect(() => {
-    const stream = activeStreams.get(router.state.location.pathname.split("/").pop() || "")
-    if(setRetryIsStreaming) {
-      setRetryIsStreaming(stream?.isRetrying|| false)
+    const stream = activeStreams.get(
+      router.state.location.pathname.split("/").pop() || "",
+    )
+    if (setRetryIsStreaming) {
+      setRetryIsStreaming(stream?.isRetrying || false)
     }
   }, [router.state.location.pathname])
 
   useEffect(() => {
     const streamKey = currentStreamKey
-    
+
     if (subscriberRef.current) {
       activeStreams.forEach((stream, key) => {
         if (subscriberRef.current) {
@@ -420,15 +457,15 @@ export const useChatStream = (
         }
       })
     }
-    
+
     const subscriber = () => {
       if (currentStreamKeyRef.current === streamKey) {
         setStreamInfo(getStreamState(streamKey))
       }
     }
-    
+
     subscriberRef.current = subscriber
-    
+
     const stream = activeStreams.get(streamKey)
     if (stream) {
       stream.subscribers.add(subscriber)
@@ -436,7 +473,7 @@ export const useChatStream = (
     } else {
       setStreamInfo(getStreamState(streamKey))
     }
-    
+
     return () => {
       const stream = activeStreams.get(streamKey)
       if (stream && subscriberRef.current) {
@@ -445,274 +482,297 @@ export const useChatStream = (
     }
   }, [currentStreamKey])
 
-  const wrappedStartStream = useCallback(async (
-    messageToSend: string,
-    selectedSources: string[] = [],
-    isReasoningActive: boolean = true,
-    isAgenticMode: boolean = false,
-    toolExternalIds: string[] = [],
-    agentIdFromChatParams?: string | null
-  ) => {
-    const streamKey = currentStreamKey
-    
-    await startStream(
-      streamKey,
-      messageToSend,
-      selectedSources,
-      isReasoningActive,
-      isAgenticMode,
-      toolExternalIds,
-      queryClient,
-      router,
-      onTitleUpdate,
-      agentIdFromChatParams
-    )
-    
-    setStreamInfo(getStreamState(streamKey))
-    
-    const stream = activeStreams.get(streamKey)
-    if (stream && subscriberRef.current) {
-      stream.subscribers.add(subscriberRef.current)
-      subscriberRef.current()
-    }
-    
-    streamKeyRef.current = streamKey
-  }, [currentStreamKey, queryClient, router, onTitleUpdate])
+  const wrappedStartStream = useCallback(
+    async (
+      messageToSend: string,
+      selectedSources: string[] = [],
+      isReasoningActive: boolean = true,
+      isAgenticMode: boolean = false,
+      agentIdFromChatParams?: string | null,
+      toolsList?: ToolsListItem[],
+    ) => {
+      const streamKey = currentStreamKey
+
+      await startStream(
+        streamKey,
+        messageToSend,
+        selectedSources,
+        isReasoningActive,
+        isAgenticMode,
+        queryClient,
+        router,
+        onTitleUpdate,
+        agentIdFromChatParams,
+        toolsList,
+      )
+
+      setStreamInfo(getStreamState(streamKey))
+
+      const stream = activeStreams.get(streamKey)
+      if (stream && subscriberRef.current) {
+        stream.subscribers.add(subscriberRef.current)
+        subscriberRef.current()
+      }
+
+      streamKeyRef.current = streamKey
+    },
+    [currentStreamKey, queryClient, router, onTitleUpdate],
+  )
 
   const wrappedStopStream = useCallback(async () => {
     await stopStream(currentStreamKey, queryClient, setRetryIsStreaming)
   }, [currentStreamKey, queryClient, setRetryIsStreaming])
 
-  const retryMessage = useCallback(async (
-    messageId: string,
-    isReasoningActive: boolean = false,
-    isAgenticMode: boolean = false,
-  ) => {
-    if (!messageId) return
+  const retryMessage = useCallback(
+    async (
+      messageId: string,
+      isReasoningActive: boolean = false,
+      isAgenticMode: boolean = false,
+    ) => {
+      if (!messageId) return
 
-    let isError = false
-    let targetMessageId : string | null = null
-    
-    if (chatId) {
-      try {
-        await queryClient.fetchQuery({
-          queryKey: ["chatHistory", chatId],
-        })
-      } catch (err) {
-        console.error("Failed to fetch latest chat history before retry:", err)
-      }
-    }
-    
-    if (chatId) {
-      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-        if (!old?.messages) return old
-        return {
-          ...old,
-          messages: old.messages.map((m: any) =>
-            (m.externalId === messageId && m.messageRole === "assistant") ? { ...m, isRetrying: true, message: "", thinking: "" } : m,
-          ),
-        }
-      })
+      let isError = false
+      let targetMessageId: string | null = null
 
-      const chatData = queryClient.getQueryData<any>(["chatHistory", chatId])
-      if (chatData && chatData.messages) {
-        const matched = chatData.messages.find((msg: any) => msg.externalId === messageId)
-
-        if (matched && matched.errorMessage && matched.errorMessage !== "") {
-          isError = true
-          const matchedIndex = chatData.messages.findIndex(
-            (msg: any) => msg.externalId === messageId
-          )
-          
-          targetMessageId = crypto.randomUUID()
-          const assistantMessage = {
-            ...JSON.parse(JSON.stringify(matched)),
-            chatExternalId: chatId,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            externalId: targetMessageId,
-            messageRole: "assistant",
-            message: "",
-            isRetrying: true,
-            sources: [],
-            thinking: "",
-            errorMessage: "",
-          }
-          
-          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-            if (!old?.messages) return old
-            const insertIndex = matchedIndex + 1
-            const updatedMessages = [
-              ...old.messages.slice(0, insertIndex),
-              assistantMessage,
-              ...old.messages.slice(insertIndex),
-            ]
-
-            return {
-              ...old,
-              messages: updatedMessages,
-            }
-          })
-
-          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-            if (!old?.messages) return old
-            return {
-              ...old,
-              messages: old.messages.map((m: any) => {
-                if (m.externalId === messageId && m.messageRole === "user") {
-                  return { 
-                    ...m, 
-                    errorMessage: ""
-                  }
-                }
-                return m
-              }),
-            }
-          })
-        }
-      }
-    }
-
-    const url = new URL(`/api/v1/message/retry`, window.location.origin)
-    url.searchParams.append("messageId", encodeURIComponent(messageId))
-    if (isReasoningActive) {
-      url.searchParams.append("isReasoningEnabled", "true")
-    }
-    if (isAgenticMode) {
-      url.searchParams.append("agentic", "true")
-    }
-
-    const eventSource = new EventSource(url.toString(), {
-      withCredentials: true,
-    })
-
-    if (setRetryIsStreaming) {
-      setRetryIsStreaming(true)
-    }
-
-    const retryStreamKey = chatId || currentStreamKey
-    
-    const streamState: StreamState = {
-      es: eventSource,
-      partial: "",
-      thinking: "",
-      sources: [],
-      citationMap: {},
-      messageId: undefined,
-      chatId: chatId || undefined,
-      isStreaming: false,
-      isRetrying: true,
-      subscribers: new Set(),
-    }
-
-    activeStreams.set(retryStreamKey, streamState)
-
-    if (subscriberRef.current && retryStreamKey === currentStreamKeyRef.current) {
-      streamState.subscribers.add(subscriberRef.current)
-      subscriberRef.current()
-    }
-    notifySubscribers(retryStreamKey)
-
-    const patchResponseContent = (delta: string, isFinal = false) => {
-      if (!chatId) return
-      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-        if (!old?.messages) return old
-        return {
-          ...old,
-          messages: old.messages.map((m: any) =>
-            (isError ? m.externalId === targetMessageId : m.externalId === messageId && m.messageRole === "assistant")
-              ? {
-                  ...m,
-                  message: isFinal ? delta : (m.message || "") + delta,
-                  isRetrying: !isFinal,
-                }
-              : m,
-          ),
-        }
-      })
-    }
-
-    const patchReasoningContent = (delta: string) => {
-      if (!chatId) return
-      queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-        if (!old?.messages) return old
-        return {
-          ...old,
-          messages: old.messages.map((m: any) =>
-            (isError ? m.externalId === targetMessageId : m.externalId === messageId && m.messageRole === "assistant")
-              ? {
-                  ...m,
-                  thinking: (m.thinking || "") + delta,
-                }
-              : m,
-          ),
-        }
-      })
-    }
-
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      streamState.partial += event.data
-      patchResponseContent(event.data)
-    })
-
-    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      streamState.thinking += event.data
-      patchReasoningContent(event.data)
-    })
-
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      streamState.sources = contextChunks
-      streamState.citationMap = citationMap
-    })
-
-    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const { messageId: newMessageId } = JSON.parse(event.data)
-      streamState.messageId = newMessageId
-    })
-
-    eventSource.addEventListener(ChatSSEvents.End, () => {
-      patchResponseContent(streamState.partial)
       if (chatId) {
-        queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
+        try {
+          await queryClient.fetchQuery({
+            queryKey: ["chatHistory", chatId],
+          })
+        } catch (err) {
+          console.error(
+            "Failed to fetch latest chat history before retry:",
+            err,
+          )
+        }
       }
-      if (setRetryIsStreaming) {
-        setRetryIsStreaming(false)
-      }
-      streamState.isRetrying = false
-      notifySubscribers(retryStreamKey)
-      activeStreams.delete(retryStreamKey)
-      eventSource.close()
-    })
 
-    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
-      console.error("Retry stream error:", event.data)
-      toast({
-        title: "Error",
-        description: event.data,
-        variant: "destructive",
+      if (chatId) {
+        queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+          if (!old?.messages) return old
+          return {
+            ...old,
+            messages: old.messages.map((m: any) =>
+              m.externalId === messageId && m.messageRole === "assistant"
+                ? { ...m, isRetrying: true, message: "", thinking: "" }
+                : m,
+            ),
+          }
+        })
+
+        const chatData = queryClient.getQueryData<any>(["chatHistory", chatId])
+        if (chatData && chatData.messages) {
+          const matched = chatData.messages.find(
+            (msg: any) => msg.externalId === messageId,
+          )
+
+          if (matched && matched.errorMessage && matched.errorMessage !== "") {
+            isError = true
+            const matchedIndex = chatData.messages.findIndex(
+              (msg: any) => msg.externalId === messageId,
+            )
+
+            targetMessageId = crypto.randomUUID()
+            const assistantMessage = {
+              ...JSON.parse(JSON.stringify(matched)),
+              chatExternalId: chatId,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              externalId: targetMessageId,
+              messageRole: "assistant",
+              message: "",
+              isRetrying: true,
+              sources: [],
+              thinking: "",
+              errorMessage: "",
+            }
+
+            queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+              if (!old?.messages) return old
+              const insertIndex = matchedIndex + 1
+              const updatedMessages = [
+                ...old.messages.slice(0, insertIndex),
+                assistantMessage,
+                ...old.messages.slice(insertIndex),
+              ]
+
+              return {
+                ...old,
+                messages: updatedMessages,
+              }
+            })
+
+            queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+              if (!old?.messages) return old
+              return {
+                ...old,
+                messages: old.messages.map((m: any) => {
+                  if (m.externalId === messageId && m.messageRole === "user") {
+                    return {
+                      ...m,
+                      errorMessage: "",
+                    }
+                  }
+                  return m
+                }),
+              }
+            })
+          }
+        }
+      }
+
+      const url = new URL(`/api/v1/message/retry`, window.location.origin)
+      url.searchParams.append("messageId", encodeURIComponent(messageId))
+      if (isReasoningActive) {
+        url.searchParams.append("isReasoningEnabled", "true")
+      }
+      if (isAgenticMode) {
+        url.searchParams.append("agentic", "true")
+      }
+
+      const eventSource = new EventSource(url.toString(), {
+        withCredentials: true,
       })
-      if (setRetryIsStreaming) {
-        setRetryIsStreaming(false)
-      }
-      streamState.isRetrying = false
-      notifySubscribers(retryStreamKey)
-      activeStreams.delete(retryStreamKey)
-      eventSource.close()
-    })
 
-    eventSource.onerror = () => {
-      console.error("Retry EventSource error")
       if (setRetryIsStreaming) {
-        setRetryIsStreaming(false)
+        setRetryIsStreaming(true)
       }
-      streamState.isRetrying = false
-      notifySubscribers(retryStreamKey)
-      activeStreams.delete(retryStreamKey)
-      eventSource.close()
-    }
 
-  }, [currentStreamKey, queryClient, chatId, setRetryIsStreaming])
+      const retryStreamKey = chatId || currentStreamKey
+
+      const streamState: StreamState = {
+        es: eventSource,
+        partial: "",
+        thinking: "",
+        sources: [],
+        citationMap: {},
+        messageId: undefined,
+        chatId: chatId || undefined,
+        isStreaming: false,
+        isRetrying: true,
+        subscribers: new Set(),
+      }
+
+      activeStreams.set(retryStreamKey, streamState)
+
+      if (
+        subscriberRef.current &&
+        retryStreamKey === currentStreamKeyRef.current
+      ) {
+        streamState.subscribers.add(subscriberRef.current)
+        subscriberRef.current()
+      }
+      notifySubscribers(retryStreamKey)
+
+      const patchResponseContent = (delta: string, isFinal = false) => {
+        if (!chatId) return
+        queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+          if (!old?.messages) return old
+          return {
+            ...old,
+            messages: old.messages.map((m: any) =>
+              (
+                isError
+                  ? m.externalId === targetMessageId
+                  : m.externalId === messageId && m.messageRole === "assistant"
+              )
+                ? {
+                    ...m,
+                    message: isFinal ? delta : (m.message || "") + delta,
+                    isRetrying: !isFinal,
+                  }
+                : m,
+            ),
+          }
+        })
+      }
+
+      const patchReasoningContent = (delta: string) => {
+        if (!chatId) return
+        queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+          if (!old?.messages) return old
+          return {
+            ...old,
+            messages: old.messages.map((m: any) =>
+              (
+                isError
+                  ? m.externalId === targetMessageId
+                  : m.externalId === messageId && m.messageRole === "assistant"
+              )
+                ? {
+                    ...m,
+                    thinking: (m.thinking || "") + delta,
+                  }
+                : m,
+            ),
+          }
+        })
+      }
+
+      eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+        streamState.partial += event.data
+        patchResponseContent(event.data)
+      })
+
+      eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+        streamState.thinking += event.data
+        patchReasoningContent(event.data)
+      })
+
+      eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        streamState.sources = contextChunks
+        streamState.citationMap = citationMap
+      })
+
+      eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+        const { messageId: newMessageId } = JSON.parse(event.data)
+        streamState.messageId = newMessageId
+      })
+
+      eventSource.addEventListener(ChatSSEvents.End, () => {
+        patchResponseContent(streamState.partial)
+        if (chatId) {
+          queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
+        }
+        if (setRetryIsStreaming) {
+          setRetryIsStreaming(false)
+        }
+        streamState.isRetrying = false
+        notifySubscribers(retryStreamKey)
+        activeStreams.delete(retryStreamKey)
+        eventSource.close()
+      })
+
+      eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+        console.error("Retry stream error:", event.data)
+        toast({
+          title: "Error",
+          description: event.data,
+          variant: "destructive",
+        })
+        if (setRetryIsStreaming) {
+          setRetryIsStreaming(false)
+        }
+        streamState.isRetrying = false
+        notifySubscribers(retryStreamKey)
+        activeStreams.delete(retryStreamKey)
+        eventSource.close()
+      })
+
+      eventSource.onerror = () => {
+        console.error("Retry EventSource error")
+        if (setRetryIsStreaming) {
+          setRetryIsStreaming(false)
+        }
+        streamState.isRetrying = false
+        notifySubscribers(retryStreamKey)
+        activeStreams.delete(retryStreamKey)
+        eventSource.close()
+      }
+    },
+    [currentStreamKey, queryClient, chatId, setRetryIsStreaming],
+  )
 
   return {
     ...streamInfo,
