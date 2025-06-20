@@ -693,51 +693,55 @@ const insertCalendarEvents = async (
   })
   // Insert confirmed events
   for (const event of confirmedEvents) {
-    const { baseUrl, joiningUrl } = getJoiningLink(event)
-    const { attendeesInfo, attendeesEmails, attendeesNames } =
-      getAttendeesOfEvent(event.attendees ?? [])
-    const { attachmentsInfo, attachmentFilenames } = getAttachments(
-      event.attachments ?? [],
-    )
-    const { isDefaultStartTime, startTime } = getEventStartTime(event)
-    const eventToBeIngested = {
-      docId: event.id ?? "",
-      name: event.summary ?? "",
-      description: getTextFromEventDescription(event?.description ?? ""),
-      url: event.htmlLink ?? "",
-      status: event.status ?? "",
-      location: event.location ?? "",
-      createdAt: new Date(event.created!).getTime(),
-      updatedAt: new Date(event.updated!).getTime(),
-      app: Apps.GoogleCalendar,
-      entity: CalendarEntity.Event,
-      creator: {
-        email: event.creator?.email ?? "",
-        displayName: event.creator?.displayName ?? "",
-      },
-      organizer: {
-        email: event.organizer?.email ?? "",
-        displayName: event.organizer?.displayName ?? "",
-      },
-      attendees: attendeesInfo,
-      attendeesNames: attendeesNames,
-      startTime: startTime,
-      endTime: new Date(event.end?.dateTime!).getTime(),
-      attachmentFilenames,
-      attachments: attachmentsInfo,
-      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
-      baseUrl,
-      joiningLink: joiningUrl,
-      permissions: getUniqueEmails([
-        event.organizer?.email ?? "",
-        ...attendeesEmails,
-      ]),
-      cancelledInstances: [],
-      defaultStartTime: isDefaultStartTime,
-    }
+    try {
+      const { baseUrl, joiningUrl } = getJoiningLink(event)
+      const { attendeesInfo, attendeesEmails, attendeesNames } =
+        getAttendeesOfEvent(event.attendees ?? [])
+      const { attachmentsInfo, attachmentFilenames } = getAttachments(
+        event.attachments ?? [],
+      )
+      const { isDefaultStartTime, startTime } = getEventStartTime(event)
+      const eventToBeIngested = {
+        docId: event.id ?? "",
+        name: event.summary ?? "",
+        description: getTextFromEventDescription(event?.description ?? ""),
+        url: event.htmlLink ?? "",
+        status: event.status ?? "",
+        location: event.location ?? "",
+        createdAt: new Date(event.created!).getTime(),
+        updatedAt: new Date(event.updated!).getTime(),
+        app: Apps.GoogleCalendar,
+        entity: CalendarEntity.Event,
+        creator: {
+          email: event.creator?.email ?? "",
+          displayName: event.creator?.displayName ?? "",
+        },
+        organizer: {
+          email: event.organizer?.email ?? "",
+          displayName: event.organizer?.displayName ?? "",
+        },
+        attendees: attendeesInfo,
+        attendeesNames: attendeesNames,
+        startTime: startTime,
+        endTime: new Date(event.end?.dateTime!).getTime(),
+        attachmentFilenames,
+        attachments: attachmentsInfo,
+        recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+        baseUrl,
+        joiningLink: joiningUrl,
+        permissions: getUniqueEmails([
+          event.organizer?.email ?? "",
+          ...attendeesEmails,
+        ]),
+        cancelledInstances: [],
+        defaultStartTime: isDefaultStartTime,
+      }
 
-    await insertWithRetry(eventToBeIngested, eventSchema)
-    tracker.updateUserStats(userEmail, StatType.Events, 1)
+      await insertWithRetry(eventToBeIngested, eventSchema)
+      tracker.updateUserStats(userEmail, StatType.Events, 1)
+    } catch (error) {
+      Logger.error(`Error inserting the Event:${event.id}`)
+    }
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -1618,22 +1622,27 @@ const insertFilesForUser = async (
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
 
     for await (let pageFiles of iterator) {
-      loggerWithChild({email: userEmail!}).info(
+      loggerWithChild({ email: userEmail! }).info(
         `Processing page of ${pageFiles.length} files for user ${userEmail}`,
       )
       // Check existence and timestamps for all files in this page right away
       const fileIds = pageFiles.map((file) => file.id!)
-      const existenceMap = await ifDocumentsExist(fileIds)
       let initialCount = pageFiles.length
-      pageFiles = filterUnchanged(existenceMap, pageFiles)
+      try {
+        const existenceMap = await ifDocumentsExist(fileIds)
 
-      const skippedFilesCount = initialCount - pageFiles.length
-      if (skippedFilesCount > 0) {
-        processedFiles += skippedFilesCount
-        tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
-        loggerWithChild({email: userEmail!}).info(
-          `Skipped ${skippedFilesCount} unchanged Drive files`,
-        )
+        pageFiles = filterUnchanged(existenceMap, pageFiles)
+
+        const skippedFilesCount = initialCount - pageFiles.length
+        if (skippedFilesCount > 0) {
+          processedFiles += skippedFilesCount
+          tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
+          loggerWithChild({ email: userEmail! }).info(
+            `Skipped ${skippedFilesCount} unchanged Drive files`,
+          )
+        }
+      } catch (error) {
+        Logger.error(`Could not check the file existance:Insering all files`)
       }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
