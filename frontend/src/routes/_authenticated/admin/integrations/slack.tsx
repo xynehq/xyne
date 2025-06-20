@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { Pencil, ArrowLeft } from "lucide-react"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
 import { Apps, AuthType, IngestionType } from "shared/types"
@@ -115,10 +116,12 @@ export const SlackOAuthButton = ({
   app,
   text,
   setIntegrationStatus,
+  className,
 }: {
   app: Apps
   text: string
   setIntegrationStatus: (status: OAuthIntegrationStatus) => void
+  className?: string
 }) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
@@ -134,7 +137,7 @@ export const SlackOAuthButton = ({
     }
   }
 
-  return <Button onClick={handleOAuth}>{text}</Button>
+  return <Button onClick={handleOAuth} className={className}>{text}</Button>
 }
 
 enum ConnectAction {
@@ -164,10 +167,11 @@ interface SlackOAuthTabProps {
   handleRegularIngestion: () => Promise<void>
   isManualIngestionActive: boolean
   isRegularIngestionActive: boolean
+  userRole: PublicUser["role"]
 }
 
 const submitSlackOAuth = async (
-  value: { clientId: string; clientSecret: string; scopes: string },
+  value: { clientId: string; clientSecret: string; scopes: string; isGlobalProvider: boolean },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
   const response = await api.admin.oauth.create.$post({
@@ -176,6 +180,7 @@ const submitSlackOAuth = async (
       clientSecret: value.clientSecret,
       scopes: value.scopes.split(",").map((s) => s.trim()),
       app: Apps.Slack,
+      isGlobalProvider: value.isGlobalProvider,
     },
   })
   if (!response.ok) {
@@ -191,15 +196,24 @@ const submitSlackOAuth = async (
   return response.json()
 }
 
-export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
+export const SlackOAuthForm = ({
+  onSuccess,
+  userRole,
+  initialIsGlobalProvider,
+}: {
+  onSuccess: () => void;
+  userRole: PublicUser["role"];
+  initialIsGlobalProvider: boolean;
+}) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<{
     clientId: string
     clientSecret: string
     scopes: string
+    isGlobalProvider: boolean
   }>({
-    defaultValues: { clientId: "", clientSecret: "", scopes: "" },
+    defaultValues: { clientId: "", clientSecret: "", scopes: "", isGlobalProvider: initialIsGlobalProvider },
     onSubmit: async ({ value }) => {
       try {
         await submitSlackOAuth(value, navigate)
@@ -298,6 +312,25 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
         )}
       />
       <Button type="submit">Add</Button>
+      {(userRole === "admin" || userRole === "SuperAdmin") && (
+        <div className="flex items-center space-x-2 mt-4">
+          <form.Field
+            name="isGlobalProvider"
+            children={(field) => (
+              <input
+                type="checkbox"
+                id="isGlobalProvider"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            )}
+          />
+          <Label htmlFor="isGlobalProvider" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+            Use this as Global OAuth Provider
+          </Label>
+        </div>
+      )}
     </form>
   )
 }
@@ -379,12 +412,32 @@ const SlackOAuthTab = ({
   handleRegularIngestion,
   isManualIngestionActive,
   isRegularIngestionActive,
+  userRole,
 }: SlackOAuthTabProps) => {
+  const [isEditingGlobalCreds, setIsEditingGlobalCreds] = useState(false)
+  const [initialIsGlobalForForm, setInitialIsGlobalForForm] = useState(false);
+
   return (
     <TabsContent value="oauth">
       <Card>
         <CardHeader>
-          <CardTitle>Slack OAuth</CardTitle>
+          {isEditingGlobalCreds ? (
+            <div className="flex items-center">
+              <div
+                onClick={() => setIsEditingGlobalCreds(false)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setIsEditingGlobalCreds(false); }}
+                role="button"
+                tabIndex={0}
+                aria-label="Back"
+                className="mr-2 p-1 cursor-pointer rounded-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </div>
+              <CardTitle>Slack OAuth</CardTitle>
+            </div>
+          ) : (
+            <CardTitle>Slack OAuth</CardTitle>
+          )}
           <CardDescription>
             Connect with slack to start ingestion
           </CardDescription>
@@ -413,42 +466,50 @@ const SlackOAuthTab = ({
                 ></path>
               </svg>
             </div>
-          ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-            <SlackOAuthForm
-              onSuccess={() => {
-                refetch()
-                setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+          ) : isEditingGlobalCreds ? (
+            <>
+              <SlackOAuthForm
+                onSuccess={() => {
+                refetch() // This should update oauthIntegrationStatus
+                setIsEditingGlobalCreds(false) // Hide form after successful submission
+                // After submitting credentials, the state should ideally become OAuthIntegrationStatus.OAuth
+                // setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth) // This might be set by refetch
               }}
+              userRole={userRole}
+              initialIsGlobalProvider={initialIsGlobalForForm}
             />
-          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-            <div className="flex flex-col items-center gap-4">
-              <SlackOAuthButton
-                app={Apps.Slack}
-                text="Connect Slack OAuth"
-                setIntegrationStatus={setOAuthIntegrationStatus}
-              />
+            </>
+          ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Button
+                  onClick={() => {
+                    setIsEditingGlobalCreds(true);
+                    setInitialIsGlobalForForm(true);
+                  }}
+                  className="flex-1 mr-2 text-sm"
+                >
+                  Connect using global credentials
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => {
+                  setIsEditingGlobalCreds(true);
+                  setInitialIsGlobalForForm(false);
+                }} aria-label="Edit Credentials">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          ) : null}
-
-          {(oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
-            oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnecting) && (
+          ) : (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
+              oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) ? (
             <Button
               onClick={handleRegularIngestion}
               disabled={isRegularIngestionActive}
             >
               {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
             </Button>
-          )}
-
-          {/* {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting && (
-            <Button
-              onClick={handleRegularIngestion}
-              disabled={isRegularIngestionActive}
-            >
-              {isRegularIngestionActive ? "Ingesting..." : "Start Regular Ingestion"}
-            </Button>
-          )} */}
+          ) : null}
         </CardContent>
       </Card>
     </TabsContent>
@@ -712,6 +773,7 @@ export const Slack = ({
               handleRegularIngestion={handleRegularIngestion}
               isManualIngestionActive={isManualIngestionActive}
               isRegularIngestionActive={isRegularIngestionActive}
+              userRole={user.role}
             />
           </Tabs>
 
