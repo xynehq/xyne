@@ -17,7 +17,7 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
-    "migrate:trace": "bun run migrations/202405241920_migrate_tracejson_to_bytea.ts",
+    "migrate:trace": "bun run migrations/migrate_tracejson_to_bytea.ts",
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
     "lint": "eslint .",
