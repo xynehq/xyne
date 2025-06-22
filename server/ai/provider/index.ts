@@ -462,10 +462,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    if (
-      !jsonKey &&
-      (text.includes("```json") || (text.includes("```") && text.includes("{")))
-    ) {
+    if (!jsonKey && text.includes("```json")) {
       const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/)
       if (jsonCodeBlockMatch) {
         text = jsonCodeBlockMatch[1].trim()

@@ -328,4 +328,10 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
     const result = jsonParseLLMOutput(input, '"answer":')
     expect(result).toEqual({ answer: "some answer" })
   })
+
+  test("should extract JSON from a code block with json specified", () => {
+    const input = "Here is the JSON: ```json\n{\"key\": \"value\"}```"
+    const result = jsonParseLLMOutput(input)
+    expect(result).toEqual({ key: "value" })
+  })
 })
