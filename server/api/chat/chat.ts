@@ -274,12 +274,12 @@ const checkAndYieldCitations = function* (
   }
 }
 
-function cleanBuffer(buffer: string): string {
-  let parsableBuffer = buffer;
-  parsableBuffer = parsableBuffer.replace(/^```json[\s\n]*/i, '');
-  return parsableBuffer.trim();
+export function cleanBuffer(buffer: string): string {
+  let parsableBuffer = buffer
+  parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
+  return parsableBuffer.trim()
 }
- 
+
 async function* processIterator(
   iterator: AsyncIterableIterator<ConverseResponse>,
   results: VespaSearchResult[],
@@ -345,8 +345,8 @@ async function* processIterator(
       if (!reasoning) {
         buffer += chunk.text
         try {
-          const parsableBuffer = cleanBuffer(buffer);
-          
+          const parsableBuffer = cleanBuffer(buffer)
+
           parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
