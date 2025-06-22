@@ -39,7 +39,7 @@ interface SlackOAuthResp {
 }
 
 export const OAuthCallback = async (c: Context) => {
-  let email=""
+  let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
@@ -66,7 +66,9 @@ export const OAuthCallback = async (c: Context) => {
 
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
-      loggerWithChild({email: email}).error("Could not find user in OAuth Callback")
+      loggerWithChild({ email: email }).error(
+        "Could not find user in OAuth Callback",
+      )
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -131,7 +133,7 @@ export const OAuthCallback = async (c: Context) => {
     if (IsGoogleApp(app)) {
       // Start ingestion in the background, but catch any errors it might throw later
       handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
-        loggerWithChild({email: email}).error(
+        loggerWithChild({ email: email }).error(
           error,
           `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
         )
@@ -161,7 +163,9 @@ export const OAuthCallback = async (c: Context) => {
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         expireInHours: JobExpiryHours,
       })
-      loggerWithChild({email: email}).info(`Job ${jobId} enqueued for connection ${connector.id}`)
+      loggerWithChild({ email: email }).info(
+        `Job ${jobId} enqueued for connection ${connector.id}`,
+      )
     }
 
     // Commit the transaction if everything is successful
@@ -170,7 +174,7 @@ export const OAuthCallback = async (c: Context) => {
     }
     return c.redirect(`${config.host}/oauth/success`)
   } catch (error) {
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `${new OAuthCallbackError({ cause: error as Error })} \n ${(error as Error).stack}`,
     )
