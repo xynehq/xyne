@@ -38,10 +38,10 @@ import mermaid from "mermaid"
 // Initialize mermaid with secure configuration to prevent syntax errors
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'strict',
-  fontFamily: 'monospace',
-  logLevel: 'fatal', // Minimize mermaid console logs
+  theme: "default",
+  securityLevel: "strict",
+  fontFamily: "monospace",
+  logLevel: "fatal", // Minimize mermaid console logs
   suppressErrorRendering: true, // Suppress error rendering if available
   flowchart: {
     useMaxWidth: true,
@@ -108,7 +108,7 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
-import { Reference } from "@/types"
+import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
@@ -117,7 +117,10 @@ export const THINKING_PLACEHOLDER = "Thinking"
 
 // Utility function to suppress console logs for a specific operation
 function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
-  const originals = ['error', 'warn', 'log', 'info', 'debug'].map(k => [k, (console as any)[k]])
+  const originals = ["error", "warn", "log", "info", "debug"].map((k) => [
+    k,
+    (console as any)[k],
+  ])
   originals.forEach(([k]) => ((console as any)[k] = () => {}))
   try {
     const result = fn()
@@ -255,7 +258,7 @@ export const ChatPage = ({
       : "/_authenticated/chat",
   })
   const queryClient = useQueryClient()
-  
+
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
@@ -270,12 +273,13 @@ export const ChatPage = ({
 
   const [query, setQuery] = useState("")
   const chatId = (params as any).chatId || null
-  
+
   // Add retryIsStreaming state
   const [retryIsStreaming, setRetryIsStreaming] = useState(false)
-  
+
   // Use custom hooks for streaming and history
-  const { data: historyData, isLoading: historyLoading } = useChatHistory(chatId)
+  const { data: historyData, isLoading: historyLoading } =
+    useChatHistory(chatId)
   const {
     partial,
     thinking,
@@ -286,15 +290,20 @@ export const ChatPage = ({
     startStream,
     stopStream,
     retryMessage,
-  } = useChatStream(chatId, (title: string) => setChatTitle(title), setRetryIsStreaming)
-  
+  } = useChatStream(
+    chatId,
+    (title: string) => setChatTitle(title),
+    setRetryIsStreaming,
+  )
+
   // Use history data if available, otherwise fall back to loader data
-  const messages = historyData?.messages || (isWithChatId ? data?.messages || [] : [])
-  
+  const messages =
+    historyData?.messages || (isWithChatId ? data?.messages || [] : [])
+
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
   )
-  
+
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
   const currentResp = isStreaming
@@ -309,7 +318,9 @@ export const ChatPage = ({
     : null
 
   const [showRagTrace, setShowRagTrace] = useState(false)
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    null,
+  )
   const [bookmark, setBookmark] = useState<boolean>(
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
@@ -479,7 +490,7 @@ export const ChatPage = ({
     if (!hasHandledQueryParam.current || isWithChatId) {
       // Data will be loaded via useChatHistory hook
     }
-    
+
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
@@ -533,7 +544,7 @@ export const ChatPage = ({
         messageToSend,
         sourcesArray,
         chatParams.agentId,
-        chatParams.toolExternalIds,
+        chatParams.toolsList,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -544,7 +555,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
-          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
+          toolsList: undefined, // Clear toolsList from URL after processing
         }),
         replace: true,
       })
@@ -554,7 +565,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
-    chatParams.toolExternalIds,
+    chatParams.toolsList,
     router,
   ])
 
@@ -562,32 +573,39 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
-    toolExternalIds?: string[],
+    toolsList?: ToolsListItem[],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
-    
+
     setUserHasScrolled(false)
     setQuery("")
-    
+
     // Add user message optimistically to React Query cache
     const queryKey = chatId
-    
-    queryClient.setQueryData<any>(
-      ["chatHistory", queryKey],
-      (oldData: any) => {
-        if (!oldData) {
-          return { messages: [{ messageRole: "user", message: messageToSend }] }
-        }
-        return {
-          ...oldData,
-          messages: [...(oldData.messages || []), { messageRole: "user", message: messageToSend }],
-        }
+
+    queryClient.setQueryData<any>(["chatHistory", queryKey], (oldData: any) => {
+      if (!oldData) {
+        return { messages: [{ messageRole: "user", message: messageToSend }] }
       }
-    )
+      return {
+        ...oldData,
+        messages: [
+          ...(oldData.messages || []),
+          { messageRole: "user", message: messageToSend },
+        ],
+      }
+    })
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(messageToSend, selectedSources, isReasoningActive, isAgenticMode, toolExternalIds || [], agentIdToUse)
+    await startStream(
+      messageToSend,
+      selectedSources,
+      isReasoningActive,
+      isAgenticMode,
+      agentIdToUse,
+      toolsList,
+    )
   }
 
   const handleFeedback = async (
@@ -1159,14 +1177,14 @@ const Code = ({
   // Function to validate if mermaid syntax looks complete
   const isMermaidSyntaxValid = async (code: string): Promise<boolean> => {
     if (!code || code.trim() === "") return false
-    
+
     const trimmedCode = code.trim()
-    
+
     // Basic checks for common mermaid diagram types
     const mermaidPatterns = [
       /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
       /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
-      /^sequenceDiagram\s*\n/i, 
+      /^sequenceDiagram\s*\n/i,
       /^classDiagram\s*\n/i,
       /^stateDiagram\s*\n/i,
       /^erDiagram\s*\n/i,
@@ -1177,11 +1195,13 @@ const Code = ({
       /^mindmap\s*\n/i,
       /^timeline\s*\n/i,
     ]
-    
+
     // Check if it starts with a valid mermaid diagram type
-    const hasValidStart = mermaidPatterns.some(pattern => pattern.test(trimmedCode))
+    const hasValidStart = mermaidPatterns.some((pattern) =>
+      pattern.test(trimmedCode),
+    )
     if (!hasValidStart) return false
-    
+
     // Try to parse with mermaid to validate syntax
     try {
       // Use scoped console suppression to avoid global hijacking
@@ -1196,108 +1216,114 @@ const Code = ({
   }
 
   // Debounced function to validate and render mermaid
-  const debouncedMermaidRender = useCallback(async (code: string) => {
-    if (!container || !isMermaid) return
-    
-    // Clear any existing timeout
-    if (mermaidRenderTimeoutRef.current) {
-      clearTimeout(mermaidRenderTimeoutRef.current)
-    }
-    
-    // If code is empty, clear the container
-    if (!code || code.trim() === "") {
-      container.innerHTML = ""
-      setLastValidMermaid("")
-      return
-    }
-    
-    // Check if syntax looks valid (async now)
-    const isValid = await isMermaidSyntaxValid(code)
-    if (!isValid) {
-      // If we have a previous valid render, keep showing it
-      if (lastValidMermaid) {
+  const debouncedMermaidRender = useCallback(
+    async (code: string) => {
+      if (!container || !isMermaid) return
+
+      // Clear any existing timeout
+      if (mermaidRenderTimeoutRef.current) {
+        clearTimeout(mermaidRenderTimeoutRef.current)
+      }
+
+      // If code is empty, clear the container
+      if (!code || code.trim() === "") {
+        container.innerHTML = ""
+        setLastValidMermaid("")
         return
-      } else {
-        // Show loading state for incomplete syntax
-        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+      }
+
+      // Check if syntax looks valid (async now)
+      const isValid = await isMermaidSyntaxValid(code)
+      if (!isValid) {
+        // If we have a previous valid render, keep showing it
+        if (lastValidMermaid) {
+          return
+        } else {
+          // Show loading state for incomplete syntax
+          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
           <div>Mermaid Chart..</div>
           <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
         </div>`
-        return
-      }
-    }
-    
-    // Debounce the actual rendering to avoid too many rapid attempts
-    mermaidRenderTimeoutRef.current = setTimeout(async () => {
-      try {
-        // Additional safety: validate the code before rendering
-        if (!code || code.trim().length === 0) {
-          container.innerHTML = ""
-          setLastValidMermaid("")
           return
         }
+      }
 
-        // Sanitize the code to prevent potential issues
-        const sanitizedCode = code
-          .replace(/javascript:/gi, '') // Remove javascript: protocols
-          .replace(/data:/gi, '') // Remove data: protocols  
-          .replace(/<script[^>]*>.*?<\/script>/gis, '') // Remove script tags
-          .trim()
+      // Debounce the actual rendering to avoid too many rapid attempts
+      mermaidRenderTimeoutRef.current = setTimeout(async () => {
+        try {
+          // Additional safety: validate the code before rendering
+          if (!code || code.trim().length === 0) {
+            container.innerHTML = ""
+            setLastValidMermaid("")
+            return
+          }
 
-        if (!sanitizedCode) {
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          // Sanitize the code to prevent potential issues
+          const sanitizedCode = code
+            .replace(/javascript:/gi, "") // Remove javascript: protocols
+            .replace(/data:/gi, "") // Remove data: protocols
+            .replace(/<script[^>]*>.*?<\/script>/gis, "") // Remove script tags
+            .trim()
+
+          if (!sanitizedCode) {
+            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
             <div>📊 Mermaid Diagram</div>
             <div style="margin-top: 10px; font-size: 12px; color: #999;">Invalid diagram content</div>
           </div>`
-          return
-        }
-
-        // Use scoped console suppression during rendering
-        try {
-          await suppressLogs(async () => {
-            // Render with additional error boundary
-            const { svg } = await mermaid.render(demoid.current, sanitizedCode)
-            
-            // Validate that we got valid SVG
-            if (!svg || !svg.includes('<svg')) {
-              throw new Error('Invalid SVG generated')
-            }
-            
-            container.innerHTML = svg
-            setLastValidMermaid(sanitizedCode)
-          })
-        } catch (error: any) {
-          // Completely suppress all error details from users
-          
-          // Always gracefully handle any mermaid errors by either:
-          // 1. Keeping the last valid diagram if we have one
-          // 2. Showing a loading/placeholder state if no valid diagram exists
-          // 3. Never showing syntax error messages to users
-          
-          if (lastValidMermaid) {
-            // Keep showing the last valid diagram - don't change anything
             return
-          } else {
-            // Show a generic processing state instead of error details
-            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+          }
+
+          // Use scoped console suppression during rendering
+          try {
+            await suppressLogs(async () => {
+              // Render with additional error boundary
+              const { svg } = await mermaid.render(
+                demoid.current,
+                sanitizedCode,
+              )
+
+              // Validate that we got valid SVG
+              if (!svg || !svg.includes("<svg")) {
+                throw new Error("Invalid SVG generated")
+              }
+
+              container.innerHTML = svg
+              setLastValidMermaid(sanitizedCode)
+            })
+          } catch (error: any) {
+            // Completely suppress all error details from users
+
+            // Always gracefully handle any mermaid errors by either:
+            // 1. Keeping the last valid diagram if we have one
+            // 2. Showing a loading/placeholder state if no valid diagram exists
+            // 3. Never showing syntax error messages to users
+
+            if (lastValidMermaid) {
+              // Keep showing the last valid diagram - don't change anything
+              return
+            } else {
+              // Show a generic processing state instead of error details
+              container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
               <div>📊 Mermaid Diagram</div>
               <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
             </div>`
+            }
           }
-        }
-      } catch (outerError: any) {
-        // Final fallback error handling
-        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
+        } catch (outerError: any) {
+          // Final fallback error handling
+          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
           <div>📊 Mermaid Diagram</div>
           <div style="margin-top: 10px; font-size: 12px; color: #999;">Unable to render diagram</div>
         </div>`
-      }
-    }, 300)
-  }, [container, isMermaid, lastValidMermaid])
+        }
+      }, 300)
+    },
+    [container, isMermaid, lastValidMermaid],
+  )
 
   useEffect(() => {
     debouncedMermaidRender(codeContent)
-    
+
     // Cleanup timeout on unmount
     return () => {
       if (mermaidRenderTimeoutRef.current) {
@@ -1507,9 +1533,7 @@ const Code = ({
           margin: 0,
         }}
       >
-        <code style={{ background: "none", color: "inherit" }}>
-          {children}
-        </code>
+        <code style={{ background: "none", color: "inherit" }}>{children}</code>
       </pre>
     )
   }
@@ -1566,9 +1590,9 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
-  feedbackStatus?: MessageFeedback | null;
-  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
-  disableRetry?: boolean;
+  feedbackStatus?: MessageFeedback | null
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void
+  disableRetry?: boolean
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
@@ -1788,7 +1812,9 @@ export const ChatMessage = ({
                 <img
                   className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => messageId && !disableRetry && handleRetry(messageId)}
+                  onClick={() =>
+                    messageId && !disableRetry && handleRetry(messageId)
+                  }
                   title="Retry"
                 />
                 {messageId && onFeedback && (
@@ -1887,17 +1913,33 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
-  toolExternalIds: z
-    .string()
+  toolsList: z
+    .any()
     .optional()
-    .transform((val) =>
-      val
-        ? val
-            .split(",")
-            .map((id) => id.trim())
-            .filter((id) => id.length > 0)
-        : undefined,
-    ),
+    .transform((val) => {
+      if (!val) return undefined
+      // If it's already an array, validate and return it
+      if (Array.isArray(val)) {
+        try {
+          return z.array(toolsListItemSchema).parse(val)
+        } catch (e) {
+          return undefined
+        }
+      }
+      // If it's a string, try to parse it as JSON
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val)
+          if (Array.isArray(parsed)) {
+            return z.array(toolsListItemSchema).parse(parsed)
+          }
+          return undefined
+        } catch (e) {
+          return undefined
+        }
+      }
+      return undefined
+    }),
 })
 
 type XyneChat = z.infer<typeof chatParams>
