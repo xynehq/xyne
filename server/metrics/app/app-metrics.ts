@@ -24,11 +24,10 @@ export const requestResponseLatency = new Summary({
 
 metricRegister.registerMetric(requestResponseLatency)
 
-
 export const likeDislikeCount = new Counter({
-  name:"like_dislike_count",
+  name: "like_dislike_count",
   help: "Count of Number of Like and Dislikes",
-  labelNames:["email", "feedback"]
+  labelNames: ["email", "feedback"],
 })
 
 metricRegister.registerMetric(likeDislikeCount)

@@ -482,7 +482,7 @@ export enum XyneTools {
   // slack tools
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",
-  getUserSlackProfile = "get_user_slack_profile"
+  getUserSlackProfile = "get_user_slack_profile",
 }
 
 export enum IngestionType {

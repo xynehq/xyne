@@ -296,12 +296,7 @@ export const getConnectorById = async (
   const res = await trx
     .select()
     .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, connectorId),
-        eq(connectors.userId, userId),
-      ),
-    )
+    .where(and(eq(connectors.id, connectorId), eq(connectors.userId, userId)))
     .limit(1)
   if (res.length) {
     const parsedRes = selectConnectorSchema.safeParse(res[0])

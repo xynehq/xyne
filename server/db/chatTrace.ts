@@ -1,6 +1,6 @@
 import { db } from "./client"
 import { chatTrace } from "@/db/schema"
-import type { InferInsertModel, InferSelectModel} from "drizzle-orm"
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"
 import { eq, and } from "drizzle-orm"
@@ -77,9 +77,9 @@ export async function updateChatTrace(
 
   if (!updated || !updated.traceJson) return null
 
-return {
+  return {
     ...updated,
-   traceJson: JSON.parse(decompressTraceJson(updated.traceJson as Buffer)),
+    traceJson: JSON.parse(decompressTraceJson(updated.traceJson as Buffer)),
   }
 }
 
