@@ -159,6 +159,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import {
   buildUserQuery,
+  cleanBuffer,
   isContextSelected,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
@@ -289,7 +290,8 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+        const parsableBuffer = cleanBuffer(buffer)
+        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
         // If we have a null answer, break this inner loop and continue outer loop
         // seen some cases with just "}"
         if (parsed.answer === null || parsed.answer === "}") {
