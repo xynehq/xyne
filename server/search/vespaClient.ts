@@ -855,7 +855,7 @@ class VespaClient {
           updatedAt: hit.fields?.updatedAt as number | undefined,
           userMap: hit.fields?.userMap as Record<string, string>, // undefined if not present
         })) || []
-        
+
       // Build the result map using original mailIds as keys
       const existenceMap = mailIds.reduce(
         (acc, id) => {
@@ -1220,7 +1220,9 @@ class VespaClient {
     }
   }
 
-  async getChatContainerIdByChannelName(channelName: string): Promise<VespaSearchResponse> {
+  async getChatContainerIdByChannelName(
+    channelName: string,
+  ): Promise<VespaSearchResponse> {
     const yqlQuery = `select docId from sources ${chatContainerSchema} where name contains '${channelName}'`
     const url = `${this.vespaEndpoint}/search/`
     try {
