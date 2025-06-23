@@ -309,12 +309,12 @@ async function* getToolContinuationIterator(
             const newText = parsed.answer.slice(currentAnswer.length)
             yield { text: newText }
           }
-          // yield* checkAndYieldCitationsForAgent(
-          //   parsed.answer,
-          //   yieldedCitations,
-          //   results,
-          //   previousResultsLength,
-          // )
+          yield* checkAndYieldCitationsForAgent(
+            parsed.answer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+          )
           currentAnswer = parsed.answer
         }
       } catch (e) {
@@ -1078,7 +1078,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                             content: formattedContent,
                             source: {
                               app: Apps.GITHUB_MCP,
-                              docId: `${toolName}-response`,
+                              docId: "",
                               title: `Response from ${toolName}`,
                               entity: SystemEntity.SystemInfo,
                               url:
