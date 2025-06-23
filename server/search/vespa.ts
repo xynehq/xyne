@@ -339,7 +339,11 @@ export const HybridDefaultProfile = (
 
     return `
       (
-        ({targetHits:${hits}} userInput(@query))
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
         ${timestampRange ? `and (${userTimestamp})` : ""}
         ${
           !hasAppOrEntity
@@ -349,7 +353,11 @@ export const HybridDefaultProfile = (
       )
       or
       (
-        ({targetHits:${hits}} userInput(@query))
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
         and owner contains @email
         ${timestampRange ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
@@ -376,15 +384,18 @@ export const HybridDefaultProfile = (
   }
 
   const buildDefaultYQL = () => {
-    return `
-    (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-    )
-    and permissions contains @email 
-    or owner contains @email
-    `
+    const appOrEntityFilter = buildAppEntityFilter()
+    return ` 
+  (
+      (
+            ({targetHits:${hits}} userInput(@query))
+            or
+            ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+      )
+      and (permissions contains @email or owner contains @email)
+      ${appOrEntityFilter}
+  )
+  `
   }
 
   const buildGoogleDriveYQL = () => {
