@@ -105,6 +105,7 @@ import {
   listAgentsSchema,
   updateAgentSchema,
 } from "@/api/agent"
+import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
@@ -254,6 +255,7 @@ export const AppRoutes = app
   .get("/tuning/ws/:jobId", TuningWsRoute)
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)

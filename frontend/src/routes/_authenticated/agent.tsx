@@ -39,6 +39,7 @@ import {
   Trash2,
   Search,
   UserPlus,
+  Sparkles,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -47,7 +48,12 @@ import { api } from "@/api"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import RetryAsset from "@/assets/retry.svg"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
@@ -188,6 +194,12 @@ function AgentComponent() {
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
   const [isPublic, setIsPublic] = useState(false)
+
+  // Prompt generation states
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
+  const [shouldHighlightPrompt, setShouldHighlightPrompt] = useState(false)
+  const promptGenerationEventSourceRef = useRef<EventSource | null>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
@@ -443,6 +455,143 @@ function AgentComponent() {
     setSelectedUsers((prev) => prev.filter((user) => user.id !== userId))
   }
 
+  const generatePromptFromRequirements = async (requirements: string) => {
+    if (!requirements.trim()) {
+      showToast({
+        title: "Error",
+        description: "Please enter requirements for prompt generation.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGeneratingPrompt(true)
+    let generatedPrompt = ""
+
+    try {
+      // Create the URL with query parameters for EventSource
+      const url = new URL(
+        "/api/v1/agent/generate-prompt",
+        window.location.origin,
+      )
+      url.searchParams.set("requirements", requirements)
+
+      // Create EventSource connection following the existing pattern
+      promptGenerationEventSourceRef.current = new EventSource(url.toString(), {
+        withCredentials: true,
+      })
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.ResponseUpdate,
+        (event) => {
+          generatedPrompt += event.data
+          setAgentPrompt(generatedPrompt)
+
+          // Auto-scroll the textarea to bottom as content is generated
+          setTimeout(() => {
+            if (promptTextareaRef.current) {
+              promptTextareaRef.current.scrollTop =
+                promptTextareaRef.current.scrollHeight
+            }
+          }, 0)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.End,
+        (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            setAgentPrompt(data.fullPrompt || generatedPrompt)
+            showToast({
+              title: "Success",
+              description: "Prompt generated successfully!",
+            })
+          } catch (e) {
+            console.warn("Could not parse end event data:", e)
+            showToast({
+              title: "Success",
+              description: "Prompt generated successfully!",
+            })
+          }
+          promptGenerationEventSourceRef.current?.close()
+          promptGenerationEventSourceRef.current = null
+          setIsGeneratingPrompt(false)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.Error,
+        (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            showToast({
+              title: "Error",
+              description: data.error || "Failed to generate prompt",
+              variant: "destructive",
+            })
+          } catch (e) {
+            showToast({
+              title: "Error",
+              description: "Failed to generate prompt",
+              variant: "destructive",
+            })
+          }
+          promptGenerationEventSourceRef.current?.close()
+          promptGenerationEventSourceRef.current = null
+          setIsGeneratingPrompt(false)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.onerror = (error) => {
+        console.error("EventSource error:", error)
+        showToast({
+          title: "Error",
+          description: "Connection error during prompt generation",
+          variant: "destructive",
+        })
+        promptGenerationEventSourceRef.current?.close()
+        promptGenerationEventSourceRef.current = null
+        setIsGeneratingPrompt(false)
+      }
+    } catch (error) {
+      console.error("Generate prompt error:", error)
+      showToast({
+        title: "Error",
+        description: "Failed to generate prompt",
+        variant: "destructive",
+      })
+      setIsGeneratingPrompt(false)
+    }
+  }
+
+  const handleGeneratePrompt = () => {
+    if (agentPrompt.trim()) {
+      // If there's already a prompt, use it as requirements
+      generatePromptFromRequirements(agentPrompt)
+    } else {
+      // If no prompt, highlight the prompt box and focus it
+      setShouldHighlightPrompt(true)
+
+      // Focus the textarea
+      if (promptTextareaRef.current) {
+        promptTextareaRef.current.focus()
+      }
+
+      // Remove highlight after a few seconds
+      setTimeout(() => {
+        setShouldHighlightPrompt(false)
+      }, 3000)
+
+      showToast({
+        title: "Add some requirements first",
+        description:
+          "Please enter some text describing what you want your agent to do, then click generate.",
+        variant: "default",
+      })
+    }
+  }
+
   const resetForm = () => {
     setAgentName("")
     setAgentDescription("")
@@ -454,6 +603,13 @@ function AgentComponent() {
     setSelectedUsers([])
     setSearchQuery("")
     setShowSearchResults(false)
+    setIsGeneratingPrompt(false)
+    setShouldHighlightPrompt(false)
+    // Close any active prompt generation stream
+    if (promptGenerationEventSourceRef.current) {
+      promptGenerationEventSourceRef.current.close()
+      promptGenerationEventSourceRef.current = null
+    }
   }
 
   const handleCreateNewAgent = () => {
@@ -1140,18 +1296,61 @@ function AgentComponent() {
                 </div>
 
                 <div className="w-full">
-                  <Label
-                    htmlFor="agentPrompt"
-                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Prompt
-                  </Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label
+                      htmlFor="agentPrompt"
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Prompt
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleGeneratePrompt}
+                            disabled={isGeneratingPrompt}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Sparkles
+                              className={`h-4 w-4 ${
+                                isGeneratingPrompt
+                                  ? "animate-pulse text-blue-600 dark:text-blue-400"
+                                  : ""
+                              }`}
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {isGeneratingPrompt
+                              ? "Generating prompt..."
+                              : "Generate prompt with AI"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Textarea
+                    ref={promptTextareaRef}
                     id="agentPrompt"
-                    placeholder="e.g., You are a helpful assistant..."
+                    placeholder="e.g., You are a helpful assistant... or describe your requirements and use the AI button"
                     value={agentPrompt}
-                    onChange={(e) => setAgentPrompt(e.target.value)}
-                    className="mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full h-36 p-3 text-base dark:text-gray-100"
+                    onChange={(e) => {
+                      setAgentPrompt(e.target.value)
+                      // Clear highlight when user starts typing
+                      if (shouldHighlightPrompt) {
+                        setShouldHighlightPrompt(false)
+                      }
+                    }}
+                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${
+                      shouldHighlightPrompt
+                        ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
+                        : "border-gray-300 dark:border-slate-600"
+                    }`}
+                    disabled={isGeneratingPrompt}
                   />
                 </div>
 
