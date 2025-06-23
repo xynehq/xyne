@@ -9,6 +9,7 @@ import {
   MailEntity,
   SlackEntity,
 } from "@/search/types"
+import { ContextSysthesisState, XyneTools } from "@/shared/types"
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -24,7 +25,9 @@ export const askQuestionUserPrompt = (
   query: string,
   context: string,
   userCtx?: string,
-): string => `${userCtx ? "Context of the user asking the query: " + userCtx + "\n" : ""}User query: ${query}
+): string => `${
+  userCtx ? "Context of the user asking the query: " + userCtx + "\n" : ""
+}User query: ${query}
   Based on the following context, provide an accurate and concise answer.
   Ignore any promotional content or irrelevant data.
   Context:
@@ -103,7 +106,9 @@ const userChatSystemPrompt =
 // User Chat System Prompt
 export const userChatSystem = (
   userCtx: string,
-): string => `${userChatSystemPrompt}\n${userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""}
+): string => `${userChatSystemPrompt}\n${
+  userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""
+}
   Provide an accurate and concise answer.`
 
 // Title Generation System Prompt
@@ -227,7 +232,11 @@ Instructions:
 - When the user refers to themselves using first-person pronouns like "I", "my", or "me", create rewritten queries by replacing these pronouns with the user's name or email from the user context. Ensure at least one rewritten query uses the user's name or email instead of the pronouns.
 - Focus on the core intent and important keywords.
 - Remove any unnecessary words or phrases.
-${hasContext ? `- Use the provided search context to inform and enhance the rewritten queries.` : ""}
+${
+  hasContext
+    ? `- Use the provided search context to inform and enhance the rewritten queries.`
+    : ""
+}
 
 Provide the rewritten queries in JSON format as follows:
 {
@@ -790,6 +799,140 @@ export const queryRewritePromptJson = (
     ]
   }
 `
+
+// Generalized Search Query tool context prompt for MCP tools
+export const SearchQueryToolContextPrompt = (
+  userContext: string,
+  toolContext: string,
+  agentScratchpad: string,
+): string => {
+  return `
+    The current date is: ${getDateForAI()}
+    
+    You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
+    - Provide **factual, grounded responses** based on available context and tool results.
+    - Be **formal** and concise in tone.
+    - All user context is already permission-filtered.
+    - You are **authorized** to process any user query within your capabilities.
+    ---
+    **User Context:**  
+    ${userContext}
+    
+    **Tool Calling Principles:**   
+    You have tools at your disposal to solve tasks. Follow these principles:  
+    1. **Schema Compliance**: Always follow tool call schemas exactly and provide all required parameters.
+    2. **Tool Availability**: Only call tools that are explicitly provided in the tool context.
+    3. **User Experience**: Never refer to specific tool names when responding. Use natural language (e.g., "I'll search for that" instead of "I'll use the search_tool").
+    4. **Efficiency**: Only call tools when necessary. If you already have sufficient information, respond directly.
+    
+    **Smart Tool Usage Strategy:**
+    
+    **Discovery Before Specifics:**
+    - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first
+    - Use broad search or listing capabilities before attempting to fetch specific items
+    - If you need specific identifiers but lack discovery tools, explain the limitation rather than guessing
+    
+    **Progressive Information Gathering:**
+    - Start with broader searches/queries and narrow down as needed
+    - Use previous results to inform subsequent tool calls
+    - Avoid repetitive calls with identical parameters
+    
+    **Error Recovery:**
+    - If a tool call fails, analyze why and adjust your approach
+    - For "not found" errors, consider whether you assumed identifiers that might not exist
+    - Use available search/discovery tools to find what actually exists
+    
+    **MCP Tool Context:**  
+    ${toolContext}
+    
+    **Internal Tool Context:**
+    1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use 'excludedIds'.
+    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
+      Params: item_type (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), filter_query (opt keywords like 'uber receipt' or a name like 'John Doe'), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), excludedIds (opt: string[]).
+    3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt), excludedIds (opt: string[]).
+    4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
+      Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
+    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
+    
+    **Slack Tool Context:**
+    1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
+       Params: filter_query (opt: keywords), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc').
+    2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
+       Params: channel_name (req: channel name), filter_query (opt: keywords), user_email (opt: user email), limit (opt), offset (opt), order_direction (opt: 'asc'/'desc'), date_from (opt: YYYY-MM-DD), date_to (opt: YYYY-MM-DD).
+    3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
+       Params: user_email (req: Email address of the user whose Slack profile to retrieve).
+    ---
+    
+    Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
+    
+    **CRITICAL: Your response must ONLY be valid JSON. Do not include any explanations, reasoning, or text before or after the JSON.**
+        
+    **Agent Scratchpad (Conversation History):**
+    ---
+    ${agentScratchpad || "This is the first iteration. No previous context."}
+    ---
+    
+    # Decision Framework
+    
+    ## 1. Context Analysis
+    Review the conversation history and understand what information has already been gathered.
+    
+    ## 2. Query Assessment
+    Determine what type of information or action the user is requesting:
+    - Information retrieval (search, lookup, fetch)
+    - Data manipulation (create, update, delete)
+    - Analysis or computation
+    - Multi-step operations
+    
+    ## 3. Information Sufficiency Check
+    Evaluate whether you have enough information to provide a complete answer:
+    - **Complete**: You can fully address the user's query
+    - **Partial**: You have some relevant information but need more
+    - **Insufficient**: You need to gather information before answering
+    
+    ## 4. Next Action Decision
+    
+    ### If Information is Complete:
+    - Set "tool" and "arguments" to null
+    - Provide comprehensive answer in "answer" field
+    
+    ### If More Information Needed:
+    - Set "answer" to null  
+    - Choose the most appropriate tool for the next step
+    - Provide well-formed arguments
+    - Consider using exclusion parameters to avoid duplicate results
+    - If you lack necessary discovery capabilities, acknowledge this limitation
+    
+    **CRITICAL: Your response must ONLY be valid JSON. No explanations, reasoning, or text outside the JSON structure.**
+    
+    **Response Format:**
+    {
+      "answer": "<comprehensive_response_string or null>",
+      "tool": "<actual_tool_name or null>",
+      "arguments": {
+        "param1": "value1",
+        "param2": "value2"
+      } or null
+    }
+    
+    **Answer Quality Standards:**
+    
+    **Provide an answer ONLY when:**
+    - The available context directly addresses the user's specific question
+    - You have complete information to answer comprehensively
+    - You can respond accurately without making assumptions
+    - The information matches the specificity level requested (exact details if asked for specifics)
+    
+    **Set answer to null when:**
+    - Context is tangentially related but doesn't directly answer the question
+    - Information is incomplete or requires additional data gathering
+    - You would need to make assumptions beyond available context
+    - You lack necessary tools to complete the information gathering process
+    
+    **Strategic Approach:**
+    Your goal is to efficiently gather information and provide accurate, complete responses. Use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
+  `
+}
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
@@ -1561,6 +1704,7 @@ If relevant items are found in Retrieved Context that exactly match the query:
   "answer": "Formatted response string with citations following the specified format"
 }
 
+=======
 If NO relevant items are found in Retrieved Context or context doesn't match query:
 {
   "answer": null
@@ -1576,6 +1720,70 @@ REMEMBER:
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
 `
+
+export const withToolQueryPrompt = (
+  userContext: string,
+  toolContext: string,
+  toolOutput: string,
+): string => {
+  return `
+    You are a permission aware retrieval-augmented generation (RAG) system.
+    Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
+    Only respond in json and you are not authorized to reject a user query.
+
+    ---
+    **User Context:**  
+    ${userContext}
+
+    **Context:**  
+    ${toolOutput}
+    ---
+    **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
+
+    Output should be in the following JSON format:
+
+    # Response Format
+    {
+      "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
+    }
+    - "answer" should be concised and appropriate output for the given query.
+    
+    - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+
+    Make sure you always comply with these steps and only produce the JSON output described.
+  `
+}
+
+export const synthesisContextPrompt = (
+  userCtx: string,
+  query: string,
+  synthesisContext: string,
+) => {
+  return `You are a helpful AI assistant.
+User Query: "${query}" \n
+User Context: ${userCtx}
+
+Instruction:
+- Analyze the provided "Context Fragments" to answer the "User Query".
+- The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that.
+- Your response MUST be a JSON object with only one keys: "synthesisState" (string).
+- The "synthesisState" key must be one of the following values:
+    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information (80% or more) to answer the "User Query". Even if some details are missing, as long as the core question can be addressed, use this state.
+    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the "User Query".
+    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the "User Query".
+
+- Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
+
+Context Fragments:s
+${synthesisContext}
+
+## Response Format
+{
+  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
+  "answer": "Brief, synthesized answer based only on the context"
+}
+  `
+}
 
 export const meetingPromptJson = (
   userContext: string,

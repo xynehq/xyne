@@ -376,7 +376,9 @@ export default function TuningPage() {
         {" "}
         {/* Added margin to content div */}
         <div className="flex flex-col gap-6">
-          <h1 className="text-2xl font-semibold dark:text-gray-100">Tune Search Parameters</h1>
+          <h1 className="text-2xl font-semibold dark:text-gray-100">
+            Tune Search Parameters
+          </h1>
           <p className="dark:text-gray-300">
             Configure and start an automated evaluation process to find the
             optimal alpha value for your search personalization. This process
@@ -412,7 +414,9 @@ export default function TuningPage() {
           {/* Display existing datasets */}
           {datasets.length > 0 && (
             <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-4 dark:text-gray-100">Available Datasets</h2>
+              <h2 className="text-xl font-semibold mb-4 dark:text-gray-100">
+                Available Datasets
+              </h2>
               <Table>
                 <TableHeader>
                   <TableRow>

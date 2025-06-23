@@ -21,6 +21,7 @@ services:
   prometheus:
     image: "prom/prometheus"
     container_name: xyne-prometheus
+    user: "65534:65534"
     volumes:
       - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
     ports:
@@ -36,6 +37,7 @@ services:
   grafana:
     image: grafana/grafana
     container_name: xyne-grafana
+    user: "472:472"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/grafana-storage:/var/lib/grafana 
@@ -44,10 +46,13 @@ services:
     restart: always
     networks:
       - xyne
+    environment:
+      - POSTGRES_PASSWORD=xyne
 
   vespa:
     image: vespaengine/vespa
     container_name: vespa
+    user: "1000:1000"
     hostname: vespa-container
     deploy:
       resources:
@@ -93,6 +98,7 @@ services:
   loki:
     image: grafana/loki:3.4.1
     container_name: loki
+    user: "10001:10001"
     ports:
       - "3100:3100"
     volumes:
@@ -110,6 +116,4 @@ volumes:
   vespa-data:
     driver: local
   grafana-storage:  
-    driver: local
-  loki_data:
     driver: local

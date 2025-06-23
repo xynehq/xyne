@@ -16,7 +16,7 @@ import {
   type VespaChatMessageSearch,
   type ScoredChunk,
   // Corrected import name for datasourceFileSchema
-  datasourceFileSchema,
+  dataSourceFileSchema,
   type VespaDataSourceFileSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
@@ -27,6 +27,17 @@ import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+
+export const constructToolContext = (tool_schema: string) => {
+  const tool = JSON.parse(tool_schema)
+  const toolSchemaContext = Object.entries(tool).map(
+    ([key, value]) => `- ${key}: ${JSON.stringify(value)}`,
+  )
+  return `
+  Tool Schema:
+   ${toolSchemaContext.join("\n")}
+   `
+}
 
 // Function for handling file context
 const constructFileContext = (
@@ -503,7 +514,7 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
-  } else if (searchResult.fields.sddocname === datasourceFileSchema) {
+  } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
     return constructDataSourceFileContext(
       searchResult.fields as VespaDataSourceFileSearch,
       searchResult.relevance,

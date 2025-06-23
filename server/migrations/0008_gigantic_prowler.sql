@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "queryRouterClassification" jsonb DEFAULT '[]'::jsonb NOT NULL;

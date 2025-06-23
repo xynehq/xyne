@@ -3,13 +3,8 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import {
-  ConnectorType,
-  metricAccountType,
-  metricNames,
-  Subsystem,
-  type SaaSJob,
-} from "@/types"
+import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
+import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
 import config from "@/config"
 import { Apps, AuthType } from "@/shared/types"
@@ -27,6 +22,7 @@ import {
   syncJobError,
   syncJobSuccess,
 } from "@/metrics/sync/sync-metrics"
+import { Auth } from "googleapis"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
@@ -138,15 +134,15 @@ const initWorkers = async () => {
       const endTime = Date.now()
       syncJobSuccess.inc(
         {
-          sync_job_name: metricNames.syncOauthAccountChanges,
-          sync_job_auth_type: metricAccountType.oauth,
+          sync_job_name: SyncOAuthSaaSQueue,
+          sync_job_auth_type: AuthType.OAuth,
         },
         1,
       )
       syncJobDuration.observe(
         {
-          sync_job_name: metricNames.syncOauthAccountChanges,
-          sync_job_auth_type: metricAccountType.oauth,
+          sync_job_name: SyncOAuthSaaSQueue,
+          sync_job_auth_type: AuthType.OAuth,
         },
         endTime - startTime,
       )
@@ -158,8 +154,8 @@ const initWorkers = async () => {
       )
       syncJobError.inc(
         {
-          sync_job_name: metricNames.syncOauthAccountChanges,
-          sync_job_auth_type: metricAccountType.oauth,
+          sync_job_name: SyncOAuthSaaSQueue,
+          sync_job_auth_type: AuthType.OAuth,
           sync_job_error_type: `${errorMessage}`,
         },
         1,
@@ -176,15 +172,15 @@ const initWorkers = async () => {
       const endTime = Date.now()
       syncJobSuccess.inc(
         {
-          sync_job_name: metricNames.syncServiceAccountChanges,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncServiceAccountSaaSQueue,
+          sync_job_auth_type: AuthType.ServiceAccount,
         },
         1,
       )
       syncJobDuration.observe(
         {
-          sync_job_name: metricNames.syncServiceAccountChanges,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncServiceAccountSaaSQueue,
+          sync_job_auth_type: AuthType.ServiceAccount,
         },
         endTime - startTime,
       )
@@ -196,8 +192,8 @@ const initWorkers = async () => {
       )
       syncJobError.inc(
         {
-          sync_job_name: metricNames.syncServiceAccountChanges,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncServiceAccountSaaSQueue,
+          sync_job_auth_type: AuthType.ServiceAccount,
           sync_job_error_type: `${errorMessage}`,
         },
         1,
@@ -212,15 +208,15 @@ const initWorkers = async () => {
       const endTime = Date.now()
       syncJobSuccess.inc(
         {
-          sync_job_name: metricNames.syncGoogleWorkspaceChange,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncGoogleWorkspace,
+          sync_job_auth_type: AuthType.ServiceAccount,
         },
         1,
       )
       syncJobDuration.observe(
         {
-          sync_job_name: metricNames.syncGoogleWorkspaceChange,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncGoogleWorkspace,
+          sync_job_auth_type: AuthType.ServiceAccount,
         },
         endTime - startTime,
       )
@@ -232,8 +228,8 @@ const initWorkers = async () => {
       )
       syncJobError.inc(
         {
-          sync_job_name: metricNames.syncGoogleWorkspaceChange,
-          sync_job_auth_type: metricAccountType.service,
+          sync_job_name: SyncGoogleWorkspace,
+          sync_job_auth_type: AuthType.ServiceAccount,
           sync_job_error_type: `${errorMessage}`,
         },
         1,
@@ -251,15 +247,15 @@ const initWorkers = async () => {
       const endTime = Date.now()
       syncJobSuccess.inc(
         {
-          sync_job_name: metricNames.syncSlackChanges,
-          sync_job_auth_type: metricAccountType.slackUser,
+          sync_job_name: SyncSlackQueue,
+          sync_job_auth_type: SlackEntity.User,
         },
         1,
       )
       syncJobDuration.observe(
         {
-          sync_job_name: metricNames.syncSlackChanges,
-          sync_job_auth_type: metricAccountType.slackUser,
+          sync_job_name: SyncSlackQueue,
+          sync_job_auth_type: SlackEntity.User,
         },
         endTime - startTime,
       )
@@ -271,8 +267,8 @@ const initWorkers = async () => {
       )
       syncJobError.inc(
         {
-          sync_job_name: metricNames.syncSlackChanges,
-          sync_job_auth_type: metricAccountType.slackUser,
+          sync_job_name: SyncSlackQueue,
+          sync_job_auth_type: SlackEntity.User,
           sync_job_error_type: `${errorMessage}`,
         },
         1,

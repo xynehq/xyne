@@ -28,9 +28,6 @@ function FileUploadIntegration() {
   const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
-  const [, setDataSourceFiles] = useState<any[]>([])
-  const [, setIsLoadingFiles] = useState(false)
-  const [, setFilesError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const refreshFilesForActiveDataSource = () => {
@@ -59,46 +56,6 @@ function FileUploadIntegration() {
 
     fetchApiDataSources()
   }, [])
-
-  useEffect(() => {
-    if (activeDataSource && activeDataSource.trim() !== "") {
-      const fetchFilesForDataSource = async () => {
-        setIsLoadingFiles(true)
-        setFilesError(null)
-        try {
-          const response = await api.datasources[":dataSourceName"].files.$get({
-            param: { dataSourceName: activeDataSource },
-          })
-          if (response.ok) {
-            const filesData = await response.json()
-            setDataSourceFiles(filesData)
-          } else {
-            const errorText = await response.text()
-            console.error(
-              `Failed to fetch files for datasource ${activeDataSource}:`,
-              errorText,
-            )
-            setFilesError(`Failed to load files: ${response.statusText}`)
-            setDataSourceFiles([])
-          }
-        } catch (error) {
-          console.error(
-            `Error fetching files for datasource ${activeDataSource}:`,
-            error,
-          )
-          setFilesError("An unexpected error occurred while fetching files.")
-          setDataSourceFiles([])
-        } finally {
-          setIsLoadingFiles(false)
-        }
-      }
-      fetchFilesForDataSource()
-    } else {
-      setDataSourceFiles([])
-      setIsLoadingFiles(false)
-      setFilesError(null)
-    }
-  }, [activeDataSource, refreshKey])
 
   const handleDatasourceCreated = async (name: string) => {
     if (!dataSources.includes(name)) {
@@ -215,7 +172,10 @@ function FileUploadIntegration() {
                   <h3 className="text-lg font-medium mb-4 dark:text-gray-200">
                     Files in {activeDataSource}
                   </h3>
-                  <FileAccordion activeDataSourceName={activeDataSource} />
+                  <FileAccordion
+                    activeDataSourceName={activeDataSource}
+                    refreshKey={refreshKey}
+                  />
                 </div>
               </div>
             ) : (

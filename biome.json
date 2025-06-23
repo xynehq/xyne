@@ -16,7 +16,8 @@
       "./migrations",
       "./server/eval-results",
       "./server/eval-data",
-      "./server/tuning-data"
+      "./server/tuning-data",
+      "./deployment/grafana"
     ]
   },
   "formatter": {

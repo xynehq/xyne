@@ -1,5 +1,5 @@
 import type { Context } from "hono"
-import { setCookie } from "hono/cookie"
+import { deleteCookie, setCookie } from "hono/cookie"
 import type { CookieOptions } from "hono/utils/cookie"
 import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
@@ -66,6 +66,24 @@ export const setCookieByEnv = (
   }
 }
 
+export const deleteCookieByEnv = (
+  c: Context,
+  CookieName: string,
+  opts?: CookieOptions,
+) => {
+  const env = process.env.NODE_ENV
+  if (env === "production") {
+    deleteCookie(c, CookieName, opts)
+  } else {
+    deleteCookie(c, CookieName, {
+      ...opts,
+      secure: false,
+      sameSite: "Lax",
+      httpOnly: true,
+    })
+  }
+}
+
 // this helps prevent typescript from
 // being bothered by the error in the catch
 export const getErrorMessage = (error: unknown) => {
@@ -75,8 +93,14 @@ export const getErrorMessage = (error: unknown) => {
 
 // // we want LLM to have a better understanding of time
 export const getRelativeTime = (oldTimestamp: number) => {
-  // Convert `oldTimestamp` to seconds if it is in milliseconds
-  const oldTimestampInSeconds = Math.floor(oldTimestamp / 1000)
+  // If timestamp > 10^12, treat it as milliseconds
+
+  const MILLISECOND_THRESHOLD = 1e10
+  const oldTimestampInSeconds =
+    oldTimestamp >= MILLISECOND_THRESHOLD
+      ? Math.floor(oldTimestamp / 1000)
+      : Math.floor(oldTimestamp)
+
   const now = Math.floor(Date.now() / 1000)
   const difference = now - oldTimestampInSeconds
 

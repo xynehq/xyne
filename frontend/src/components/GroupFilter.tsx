@@ -51,7 +51,9 @@ const GroupFilterItem = ({
       >
         <div className="flex items-center">
           {Image}
-          <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">{title}</p>
+          <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">
+            {title}
+          </p>
         </div>
         {<p className="text-[#97A6C4] dark:text-slate-400 ml-7">{total}</p>}
       </div>
@@ -95,6 +97,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Event"
   } else if (app === Apps.Slack && entity === SlackEntity.Message) {
     return "Slack Message"
+  } else if (app === Apps.Slack && entity === SlackEntity.User) {
+    return "Slack User"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

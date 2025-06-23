@@ -9,6 +9,7 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 const page = 8
 
 import { Sidebar } from "@/components/Sidebar"
+import { useTheme } from "@/components/ThemeContext"
 
 import { useEffect, useRef, useState } from "react"
 
@@ -78,6 +79,7 @@ interface IndexProps {
 }
 
 export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
+  const { theme } = useTheme()
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
@@ -483,12 +485,13 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                     <MarkdownPreview
                       source={answer}
                       wrapperElement={{
-                        "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                        "data-color-mode": theme,
                       }}
                       style={{
                         padding: 0,
-                        backgroundColor: document.documentElement.classList.contains('dark') ? "#1F2937" : "#ffffff", // bg-slate-800 for dark
-                        color: document.documentElement.classList.contains('dark') ? "#E5E7EB" : "#464B53", // text-gray-200 for dark
+                        backgroundColor:
+                          theme === "dark" ? "#1F2937" : "#ffffff",
+                        color: theme === "dark" ? "#E5E7EB" : "#464B53",
                       }}
                     />
                     {/* Gradient overlay when not expanded */}
@@ -504,9 +507,17 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                       onClick={() => setIsExpanded(!isExpanded)}
                     >
                       {!isExpanded ? (
-                        <ChevronsUpDown size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
+                        <ChevronsUpDown
+                          size={16}
+                          stroke="#707F9F"
+                          className="dark:stroke-gray-300"
+                        />
                       ) : (
-                        <ChevronsDownUp size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
+                        <ChevronsDownUp
+                          size={16}
+                          stroke="#707F9F"
+                          className="dark:stroke-gray-300"
+                        />
                       )}
                       {isExpanded ? (
                         <span className="ml-2">Show less</span>
@@ -520,7 +531,11 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                         // Your code here
                       }}
                     >
-                      <MessageSquareShare size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
+                      <MessageSquareShare
+                        size={16}
+                        stroke="#707F9F"
+                        className="dark:stroke-gray-300"
+                      />
                       <span className="ml-3">Turn into Chat</span>
                     </button>
                   </div>

@@ -18,13 +18,13 @@ interface FileItem {
 interface FileAccordionProps {
   className?: string
   activeDataSourceName?: string | null
-  fileSchema?: string 
+  refreshKey?: number
 }
 
 export default function FileAccordion({
   className = "",
   activeDataSourceName,
-  fileSchema = "datasource_file", 
+  refreshKey,
 }: FileAccordionProps) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(false) // Start with false, set to true when fetching
@@ -78,7 +78,7 @@ export default function FileAccordion({
       setLoading(false)
       setError(null) // Or set a message like "No data source selected"
     }
-  }, [activeDataSourceName]) // Re-fetch when activeDataSourceName changes
+  }, [activeDataSourceName, refreshKey]) // Re-fetch when activeDataSourceName and refreshKey changes
 
   const fetchFiles = async (dataSourceName: string) => {
     setLoading(true)
@@ -182,7 +182,9 @@ export default function FileAccordion({
   if (loading) {
     return (
       <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
-        <div className="text-slate-600 dark:text-slate-400">Loading files...</div>
+        <div className="text-slate-600 dark:text-slate-400">
+          Loading files...
+        </div>
       </div>
     )
   }

@@ -91,3 +91,36 @@ html {
     @apply bg-background text-foreground;
   }
 }
+
+/* Chat-specific styles to prevent overflow */
+.prevent-overflow {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.markdown-content {
+  @apply prevent-overflow;
+}
+
+.markdown-content pre {
+  @apply prevent-overflow;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.markdown-content code {
+  @apply prevent-overflow;
+  word-break: break-all;
+}
+
+.markdown-content p {
+  @apply prevent-overflow;
+}
+
+/* Ensure long URLs or links don't overflow */
+.markdown-content a {
+  @apply prevent-overflow;
+  word-break: break-all;
+}

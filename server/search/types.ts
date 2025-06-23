@@ -20,7 +20,7 @@ export const chatAttachment = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
-export const datasourceFileSchema = "datasource_file"
+export const dataSourceFileSchema = "datasource_file"
 
 export type VespaSchema =
   | typeof fileSchema
@@ -35,7 +35,7 @@ export type VespaSchema =
   | typeof chatUserSchema
   | typeof chatAttachment
   | typeof datasourceSchema
-  | typeof datasourceFileSchema
+  | typeof dataSourceFileSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -50,6 +50,10 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+
+  MCP = "mcp",
+  GITHUB_MCP = "github_mcp",
+  Xyne = "xyne",
   DataSource = "data-source",
 }
 
@@ -105,7 +109,7 @@ const Schemas = z.union([
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
   z.literal(datasourceSchema),
-  z.literal(datasourceFileSchema),
+  z.literal(dataSourceFileSchema),
 ])
 
 export enum MailEntity {
@@ -174,7 +178,14 @@ export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
+export enum SystemEntity {
+  SystemInfo = "system_info",
+  UserProfile = "user_profile",
+}
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+
 export const entitySchema = z.union([
+  SystemEntitySchema,
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
@@ -185,6 +196,7 @@ export const entitySchema = z.union([
 ])
 
 export type Entity =
+  | SystemEntity
   | PeopleEntity
   | DriveEntity
   | NotionEntity
@@ -342,7 +354,7 @@ export type VespaDataSourceFile = z.infer<typeof VespaDataSourceFileSchemaBase>
 // Search schema for DataSourceFile
 export const VespaDataSourceFileSearchSchema =
   VespaDataSourceFileSchemaBase.extend({
-    sddocname: z.literal(datasourceFileSchema),
+    sddocname: z.literal(dataSourceFileSchema),
     matchfeatures: DataSourceFileMatchFeaturesSchema,
     rankfeatures: z.any().optional(),
     dataSourceName: z.string().optional(),
@@ -421,6 +433,7 @@ export const MailSchema = z.object({
   chunks: z.array(z.string()),
   timestamp: z.number(),
   app: z.nativeEnum(Apps),
+  userMap: z.optional(z.record(z.string())),
   entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
   from: z.string(),
@@ -1010,6 +1023,8 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   from: true,
   relevance: true,
   timestamp: true,
+  userMap: true,
+  mailId: true,
 })
   .strip()
   .extend({
@@ -1083,7 +1098,7 @@ export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
 })
   .strip()
   .extend({
-    type: z.literal(datasourceFileSchema), // Using the schema const for the literal
+    type: z.literal(dataSourceFileSchema), // Using the schema const for the literal
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
     matchfeatures: DataSourceFileMatchFeaturesSchema.optional(), // or z.any().optional() if specific match features aren't always needed here
     rankfeatures: z.any().optional(),
@@ -1091,3 +1106,16 @@ export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
 export type DataSourceFileResponse = z.infer<
   typeof DataSourceFileResponseSchema
 >
+
+export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
+  gmail: Apps.Gmail,
+  drive: Apps.GoogleDrive,
+  googledrive: Apps.GoogleDrive,
+  googlecalendar: Apps.GoogleCalendar,
+  slack: Apps.Slack,
+  datasource: Apps.DataSource,
+  "google-workspace": Apps.GoogleWorkspace,
+  googledocs: Apps.GoogleDrive,
+  googlesheets: Apps.GoogleDrive,
+  pdf: Apps.GoogleDrive,
+}

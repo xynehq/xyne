@@ -1,4 +1,3 @@
-
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { useForm } from "@tanstack/react-form"
@@ -9,11 +8,16 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType } from "shared/types"
+import { Apps, AuthType, IngestionType } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
-import { Square, Pause, Play, X } from "lucide-react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 
 import {
   Card,
@@ -27,7 +31,6 @@ import { useQuery } from "@tanstack/react-query"
 import { OAuthModal } from "@/oauth"
 import { ConnectorStatus } from "shared/types"
 import { OAuthIntegrationStatus } from "@/types"
-import { Progress } from "@/components/ui/progress"
 import {
   Table,
   TableBody,
@@ -134,6 +137,21 @@ export const SlackOAuthButton = ({
   return <Button onClick={handleOAuth}>{text}</Button>
 }
 
+enum ConnectAction {
+  Nil,
+  Pause,
+  Start,
+  Stop,
+  Remove,
+  Edit,
+}
+
+type ManualIngestionFormData = {
+  channelIds: string
+  startDate: string
+  endDate: string
+}
+
 interface SlackOAuthTabProps {
   isPending: boolean
   oauthIntegrationStatus: OAuthIntegrationStatus
@@ -143,6 +161,9 @@ interface SlackOAuthTabProps {
   connectAction: ConnectAction
   setConnectAction: (status: ConnectAction) => void
   connector: any
+  handleRegularIngestion: () => Promise<void>
+  isManualIngestionActive: boolean
+  isRegularIngestionActive: boolean
 }
 
 const submitSlackOAuth = async (
@@ -355,45 +376,10 @@ const SlackOAuthTab = ({
   connectAction,
   setConnectAction,
   connector,
+  handleRegularIngestion,
+  isManualIngestionActive,
+  isRegularIngestionActive,
 }: SlackOAuthTabProps) => {
-  const handleStatusUpdate = async (
-    connectorId: string,
-    newStatus: ConnectorStatus,
-  ) => {
-    try {
-      await updateConnectorStatus(connectorId, newStatus)
-      toast({
-        title: "Status Updated",
-        description: `Connector status changed to ${newStatus}`,
-      })
-      refetch()
-    } catch (error) {
-      toast({
-        title: "Status Update Failed",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleDelete = async (connectorId: string) => {
-    try {
-      await deleteConnector(connectorId)
-      toast({
-        title: "Connector Deleted",
-        description: "Slack connector has been removed",
-      })
-      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
-      refetch()
-    } catch (error) {
-      toast({
-        title: "Deletion Failed",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      })
-    }
-  }
-
   return (
     <TabsContent value="oauth">
       <Card>
@@ -442,62 +428,31 @@ const SlackOAuthTab = ({
                 setIntegrationStatus={setOAuthIntegrationStatus}
               />
             </div>
-          ) : oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnecting ||
-            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused ? (
-            <div className="flex flex-col items-center gap-4">
-              <p className="dark:text-gray-300">Connecting to Slack...</p>
-              <div className="flex items-center gap-2"></div>
-              <div className="flex">
-                <Square
-                  onClick={() => {
-                    handleStatusUpdate(
-                      connector.id,
-                      ConnectorStatus.NotConnected,
-                    )
-                  }}
-                />
-                {oauthIntegrationStatus ===
-                OAuthIntegrationStatus.OAuthConnecting ? (
-                  <Pause
-                    onClick={() => {
-                      handleStatusUpdate(connector.id, ConnectorStatus.Paused)
-                    }}
-                  />
-                ) : (
-                  <Play onClick={() => {}} />
-                )}
+          ) : null}
 
-                <X
-                  onClick={() => {
-                    handleDelete(connector.id)
-                  }}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-4">
-              <p className="text-green-600 dark:text-green-400 font-medium">
-                Slack OAuth Connected
-              </p>
-              <Button variant="outline" onClick={() => refetch()}>
-                Refresh Status
-              </Button>
-            </div>
+          {(oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
+            oauthIntegrationStatus ===
+              OAuthIntegrationStatus.OAuthConnecting) && (
+            <Button
+              onClick={handleRegularIngestion}
+              disabled={isRegularIngestionActive}
+            >
+              {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
+            </Button>
           )}
+
+          {/* {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting && (
+            <Button
+              onClick={handleRegularIngestion}
+              disabled={isRegularIngestionActive}
+            >
+              {isRegularIngestionActive ? "Ingesting..." : "Start Regular Ingestion"}
+            </Button>
+          )} */}
         </CardContent>
       </Card>
     </TabsContent>
   )
-}
-
-enum ConnectAction {
-  Nil,
-  Pause,
-  Start,
-  Stop,
-  Remove,
-  Edit,
 }
 
 export const Slack = ({
@@ -507,8 +462,7 @@ export const Slack = ({
 }: IntegrationProps) => {
   const navigate = useNavigate()
   const [slackStatus, setSlackStatus] = useState("")
-  // @ts-ignore
-  const [activeTab, setActiveTab] = useState("oauth")
+  const [, setActiveTab] = useState("oauth")
   const startTimeRef = useRef<number | null>(null)
 
   const [connectAction, setConnectAction] = useState<ConnectAction>(
@@ -518,12 +472,25 @@ export const Slack = ({
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(OAuthIntegrationStatus.Provider)
   const [slackProgress, setSlackProgress] = useState<number>(0)
-  const [slackUserStats, setSlackUserStats] = useState<{
+  const [, setSlackUserStats] = useState<{
     [email: string]: any
   }>({})
+  const [slackUserNormalIngestionStats, setSlackUserNormalIngestionStats] =
+    useState<{
+      [email: string]: any
+    }>({})
+  const [slackUserPartialIngestionStats, setSlackUserPartialIngestionStats] =
+    useState<{
+      [email: string]: any
+    }>({})
+  const [, setIngestionType] = useState<IngestionType>(
+    IngestionType.fullIngestion,
+  )
+  const [isManualIngestionActive, setIsManualIngestionActive] = useState(false)
+  const [isRegularIngestionActive, setIsRegularIngestionActive] =
+    useState(false)
 
-  // @ts-ignore
-  const { isPending, error, data, refetch } = useQuery<any[]>({
+  const { isPending, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -567,7 +534,6 @@ export const Slack = ({
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
-      // Open a websocket with the first connector id and pass app as Slack
       const slackConnector = data.find(
         (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
       )
@@ -589,13 +555,51 @@ export const Slack = ({
         const dataMsg = JSON.parse(e.data)
         const statusJson = JSON.parse(dataMsg.message)
         setSlackProgress(statusJson.progress ?? 0)
-        setSlackUserStats(statusJson.userStats ?? {})
+        if (statusJson.IngestionType) {
+          if (statusJson.IngestionType === IngestionType.fullIngestion)
+            setSlackUserNormalIngestionStats((prevStats) => {
+              if (
+                statusJson.userStats &&
+                Object.keys(statusJson.userStats).length > 0
+              ) {
+                return statusJson.userStats
+              }
+              return Object.keys(prevStats).length > 0 ? prevStats : {}
+            })
+          else
+            setSlackUserPartialIngestionStats((prevStats) => {
+              if (
+                statusJson.userStats &&
+                Object.keys(statusJson.userStats).length > 0
+              ) {
+                return statusJson.userStats
+              }
+              return Object.keys(prevStats).length > 0 ? prevStats : {}
+            })
+        }
+        setSlackUserStats((prevStats) => {
+          // If new userStats are provided and are not empty, update the state.
+          if (
+            statusJson.userStats &&
+            Object.keys(statusJson.userStats).length > 0
+          ) {
+            return statusJson.userStats
+          }
+          // Otherwise, if new userStats are empty or missing,
+          // keep the previous stats if they already had data.
+          // If previous stats were also empty, then return an empty object.
+          return Object.keys(prevStats).length > 0 ? prevStats : {}
+        })
+        setIngestionType(
+          statusJson.IngestionType ?? IngestionType.fullIngestion,
+        )
       })
 
       socket?.addEventListener("close", (e) => {
         console.info("Slack WebSocket connection closed", e.reason)
         if (e.reason === "Job finished") {
           setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+          setIsRegularIngestionActive(false)
         }
       })
       socket?.addEventListener("error", (error) => {
@@ -605,6 +609,7 @@ export const Slack = ({
           description: "Lost connection to Slack integration service",
           variant: "destructive",
         })
+        setIsRegularIngestionActive(false)
       })
     }
     return () => {
@@ -612,51 +617,49 @@ export const Slack = ({
     }
   }, [data, isPending])
 
-  // New component: SlackUserStatsTable similar to Google
-  const SlackUserStatsTable = ({
-    userStats,
-    type,
-  }: {
-    userStats: { [email: string]: any }
-    type: AuthType
-  }) => {
-    const elapsedSeconds = startTimeRef.current
-      ? (Date.now() - startTimeRef.current) / 1000
-      : 1
-    return (
-      <Table className="ml-[20px] max-h-[400px]">
-        <TableHeader>
-          <TableRow>
-            {type !== AuthType.OAuth && <TableHead>Email</TableHead>}
-            <TableHead>Messages</TableHead>
-            <TableHead>Replies</TableHead>
-            <TableHead>Conversations</TableHead>
-            <TableHead>Users</TableHead>
-            <TableHead>msgs / s</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Object.entries(userStats).map(([email, stats]) => (
-            <TableRow key={email}>
-              {type !== AuthType.OAuth && (
-                <TableCell className={`${stats.done ? "text-lime-600 dark:text-lime-400" : ""}`}>
-                  {email}
-                </TableCell>
-              )}
-              <TableCell>{stats.slackMessageCount}</TableCell>
-              <TableCell>{stats.slackMessageReplyCount}</TableCell>
-              <TableCell>{stats.slackConversationCount}</TableCell>
-              <TableCell>{stats.slackUserCount}</TableCell>
-              <TableCell>
-                {(stats.slackMessageCount / elapsedSeconds).toFixed(2)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    )
-  }
+  const handleRegularIngestion = async () => {
+    if (!slackConnector?.cId) {
+      toast({
+        title: "Slack connector not found",
+        description: "Please ensure Slack is connected.",
+        variant: "destructive",
+      })
+      return
+    }
 
+    setIsRegularIngestionActive(true)
+
+    try {
+      const response = await api.admin.slack.start_ingestion.$post({
+        json: {
+          connectorId: slackConnector.cId,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        toast({
+          title: "Regular Ingestion Failed",
+          description: `Error: ${errorText}`,
+          variant: "destructive",
+        })
+        setIsRegularIngestionActive(false)
+        return
+      }
+
+      toast({
+        title: "Regular Ingestion Started",
+        description: "Regular ingestion process initiated successfully.",
+      })
+    } catch (error) {
+      toast({
+        title: "An error occurred",
+        description: `Error: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      })
+      setIsRegularIngestionActive(false)
+    }
+  }
   return (
     <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
@@ -680,12 +683,7 @@ export const Slack = ({
 
             <TabsContent value="bot">
               <Card>
-                <CardHeader>
-                  {/* <CardTitle>Slack Bot</CardTitle>
-                  <CardDescription>
-                    Add your Slack Bot Token to enable integration.
-                  </CardDescription> */}
-                </CardHeader>
+                <CardHeader></CardHeader>
                 <CardContent>
                   <SlackBotTokenForm
                     onSuccess={() => setSlackStatus("connecting")}
@@ -711,17 +709,55 @@ export const Slack = ({
               connectAction={connectAction}
               setConnectAction={setConnectAction}
               connector={slackConnector}
+              handleRegularIngestion={handleRegularIngestion}
+              isManualIngestionActive={isManualIngestionActive}
+              isRegularIngestionActive={isRegularIngestionActive}
             />
           </Tabs>
 
-          {Object.keys(slackUserStats).length > 0 && (
+          {Object.keys(slackUserNormalIngestionStats).length > 0 && (
             <div className="mt-4 w-full">
               <p className="mb-2 dark:text-gray-300">
-                Slack Integration Progress: {slackProgress}%
+                Slack Integration Progress
               </p>
-              <Progress value={slackProgress} className="w-[60%] mb-4" />
+              {/* <Progress value={slackProgress} className="w-[60%] mb-4" /> */}
               <SlackUserStatsTable
-                userStats={slackUserStats}
+                userStats={slackUserNormalIngestionStats}
+                type={AuthType.OAuth}
+              />
+            </div>
+          )}
+
+          {/* Accordion for Manual Ingestion */}
+          <Accordion type="single" collapsible className="w-full mt-4">
+            <AccordionItem value="manual-ingestion">
+              <AccordionTrigger>Manual Ingestion</AccordionTrigger>
+              <AccordionContent>
+                {oauthIntegrationStatus ===
+                  OAuthIntegrationStatus.OAuthConnecting ||
+                oauthIntegrationStatus ===
+                  OAuthIntegrationStatus.OAuthConnected ? (
+                  <ManualIngestionForm
+                    connectorId={slackConnector?.cId}
+                    isManualIngestionActive={isManualIngestionActive}
+                    setIsManualIngestionActive={setIsManualIngestionActive}
+                    slackProgress={slackProgress}
+                    slackUserStats={slackUserPartialIngestionStats}
+                  />
+                ) : (
+                  <p>Please connect Slack OAuth to enable manual ingestion.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+
+          {/* Show manual ingestion stats - always show if there's data */}
+          {Object.keys(slackUserPartialIngestionStats).length > 0 && (
+            <div className="mt-4 w-full">
+              <p className="mb-2">Manual Ingestion Progress</p>
+              {/* <Progress value={slackProgress} className="w-[60%] mb-4" /> */}
+              <SlackUserStatsTable
+                userStats={slackUserPartialIngestionStats}
                 type={AuthType.OAuth}
               />
             </div>
@@ -732,19 +768,55 @@ export const Slack = ({
   )
 }
 
+const SlackUserStatsTable = ({
+  userStats,
+  type,
+}: {
+  userStats: { [email: string]: any }
+  type: AuthType
+}) => {
+  const startTimeRef = useRef<number | null>(null)
+  const elapsedSeconds = startTimeRef.current
+    ? (Date.now() - startTimeRef.current) / 1000
+    : 1
+  return (
+    <Table className="ml-[20px] max-h-[400px]">
+      <TableHeader>
+        <TableRow>
+          {type !== AuthType.OAuth && <TableHead>Email</TableHead>}
+          <TableHead>Messages</TableHead>
+          <TableHead>Replies</TableHead>
+          <TableHead>Conversations</TableHead>
+          <TableHead>Users</TableHead>
+          <TableHead>msgs / s</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {Object.entries(userStats).map(([email, stats]) => (
+          <TableRow key={email}>
+            {type !== AuthType.OAuth && (
+              <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                {email}
+              </TableCell>
+            )}
+            <TableCell>{stats.slackMessageCount}</TableCell>
+            <TableCell>{stats.slackMessageReplyCount}</TableCell>
+            <TableCell>{stats.slackConversationCount}</TableCell>
+            <TableCell>{stats.slackUserCount}</TableCell>
+            <TableCell>
+              {(stats.slackMessageCount / elapsedSeconds).toFixed(2)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 export const Route = createFileRoute(
   "/_authenticated/admin/integrations/slack",
 )({
   beforeLoad: async ({ params, context }) => {
-    // @ts-ignore
-    const userWorkspace = context
-    // Admins should be redirected to visit /admin/integrations
-    // if (
-    //   userWorkspace?.user?.role === UserRole.SuperAdmin ||
-    //   userWorkspace?.user?.role === UserRole.Admin
-    // ) {
-    //   throw redirect({ to: '/admin/integrations/' })
-    // }
     return params
   },
   loader: async (params) => {
@@ -763,3 +835,144 @@ export const Route = createFileRoute(
     )
   },
 })
+
+interface ManualIngestionFormProps {
+  connectorId: string | undefined
+  isManualIngestionActive: boolean
+  setIsManualIngestionActive: (active: boolean) => void
+  slackProgress: number
+  slackUserStats: { [email: string]: any }
+}
+
+const ManualIngestionForm = ({
+  connectorId,
+  isManualIngestionActive,
+  setIsManualIngestionActive,
+  slackProgress,
+  slackUserStats,
+}: ManualIngestionFormProps) => {
+  const { toast } = useToast()
+  // const startTimeRef = useRef<number | null>(null)
+
+  const form = useForm<ManualIngestionFormData>({
+    defaultValues: { channelIds: "", startDate: "", endDate: "" },
+    onSubmit: async ({ value }) => {
+      if (!connectorId) {
+        toast({
+          title: "Slack connector not found",
+          description: "Please ensure Slack is connected.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setIsManualIngestionActive(true)
+
+      try {
+        const channelIdsList = value.channelIds
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+
+        if (channelIdsList.length === 0) {
+          toast({
+            title: "Invalid Channel IDs",
+            description: "Please provide at least one valid channel ID.",
+            variant: "destructive",
+          })
+          setIsManualIngestionActive(false)
+          return
+        }
+
+        const response = await api.admin.slack.ingest_more_channel.$post({
+          json: {
+            connectorId: connectorId,
+            channelsToIngest: channelIdsList,
+            startDate: value.startDate,
+            endDate: value.endDate,
+          },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          toast({
+            title: "Ingestion Failed",
+            description: `Error: ${errorText}`,
+            variant: "destructive",
+          })
+          setIsManualIngestionActive(false)
+          return
+        }
+
+        toast({
+          title: "Manual Ingestion Started",
+          description: "Ingestion process initiated successfully.",
+        })
+
+        form.reset()
+        setIsManualIngestionActive(false)
+      } catch (error) {
+        toast({
+          title: "An error occurred",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+        setIsManualIngestionActive(false)
+      }
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        form.handleSubmit()
+      }}
+      className="grid w-full max-w-sm items-center gap-1.5"
+    >
+      <Label htmlFor="channelIds">Channel IDs (comma-separated)</Label>
+      <form.Field
+        name="channelIds"
+        children={(field) => (
+          <Input
+            id="channelIds"
+            type="text"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+            placeholder="e.g., C123,C456"
+          />
+        )}
+      />
+
+      <Label htmlFor="startDate">Start Date</Label>
+      <form.Field
+        name="startDate"
+        children={(field) => (
+          <Input
+            id="startDate"
+            type="date"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+          />
+        )}
+      />
+
+      <Label htmlFor="endDate">End Date</Label>
+      <form.Field
+        name="endDate"
+        children={(field) => (
+          <Input
+            id="endDate"
+            type="date"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+          />
+        )}
+      />
+
+      <Button type="submit" disabled={isManualIngestionActive}>
+        {isManualIngestionActive ? "Ingesting..." : "Ingest Channels"}
+      </Button>
+    </form>
+  )
+}

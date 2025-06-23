@@ -15,6 +15,11 @@ import type {
   VespaChatContainer,
   Inserts,
 } from "@/search/types"
+import {
+  chatContainerSchema,
+  chatMessageSchema,
+  chatUserSchema,
+} from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
@@ -443,7 +448,10 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     const { docIds, generateAnswerSpan } = options
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
-    const yqlQuery = `select * from sources * where (${yqlIds})`
+    const yqlMailIds = docIds
+      .map((id) => `mailId contains '${id}'`)
+      .join(" or ")
+    const yqlQuery = `select * from sources * where (${yqlIds}) or (${yqlMailIds})`
     const url = `${this.vespaEndpoint}/search/`
 
     try {
@@ -800,12 +808,20 @@ class VespaClient {
     }
   }
 
-  async ifMailDocumentsExist(
-    mailIds: string[],
-  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
+  async ifMailDocumentsExist(mailIds: string[]): Promise<
+    Record<
+      string,
+      {
+        docId: string
+        exists: boolean
+        updatedAt: number | null
+        userMap: Record<string, string>
+      }
+    >
+  > {
     // Construct the YQL query
     const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select mailId, updatedAt from sources mail where mailId in (${yqlIds})`
+    const yqlQuery = `select docId, mailId, updatedAt,userMap from sources mail where mailId in (${yqlIds})`
     const url = `${this.vespaEndpoint}/search/`
 
     try {
@@ -831,12 +847,13 @@ class VespaClient {
       }
 
       const result = await response.json()
-
       // Extract found documents with their mailId and updatedAt
       const foundDocs =
         result.root?.children?.map((hit: any) => ({
-          mailId: hit.fields.mailId as string,
-          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+          docId: hit.fields?.docId as string, // fixed typo: fields, not field
+          mailId: hit.fields?.mailId as string,
+          updatedAt: hit.fields?.updatedAt as number | undefined,
+          userMap: hit.fields?.userMap as Record<string, string>, // undefined if not present
         })) || []
 
       // Build the result map using original mailIds as keys
@@ -847,12 +864,22 @@ class VespaClient {
             (doc: { mailId: string }) => doc.mailId === cleanedId,
           )
           acc[id] = {
+            docId: foundDoc?.docId ?? "",
             exists: !!foundDoc,
-            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+            updatedAt: foundDoc?.updatedAt ?? null,
+            userMap: foundDoc?.userMap, // null if not found or no updatedAt
           }
           return acc
         },
-        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
+        {} as Record<
+          string,
+          {
+            docId: string
+            exists: boolean
+            updatedAt: number | null
+            userMap: Record<string, string>
+          }
+        >,
       )
 
       return existenceMap
@@ -968,7 +995,6 @@ class VespaClient {
           body: JSON.stringify(payload),
         },
       )
-
       if (!response.ok) {
         const errorText = response.statusText
         throw new Error(
@@ -982,6 +1008,38 @@ class VespaClient {
       const errMessage = getErrorMessage(error)
       Logger.error(error, `Error fetching items: ${errMessage}`)
       throw new Error(`Error fetching items: ${errMessage}`)
+    }
+  }
+
+  async ifMailDocExist(email: string, docId: string): Promise<boolean> {
+    // Construct the YQL query using userMap with sameElement
+    const yqlQuery = `select docId from mail where userMap contains sameElement(key contains "${email}", value contains "${docId}")`
+
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=1`
+
+    try {
+      const response = await this.fetchWithRetry(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Check if document exists
+      return !!result.root?.children?.[0]
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence: ${errMessage}`)
+      throw error
     }
   }
   /**
@@ -1092,6 +1150,109 @@ class VespaClient {
       Logger.error(error, `Error fetching random document: ${errMessage}`)
       // Rethrow or wrap the error as needed
       throw new Error(`Error fetching random document: ${errMessage}`)
+    }
+  }
+
+  async getDocumentsBythreadId(
+    threadId: string[],
+  ): Promise<VespaSearchResponse> {
+    const yqlIds = threadId
+      .map((id) => `threadId contains '${id}'`)
+      .join(" or ")
+    const yqlQuery = `select * from sources ${chatMessageSchema} where (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching documents with threadId: ${errMessage}`)
+    }
+  }
+
+  async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
+    const yqlQuery = `select docId from sources ${chatUserSchema} where email contains '${email}'`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching user with email ${email}: ${errMessage}`)
+    }
+  }
+
+  async getChatContainerIdByChannelName(
+    channelName: string,
+  ): Promise<VespaSearchResponse> {
+    const yqlQuery = `select docId from sources ${chatContainerSchema} where name contains '${channelName}'`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+      console.log(yqlQuery)
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(
+        `Error fetching channelId with channel name ${channelName}: ${errMessage}`,
+      )
     }
   }
 }

@@ -41,6 +41,7 @@ import {
   UserPlus,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -50,6 +51,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
 type CurrentResp = {
   resp: string
@@ -185,6 +187,7 @@ function AgentComponent() {
   const [agentName, setAgentName] = useState("")
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
+  const [isPublic, setIsPublic] = useState(false)
 
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
@@ -210,6 +213,13 @@ function AgentComponent() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const [userStopped, setUserStopped] = useState<boolean>(false)
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmModalTitle, setConfirmModalTitle] = useState("")
+  const [confirmModalMessage, setConfirmModalMessage] = useState("")
+  const [confirmAction, setConfirmAction] = useState<
+    (() => Promise<void>) | null
+  >(null)
+
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
     return storedValue ? JSON.parse(storedValue) : false
@@ -229,7 +239,7 @@ function AgentComponent() {
   const [selectedUsers, setSelectedUsers] = useState<User[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
-
+  const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -399,7 +409,26 @@ function AgentComponent() {
 
   useEffect(() => {
     const loadUsers = async () => {
-      setUsers([])
+      try {
+        const response = await api.workspace.users.$get()
+        if (response.ok) {
+          const data = await response.json()
+          setUsers(data as User[])
+        } else {
+          showToast({
+            title: "Error",
+            description: "Failed to fetch workspace users.",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        showToast({
+          title: "Error",
+          description: "An error occurred while fetching workspace users.",
+          variant: "destructive",
+        })
+        console.error("Fetch workspace users error:", error)
+      }
     }
     loadUsers()
   }, [showToast])
@@ -418,6 +447,7 @@ function AgentComponent() {
     setAgentName("")
     setAgentDescription("")
     setAgentPrompt("")
+    setIsPublic(false)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
     setEditingAgent(null)
@@ -459,6 +489,7 @@ function AgentComponent() {
       setAgentName(editingAgent.name)
       setAgentDescription(editingAgent.description || "")
       setAgentPrompt(editingAgent.prompt || "")
+      setIsPublic(editingAgent.isPublic || false)
       setSelectedModel(editingAgent.model)
 
       const currentIntegrations: Record<string, boolean> = {}
@@ -467,52 +498,78 @@ function AgentComponent() {
           editingAgent.appIntegrations?.includes(int.id) || false
       })
       setSelectedIntegrations(currentIntegrations)
+
+      // Load existing user permissions only for private agents
+      const loadAgentPermissions = async () => {
+        try {
+          const response = await api.agent[":agentExternalId"].permissions.$get(
+            {
+              param: { agentExternalId: editingAgent.externalId },
+            },
+          )
+          if (response.ok) {
+            const data = await response.json()
+            const existingUsers = users.filter((user) =>
+              data.userEmails.includes(user.email),
+            )
+            setSelectedUsers(existingUsers)
+          }
+        } catch (error) {
+          console.error("Failed to load agent permissions:", error)
+        }
+      }
+
+      if (users.length > 0 && !editingAgent.isPublic) {
+        loadAgentPermissions()
+      } else if (editingAgent.isPublic) {
+        setSelectedUsers([]) // Clear users for public agents
+      }
     }
-  }, [editingAgent, viewMode, allAvailableIntegrations])
+  }, [editingAgent, viewMode, allAvailableIntegrations, users])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this agent? This action cannot be undone.",
-      )
-    ) {
-      return
-    }
-    try {
-      const response = await api.agent[":agentExternalId"].$delete({
-        param: { agentExternalId },
-      })
-      if (response.ok) {
-        showToast({
-          title: "Success",
-          description: "Agent deleted successfully.",
+    setConfirmModalTitle("Delete Agent")
+    setConfirmModalMessage(
+      "Are you sure you want to delete this agent? This action cannot be undone.",
+    )
+    setConfirmAction(() => async () => {
+      try {
+        const response = await api.agent[":agentExternalId"].$delete({
+          param: { agentExternalId },
         })
-        setAgents((prevAgents) =>
-          prevAgents.filter((agent) => agent.externalId !== agentExternalId),
-        )
-      } else {
-        let errorDetail = response.statusText
-        try {
-          const errorData = await response.json()
-          errorDetail =
-            errorData.message || errorData.detail || response.statusText
-        } catch (e) {
-          console.error("Failed to parse error response as JSON", e)
+        if (response.ok) {
+          showToast({
+            title: "Success",
+            description: "Agent deleted successfully.",
+          })
+          setAgents((prevAgents) =>
+            prevAgents.filter((agent) => agent.externalId !== agentExternalId),
+          )
+        } else {
+          let errorDetail = response.statusText
+          try {
+            const errorData = await response.json()
+            errorDetail =
+              errorData.message || errorData.detail || response.statusText
+          } catch (e) {
+            console.error("Failed to parse error response as JSON", e)
+          }
+          showToast({
+            title: "Error",
+            description: `Failed to delete agent: ${errorDetail}`,
+            variant: "destructive",
+          })
         }
+      } catch (error) {
         showToast({
           title: "Error",
-          description: `Failed to delete agent: ${errorDetail}`,
+          description: "An error occurred while deleting the agent.",
           variant: "destructive",
         })
+        console.error("Delete agent error:", error)
       }
-    } catch (error) {
-      showToast({
-        title: "Error",
-        description: "An error occurred while deleting the agent.",
-        variant: "destructive",
-      })
-      console.error("Delete agent error:", error)
-    }
+    })
+    setShowConfirmModal(true)
   }
 
   const handleSaveAgent = async () => {
@@ -525,7 +582,10 @@ function AgentComponent() {
       description: agentDescription,
       prompt: agentPrompt,
       model: selectedModel,
+      isPublic: isPublic,
       appIntegrations: enabledIntegrations,
+      // Only include userEmails for private agents
+      userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
     try {
@@ -918,6 +978,19 @@ function AgentComponent() {
         role={user?.role}
         isAgentMode={agentWhiteList}
       />
+      <ConfirmModal
+        showModal={showConfirmModal}
+        setShowModal={(val) =>
+          setShowConfirmModal(val.open ?? showConfirmModal)
+        }
+        modalTitle={confirmModalTitle}
+        modalMessage={confirmModalMessage}
+        onConfirm={() => {
+          if (confirmAction) {
+            confirmAction()
+          }
+        }}
+      />
       <div className="flex flex-col md:flex-row flex-1 h-full md:ml-[60px]">
         <div
           className={`p-4 md:py-4 md:px-8 bg-white dark:bg-[#1E1E1E] overflow-y-auto h-full relative ${viewMode === "list" ? "w-full" : "w-full md:w-[50%] border-r border-gray-200 dark:border-gray-700"}`}
@@ -1082,6 +1155,46 @@ function AgentComponent() {
                   />
                 </div>
 
+                <div className="w-full">
+                  <Label className="text-sm font-medium text-gray-700">
+                    Visibility
+                  </Label>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="private"
+                        name="visibility"
+                        checked={!isPublic}
+                        onChange={() => setIsPublic(false)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="private"
+                        className="text-sm text-gray-700 cursor-pointer"
+                      >
+                        Private (only shared users can access)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="public"
+                        name="visibility"
+                        checked={isPublic}
+                        onChange={() => setIsPublic(true)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="public"
+                        className="text-sm text-gray-700 cursor-pointer"
+                      >
+                        Public (all workspace members can access)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     App Integrations
@@ -1162,120 +1275,125 @@ function AgentComponent() {
                   </div>
                 </div>
 
-                <div>
-                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                    Agent Users{" "}
-                    {selectedUsers.length > 0 && (
-                      <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
-                        ({selectedUsers.length})
-                      </span>
-                    )}
-                  </Label>
-                  <div className="mt-3">
-                    <div className="relative w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
-                      <Input
-                        placeholder="Search users by name or email..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
-                      />
-                      {showSearchResults && (
-                        <Card className="absolute z-10 mt-1 shadow-lg w-full"> {/* Card adapts */}
-                          <CardContent
-                            className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500"
-                            ref={searchResultsRef}
-                            style={{
-                              scrollbarWidth: "thin",
-                              WebkitOverflowScrolling: "touch",
-                              scrollbarColor: "var(--scrollbar-thumb) transparent", 
-                              overflowY: "auto",
-                              display: "block",
-                            }}
-                          >
-                            {filteredUsers.length > 0 ? (
-                              filteredUsers.map((user, index) => (
-                                <div
-                                  key={user.id}
-                                  className={`flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-slate-600 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
-                                    index === selectedSearchIndex
-                                      ? "bg-gray-50 dark:bg-slate-600"
-                                      : ""
-                                  }`}
-                                  onClick={() => handleSelectUser(user)}
-                                >
-                                  <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                    <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                                      {user.name}
-                                    </span>
-                                    <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                      -
-                                    </span>
-                                    <span className="text-gray-500 dark:text-gray-400 truncate">
-                                      {user.email}
-                                    </span>
-                                  </div>
-                                  <UserPlus className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                                </div>
-                              ))
-                            ) : (
-                              <div className="p-3 text-center text-gray-500 dark:text-gray-400">
-                                No users found matching "{searchQuery}"
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                {!isPublic && (
+                  <div>
+                    <Label className="text-base font-medium text-gray-800">
+                      Agent Users{" "}
+                      {selectedUsers.length > 0 && (
+                        <span className="text-sm text-gray-500 ml-1">
+                          ({selectedUsers.length})
+                        </span>
                       )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Agent Users Section */}
-                <div>
-                  <Card className="mt-3"> {/* Card adapts */}
-                    <CardContent className="p-4">
-                      <div className="space-y-1.5 h-[126px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
-                        {selectedUsers.length > 0 ? (
-                          selectedUsers.map((user) => (
-                            <div
-                              key={user.id}
-                              className="flex items-center justify-between p-1.5 bg-gray-50 dark:bg-slate-600 rounded-lg"
+                    </Label>
+                    <div className="mt-3">
+                      <div className="relative w-full">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search users by name or email..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
+                        />
+                        {showSearchResults && (
+                          <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                            <CardContent
+                              className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
+                              ref={searchResultsRef}
+                              style={{
+                                scrollbarWidth: "thin",
+                                WebkitOverflowScrolling: "touch",
+                                scrollbarColor: "#D1D5DB transparent",
+                                overflowY: "auto",
+                                display: "block",
+                              }}
                             >
-                              <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                                  {user.name}
-                                </span>
-                                <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                  -
-                                </span>
-                                <span className="text-gray-500 dark:text-gray-400 truncate">
-                                  {user.email}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveUser(user.id)}
-                                className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-500 h-6 w-6 p-0 flex-shrink-0"
-                              >
-                                <LucideX className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-                            <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                            <p>No users added yet</p>
-                            <p className="text-sm">
-                              Search and select users to add them to this agent
-                            </p>
-                          </div>
+                              {filteredUsers.length > 0 ? (
+                                filteredUsers.map((user, index) => (
+                                  <div
+                                    key={user.id}
+                                    className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
+                                      index === selectedSearchIndex
+                                        ? "bg-gray-50"
+                                        : ""
+                                    }`}
+                                    onClick={() => handleSelectUser(user)}
+                                  >
+                                    <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                      <span className="text-sm text-gray-600 truncate">
+                                        {user.name}
+                                      </span>
+                                      <span className="text-gray-500 flex-shrink-0">
+                                        -
+                                      </span>
+                                      <span className="text-gray-500 truncate">
+                                        {user.email}
+                                      </span>
+                                    </div>
+                                    <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-3 text-center text-gray-500">
+                                  No users found matching "{searchQuery}"
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Agent Users Section */}
+                {!isPublic && (
+                  <div>
+                    <Card className="mt-3">
+                      <CardContent className="p-4">
+                        <div className="space-y-1.5 h-[126px] overflow-y-auto">
+                          {selectedUsers.length > 0 ? (
+                            selectedUsers.map((user) => (
+                              <div
+                                key={user.id}
+                                className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg"
+                              >
+                                <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                  <span className="text-sm text-gray-600 truncate">
+                                    {user.name}
+                                  </span>
+                                  <span className="text-gray-500 flex-shrink-0">
+                                    -
+                                  </span>
+                                  <span className="text-gray-500 truncate">
+                                    {user.email}
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveUser(user.id)}
+                                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
+                                >
+                                  <LucideX className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                              <p>No users added yet</p>
+                              <p className="text-sm">
+                                Search and select users to add them to this
+                                agent
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button
                     onClick={handleSaveAgent}
@@ -1387,10 +1505,14 @@ function AgentComponent() {
 
             <div className="p-2 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E1E1E] flex justify-center">
               <ChatBox
+                role={user?.role}
                 query={query}
+                user={user}
                 setQuery={setQuery}
                 handleSend={handleSend}
                 handleStop={handleStop}
+                setIsAgenticMode={setIsAgenticMode}
+                isAgenticMode={isAgenticMode}
                 isStreaming={isStreaming}
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
@@ -1441,6 +1563,7 @@ const AgentChatMessage = ({
   citationMap?: Record<number, number>
   isStreaming?: boolean
 }) => {
+  const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1473,19 +1596,25 @@ const AgentChatMessage = ({
 
   return (
     <div
-      className={`rounded-[16px] max-w-full ${ /* Added max-w-full for consistency */
+      className={`rounded-[16px] max-w-full ${
+        /* Added max-w-full for consistency */
         isUser
           ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words"
           : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full" /* Added w-full for assistant */
       }`}
     >
       {isUser ? (
-        <div className="break-words overflow-wrap-anywhere" dangerouslySetInnerHTML={{ __html: message }} />
+        <div
+          className="break-words overflow-wrap-anywhere"
+          dangerouslySetInnerHTML={{ __html: message }}
+        />
       ) : (
         <div
           className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
         >
-          <div className="flex flex-row w-full"> {/* Added w-full */}
+          <div className="flex flex-row w-full">
+            {" "}
+            {/* Added w-full */}
             <img
               className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
@@ -1497,14 +1626,15 @@ const AgentChatMessage = ({
                   <MarkdownPreview
                     source={processMessage(thinking)}
                     wrapperElement={{
-                      "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                      "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#A0AEC0" : "#627384",
                       fontSize: "15px",
-                       maxWidth: "100%", overflowWrap: "break-word" 
+                      maxWidth: "100%",
+                      overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1520,14 +1650,15 @@ const AgentChatMessage = ({
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
-                    "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                    "data-color-mode": theme,
                   }}
                   style={{
                     padding: 0,
                     backgroundColor: "transparent",
-                    color: document.documentElement.classList.contains('dark') ? "#F1F3F4" : "#1C1D1F",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                     fontSize: "15px",
-                    maxWidth: "100%", overflowWrap: "break-word" 
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
                   }}
                   components={{
                     a: renderMarkdownLink,
@@ -1594,7 +1725,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "0.83em 0",
                         }}
-                         className="dark:text-gray-100"
+                        className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1605,7 +1736,7 @@ const AgentChatMessage = ({
                           fontWeight: "600",
                           margin: "1em 0",
                         }}
-                         className="dark:text-gray-100"
+                        className="dark:text-gray-100"
                         {...props}
                       />
                     ),
@@ -1619,7 +1750,7 @@ const AgentChatMessage = ({
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? (document.documentElement.classList.contains('dark') ? "#A0AEC0" : "#4F535C") : (document.documentElement.classList.contains('dark') ? "#6B7280" : "#B2C3D4")}`}
+                  stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
                   onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}

@@ -13,6 +13,6 @@ export const GetUserWorkspaceInfo = async (c: Context) => {
     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
   return c.json({
     ...userAndWorkspace,
-    agentWhiteList: agentWhiteList.includes(email),
+    agentWhiteList: true,
   })
 }

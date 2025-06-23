@@ -5,64 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1736661636928,
-      "tag": "0000_early_warlock",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1738829424740,
-      "tag": "0001_workable_molly_hayes",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1739732714209,
-      "tag": "0002_natural_arclight",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1742072652377,
-      "tag": "0003_jittery_speed",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1743015841870,
-      "tag": "0004_perpetual_shard",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1743118729384,
-      "tag": "0005_empty_gertrude_yorkes",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1746705585221,
-      "tag": "0006_careful_odin",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1748503775670,
-      "tag": "0007_overconfident_doctor_spectrum",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1748596968639,
-      "tag": "0008_smiling_pride",
+      "when": 1750156740369,
+      "tag": "0000_supreme_saracen",
       "breakpoints": true
     }
   ]

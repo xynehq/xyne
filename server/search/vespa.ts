@@ -12,10 +12,11 @@ import {
   chatUserSchema,
   chatMessageSchema,
   datasourceSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
+  SlackEntity,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -56,6 +57,7 @@ import { VespaSearchResponseToSearchResult } from "./mappers"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -337,7 +339,11 @@ export const HybridDefaultProfile = (
 
     return `
       (
-        ({targetHits:${hits}} userInput(@query))
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
         ${timestampRange ? `and (${userTimestamp})` : ""}
         ${
           !hasAppOrEntity
@@ -347,7 +353,11 @@ export const HybridDefaultProfile = (
       )
       or
       (
-        ({targetHits:${hits}} userInput(@query))
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
         and owner contains @email
         ${timestampRange ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
@@ -371,6 +381,21 @@ export const HybridDefaultProfile = (
         ${mailLabelQuery}
         ${appOrEntityFilter}
       )`
+  }
+
+  const buildDefaultYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+    return ` 
+  (
+      (
+            ({targetHits:${hits}} userInput(@query))
+            or
+            ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+      )
+      and (permissions contains @email or owner contains @email)
+      ${appOrEntityFilter}
+  )
+  `
   }
 
   const buildGoogleDriveYQL = () => {
@@ -453,7 +478,6 @@ export const HybridDefaultProfile = (
 
   // Start with all apps and filter out excluded ones
   const allApps = Object.values(Apps)
-
   const includedApps = allApps.filter(
     (appItem) => !excludedApps?.includes(appItem),
   )
@@ -481,7 +505,7 @@ export const HybridDefaultProfile = (
       case Apps.DataSource:
         break
       default:
-        handleAppsNotInYql(includedApp, includedApps)
+        appQueries.push(buildDefaultYQL())
         break
     }
   }
@@ -652,7 +676,6 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         ) 
         and ${dataSourceIdConditions}
-        ${appOrEntityFilter} 
       )`
   }
 
@@ -682,14 +705,16 @@ export const HybridDefaultProfileForAgent = (
         case Apps.Slack:
           appQueries.push(buildSlackYQL())
           if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+          if (!sources.includes(chatMessageSchema))
+            sources.push(chatMessageSchema)
           break
         case Apps.DataSource:
           // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
           // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
           if (dataSourceIds && dataSourceIds.length > 0) {
             appQueries.push(buildDataSourceFileYQL())
-            if (!sources.includes(datasourceFileSchema))
-              sources.push(datasourceFileSchema)
+            if (!sources.includes(dataSourceFileSchema))
+              sources.push(dataSourceFileSchema)
           } else {
             // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
             // across all accessible data sources. This might be too broad or not the intended behavior.
@@ -707,8 +732,8 @@ export const HybridDefaultProfileForAgent = (
     // This handles the case where AllowedApps might be empty or null,
     // but specific dataSourceIds are provided (e.g., agent is only for specific data sources).
     appQueries.push(buildDataSourceFileYQL())
-    if (!sources.includes(datasourceFileSchema))
-      sources.push(datasourceFileSchema)
+    if (!sources.includes(dataSourceFileSchema))
+      sources.push(dataSourceFileSchema)
   }
 
   // Combine all queries
@@ -968,20 +993,22 @@ export const groupVespaSearch = async (
 ): Promise<AppEntityCounts> => {
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
+
   Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
@@ -1048,17 +1075,18 @@ export const searchVespa = async (
   // Check if Slack sync job exists for the user
   let excludedApps: Apps[] = []
   try {
-    const slackSyncJobs = await getAppSyncJobsByEmail(
+    const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+
+    if (!connector || connector.status === "not-connected") {
       excludedApps.push(Apps.Slack)
     }
   } catch (error) {
-    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    Logger.error(`Error checking Slack Connector Status: ${error}`)
     // If there's an error checking sync jobs, exclude Slack to be safe
     excludedApps.push(Apps.Slack)
   }
@@ -1095,7 +1123,8 @@ export const searchVespa = async (
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    let result = await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return result
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1265,6 +1294,21 @@ export const GetDocument = async (
   }
 }
 
+export const IfMailDocExist = async (
+  email: string,
+  docId: string,
+): Promise<boolean> => {
+  try {
+    return await vespa.ifMailDocExist(email, docId)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error checking document with docId: ${docId} existance check`,
+    )
+    return false
+  }
+}
+
 export const GetDocumentsByDocIds = async (
   docIds: string[],
   generateAnswerSpan: Span,
@@ -1402,7 +1446,17 @@ export const ifDocumentsExist = async (
 
 export const ifMailDocumentsExist = async (
   mailIds: string[],
-): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+): Promise<
+  Record<
+    string,
+    {
+      docId: string
+      exists: boolean
+      updatedAt: number | null
+      userMap: Record<string, string>
+    }
+  >
+> => {
   try {
     return await vespa.ifMailDocumentsExist(mailIds)
   } catch (error) {
@@ -1644,12 +1698,10 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
+  excludedIds?: string[]
   asc: boolean
-  // query: string
 }
 
-// TODO: this won't work for user schema
-//
 export const getItems = async (
   params: GetItemsParams,
 ): Promise<VespaSearchResponse> => {
@@ -1661,6 +1713,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
+    excludedIds, // Added excludedIds here
     asc,
   } = params
 
@@ -1678,7 +1731,7 @@ export const getItems = async (
   }
 
   // Permissions or owner condition based on schema
-  if (schema === datasourceFileSchema) {
+  if (schema === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
     conditions.push(`permissions contains @email`)
@@ -1707,19 +1760,29 @@ export const getItems = async (
   // Timestamp conditions
   if (timestampRange) {
     let timeConditions: string[] = []
+    let fieldForRange = timestampField // Use default field unless orderBy overrides
+
     if (timestampRange.from) {
       timeConditions.push(
-        `${timestampField} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${timestampField} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
       )
     }
     if (timeConditions.length > 0) {
       conditions.push(`(${timeConditions.join(" and ")})`)
     }
+  }
+
+  // Excluded IDs condition
+  if (excludedIds && excludedIds.length > 0) {
+    const exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+    conditions.push(`!(${exclusionCondition})`)
   }
 
   // Combine conditions
@@ -1739,15 +1802,21 @@ export const getItems = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
+    hits: limit,
+    offset: offset,
   }
 
   try {
-    return await vespa.getItems(searchPayload)
+    let result = await vespa.getItems(searchPayload)
+    return result
   } catch (error) {
-    throw new ErrorPerformingSearch({
+    const searchError = new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
+      message: `getItems failed for schema ${schema}`,
     })
+    Logger.error(searchError, "Error in getItems function")
+    throw searchError
   }
 }
 
@@ -1769,7 +1838,7 @@ export const insertDataSourceFile = async (
   document: VespaDataSourceFile,
 ): Promise<void> => {
   try {
-    await insert(document as Inserts, datasourceFileSchema)
+    await insert(document as Inserts, dataSourceFileSchema)
     Logger.info(`DataSourceFile ${document.docId} inserted successfully`)
   } catch (error) {
     Logger.error(error, `Error inserting DataSourceFile ${document.docId}`)
@@ -1845,7 +1914,7 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
 ): Promise<boolean> => {
   const yql = `
     select * 
-    from sources ${datasourceFileSchema} 
+    from sources ${dataSourceFileSchema} 
     where fileName contains @fileName and dataSourceId contains @dataSourceId and uploadedBy contains @uploadedBy 
     limit 1
   `
@@ -1873,7 +1942,7 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
     throw new ErrorPerformingSearch({
       message: `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`,
       cause: error as Error,
-      sources: datasourceFileSchema,
+      sources: dataSourceFileSchema,
     })
   }
 }
@@ -1885,7 +1954,7 @@ export const getDataSourceFilesByName = async (
 ): Promise<VespaSearchResponse> => {
   const yql = `
     select * 
-    from sources ${datasourceFileSchema} 
+    from sources ${dataSourceFileSchema} 
     where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
     order by createdAt desc 
     limit ${limit}
@@ -1909,7 +1978,336 @@ export const getDataSourceFilesByName = async (
     throw new ErrorPerformingSearch({
       message: `Error fetching files for DataSource "${dataSourceName}" and user "${userEmail}"`,
       cause: error as Error,
-      sources: datasourceFileSchema,
+      sources: dataSourceFileSchema,
+    })
+  }
+}
+
+export const SlackHybridProfile = (
+  hits: number,
+  entity: Entity | null,
+  profile: SearchModes = SearchModes.NativeRank,
+  timestampRange?: { to: number | null; from: number | null } | null,
+  channelId?: string,
+  userId?: string,
+): YqlProfile => {
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
+
+  // Helper function to build entity filter
+  const buildEntityFilter = () => {
+    return entity ? "and entity contains @entity" : ""
+  }
+
+  // Helper function to build channel filter
+  const buildChannelFilter = () => {
+    return channelId ? "and channelId contains @channelId" : ""
+  }
+
+  // Helper function to build user filter
+  const buildUserFilter = () => {
+    return userId ? "and userId contains @userId" : ""
+  }
+
+  // Build Slack YQL
+  const buildSlackYQL = () => {
+    const timestampCondition = timestampRange
+      ? buildTimestampConditions("createdAt", "createdAt")
+      : ""
+    const entityFilter = buildEntityFilter()
+    const channelFilter = buildChannelFilter()
+    const userFilter = buildUserFilter()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${timestampCondition ? `and (${timestampCondition})` : ""}
+        and permissions contains @email
+        ${entityFilter}
+        ${channelFilter}
+        ${userFilter}
+      )`
+  }
+
+  const combinedQuery = buildSlackYQL()
+  const sources = [chatMessageSchema] // Only chat message schema for Slack
+
+  return {
+    profile: profile,
+    yql: `
+    select *
+    from sources ${sources.join(", ")} 
+    where
+    (
+      (
+        ${combinedQuery}
+      )
+    )
+    ;
+    `,
+  }
+}
+
+export const dateToUnixTimestamp = (
+  dateString: string,
+  endOfDay: boolean = false,
+): string => {
+  const date = new Date(dateString)
+
+  if (isNaN(date.getTime())) {
+    throw new Error(
+      `Invalid date format: ${dateString}. Expected format: YYYY-MM-DD`,
+    )
+  }
+
+  if (endOfDay) {
+    date.setHours(23, 59, 59, 999)
+  } else {
+    date.setHours(0, 0, 0, 0)
+  }
+
+  const timestampMs = date.getTime()
+
+  const seconds = Math.floor(timestampMs / 1000)
+  const microseconds = (timestampMs % 1000) * 1000
+
+  return `${seconds}.${microseconds.toString().padStart(6, "0")}`
+}
+
+export const SearchVespaThreads = async (
+  threadIdsInput: string[],
+  generateAnswerSpan: Span,
+): Promise<VespaSearchResponse> => {
+  const validThreadIds = threadIdsInput.filter(
+    (id) => typeof id === "string" && id.length > 0,
+  )
+
+  if (validThreadIds.length === 0) {
+    Logger.warn("SearchVespaThreads called with no valid threadIds.")
+    return {
+      root: {
+        id: "nullss",
+        relevance: 0,
+        fields: { totalCount: 0 },
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: true,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0,
+        },
+        children: [],
+      },
+    }
+  }
+
+  try {
+    return vespa.getDocumentsBythreadId(validThreadIds)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
+    )
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
+  }
+}
+
+export interface GetThreadItemsParams {
+  entity?: Entity | null
+  timestampRange?: { from: any; to: any } | null
+  limit?: number
+  offset?: number
+  email: string
+  userEmail?: string
+  asc?: boolean
+  channelName?: string
+  filterQuery?: string
+}
+// Enhanced getThreadItems function
+export const getThreadItems = async (
+  params: GetThreadItemsParams & { filterQuery?: string }, // Add filterQuery to params
+): Promise<VespaSearchResponse> => {
+  let {
+    entity = SlackEntity.Message,
+    timestampRange = null,
+    limit = config.page,
+    offset = 0,
+    email,
+    userEmail = null,
+    asc = "asc",
+    channelName = null,
+    filterQuery = null, // New parameter
+  } = params
+
+  // Common setup for both search types
+  let channelId = undefined
+  let userId = undefined
+
+  // Handle timestamp range normalization
+  if (timestampRange) {
+    if (timestampRange.from) {
+      timestampRange.from = dateToUnixTimestamp(timestampRange.from, false)
+    }
+    if (timestampRange.to) {
+      timestampRange.to = dateToUnixTimestamp(timestampRange.to, true)
+    }
+  }
+
+  // Get channel ID if channelName is provided
+  if (channelName) {
+    try {
+      const resp = await vespa.getChatContainerIdByChannelName(channelName)
+      // console.log(resp.root.children[0].fields.docId)
+      // @ts-ignore
+      channelId = resp.root.children[0].fields.docId
+    } catch (error) {
+      Logger.error(
+        `Could not fetch the channelId with channel name ${channelName}`,
+      )
+    }
+  }
+
+  // Get user ID if userEmail is provided
+  if (userEmail) {
+    try {
+      const resp = await vespa.getChatUserByEmail(userEmail)
+      // @ts-ignore
+      userId = resp.root.children[0].fields.docId
+    } catch (error) {
+      Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    }
+  }
+
+  // If filterQuery is present, use hybrid search
+  if (filterQuery) {
+    const { yql, profile } = SlackHybridProfile(
+      limit,
+      SlackEntity.Message,
+      SearchModes.NativeRank, // or your desired ranking profile
+      timestampRange,
+      channelId || undefined,
+      userId || undefined,
+    )
+
+    const hybridDefaultPayload = {
+      yql,
+      query: filterQuery,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": 0.5, // Default alpha value
+      "input.query(recency_decay_rate)": 0.1, // Default recency decay rate
+      maxHits: limit,
+      hits: limit,
+      ...(offset ? { offset } : {}),
+      ...(entity ? { entity } : {}),
+      ...(channelId ? { channelId } : {}),
+      ...(userId ? { userId } : {}),
+    }
+
+    try {
+      return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    } catch (error) {
+      console.error("Vespa hybrid search error:", error)
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: "chat_message",
+      })
+    }
+  } else {
+    // Continue with normal search flow
+    let conditions: string[] = []
+
+    if (entity) {
+      conditions.push(`entity contains "${entity}"`)
+    }
+
+    if (email) {
+      conditions.push(`permissions contains "${email}"`)
+    }
+
+    if (channelId) {
+      conditions.push(`channelId contains "${channelId}"`)
+    }
+
+    if (userId) {
+      conditions.push(`userId contains "${userId}"`)
+    }
+
+    let timestampField = "createdAt"
+
+    const buildTimestampConditions = (fromField: string, toField: string) => {
+      const timestampConditions: string[] = []
+      if (timestampRange?.from) {
+        timestampConditions.push(`${fromField} >= '${timestampRange.from}'`)
+      }
+      if (timestampRange?.to) {
+        timestampConditions.push(`${toField} <= '${timestampRange.to}'`)
+      }
+      return timestampConditions
+    }
+
+    if (timestampRange) {
+      const timestampConditions = buildTimestampConditions(
+        timestampField,
+        timestampField,
+      )
+      conditions.push(...timestampConditions)
+    }
+
+    const chatMessageSchema = "chat_message"
+
+    const whereClause =
+      conditions.length > 0 ? `where ${conditions.join(" and ")}` : ""
+    const orderByClause = timestampField
+      ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
+      : ""
+    const yql = `select * from sources ${chatMessageSchema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
+
+    const searchPayload = {
+      yql,
+      "ranking.profile": "unranked",
+    }
+
+    try {
+      let result = await vespa.getItems(searchPayload)
+      return result
+    } catch (error) {
+      console.error("Vespa search error:", error)
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatMessageSchema,
+      })
+    }
+  }
+}
+
+export const getSlackUserDetails = async (
+  userEmail: string,
+): Promise<VespaSearchResponse> => {
+  try {
+    const resp = await vespa.getChatUserByEmail(userEmail)
+    return resp
+  } catch (error) {
+    Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: chatUserSchema,
     })
   }
 }

@@ -85,3 +85,11 @@ export const totalDurationForFileExtraction = new Histogram({
   buckets: [25, 50, 75, 100, 125, 150, 175, 200],
 })
 metricRegister.registerMetric(totalDurationForFileExtraction)
+
+export const totalDriveFilesToBeIngested = new Counter({
+  name: "total_files_to_be_inserted",
+  help: "Total number of drive files to be inserted",
+  labelNames: ["email", "file_type", "status"],
+})
+
+metricRegister.registerMetric(totalDriveFilesToBeIngested)

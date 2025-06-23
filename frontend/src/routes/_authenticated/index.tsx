@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef } from "react"
+import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Search as SearchIcon } from "lucide-react"
@@ -19,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
+import { ToolsListItem } from "@/types"
 
 enum Tabs {
   Search = "search",
@@ -26,12 +28,22 @@ enum Tabs {
 }
 
 const Index = () => {
+  const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
     return storedValue ? JSON.parse(storedValue) : true
   })
+  const AGENTIC_STATE = "agenticState"
+  const [isAgenticMode, setIsAgenticMode] = useState(() => {
+    const storedValue = localStorage.getItem(AGENTIC_STATE)
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
 
   useEffect(() => {
     localStorage.setItem(
@@ -122,6 +134,7 @@ const Index = () => {
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
+    toolsList?: ToolsListItem[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -129,6 +142,8 @@ const Index = () => {
         reasoning?: boolean
         sources?: string
         agentId?: string
+        toolsList?: ToolsListItem[]
+        agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -139,10 +154,18 @@ const Index = () => {
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
-
+      // If agentId is provided, add it to the searchParams
       if (agentId) {
         // Use agentId directly
         searchParams.agentId = agentId
+      }
+      if (isAgenticMode) {
+        searchParams.agentic = true
+      }
+
+      // Use toolsList as array instead of JSON string
+      if (toolsList && toolsList.length > 0) {
+        searchParams.toolsList = toolsList
       }
 
       navigate({
@@ -177,8 +200,9 @@ const Index = () => {
           isAgentMode={agentWhiteList}
         />
         <div className="flex flex-col flex-grow justify-center items-center ml-[52px] relative">
-          
-          <div className="flex flex-col min-h-36 w-full max-w-3xl z-10"> {/* Ensure content is above the text logo */}
+          <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+            {" "}
+            {/* Ensure content is above the text logo */}
             <div className="flex mb-[14px] w-full justify-start">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -191,7 +215,15 @@ const Index = () => {
                     onClick={() => setActiveTab(Tabs.Ask)}
                   >
                     <Sparkle
-                      stroke={activeTab === Tabs.Ask ? (document.documentElement.classList.contains('dark') ? "#F3F4F6" : "#33383D") : (document.documentElement.classList.contains('dark') ? "#9CA3AF" : "#728395")}
+                      stroke={
+                        activeTab === Tabs.Ask
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
                     />
                     Ask
@@ -211,7 +243,15 @@ const Index = () => {
                   >
                     <SearchIcon
                       size={16}
-                      stroke={activeTab === Tabs.Search ? (document.documentElement.classList.contains('dark') ? "#F3F4F6" : "#33383D") : (document.documentElement.classList.contains('dark') ? "#9CA3AF" : "#728395")}
+                      stroke={
+                        activeTab === Tabs.Search
+                          ? theme === "dark"
+                            ? "#F3F4F6"
+                            : "#33383D"
+                          : theme === "dark"
+                            ? "#9CA3AF"
+                            : "#728395"
+                      }
                       className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
                     />
                     Search
@@ -241,12 +281,16 @@ const Index = () => {
             {activeTab === "ask" && (
               <div className="w-full h-72">
                 <ChatBox
+                  role={user?.role}
                   query={query}
+                  user={user}
                   setQuery={setQuery}
                   handleSend={handleAsk}
                   allCitations={new Map()} // Change this line
                   isReasoningActive={isReasoningActive}
                   setIsReasoningActive={setIsReasoningActive}
+                  isAgenticMode={isAgenticMode}
+                  setIsAgenticMode={setIsAgenticMode}
                 />
               </div>
             )}

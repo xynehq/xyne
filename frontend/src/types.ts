@@ -24,6 +24,11 @@ export const searchSchema = z.object({
   entity: z.string().min(1).optional(),
 })
 
+export const toolsListItemSchema = z.object({
+  connectorId: z.string(),
+  tools: z.array(z.string()),
+})
+
 export type Connectors = {
   app: string
   status: string
@@ -46,6 +51,11 @@ export enum OAuthIntegrationStatus {
   OAuthPaused = "OAuthPaused",
 }
 
+export interface ToolsListItem {
+  connectorId: string
+  tools: string[]
+}
+
 export interface Reference {
   id: string
   title: string
@@ -55,4 +65,6 @@ export interface Reference {
   entity?: string
   type: "citation" | "global"
   photoLink?: string
+  mailId?: string
+  userMap?: Record<string, string>
 }
