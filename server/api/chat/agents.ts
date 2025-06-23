@@ -566,7 +566,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const maxIterations = 9
           let iterationCount = 0
           let answered = false
-
+          let isCustomMCP = false
           await logAndStreamReasoning({
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
@@ -592,6 +592,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               try {
                 if ("url" in connector.config) {
+                  isCustomMCP = true;
                   // MCP SSE
                   const config = connector.config as z.infer<
                     typeof MCPClientConfig
@@ -1048,14 +1049,30 @@ export const MessageWithToolsApi = async (c: Context) => {
                           mcpToolResponse.content[0].text,
                         )
 
-                        const baseFragmentId = `mcp-${connectorId}-${toolName}`
-                        ;({ formattedContent, newFragments } =
-                          mapGithubToolResponse(
-                            toolName,
-                            parsedJson,
-                            baseFragmentId,
-                            sub,
-                          ))
+                        if(isCustomMCP){
+                            // Convert the formatted response into a standard MinimalAgentFragment
+                            const fragmentId = `mcp-${connectorId}-${toolName}}`
+                            newFragments.push({
+                              id: fragmentId,
+                              content: formattedContent,
+                              source: {
+                                app: isCustomMCP ? Apps.MCP : Apps.GITHUB_MCP, // Or derive dynamically if possible
+                                docId: "", // Use a unique ID for the doc
+                                title: `Output from tool: ${toolName}`,
+                                entity: SystemEntity.SystemInfo,
+                              },
+                              confidence: 1.0,
+                            })
+                        } else {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          ;({ formattedContent, newFragments } =
+                            mapGithubToolResponse(
+                              toolName,
+                              parsedJson,
+                              baseFragmentId,
+                              sub,
+                            ))
+                        }
                       }
                     } catch (parsingError) {
                       loggerWithChild({ email: sub }).error(
