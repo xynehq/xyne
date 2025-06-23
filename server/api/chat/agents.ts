@@ -309,12 +309,12 @@ async function* getToolContinuationIterator(
             const newText = parsed.answer.slice(currentAnswer.length)
             yield { text: newText }
           }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
+          // yield* checkAndYieldCitationsForAgent(
+          //   parsed.answer,
+          //   yieldedCitations,
+          //   results,
+          //   previousResultsLength,
+          // )
           currentAnswer = parsed.answer
         }
       } catch (e) {
@@ -1048,7 +1048,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         const parsedJson = JSON.parse(
                           mcpToolResponse.content[0].text,
                         )
-
+                        console.log(parsedJson,"parsedjson")
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
