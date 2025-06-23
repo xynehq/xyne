@@ -16,7 +16,7 @@ interface FileItem {
 interface FileAccordionProps {
   className?: string
   activeDataSourceName?: string | null
-  refreshKey?: number 
+  refreshKey?: number
 }
 
 export default function FileAccordion({

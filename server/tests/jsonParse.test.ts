@@ -1,4 +1,5 @@
 import { jsonParseLLMOutput } from "@/ai/provider"
+import { cleanBuffer } from "@/api/chat/chat"
 import { describe, expect, test } from "bun:test"
 
 describe("jsonParseLLMOutput", () => {
@@ -80,21 +81,24 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("should handle missing initial brace and leading whitespace", () => {
-    const input = '   "answer": "some value"}'
+    let input = '   "answer": "some value"}'
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "some value" })
   })
 
   test("should handle missing initial brace and trailing content after brace", () => {
-    const input = '   "answer": "some value"} some trailing text'
+    let input = '   "answer": "some value"} some trailing text'
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "some value" })
   })
 
   test("should handle plain text input and wrap it in an answer object", () => {
-    const input = "This is a plain text answer."
+    let input = "This is a plain text answer."
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     console.debug(result)
@@ -102,20 +106,23 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("all correct execept end curly brace", () => {
-    const input = '{"answer": "This is a plain text answer."'
+    let input = '{"answer": "This is a plain text answer."'
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
 
   test("backslash would get replaced by Quotes due to partial library", () => {
-    const input = '{"answer": "This is a plain text answer \\\\"}' //Extra Backslash added as an escape character, thus 4 backslashes
+    let input = '{"answer": "This is a plain text answer \\\\"}' //Extra Backslash added as an escape character, thus 4 backslashes
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer \\" })
   })
   test("should handle text with quotes when using jsonKey", () => {
-    const text = 'This is a "quoted" text that should not break'
+    let text = 'This is a "quoted" text that should not break'
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: 'This is a "quoted" text that should not break',
@@ -123,7 +130,8 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("should handle text with curly braces when using jsonKey", () => {
-    const text = "This text has {braces} in it"
+    let text = "This text has {braces} in it"
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: "This text has {braces} in it",
@@ -131,7 +139,8 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("should handle text with both quotes and braces when using jsonKey", () => {
-    const text = 'Answer is "hello {world}" and more text'
+    let text = 'Answer is "hello {world}" and more text'
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: 'Answer is "hello {world}" and more text',
@@ -139,13 +148,14 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("should handle markdown text with bullets and formatting when using jsonKey", () => {
-    const text = `Imagine you're a chef joining a high-end restaurant. Before you can cook, you need:
+    let text = `Imagine you're a chef joining a high-end restaurant. Before you can cook, you need:
 - Access to the kitchen (repository access)
 - The right knives and tools (development setup)
 - Knowledge of where ingredients are stored (codebase structure)
 - Understanding of the kitchen's systems (build processes)
 **Setting up Euler PS is the same process** - preparing your development "kitchen" for payment orchestration work.
 ### Prerequisites You'll Need:`
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: text,
@@ -153,35 +163,39 @@ describe("jsonParseLLMOutput", () => {
   })
 
   test("string not closed and multiline inside answer key", () => {
-    const input = `{
+    let input = `{
     "answer": "This is a plain text answer.
     `
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
   test("no start brace, tripple backticks at end", () => {
-    const input = `"answer": "This is a plain text answer."
+    let input = `"answer": "This is a plain text answer."
   }
     \`\`\``
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
   test("no start brace, tripple backticks at end and answer null", () => {
-    const input = `"answer": null
+    let input = `"answer": null
   }
 \`\`\``
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result.answer).toEqual(null)
   })
 
   test("should handle unterminated string with newlines and convert newlines to spaces in value", () => {
-    const input = `{
+    let input = `{
   "answer": "kalp
 and for this one"}
 `
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "kalp\nand for this one" })
@@ -194,17 +208,19 @@ and for this one"}
   })
 
   test("should handle JSON with a full line comment before a key-value pair", () => {
-    const input = `{
+    let input = `{
       // This is a full line comment explaining the answer
       "answer": "The value itself is simple."
     }`
+    input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "The value itself is simple." })
   })
 
   test("should handle text with quotes when using jsonKey", () => {
-    const text = 'This is a "quoted" text that should not break'
+    let text = 'This is a "quoted" text that should not break'
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: 'This is a "quoted" text that should not break',
@@ -212,7 +228,8 @@ and for this one"}
   })
 
   test("should handle text with curly braces when using jsonKey", () => {
-    const text = "This text has {braces} in it"
+    let text = "This text has {braces} in it"
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: "This text has {braces} in it",
@@ -220,7 +237,8 @@ and for this one"}
   })
 
   test("should handle text with both quotes and braces when using jsonKey", () => {
-    const text = 'Answer is "hello {world}" and more text'
+    let text = 'Answer is "hello {world}" and more text'
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: 'Answer is "hello {world}" and more text',
@@ -228,13 +246,14 @@ and for this one"}
   })
 
   test("should handle markdown text with bullets and formatting when using jsonKey", () => {
-    const text = `Imagine you're a chef joining a high-end restaurant. Before you can cook, you need:
+    let text = `Imagine you're a chef joining a high-end restaurant. Before you can cook, you need:
 - Access to the kitchen (repository access)
 - The right knives and tools (development setup)
 - Knowledge of where ingredients are stored (codebase structure)
 - Understanding of the kitchen's systems (build processes)
 **Setting up Euler PS is the same process** - preparing your development "kitchen" for payment orchestration work.
 ### Prerequisites You'll Need:`
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: text,
@@ -242,7 +261,7 @@ and for this one"}
   })
 
   test("should handle code blocks with triple backticks when using jsonKey", () => {
-    const text = `\`\`\`purescript
+    let text = `\`\`\`purescript
 -- Order represents the fundamental transaction unit
 type Order = {
    orderId :: OrderId
@@ -261,6 +280,7 @@ data PaymentMethod
   | NetBanking BankCode
   | Wallet WalletProvider
 \`\`\``
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: text,
@@ -268,7 +288,7 @@ data PaymentMethod
   })
 
   test("should handle complex markdown content starting with headers when using jsonKey", () => {
-    const text = `## 🔧 Concept D.3: Debugging Transaction Issues
+    let text = `## 🔧 Concept D.3: Debugging Transaction Issues
 
 **Technical Overview:**
 Debugging transaction issues in Euler involves systematic investigation of payment flows using multiple tools and techniques. This includes analyzing logs, tracking process flows, examining gateway responses, and understanding transaction state transitions to identify root causes of failures [28].
@@ -281,9 +301,37 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
 1. **Process Tracker** - Monitor transaction state transitions and workflow progression
 2. **Log Viewer** - Examine detailed execution logs across services  
 3. **Session ID Tracking** - Follow complete transaction journeys`
+    text = cleanBuffer(text)
     const result = jsonParseLLMOutput(text, '"answer":')
     expect(result).toEqual({
       answer: text,
     })
+  })
+
+  test("should handle backticks with json before answer key", () => {
+    let input = "```json\n"
+    input = cleanBuffer(input)
+    const result = jsonParseLLMOutput(input, '"answer":')
+    expect(result).toEqual({ answer: "" })
+  })
+
+  test("should handle JSON with backticks", () => {
+    let input = "```"
+    input = cleanBuffer(input)
+    const result = jsonParseLLMOutput(input, '"answer":')
+    expect(result).toEqual({ answer: "" })
+  })
+
+  test("should handle JSON with triple backticks and text", () => {
+    let input = '```json\n{\n  "answer": "some answer"\n}```'
+    input = cleanBuffer(input)
+    const result = jsonParseLLMOutput(input, '"answer":')
+    expect(result).toEqual({ answer: "some answer" })
+  })
+
+  test("should extract JSON from a code block with json specified", () => {
+    const input = "Here is the JSON: ```json\n{\"key\": \"value\"}```"
+    const result = jsonParseLLMOutput(input)
+    expect(result).toEqual({ key: "value" })
   })
 })

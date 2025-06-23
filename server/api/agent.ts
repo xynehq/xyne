@@ -323,7 +323,7 @@ export const ListAgentsApi = async (c: Context) => {
       // Use return c.json for consistency, though HTTPException might be fine if Hono's default error handler is JSON-friendly
       return c.json({ message: "User or workspace not found" }, 404)
     }
-
+    
     let agents
     if (filter === "madeByMe") {
       agents = await getAgentsMadeByMe(

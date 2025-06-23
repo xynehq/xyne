@@ -909,10 +909,6 @@ export const agentSearchQueryPrompt = (
   return `
     You are an AI router and classifier for an Enterprise Search and AI Agent.
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
-    Agent System Prompt: ${agentPromptData.prompt}
-    # Agent Sources
-    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
-    this is the context of the agent, it is very important to follow this.
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
@@ -956,16 +952,7 @@ export const agentSearchQueryPrompt = (
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
 
-    2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi"
-       - "Hello"
-       - "Hey"
-       - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
-
-    3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
-
-    4. Determine if the query is about tracking down a calendar event or meeting that either last occurred or will next occur.
+    2. Determine if the query is about tracking down a calendar event or meeting that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
       - If asking about a past calendar event or meeting (e.g., "last meeting", "previous meeting"), set "temporalDirection" to "prev". 
       - Otherwise, set "temporalDirection" to null.
@@ -975,11 +962,11 @@ export const agentSearchQueryPrompt = (
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
 
-    5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
+    3. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For all other apps and queries, "temporalDirection" should be set to null
 
-    6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
+    4. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
       - Reference Examples:
         - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
@@ -997,7 +984,7 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    8. Extract the main intent or search keywords from the query to create a "filterQuery" field:
+    6. Extract the main intent or search keywords from the query to create a "filterQuery" field:
       
       **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
       
@@ -1021,7 +1008,7 @@ export const agentSearchQueryPrompt = (
       - IF no specific content keywords remain after exclusion → set filterQuery to null
       
 
-    9. Now our task is to classify the user's query into one of the following categories:  
+    7. Now our task is to classify the user's query into one of the following categories:  
       a. ${QueryType.SearchWithoutFilters}
       b. ${QueryType.SearchWithFilters}  
       c. ${QueryType.GetItems}
@@ -1141,16 +1128,16 @@ export const agentSearchQueryPrompt = (
      - ${GooglePeopleEntity.Contacts} or 
      - ${GooglePeopleEntity.OtherContacts}
 
-    10. **IMPORTANT - TEMPORAL DIRECTION RULES:**
+    8. **IMPORTANT - TEMPORAL DIRECTION RULES:**
         - "temporalDirection" should ONLY be set for calendar-related queries (meetings, events, appointments, schedule)
         - For Gmail queries (emails, mail), always set "temporalDirection" to null
         - For Google Drive queries (files, documents), always set "temporalDirection" to null  
         - For Google Workspace queries (contacts), always set "temporalDirection" to null
         - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
 
-    11. Output JSON in the following structure:
+    9. Output JSON in the following structure:
        {
-         "answer": "<string or null>",
+         "answer": null,
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
          "isFollowUp": "<boolean>",
@@ -1175,9 +1162,8 @@ export const agentSearchQueryPrompt = (
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-    12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    14. If query is a follow up query then "isFollowUp" must be true.
+    10. "answer" must always be null.
+    11. If query is a follow up query then "isFollowUp" must be true.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 

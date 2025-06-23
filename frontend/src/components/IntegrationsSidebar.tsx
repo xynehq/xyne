@@ -55,7 +55,7 @@ export const IntegrationsSidebar = ({
               </span>
             </li>
             <li
-              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/mcp") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/mcp") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
               onClick={() => {
                 router.navigate({
                   to:
@@ -66,7 +66,7 @@ export const IntegrationsSidebar = ({
               }}
             >
               <img width={16} src={GithubSvg} className="ml-[8px]" />
-              <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+              <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
                 Github
               </span>
             </li>

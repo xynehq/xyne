@@ -12,6 +12,7 @@ import { workspaces } from "./workspaces"
 import { users } from "./users"
 import { chats } from "./chats"
 import { messages } from "./messages"
+import { bytea } from "../customType"
 
 export const chatTrace = pgTable(
   "chat_trace",
@@ -32,7 +33,7 @@ export const chatTrace = pgTable(
     chatExternalId: text("chat_external_id").notNull(),
     messageExternalId: text("message_external_id").notNull(),
     email: text("email").notNull(),
-    traceJson: jsonb("trace_json").notNull(),
+    traceJson: bytea("trace_json").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),

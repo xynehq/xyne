@@ -274,6 +274,12 @@ const checkAndYieldCitations = function* (
   }
 }
 
+export function cleanBuffer(buffer: string): string {
+  let parsableBuffer = buffer
+  parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
+  return parsableBuffer.trim()
+}
+
 async function* processIterator(
   iterator: AsyncIterableIterator<ConverseResponse>,
   results: VespaSearchResult[],
@@ -339,13 +345,14 @@ async function* processIterator(
       if (!reasoning) {
         buffer += chunk.text
         try {
-          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+          const parsableBuffer = cleanBuffer(buffer)
+
+          parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
           if (parsed.answer === null || parsed.answer === "}") {
             break
           }
-
           // If we have an answer and it's different from what we've seen
           if (parsed.answer && currentAnswer !== parsed.answer) {
             if (currentAnswer === "") {
@@ -3279,7 +3286,6 @@ export const MessageApi = async (c: Context) => {
               }
             }
 
-            console.log(buffer, "buffer")
             conversationSpan.setAttribute("answer_found", parsed.answer)
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)

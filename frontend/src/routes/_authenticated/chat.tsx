@@ -108,7 +108,7 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
-import { Reference } from "@/types"
+import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
@@ -544,7 +544,7 @@ export const ChatPage = ({
         messageToSend,
         sourcesArray,
         chatParams.agentId,
-        chatParams.toolExternalIds,
+        chatParams.toolsList,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -555,7 +555,7 @@ export const ChatPage = ({
           reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
-          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
+          toolsList: undefined, // Clear toolsList from URL after processing
         }),
         replace: true,
       })
@@ -565,7 +565,7 @@ export const ChatPage = ({
     chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
-    chatParams.toolExternalIds,
+    chatParams.toolsList,
     router,
   ])
 
@@ -573,7 +573,7 @@ export const ChatPage = ({
     messageToSend: string,
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
-    toolExternalIds?: string[],
+    toolsList?: ToolsListItem[],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -603,8 +603,8 @@ export const ChatPage = ({
       selectedSources,
       isReasoningActive,
       isAgenticMode,
-      toolExternalIds || [],
       agentIdToUse,
+      toolsList,
     )
   }
 
@@ -1247,7 +1247,7 @@ const Code = ({
           return
         }
       }
-
+      
       // Debounce the actual rendering to avoid too many rapid attempts
       mermaidRenderTimeoutRef.current = setTimeout(async () => {
         try {
@@ -1515,38 +1515,39 @@ const Code = ({
     )
   }
 
-  // For regular code blocks, improve styling
+  // For regular code blocks, render as plain text without boxing
   if (!inline) {
     return (
-      <div className="relative group mb-4 w-full max-w-full">
-        <div className="bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
-          {className ? className.replace("language-", "") : "code"}
-        </div>
-        <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-b-lg border border-gray-200 dark:border-gray-700 overflow-x-auto w-full max-w-full min-w-0">
-          <code
-            className={`${className || ""} text-sm block w-full`}
-            style={{
-              fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
-              whiteSpace: "pre",
-              overflowWrap: "break-word",
-              wordBreak: "break-all",
-              maxWidth: "100%",
-            }}
-          >
-            {children}
-          </code>
-        </pre>
-      </div>
+      <pre
+        className="text-sm block w-full my-2"
+        style={{
+          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+          maxWidth: "100%",
+          color: "inherit",
+          background: "none",
+          border: "none",
+          padding: 0,
+          margin: 0,
+        }}
+      >
+        <code style={{ background: "none", color: "inherit" }}>{children}</code>
+      </pre>
     )
   }
 
   return (
     <code
-      className={`${className || ""} bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono`}
+      className={`${className || ""} font-mono`}
       style={{
         overflowWrap: "break-word",
-        wordBreak: "break-all",
+        wordBreak: "break-word",
         maxWidth: "100%",
+        background: "none",
+        padding: 0,
+        color: "inherit",
       }}
     >
       {children}
@@ -1596,7 +1597,6 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
 
@@ -1913,17 +1913,33 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
-  toolExternalIds: z
-    .string()
+  toolsList: z
+    .any()
     .optional()
-    .transform((val) =>
-      val
-        ? val
-            .split(",")
-            .map((id) => id.trim())
-            .filter((id) => id.length > 0)
-        : undefined,
-    ),
+    .transform((val) => {
+      if (!val) return undefined
+      // If it's already an array, validate and return it
+      if (Array.isArray(val)) {
+        try {
+          return z.array(toolsListItemSchema).parse(val)
+        } catch (e) {
+          return undefined
+        }
+      }
+      // If it's a string, try to parse it as JSON
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val)
+          if (Array.isArray(parsed)) {
+            return z.array(toolsListItemSchema).parse(parsed)
+          }
+          return undefined
+        } catch (e) {
+          return undefined
+        }
+      }
+      return undefined
+    }),
 })
 
 type XyneChat = z.infer<typeof chatParams>
