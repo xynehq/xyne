@@ -232,7 +232,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     sheetsCount,
     slidesCount,
     fileCount,
-    totalDriveFiles
+    totalDriveFiles,
+    blockedPdfs
    } = body
   await updateMetricsFromThread(
     email, 
@@ -249,7 +250,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     sheetsCount,
     slidesCount,
     fileCount,
-    totalDriveFiles
+    totalDriveFiles,
+    blockedPdfs
   )
 }
 const updateApp = new Hono()

@@ -3,7 +3,7 @@ import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested
 import { AuthType, CalendarEntity, DriveEntity, GooglePeopleEntity } from "@/shared/types";
 import { OperationStatus } from "@/types";
 import { metadataFiles } from "./google/metadata_metrics";
-import { totalDriveFilesToBeIngested, totalIngestedFiles } from "./google/google-drive-file-metrics";
+import { blockedFilesTotal, totalDriveFilesToBeIngested, totalIngestedFiles } from "./google/google-drive-file-metrics";
 import { DriveMime } from "@/integrations/google/utils";
 
 export const updateMetricsFromThread = (
@@ -22,6 +22,7 @@ export const updateMetricsFromThread = (
  slidesCount:number,
  fileCount:number,
  totalDriveFiles:number,
+ blockedFiles: number,
 ) => {
     totalIngestedMails.inc({email: email, account_type: AuthType.ServiceAccount, status: OperationStatus.Success}, messageCount)
     totalAttachmentIngested.inc({email: email, account_type: AuthType.ServiceAccount, status: OperationStatus.Success}, attachmentCount)
@@ -37,5 +38,6 @@ export const updateMetricsFromThread = (
     totalIngestedFiles.inc({mime_type: DriveMime.Slides, status: OperationStatus.Success,email: email,file_type: DriveEntity.Slides,}, slidesCount)
     totalIngestedFiles.inc({mime_type: "application/vnd.google-apps.file", status: OperationStatus.Success,email: email,file_type: DriveEntity.Misc,}, fileCount)
     totalDriveFilesToBeIngested.inc({email: email, file_type: DriveEntity.Misc, status: OperationStatus.Success}, totalDriveFiles)
+    blockedFilesTotal.inc({email: email, file_type: DriveEntity.PDF, mime_type: DriveMime.PDF, status: OperationStatus.Cancelled}, blockedFiles)
     console.log(`Completed Adding Metrics`)
 }

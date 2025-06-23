@@ -36,7 +36,10 @@ import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
 import path from "path"
 import { retryWithBackoff } from "@/utils"
+import config from "@/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+const {host} = config
+const METRICS_SERVER_URL = host ?? "http://localhost:3000"
 
 // TODO: make it even more extensive
 export const mimeTypeMap: Record<string, DriveEntity> = {
@@ -410,4 +413,52 @@ export const checkDownloadsFolder = async (
       `Error checking or deleting files in downloads folder: ${error} ${(error as Error).stack}`,
     )
   }
+}
+
+
+export const sendProgressToServer = (userEmail:string,
+   messageCount:number,
+   attachmentCount: number,
+   failedMessages: number,
+   failedAttachments: number,
+   totalMailsToBeIngested:number,
+   totalMailsSkipped:number,
+   insertedEventCount:number,
+   insertedContactsCount:number,
+   insertedpdfCount:number,
+   insertedDocCount:number,
+   insertedSheetCount:number,
+   insertedSlideCount:number,
+   insertedDriveFileCount:number,
+   totalDriveflesToBeIngested:number,
+   totalBlockedPdfs:number,
+   ) => {
+          Logger.info(`Updating Progress for Script`)
+            fetch(`${METRICS_SERVER_URL}/update-metrics`, {
+            method: "POST",
+              headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
+            },
+            body: JSON.stringify({
+              email: userEmail,
+              messageCount: messageCount,
+              attachmentCount: attachmentCount,
+              failedMessages: failedMessages,
+              failedAttachments: failedAttachments,
+              totalMails: totalMailsToBeIngested,
+              skippedMail: totalMailsSkipped,
+              eventsCount: insertedEventCount,
+              contactsCount: insertedContactsCount,
+              pdfCount: insertedpdfCount,
+              docCount: insertedDocCount,
+              sheetsCount: insertedSheetCount,
+              slidesCount: insertedSlideCount,
+              fileCount: insertedDriveFileCount,
+              totalDriveFiles: totalDriveflesToBeIngested,
+              blockedPdfs: totalBlockedPdfs
+        }),
+      }).catch((err) => {
+            Logger.warn("Failed to send metrics to server", { err })
+   })
 }

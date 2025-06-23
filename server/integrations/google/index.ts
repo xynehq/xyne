@@ -72,6 +72,7 @@ import {
   driveFileToIndexed,
   DriveMime,
   getFile,
+  sendProgressToServer,
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -136,10 +137,8 @@ import { v4 as uuidv4 } from "uuid"
 
 let isScriptRunning = false;
 
-const {host} = config
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
-const METRICS_SERVER_URL = host ?? "http://localhost:3000"
 let totalMailsToBeIngested=0
 let totalDriveflesToBeIngested = 0
 let totalMailsSkipped= 0  
@@ -150,6 +149,7 @@ let insertedDocCount = 0
 let insertedSheetCount = 0
 let insertedSlideCount = 0
 let insertedDriveFileCount = 0
+let totalpdfsBlockedCount = 0
 
 // export const loggerWithChild = (email: string) => {
 //   return Logger.child({ email: email })
@@ -233,27 +233,12 @@ const initializeGmailWorker = () => {
       }
     } else if (result.type === WorkerResponseTypes.ProgressUpdate) {
       if(isScriptRunning) {
-        loggerWithChild({email: result.email}).info(`Updating Progress for Script`)
-        fetch(`${METRICS_SERVER_URL}/update-metrics`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
-          },
-          body: JSON.stringify({
-            email: result.email,
-            messageCount: result.stats.messageCount,
-            attachmentCount: result.stats.attachmentCount,
-            failedMessages: result.stats.failedMessageCount,
-            failedAttachments: result.stats.failedAttottachmentCount,
-            totalMails: 0,
-            skippedMail: 0,
-            eventsCount: 0,
-            contactsCount: 0
-          }),
-        }).catch((err) => {
-          Logger.warn("Failed to send metrics to server", { err })
-        })
+        sendProgressToServer(result.email,
+          result.stats.messageCount,
+          result.stats.attachmentCount, 
+          result.stats.failedMessageCount, 
+          result.stats.failedAttottachmentCount,
+          0,0,0,0,0,0,0,0,0,0,0)
       } else {
       Logger.info(
         `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
@@ -2378,6 +2363,7 @@ export const googlePDFsVespa = async (
           status: "BLOCKED",
         })
         return null
+        totalpdfsBlockedCount++;
       }
 
       console.log(`PDF SIZE : `, pdfSizeInMB)
@@ -3457,6 +3443,28 @@ export const ServiceAccountIngestMoreUsers = async (
           totalDrive: driveFileCount,
         })
 
+        
+      if(isScriptRunning) {
+        sendProgressToServer(
+          userEmail,
+           0,
+           0,
+           0,
+           0,
+           mailCountExcludingPromotions,
+           (totalMails - mailCountExcludingPromotions),
+           0,
+           0,
+           0,
+           0,
+           0,
+           0,
+           0,
+           driveFileCount,
+           0
+          )
+      }
+
         const servicePromises: Promise<any>[] = []
         let contactsTokenVal = ""
         let otherContactsTokenVal = ""
@@ -3542,32 +3550,24 @@ export const ServiceAccountIngestMoreUsers = async (
         tracker.markUserComplete(userEmail)
        if(isScriptRunning) {
         Logger.info(`Updating Progress for Script`)
-          fetch(`${METRICS_SERVER_URL}/update-metrics`, {
-          method: "POST",
-            headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
-          },
-          body: JSON.stringify({
-            email: userEmail,
-            messageCount: 0,
-            attachmentCount: 0,
-            failedMessages: 0,
-            failedAttachments: 0,
-            totalMails: totalMailsToBeIngested,
-            skippedMail: totalMailsSkipped,
-            eventsCount: insertedEventCount,
-            contactsCount: insertedContactsCount,
-            pdfCount: insertedpdfCount,
-            docCount: insertedDocCount,
-            sheetsCount: insertedSheetCount,
-            slidesCount: insertedSlideCount,
-            fileCount: insertedDriveFileCount,
-            totalDriveFiles: totalDriveflesToBeIngested
-          }),
-        }).catch((err) => {
-          Logger.warn("Failed to send metrics to server", { err })
-        })
+        sendProgressToServer(
+          userEmail,
+           0,
+           0,
+           0,
+           0,
+           0,
+           0,
+           insertedEventCount,
+           insertedContactsCount,
+           insertedpdfCount,
+           insertedDocCount,
+           insertedSheetCount,
+           insertedSlideCount,
+           insertedDriveFileCount,
+           0,
+           totalpdfsBlockedCount
+          )
       } 
         return {
           email: userEmail,
