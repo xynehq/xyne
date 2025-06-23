@@ -49,6 +49,7 @@ import {
   AdminDeleteUserData,
   IngestMoreChannelApi,
   StartSlackIngestionApi,
+  GetProviders,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -343,10 +344,7 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
-  .get("/oauth/global-slack-provider", async (c) => {
-    const provider = await getAppGlobalOAuthProvider(db, Apps.Slack)
-    return c.json({ exists: !!provider })
-  })
+  .get("/oauth/global-slack-provider", GetProviders)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

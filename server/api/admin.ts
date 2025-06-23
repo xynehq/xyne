@@ -81,6 +81,10 @@ export const GetConnectors = async (c: Context) => {
   const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
 }
+export const GetProviders = async (c: Context) => {
+  const provider = await getAppGlobalOAuthProvider(db, Apps.Slack)
+  return c.json({ exists: !!provider })
+}
 
 export const GetConnectorTools = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
