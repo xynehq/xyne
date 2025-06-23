@@ -1048,7 +1048,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                         const parsedJson = JSON.parse(
                           mcpToolResponse.content[0].text,
                         )
-                        console.log(parsedJson,"parsedjson")
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
