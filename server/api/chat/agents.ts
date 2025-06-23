@@ -195,21 +195,19 @@ const checkAndYieldCitationsForAgent = function* (
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
-      if (item.source.docId) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      } else {
-        Logger.error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
-        )
+
+      if (!item?.source?.docId) {
+        Logger.info("[checkAndYieldCitationsForAgent] No docId found for citation, skipping")
+        continue
+      } 
+
+      yield {
+        citation: {
+          index: citationIndex,
+          item: item.source,
+        },
       }
+      yieldedCitations.add(citationIndex)
     }
   }
 }
