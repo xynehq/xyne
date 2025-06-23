@@ -1823,7 +1823,7 @@ export const ChatBox = ({
             }}
           />
           {/* Dropdown for All Connectors */}
-          {role === UserRole.SuperAdmin && (
+          {(role === UserRole.SuperAdmin || role === UserRole.Admin)&& (
             <DropdownMenu
               open={isConnectorsMenuOpen}
               onOpenChange={setIsConnectorsMenuOpen}
