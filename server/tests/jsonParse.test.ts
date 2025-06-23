@@ -345,4 +345,17 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
+
+  test("should handle XML/HTML tags in the starting of the answer and not removing after first line", () => {
+    let input = `<answer>
+        {
+          "answer": "This is a plain text answer.
+<question> question What is the capital of France? </question>"
+        }
+    </answer>`
+    input = cleanBuffer(input)
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({answer: "This is a plain text answer.\n<question> question What is the capital of France? </question>",})
+  })
 })
