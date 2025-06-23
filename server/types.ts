@@ -1,10 +1,21 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType, ConnectorStatus, DriveEntity, SlackEntity } from "@/shared/types"
+import {
+  Apps,
+  AuthType,
+  ConnectorStatus,
+  DriveEntity,
+  SlackEntity,
+} from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
-import type { CalendarEntity, MailAttachmentEntity, MailEntity, PeopleEntity } from "./search/types"
+import type {
+  CalendarEntity,
+  MailAttachmentEntity,
+  MailEntity,
+  PeopleEntity,
+} from "./search/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -106,38 +117,45 @@ export const addStdioMCPConnectorSchema = z.object({
 
 export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
 
-export const createOAuthProvider = z.object({
-  clientId: z.string().optional(),
-  clientSecret: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  app: z.nativeEnum(Apps),
-  isUsingGlobalCred: z.boolean().default(false),
-}).superRefine((data, ctx) => {
-  if (!data.isUsingGlobalCred) {
-    if (!data.clientId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "clientId is required when isUsingGlobalCred is false",
-        path: ["clientId"],
-      });
+export const createOAuthProvider = z
+  .object({
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+    scopes: z.array(z.string()).optional(),
+    app: z.nativeEnum(Apps),
+    isUsingGlobalCred: z
+      .preprocess((val) => val === "true", z.boolean())
+      .default(false),
+    isGlobalProvider: z
+      .preprocess((val) => val === "true", z.boolean())
+      .default(false)
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.isUsingGlobalCred) {
+      if (!data.clientId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "clientId is required when isUsingGlobalCred is false",
+          path: ["clientId"],
+        })
+      }
+      if (!data.clientSecret) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "clientSecret is required when isUsingGlobalCred is false",
+          path: ["clientSecret"],
+        })
+      }
+      if (!data.scopes) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "scopes is required when isUsingGlobalCred is false",
+          path: ["scopes"],
+        })
+      }
     }
-    if (!data.clientSecret) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "clientSecret is required when isUsingGlobalCred is false",
-        path: ["clientSecret"],
-      });
-    }
-    if (!data.scopes) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "scopes is required when isUsingGlobalCred is false",
-        path: ["scopes"],
-      });
-    }
-  }
-});
-
+  })
 
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
@@ -408,14 +426,29 @@ export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })
 
-export type EntityType = DriveEntity|SlackEntity|MailEntity|MailAttachmentEntity|CalendarEntity|PeopleEntity
-export type OperationType = "ingestion" | "request" | "response" | "chat-create" | "chat-response" | "chat-response-error" | "search" | "search-response" | "ingest-more_user"
+export type EntityType =
+  | DriveEntity
+  | SlackEntity
+  | MailEntity
+  | MailAttachmentEntity
+  | CalendarEntity
+  | PeopleEntity
+export type OperationType =
+  | "ingestion"
+  | "request"
+  | "response"
+  | "chat-create"
+  | "chat-response"
+  | "chat-response-error"
+  | "search"
+  | "search-response"
+  | "ingest-more_user"
 
 export type loggerChildSchema = {
-  email: string,
-  appType?: Apps,
-  entityType?: EntityType,
-  responseCode?:string,
-  responseStatus?:string,
-  operationType?:OperationType
+  email: string
+  appType?: Apps
+  entityType?: EntityType
+  responseCode?: string
+  responseStatus?: string
+  operationType?: OperationType
 }
