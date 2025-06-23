@@ -1248,7 +1248,7 @@ const Code = ({
           return
         }
       }
-
+      
       // Debounce the actual rendering to avoid too many rapid attempts
       mermaidRenderTimeoutRef.current = setTimeout(async () => {
         try {
