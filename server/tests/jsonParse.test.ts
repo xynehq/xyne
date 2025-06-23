@@ -101,7 +101,6 @@ describe("jsonParseLLMOutput", () => {
     input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
-    console.debug(result)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
 
@@ -333,5 +332,17 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
     const input = 'Here is the JSON: ```json\n{"key": "value"}```'
     const result = jsonParseLLMOutput(input)
     expect(result).toEqual({ key: "value" })
+  })
+
+  test("should handle XML/HTML tags in the starting of the answer", () => {
+    let input = `<answer>
+    {
+      "answer": "This is a plain text answer."
+    }
+    </answer>`
+    input = cleanBuffer(input)
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
   })
 })
