@@ -182,6 +182,7 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
 const checkAndYieldCitationsForAgent = function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -293,12 +294,10 @@ async function* getToolContinuationIterator(
       try {
         const parsableBuffer = cleanBuffer(buffer)
         parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
-        // If we have a null answer, break this inner loop and continue outer loop
-        // seen some cases with just "}"
+
         if (parsed.answer === null || parsed.answer === "}") {
           break
         }
-
         // If we have an answer and it's different from what we've seen
         if (parsed.answer && currentAnswer !== parsed.answer) {
           if (currentAnswer === "") {
@@ -1063,7 +1062,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                               `Description: ${parsedJson.description}`,
                             )
 
-                          if (mainContentParts.length > 0) {
+                          if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
                             formattedContent = `Tool Response: ${flattenObject(
@@ -1077,7 +1076,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                             id: `${baseFragmentId}-generic`,
                             content: formattedContent,
                             source: {
-                              app: Apps.GITHUB_MCP,
+                              app: Apps.MCP,
                               docId: "",
                               title: `Response from ${toolName}`,
                               entity: SystemEntity.SystemInfo,
