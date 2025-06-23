@@ -109,6 +109,7 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+import slackApp from "@/integrations/slack/client"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -545,6 +546,10 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve a
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {
   await initQueue()
+  if (process.env.ENABLE_SLACK_SOCKET_MODE?.toLowerCase() === "true") {
+    await slackApp.start()
+    Logger.info("Slack app is running.")
+  }
 }
 
 app.get("/metrics", async (c) => {
