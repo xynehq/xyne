@@ -9,6 +9,8 @@ import {
   getAgentByExternalIdWithPermissionCheck,
   deleteAgentByExternalIdWithPermissionCheck,
   getAllAgents,
+  getAgentsMadeByMe,
+  getAgentsSharedToMe,
 } from "@/db/agent"
 import {
   syncAgentUserPermissions,
@@ -56,6 +58,7 @@ export type UpdateAgentPayload = z.infer<typeof updateAgentSchema>
 export const listAgentsSchema = z.object({
   limit: z.coerce.number().int().positive().optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
+  filter: z.enum(["all", "madeByMe", "sharedToMe"]).optional().default("all"),
 })
 
 export const CreateAgentApi = async (c: Context) => {
@@ -120,7 +123,7 @@ export const CreateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(newAgent), 201)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Create Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -224,7 +227,7 @@ export const UpdateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(updatedAgent))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Update Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -239,7 +242,7 @@ export const UpdateAgentApi = async (c: Context) => {
 }
 
 export const DeleteAgentApi = async (c: Context) => {
-  let email= ""
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub // For logging or audit if needed, not directly used in delete logic by ID
@@ -289,7 +292,7 @@ export const DeleteAgentApi = async (c: Context) => {
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Delete Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -303,7 +306,7 @@ export const ListAgentsApi = async (c: Context) => {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub
     // @ts-ignore
-    const { limit, offset } = c.req.valid("query") as z.infer<
+    const { limit, offset, filter } = c.req.valid("query") as z.infer<
       typeof listAgentsSchema
     >
 
@@ -320,17 +323,38 @@ export const ListAgentsApi = async (c: Context) => {
       // Use return c.json for consistency, though HTTPException might be fine if Hono's default error handler is JSON-friendly
       return c.json({ message: "User or workspace not found" }, 404)
     }
-    const agents = await getAgentsAccessibleToUser(
-      db,
-      userAndWorkspace.user.id,
-      userAndWorkspace.workspace.id,
-      limit,
-      offset
-    )
+
+    let agents
+    if (filter === "madeByMe") {
+      agents = await getAgentsMadeByMe(
+        db,
+        userAndWorkspace.user.id,
+        userAndWorkspace.workspace.id,
+        limit,
+        offset,
+      )
+    } else if (filter === "sharedToMe") {
+      agents = await getAgentsSharedToMe(
+        db,
+        userAndWorkspace.user.id,
+        userAndWorkspace.workspace.id,
+        limit,
+        offset,
+      )
+    } else {
+      // Default to "all"
+      agents = await getAgentsAccessibleToUser(
+        db,
+        userAndWorkspace.user.id,
+        userAndWorkspace.workspace.id,
+        limit,
+        offset,
+      )
+    }
     return c.json(agents)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `List Agents Error: ${errMsg} ${(error as Error).stack}`,
     )

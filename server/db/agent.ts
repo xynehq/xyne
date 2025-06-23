@@ -17,7 +17,11 @@ import {
   grantUserAgentPermission,
   getUserAccessibleAgents,
   checkUserAgentAccessByExternalId,
+  getAgentsMadeByMe,
+  getAgentsSharedToMe,
 } from "@/db/userAgentPermission"
+
+export { getAgentsMadeByMe, getAgentsSharedToMe }
 
 export const insertAgent = async (
   trx: TxnOrClient,
