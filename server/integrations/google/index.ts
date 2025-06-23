@@ -2355,6 +2355,7 @@ export const googlePDFsVespa = async (
         loggerWithChild({email: userEmail!}).warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
+        totalpdfsBlockedCount++;
         blockedFilesTotal.inc({
           mime_type: pdf.mimeType ?? "google_pdf",
           blocked_type: "MAX_PDF_SIZE_EXCEEDED",
@@ -2363,7 +2364,7 @@ export const googlePDFsVespa = async (
           status: "BLOCKED",
         })
         return null
-        totalpdfsBlockedCount++;
+       
       }
 
       console.log(`PDF SIZE : `, pdfSizeInMB)
@@ -3445,6 +3446,7 @@ export const ServiceAccountIngestMoreUsers = async (
 
         
       if(isScriptRunning) {
+        Logger.info(`Updating Partial Progress for Script`)
         sendProgressToServer(
           userEmail,
            0,
@@ -3461,7 +3463,7 @@ export const ServiceAccountIngestMoreUsers = async (
            0,
            0,
            driveFileCount,
-           0
+           totalpdfsBlockedCount
           )
       }
 

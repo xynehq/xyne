@@ -30,7 +30,7 @@ const runServiceAccountIngestion = async () => {
     }
 
     Logger.info(`Starting ingestion for connector ID: ${serviceAccountConnectorId}`)
-    await ServiceAccountIngestMoreUsers(ingestionPayload, connector.userId)
+    await ServiceAccountIngestMoreUsers(ingestionPayload, connector.userId, true)
     Logger.info(`Ingestion completed successfully for connector ID: ${serviceAccountConnectorId}`)
   } catch (error) {
     Logger.error(
