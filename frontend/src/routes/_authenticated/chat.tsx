@@ -1523,7 +1523,6 @@ const Code = ({
   const isActuallyInline = inline || (
     !className &&
     !codeString.includes('\n') &&
-    codeString.length < 100 &&
     codeString.trim().length > 0
   )
 
