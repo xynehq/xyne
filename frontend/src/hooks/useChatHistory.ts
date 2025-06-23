@@ -16,20 +16,19 @@ export const useChatHistory = (chatId: string | null) => {
   const query = useQuery<ChatHistoryData>({
     queryKey: ["chatHistory", chatId],
     queryFn: async () => {
-      
       if (!chatId) {
         return { messages: [] }
       }
 
       try {
         const response = await api.chat.$post({
-          json: { chatId }
+          json: { chatId },
         })
-        
+
         if (!response.ok) {
           throw new Error("Failed to fetch chat history")
         }
-        
+
         const data = await response.json()
         return data as ChatHistoryData
       } catch (error) {
@@ -44,7 +43,6 @@ export const useChatHistory = (chatId: string | null) => {
 
   // Helper function to add a message optimistically
   const addMessageOptimistically = (message: SelectPublicMessage) => {
-    
     queryClient.setQueryData<ChatHistoryData>(
       ["chatHistory", chatId],
       (oldData) => {
@@ -55,40 +53,44 @@ export const useChatHistory = (chatId: string | null) => {
           ...oldData,
           messages: [...oldData.messages, message],
         }
-      }
+      },
     )
   }
 
   // Helper function to update the last message
-  const updateLastMessage = (updater: (msg: SelectPublicMessage) => SelectPublicMessage) => {
+  const updateLastMessage = (
+    updater: (msg: SelectPublicMessage) => SelectPublicMessage,
+  ) => {
     if (!chatId) return
 
     queryClient.setQueryData<ChatHistoryData>(
       ["chatHistory", chatId],
       (oldData) => {
         if (!oldData || oldData.messages.length === 0) return oldData
-        
+
         const messages = [...oldData.messages]
         const lastIndex = messages.length - 1
         messages[lastIndex] = updater(messages[lastIndex])
-        
+
         return {
           ...oldData,
           messages,
         }
-      }
+      },
     )
   }
 
   // Helper function to update chat metadata
-  const updateChatMetadata = (updates: Partial<{ title: string | null; isBookmarked: boolean }>) => {
+  const updateChatMetadata = (
+    updates: Partial<{ title: string | null; isBookmarked: boolean }>,
+  ) => {
     if (!chatId) return
 
     queryClient.setQueryData<ChatHistoryData>(
       ["chatHistory", chatId],
       (oldData) => {
         if (!oldData) return oldData
-        
+
         return {
           ...oldData,
           chat: {
@@ -96,9 +98,9 @@ export const useChatHistory = (chatId: string | null) => {
             title: oldData.chat?.title || null,
             isBookmarked: oldData.chat?.isBookmarked || false,
             ...updates,
-          }
+          },
         }
-      }
+      },
     )
   }
 
@@ -108,4 +110,4 @@ export const useChatHistory = (chatId: string | null) => {
     updateLastMessage,
     updateChatMetadata,
   }
-} 
+}

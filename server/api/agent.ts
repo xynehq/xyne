@@ -120,7 +120,7 @@ export const CreateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(newAgent), 201)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Create Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -224,7 +224,7 @@ export const UpdateAgentApi = async (c: Context) => {
     return c.json(selectPublicAgentSchema.parse(updatedAgent))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Update Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -239,7 +239,7 @@ export const UpdateAgentApi = async (c: Context) => {
 }
 
 export const DeleteAgentApi = async (c: Context) => {
-  let email= ""
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub // For logging or audit if needed, not directly used in delete logic by ID
@@ -289,7 +289,7 @@ export const DeleteAgentApi = async (c: Context) => {
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Delete Agent Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -325,12 +325,12 @@ export const ListAgentsApi = async (c: Context) => {
       userAndWorkspace.user.id,
       userAndWorkspace.workspace.id,
       limit,
-      offset
+      offset,
     )
     return c.json(agents)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `List Agents Error: ${errMsg} ${(error as Error).stack}`,
     )

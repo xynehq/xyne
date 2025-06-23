@@ -26,6 +26,7 @@ export {
   SlackEntity,
   Apps,
   isMailAttachment,
+  SystemEntity
 } from "search/types"
 export type { Entity } from "search/types"
 
@@ -478,6 +479,11 @@ export enum XyneTools {
   Search = "search",
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
+
+  // slack tools
+  getSlackRelatedMessages = "get_slack_related_messages",
+  getSlackThreads = "get_slack_threads",
+  getUserSlackProfile = "get_user_slack_profile",
 }
 
 export enum IngestionType {
