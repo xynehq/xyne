@@ -28,6 +28,7 @@ import {
   CalendarEntity,
   isMailAttachment,
   ConnectorType,
+  SystemEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -121,12 +122,12 @@ export const getIcon = (
     return <CalendarDays size={12} className={classNameVal} />
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
-  } else if (entity === ConnectorType.MCP) {
-    // Handle MCP connectors
-    if (app === "github_mcp") {
-      // Check if the app is specifically github_mcp
-      return <Github size={size?.w || 12} className={classNameVal} />
-    }
+  } else if (
+    (app === Apps.GITHUB_MCP && entity === ConnectorType.MCP) ||
+    entity === SystemEntity.SystemInfo
+  ) {
+    return <Github size={size?.w || 12} className={classNameVal} />
+  } else if (entity === SystemEntity.SystemInfo) {
     return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
   } else {
     // Fallback or handle unknown app/entity

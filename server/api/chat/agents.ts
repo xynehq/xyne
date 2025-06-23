@@ -165,6 +165,7 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
+import { mapGithubToolResponse } from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -308,12 +309,12 @@ async function* getToolContinuationIterator(
             const newText = parsed.answer.slice(currentAnswer.length)
             yield { text: newText }
           }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
+          // yield* checkAndYieldCitationsForAgent(
+          //   parsed.answer,
+          //   yieldedCitations,
+          //   results,
+          //   previousResultsLength,
+          // )
           currentAnswer = parsed.answer
         }
       } catch (e) {
@@ -591,7 +592,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               try {
                 if ("url" in connector.config) {
-                  isCustomMCP = true;
+                  isCustomMCP = true
                   // MCP SSE
                   const config = connector.config as z.infer<
                     typeof MCPClientConfig
@@ -1035,11 +1036,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                       arguments: toolParams,
                     })
 
-                    // --- Process and Normalize the MCP Response ---
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
 
-                    // Safely parse the response text
                     try {
                       if (
                         mcpToolResponse.content &&
@@ -1049,23 +1048,57 @@ export const MessageWithToolsApi = async (c: Context) => {
                         const parsedJson = JSON.parse(
                           mcpToolResponse.content[0].text,
                         )
-                        formattedContent = flattenObject(parsedJson)
-                          .map(([key, value]) => `- ${key}: ${value}`)
-                          .join("\n")
+                        console.log(parsedJson,"parsedjson")
+                        if (isCustomMCP) {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          // Convert the formatted response into a standard MinimalAgentFragment
+                          let mainContentParts = []
+                          if (parsedJson.title)
+                            mainContentParts.push(`Title: ${parsedJson.title}`)
+                          if (parsedJson.body)
+                            mainContentParts.push(`Body: ${parsedJson.body}`)
+                          if (parsedJson.name)
+                            mainContentParts.push(`Name: ${parsedJson.name}`)
+                          if (parsedJson.description)
+                            mainContentParts.push(
+                              `Description: ${parsedJson.description}`,
+                            )
 
-                        // Convert the formatted response into a standard MinimalAgentFragment
-                        const fragmentId = `mcp-${connectorId}-${toolName}}`
-                        newFragments.push({
-                          id: fragmentId,
-                          content: formattedContent,
-                          source: {
-                            app: isCustomMCP ? Apps.MCP : Apps.GITHUB_MCP, // Or derive dynamically if possible
-                            docId: "", // Use a unique ID for the doc
-                            title: `Output from tool: ${toolName}`,
-                            entity: SystemEntity.SystemInfo,
-                          },
-                          confidence: 1.0,
-                        })
+                          if (mainContentParts.length > 0) {
+                            formattedContent = mainContentParts.join("\n")
+                          } else {
+                            formattedContent = `Tool Response: ${flattenObject(
+                              parsedJson,
+                            )
+                              .map(([key, value]) => `- ${key}: ${value}`)
+                              .join("\n")}`
+                          }
+
+                          newFragments.push({
+                            id: `${baseFragmentId}-generic`,
+                            content: formattedContent,
+                            source: {
+                              app: Apps.GITHUB_MCP,
+                              docId: `${toolName}-response`,
+                              title: `Response from ${toolName}`,
+                              entity: SystemEntity.SystemInfo,
+                              url:
+                                parsedJson.html_url ||
+                                parsedJson.url ||
+                                undefined,
+                            },
+                            confidence: 0.8,
+                          })
+                        } else {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          ;({ formattedContent, newFragments } =
+                            mapGithubToolResponse(
+                              toolName,
+                              parsedJson,
+                              baseFragmentId,
+                              sub,
+                            ))
+                        }
                       }
                     } catch (parsingError) {
                       loggerWithChild({ email: sub }).error(
