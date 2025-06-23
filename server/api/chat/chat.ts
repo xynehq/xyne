@@ -276,6 +276,7 @@ const checkAndYieldCitations = function* (
 
 export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
+  parsableBuffer = parsableBuffer.replace(/^\s*<[^>]*>?\s*/gim, "")
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
 }
