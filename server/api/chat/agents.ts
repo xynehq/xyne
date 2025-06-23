@@ -18,7 +18,11 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
 } from "@/ai/provider"
-import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
+import {
+  getConnectorByExternalId,
+  getConnectorByApp,
+  getConnectorById,
+} from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -68,7 +72,12 @@ import {
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
-import { MessageRole, Subsystem } from "@/types"
+import {
+  MessageRole,
+  Subsystem,
+  MCPClientConfig,
+  MCPClientStdioConfig,
+} from "@/types"
 import {
   delay,
   getErrorMessage,
@@ -150,6 +159,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import {
   buildUserQuery,
+  cleanBuffer,
   isContextSelected,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
@@ -281,7 +291,8 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+        const parsableBuffer = cleanBuffer(buffer)
+        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
         // If we have a null answer, break this inner loop and continue outer loop
         // seen some cases with just "}"
         if (parsed.answer === null || parsed.answer === "}") {
@@ -353,7 +364,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       chatId,
       modelId,
       isReasoningEnabled,
-      toolExternalIds,
+      toolsList,
       agentId,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
@@ -490,6 +501,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     return streamSSE(
       c,
       async (stream) => {
+        // Store MCP clients for cleanup to prevent memory leaks
+        const mcpClients: Client[] = []
         let finalReasoningLogString = ""
         let agentLog: string[] = [] // For building the prompt context
         let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
@@ -558,61 +571,133 @@ export const MessageWithToolsApi = async (c: Context) => {
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
           })
-          // once we start getting toolsList will remove the above code
-          if (toolExternalIds && toolExternalIds.length > 0) {
-            // Fetch connector info and create client
-            const connector = await getConnectorByApp(
-              db,
-              user.id,
-              Apps.GITHUB_MCP,
-            )
-
-            const config = connector.config as any
-            const client = new Client({
-              name: `connector-${connector.id}`,
-              version: config.version,
-            })
-            await client.connect(
-              new StdioClientTransport({
-                command: config.command,
-                args: config.args,
-              }),
-            )
-
-            // Fetch all available tools from the client
-            // TODO: look in the DB. cache logic has to be discussed.
-
-            const tools = await getToolsByConnectorId(
-              db,
-              workspace.id,
-              connector.id,
-            )
-            // Filter to only the requested tools, or use all tools if toolNames is empty
-            const filteredTools = tools.filter((tool) => {
-              const isIncluded = toolExternalIds.includes(tool.externalId!)
-              if (!isIncluded) {
-                loggerWithChild({ email: sub }).info(
-                  `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+          if (toolsList && toolsList.length > 0) {
+            for (const item of toolsList) {
+              const { connectorId, tools: toolExternalIds } = item
+              // Fetch connector info and create client
+              const connector = await getConnectorById(
+                db,
+                parseInt(connectorId, 10),
+                user.id,
+              )
+              if (!connector) {
+                loggerWithChild({ email: sub }).warn(
+                  `Connector not found or access denied for connectorId: ${connectorId}`,
                 )
+                continue
               }
-              return isIncluded
-            })
+              const client = new Client({
+                name: `connector-${connectorId}`,
+                version: connector.config.version,
+              })
+              try {
+                if ("url" in connector.config) {
+                  // MCP SSE
+                  const config = connector.config as z.infer<
+                    typeof MCPClientConfig
+                  >
+                  Logger.info(
+                    `invoking client initialize for url: ${new URL(config.url)} ${
+                      config.url
+                    }`,
+                  )
+                  await client.connect(
+                    new SSEClientTransport(new URL(config.url)),
+                  )
+                } else {
+                  // MCP Stdio
+                  const config = connector.config as z.infer<
+                    typeof MCPClientStdioConfig
+                  >
+                  Logger.info(
+                    `invoking client initialize for command: ${config.command}`,
+                  )
+                  await client.connect(
+                    new StdioClientTransport({
+                      command: config.command,
+                      args: config.args,
+                    }),
+                  )
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  `Failed to connect to MCP client for connector ${connectorId}`,
+                )
+                continue
+              }
+              // Store client for cleanup
+              mcpClients.push(client)
+              const tools = await getToolsByConnectorId(
+                db,
+                workspace.id,
+                connector.id,
+              )
 
-            finalToolsList[connector.id] = {
-              tools: filteredTools,
-              client: client,
+              const filteredTools = tools.filter((tool) => {
+                const isIncluded = toolExternalIds.includes(tool.externalId!)
+                if (!isIncluded) {
+                  loggerWithChild({ email: sub }).info(
+                    `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                  )
+                }
+                return isIncluded
+              })
+
+              finalToolsList[connector.id] = {
+                tools: filteredTools,
+                client: client,
+              }
+              // Fetch all available tools from the client
+              // TODO: look in the DB. cache logic has to be discussed.
+              // const respone = await client.listTools()
+              // const clientTools = response.tools
+
+              // // Update tool definitions in the database for future use
+              // await syncConnectorTools(
+              //   db,
+              //   workspace.id,
+              //   connector.id,
+              //   clientTools.map((tool) => ({
+              //     toolName: tool.name,
+              //     toolSchema: JSON.stringify(tool),
+              //     description: tool.description,
+              //   })),
+              // )
+              // // Create a map for quick lookup
+              // const toolSchemaMap = new Map(
+              //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
+              // )
+              // // Filter to only the requested tools, or use all tools if toolNames is empty
+              // const filteredTools = []
+              // if (toolNames.length === 0) {
+              //   // If toolNames is empty, add all tools
+              //   for (const [toolName, schema] of toolSchemaMap.entries()) {
+              //     filteredTools.push({
+              //       name: toolName,
+              //       schema: schema || "",
+              //     })
+              //   }
+              // } else {
+              //   // Otherwise, filter to only the requested tools
+              //   for (const toolName of toolNames) {
+              //     if (toolSchemaMap.has(toolName)) {
+              //       filteredTools.push({
+              //         name: toolName,
+              //         schema: toolSchemaMap.get(toolName) || "",
+              //       })
+              //     } else {
+              //       Logger.info(
+              //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
+              //       )
+              //     }
+              //   }
+              // }
+              // finalToolsList[connectorId] = {
+              //   tools: filteredTools,
+              //   client: client,
+              // }
             }
-            // Update tool definitions in the database for future use
-            // await syncConnectorTools(
-            //   db,
-            //   workspace.id,
-            //   connector.id,
-            //   filteredTools.map((tool) => ({
-            //     toolName: tool.tool_name,
-            //     toolSchema: JSON.stringify(tool),
-            //     description: tool.description ?? "",
-            //   })),
-            // )
           }
           let answer = ""
           let currentAnswer = ""
@@ -656,7 +741,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   gatheredFragments
                     .map(
                       (f, i) =>
-                        `[Fragment ${i + 1}] (Source Doc ID: ${f.source.docId})\n` +
+                        `[Fragment ${i + 1}] (Source Doc ID: ${
+                          f.source.docId
+                        })\n` +
                         `  - Title: ${f.source.title || "Untitled"}\n` +
                         // Truncate content in the scratchpad to keep the prompt concise.
                         // The full content is available in `planningContext` for the final answer.
@@ -668,7 +755,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
-                   **Critique Past Actions:** You have already called some tools ${previousToolCalls.map((toolCall, idx) => `[Iteration-${idx}] Tool: ${toolCall.tool}, Args: ${JSON.stringify(toolCall.args)}`).join("\n")}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
+                   **Critique Past Actions:** You have already called some tools ${previousToolCalls
+                     .map(
+                       (toolCall, idx) =>
+                         `[Iteration-${idx}] Tool: ${
+                           toolCall.tool
+                         }, Args: ${JSON.stringify(toolCall.args)}`,
+                     )
+                     .join(
+                       "\n",
+                     )}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
                  You **MUST** change your strategy.
                   For example: 
                     1.  Choose a **DIFFERENT TOOL**.
@@ -696,7 +792,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   for (const tool of tools) {
                     const parsedTool = selectToolSchema.safeParse(tool)
                     if (parsedTool.success && parsedTool.data.toolSchema) {
-                      toolsPrompt += `${constructToolContext(parsedTool.data.toolSchema)}\n\n`
+                      toolsPrompt += `${constructToolContext(
+                        parsedTool.data.toolSchema,
+                      )}\n\n`
                     }
                   }
                 }
@@ -970,7 +1068,10 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     // Populate the unified response object for the MCP tool
                     toolExecutionResponse = {
-                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(0, 200)}...`,
+                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(
+                        0,
+                        200,
+                      )}...`,
                       contexts: newFragments,
                     }
                   } catch (error) {
@@ -1054,9 +1155,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ? gatheredFragments
                     .map(
                       (f, i) =>
-                        `[${i + 1}] ${f.source.title || `Source ${f.source.docId}`}: ${
-                          f.content
-                        }...`,
+                        `[${i + 1}] ${
+                          f.source.title || `Source ${f.source.docId}`
+                        }: ${f.content}...`,
                     )
                     .join("\n")
                 : ""
@@ -1150,7 +1251,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                 })
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: ` Synthesis: ${parseSynthesisOutput.answer || "No Synthesis details"}`,
+                  message: ` Synthesis: ${
+                    parseSynthesisOutput.answer || "No Synthesis details"
+                  }`,
                 })
                 const isContextSufficient =
                   parseSynthesisOutput.synthesisState ===
@@ -1169,7 +1272,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   if (iterationCount < maxIterations) {
                     await logAndStreamReasoning({
                       type: AgentReasoningStepType.BroadeningSearch,
-                      details: `Context is insufficient. Planning iteration ${iterationCount + 1}.`,
+                      details: `Context is insufficient. Planning iteration ${
+                        iterationCount + 1
+                      }.`,
                     })
                     continue
                   } else {
@@ -1389,6 +1494,17 @@ export const MessageWithToolsApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
+          // Cleanup MCP clients to prevent memory leaks
+          for (const client of mcpClients) {
+            try {
+              await client.close()
+            } catch (error) {
+              loggerWithChild({ email: sub }).error(
+                error,
+                "Failed to close MCP client",
+              )
+            }
+          }
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -1764,7 +1880,9 @@ export const AgentMessageApi = async (c: Context) => {
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                    data: `Skipping last ${
+                      totalValidFileIdsFromLinkCount - maxValidLinks
+                    } links as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
                 if (reasoning && chunk.reasoning) {
@@ -2310,7 +2428,9 @@ export const AgentMessageApi = async (c: Context) => {
           })
           Logger.error(
             error,
-            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+            `Streaming Error: ${(error as Error).message} ${
+              (error as Error).stack
+            }`,
           )
           streamErrorSpan.end()
           streamSpan.end()

@@ -22,8 +22,8 @@ import {
   RotateCcw,
   Atom,
   Bot, // Import Bot icon
-  PlugZap, // Added for new dropdown
-  PlusCircle, // For MCP connector tools
+  PlusCircle,
+  Gavel, // For MCP connector tools
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import {
@@ -56,7 +56,7 @@ import { DriveEntity } from "shared/types"
 import { api } from "@/api"
 import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
-import { Reference } from "@/types"
+import { Reference, ToolsListItem } from "@/types"
 
 interface SourceItem {
   id: string
@@ -97,7 +97,7 @@ interface ChatBoxProps {
     messageToSend: string,
     selectedSources?: string[],
     agentId?: string | null,
-    toolExternalIds?: string[],
+    toolsList?: ToolsListItem[],
   ) => void // Expects agentId string
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -293,8 +293,8 @@ export const ChatBox = ({
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
   const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
-  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(
-    null,
+  const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
+    new Set(),
   )
   const [isConnectorsMenuOpen, setIsConnectorsMenuOpen] = useState(false)
   const [connectorTools, setConnectorTools] = useState<FetchedTool[]>([])
@@ -302,6 +302,9 @@ export const ChatBox = ({
   const [isToolSelectionModalOpen, setIsToolSelectionModalOpen] =
     useState(false)
   const [toolSearchTerm, setToolSearchTerm] = useState("")
+  const [activeToolConnectorId, setActiveToolConnectorId] = useState<
+    string | null
+  >(null) // Track which connector's tools are being shown
   const connectorsDropdownTriggerRef = useRef<HTMLButtonElement | null>(null)
   const toolModalRef = useRef<HTMLDivElement | null>(null) // Ref for the tool modal itself
   const [toolModalPosition, setToolModalPosition] = useState<{
@@ -482,7 +485,7 @@ export const ChatBox = ({
         if (Array.isArray(data)) {
           processedConnectors = data.map((conn: any) => ({
             ...conn,
-            displayName: conn.config?.name || conn.app || conn.id,
+            displayName: conn.name || conn.config?.name || conn.app || conn.id,
           }))
         } else {
           console.error("Fetched connectors data is not an array:", data)
@@ -499,7 +502,7 @@ export const ChatBox = ({
           (c) => c.id === storedMcpId && c.type === ConnectorType.MCP,
         )
         if (connectorExists) {
-          setSelectedConnectorId(storedMcpId)
+          setSelectedConnectorIds(new Set([storedMcpId]))
         } else {
           // If stored ID is invalid (not found or not MCP), remove it.
           localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
@@ -518,29 +521,24 @@ export const ChatBox = ({
       return
     }
 
-    if (selectedConnectorId) {
-      // Only proceed if allConnectors has been populated.
-      if (allConnectors.length > 0) {
-        const connector = allConnectors.find(
-          (c) => c.id === selectedConnectorId,
-        )
-        if (connector && connector.type === ConnectorType.MCP) {
-          localStorage.setItem(
-            SELECTED_MCP_CONNECTOR_ID_KEY,
-            selectedConnectorId,
-          )
-        } else {
-          // If the selected connector is not an MCP, or not found, remove the key.
-          localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
+    // Find any MCP connector in the selected set
+    const mcpConnectorId = Array.from(selectedConnectorIds).find(
+      (connectorId) => {
+        if (allConnectors.length > 0) {
+          const connector = allConnectors.find((c) => c.id === connectorId)
+          return connector && connector.type === ConnectorType.MCP
         }
-      }
-      // If allConnectors is not yet populated (should not happen if initialLoadComplete is true),
-      // this effect will re-run when allConnectors changes.
+        return false
+      },
+    )
+
+    if (mcpConnectorId) {
+      localStorage.setItem(SELECTED_MCP_CONNECTOR_ID_KEY, mcpConnectorId)
     } else {
-      // If selectedConnectorId is null (deselected)
+      // If no MCP connector is selected
       localStorage.removeItem(SELECTED_MCP_CONNECTOR_ID_KEY)
     }
-  }, [selectedConnectorId, allConnectors, initialLoadComplete])
+  }, [selectedConnectorIds, allConnectors, initialLoadComplete])
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -1183,14 +1181,35 @@ export const ChatBox = ({
     htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
     htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
 
-    let toolIdsToSend: string[] | undefined = undefined
-    if (selectedConnectorId) {
-      const connector = allConnectors.find((c) => c.id === selectedConnectorId)
-      if (connector && connector.type === ConnectorType.MCP) {
-        const selectedToolExternalIdsSet = selectedConnectorTools[connector.id] // connector.id is externalId of connector
-        if (selectedToolExternalIdsSet && selectedToolExternalIdsSet.size > 0) {
-          toolIdsToSend = Array.from(selectedToolExternalIdsSet) // externalIds are already strings
+    let toolsListToSend: ToolsListItem[] | undefined = undefined
+
+    // Build toolsList from all selected connectors
+    if (selectedConnectorIds.size > 0) {
+      const toolsListArray: ToolsListItem[] = []
+
+      // Include tools from all selected connectors
+      selectedConnectorIds.forEach((connectorId) => {
+        const toolsSet = selectedConnectorTools[connectorId]
+
+        if (toolsSet && toolsSet.size > 0) {
+          // Find the connector to get its internal connectorId
+          const connector = allConnectors.find((c) => c.id === connectorId)
+          if (connector) {
+            const toolsArray = Array.from(toolsSet)
+            toolsListArray.push({
+              connectorId: connector.connectorId.toString(), // Use internal DB id
+              tools: toolsArray,
+            })
+          }
         }
+      })
+
+      // Only send toolsList if we actually have tools selected
+      if (
+        toolsListArray.length > 0 &&
+        toolsListArray.some((item) => item.tools.length > 0)
+      ) {
+        toolsListToSend = toolsListArray
       }
     }
 
@@ -1239,7 +1258,7 @@ export const ChatBox = ({
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
-      toolIdsToSend,
+      toolsListToSend,
     )
     // setReferences([]) // This state and its setter are removed.
 
@@ -1814,27 +1833,54 @@ export const ChatBox = ({
                   ref={connectorsDropdownTriggerRef}
                   className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-slate-300 cursor-pointer"
                 >
-                  {selectedConnectorId &&
-                  allConnectors.find((c) => c.id === selectedConnectorId) ? (
-                    getIcon(
-                      allConnectors.find((c) => c.id === selectedConnectorId)!
-                        .app,
-                      allConnectors.find((c) => c.id === selectedConnectorId)!
-                        .type,
-                      { w: 14, h: 14, mr: 0 },
+                  {selectedConnectorIds.size > 0 ? (
+                    selectedConnectorIds.size === 1 ? (
+                      // Single connector selected - show its icon
+                      (() => {
+                        const selectedConnector = allConnectors.find((c) =>
+                          selectedConnectorIds.has(c.id),
+                        )
+                        return selectedConnector ? (
+                          <>
+                            {getIcon(
+                              selectedConnector.app,
+                              selectedConnector.type,
+                              { w: 14, h: 14, mr: 0 },
+                            )}
+                            <span>
+                              {selectedConnector.displayName || "Connector"}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Gavel
+                              size={14}
+                              className="text-[#464D53] dark:text-slate-400"
+                            />
+                            <span>Mcp</span>
+                          </>
+                        )
+                      })()
+                    ) : (
+                      // Multiple connectors selected
+                      <>
+                        <Gavel
+                          size={14}
+                          className="text-[#464D53] dark:text-slate-400"
+                        />
+                        <span>{selectedConnectorIds.size} Mcps</span>
+                      </>
                     )
                   ) : (
-                    <PlugZap
-                      size={14}
-                      className="text-[#464D53] dark:text-slate-400"
-                    />
+                    // No connectors selected
+                    <>
+                      <Gavel
+                        size={14}
+                        className="text-[#464D53] dark:text-slate-400"
+                      />
+                      <span>Mcp</span>
+                    </>
                   )}
-                  <span>
-                    {selectedConnectorId
-                      ? allConnectors.find((c) => c.id === selectedConnectorId)
-                          ?.displayName || "Connector"
-                      : "Mcp"}
-                  </span>
                   <ChevronDown
                     size={16}
                     className="ml-1 text-gray-500 dark:text-slate-400"
@@ -1866,24 +1912,33 @@ export const ChatBox = ({
                             className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700"
                             onClick={() => {
                               const isCurrentlySelected =
-                                selectedConnectorId === connector.id
+                                selectedConnectorIds.has(connector.id)
 
                               if (isCurrentlySelected) {
                                 // If clicking the already selected connector, deselect it
-                                setSelectedConnectorId(null)
+                                setSelectedConnectorIds((prev) => {
+                                  const newSet = new Set(prev)
+                                  newSet.delete(connector.id)
+                                  return newSet
+                                })
                                 setConnectorTools([]) // Clear any tools
-                                // Optionally, close the tool selection modal if it's open for this connector
+                                // Close the tool selection modal if it's open for this connector
                                 if (
                                   isToolSelectionModalOpen &&
-                                  selectedConnectorId === connector.id
+                                  activeToolConnectorId === connector.id
                                 ) {
                                   setIsToolSelectionModalOpen(false)
+                                  setActiveToolConnectorId(null)
                                 }
                                 // Keep the main dropdown open or close it based on desired UX for deselection.
                                 // For now, let's assume it stays open.
                               } else {
-                                // Clicking a new connector to select it
-                                setSelectedConnectorId(connector.id)
+                                // Clicking a new connector to add it to selection
+                                setSelectedConnectorIds((prev) => {
+                                  const newSet = new Set(prev)
+                                  newSet.add(connector.id)
+                                  return newSet
+                                })
                                 if (!isMCP) {
                                   // For non-MCP connectors, preserve existing selections or initialize empty
                                   setConnectorTools([])
@@ -1894,7 +1949,7 @@ export const ChatBox = ({
                                       [connector.id]: new Set(),
                                     }))
                                   }
-                                  setIsConnectorsMenuOpen(false) // Close the dropdown
+                                  // Don't close dropdown for multiple selections
                                 } else {
                                   // For MCP connectors, clear tools from any previously selected MCP.
                                   setConnectorTools([])
@@ -1917,7 +1972,7 @@ export const ChatBox = ({
 
                             {/* Icons container - aligned to the right */}
                             <div className="flex items-center ml-auto">
-                              {selectedConnectorId === connector.id && (
+                              {selectedConnectorIds.has(connector.id) && (
                                 <Check
                                   className={`h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0 ${isMCP ? "mr-1.5" : ""}`}
                                 />
@@ -1930,16 +1985,25 @@ export const ChatBox = ({
                                     e.stopPropagation() // IMPORTANT: Prevent main item click handler
 
                                     // Ensure this connector is marked as active if not already
-                                    if (selectedConnectorId !== connector.id) {
-                                      setSelectedConnectorId(connector.id)
+                                    if (
+                                      !selectedConnectorIds.has(connector.id)
+                                    ) {
+                                      setSelectedConnectorIds((prev) => {
+                                        const newSet = new Set(prev)
+                                        newSet.add(connector.id)
+                                        return newSet
+                                      })
                                       setConnectorTools([]) // Clear tools if switching to this MCP
                                     } else if (
                                       !connectorTools.length &&
-                                      selectedConnectorId === connector.id
+                                      selectedConnectorIds.has(connector.id)
                                     ) {
                                       // If it's already selected but tools aren't loaded (e.g. re-opening modal)
                                       // proceed to load them.
                                     }
+
+                                    // Set this connector as the active one for tool selection
+                                    setActiveToolConnectorId(connector.id)
 
                                     if (connectorsDropdownTriggerRef.current) {
                                       const rect =
@@ -2083,9 +2147,9 @@ export const ChatBox = ({
 
           {/* Tool Selection Modal / Popover */}
           {isToolSelectionModalOpen &&
-            selectedConnectorId &&
+            activeToolConnectorId &&
             toolModalPosition &&
-            allConnectors.find((c) => c.id === selectedConnectorId)?.type ===
+            allConnectors.find((c) => c.id === activeToolConnectorId)?.type ===
               ConnectorType.MCP && (
               <div
                 ref={toolModalRef}
@@ -2103,8 +2167,9 @@ export const ChatBox = ({
                     <h3 className="text-md font-semibold text-gray-900 dark:text-slate-100">
                       Tools for{" "}
                       {
-                        allConnectors.find((c) => c.id === selectedConnectorId)
-                          ?.displayName
+                        allConnectors.find(
+                          (c) => c.id === activeToolConnectorId,
+                        )?.displayName
                       }
                     </h3>
                     <button
@@ -2163,7 +2228,7 @@ export const ChatBox = ({
                               onClick={() => {
                                 setSelectedConnectorTools((prev) => {
                                   const newSelected = new Set(
-                                    prev[selectedConnectorId!] || [],
+                                    prev[activeToolConnectorId!] || [],
                                   )
                                   if (newSelected.has(tool.externalId)) {
                                     newSelected.delete(tool.externalId)
@@ -2172,7 +2237,7 @@ export const ChatBox = ({
                                   }
                                   return {
                                     ...prev,
-                                    [selectedConnectorId!]: newSelected,
+                                    [activeToolConnectorId!]: newSelected,
                                   }
                                 })
                               }}
@@ -2186,7 +2251,7 @@ export const ChatBox = ({
                               <div className="h-4 w-4 flex items-center justify-center">
                                 {(
                                   selectedConnectorTools[
-                                    selectedConnectorId!
+                                    activeToolConnectorId!
                                   ] || new Set()
                                 ).has(tool.externalId) && (
                                   <Check className="h-4 w-4 text-green-500 dark:text-green-400" />
