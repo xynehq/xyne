@@ -935,7 +935,6 @@ export const ChatPage = ({
                   disableRetry={disableRetry}
                 />
               )}
-              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white dark:bg-[#1E1E1E]"></div>
             </div>
             {showRagTrace && chatId && selectedMessageId && (
               <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -949,23 +948,25 @@ export const ChatPage = ({
                 />
               </div>
             )}
-            <ChatBox
-              role={user?.role}
-              query={query}
-              setQuery={setQuery}
-              handleSend={handleSend}
-              handleStop={stopStream}
-              isStreaming={isStreaming}
-              retryIsStreaming={retryIsStreaming}
-              allCitations={allCitations}
-              setIsAgenticMode={setIsAgenticMode}
-              isAgenticMode={isAgenticMode}
-              chatId={chatId}
-              agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-              isReasoningActive={isReasoningActive}
-              setIsReasoningActive={setIsReasoningActive}
-              user={user} // Pass user prop
-            />
+            <div className="sticky bottom-0 w-full flex justify-center bg-white dark:bg-[#1E1E1E] pt-2">
+              <ChatBox
+                role={user?.role}
+                query={query}
+                setQuery={setQuery}
+                handleSend={handleSend}
+                handleStop={stopStream}
+                isStreaming={isStreaming}
+                retryIsStreaming={retryIsStreaming}
+                allCitations={allCitations}
+                setIsAgenticMode={setIsAgenticMode}
+                isAgenticMode={isAgenticMode}
+                chatId={chatId}
+                agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
+                isReasoningActive={isReasoningActive}
+                setIsReasoningActive={setIsReasoningActive}
+                user={user} // Pass user prop
+              />
+            </div>
           </div>
           <Sources
             showSources={showSources}
