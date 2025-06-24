@@ -70,7 +70,9 @@ async function processPermissionUpdatesAndDeleteIfSoleOwner(
     const searchPayload = {
       yql: permissionQueryWithDateFilter,
       hits: BATCH_SIZE,
-      offset: offset,
+      // offset: offset,
+      // due to this we were missing documents in next search
+      // previous docs won't be there in next search as permission is updated
       timeout: "10s",
       "ranking.profile": "unranked",
     }
@@ -258,7 +260,9 @@ async function processDirectDeletesWithDateFilter(
       const searchPayload = {
         yql: directDeleteQueryWithDateFilter,
         hits: BATCH_SIZE,
-        offset: offset,
+        // offset: offset,
+        // due to this we were missing documents in next search
+        // previous docs won't be there in next search as permission is updated
         timeout: "10s",
         "ranking.profile": "unranked",
       }
