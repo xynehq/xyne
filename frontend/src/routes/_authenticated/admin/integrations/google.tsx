@@ -1225,6 +1225,7 @@ type DeleteUserDataFormValues = {
   endDate?: string
   // servicesToClear?: string // Will be replaced by individual booleans
   deleteOnlyIfSoleOwnerInPermissions?: boolean
+  deleteSyncJob?: boolean // Add new field for deleteSyncJob
   // New boolean fields for services
   clearDrive?: boolean
   clearGmail?: boolean
@@ -1254,6 +1255,9 @@ const submitDeleteUserDataForm = async (
       ...(value.deleteOnlyIfSoleOwnerInPermissions !== undefined && {
         deleteOnlyIfSoleOwnerInPermissions:
           value.deleteOnlyIfSoleOwnerInPermissions,
+      }),
+      ...(value.deleteSyncJob !== undefined && {
+        deleteSyncJob: value.deleteSyncJob,
       }),
     },
   }
@@ -1289,6 +1293,7 @@ const DeleteUserDataForm = ({
       endDate: "",
       // servicesToClear: "drive,gmail,calendar", // Removed
       deleteOnlyIfSoleOwnerInPermissions: true,
+      deleteSyncJob: true, // Default to true
       clearDrive: true, // Default to true
       clearGmail: true, // Default to true
       clearCalendar: true, // Default to true
@@ -1492,8 +1497,24 @@ const DeleteUserDataForm = ({
           )}
         />
         <Label htmlFor="delete-sole-owner">
-          Delete only if sole owner in permissions (default: true)
+          Delete only if sole owner in permissions
         </Label>
+      </div>
+
+      <div className="flex items-center space-x-2 mt-4">
+        <form.Field
+          name="deleteSyncJob"
+          children={(field) => (
+            <input
+              type="checkbox"
+              id="delete-sync-job"
+              checked={field.state.value ?? true}
+              onChange={(e) => field.handleChange(e.target.checked)}
+              className="h-4 w-4"
+            />
+          )}
+        />
+        <Label htmlFor="delete-sync-job">Delete Sync Job</Label>
       </div>
 
       <Button type="submit" disabled={form.state.isSubmitting} className="mt-4">
