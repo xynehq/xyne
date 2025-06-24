@@ -5,6 +5,8 @@ import { getUserByEmail } from "@/db/user";
 import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 import { sign } from "hono/jwt";
+import { SearchApi } from "@/api/search";
+import config from "@/config";
 
 dotenv.config();
 
@@ -53,91 +55,155 @@ app.event("app_mention", async ({ event, client }) => {
       return;
     }
 
-    const authToken = await generateToken(dbUser[0].email, dbUser[0].role, dbUser[0].workspaceExternalId);
     const processedText = text.replace(/<@.*?>\s*/, "").trim();
+
+    Logger.info(`Calling SearchApi for query: "${processedText}"`);
     
-    // TODO: Replace with dynamic chatId and modelId
-    const modelId = "gpt-4o-mini";
+    let results: any[] = [];
     
-    // Use message/create endpoint instead of search
-    const url = process.env.SLACK_BASE_URL + `/api/v1/message/create?modelId=${modelId}&message=${encodeURIComponent(processedText)}&isReasoningEnabled=false`;
-    
-    Logger.info(`Sending request to: ${url}`);
-    
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "text/event-stream",
-        "Cookie": `auth-token=${authToken}`,
-      },
-    });
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Failed to get response reader");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let contentResponse = "";
-    let hasSentMessage = false;
-    
-    // For debugging
-    let allEvents = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf('\n\n');
-
-      while (boundary !== -1) {
-        const chunk = buffer.substring(0, boundary);
-        buffer = buffer.substring(boundary + 2);
-        
-        allEvents.push(chunk); // For debugging
-
-        let eventName = '';
-        let data = '';
-
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('event:')) {
-            eventName = line.substring(6).trim();
-          } else if (line.startsWith('data:')) {
-            data = line.substring(5).trim();
-          } else if (line.trim() && !eventName) {
-            // Handle cases where the event is just a single character without "event:" prefix
-            eventName = line.trim();
+    try {
+      // Create a context object for SearchApi with the necessary parameters
+      const mockContext = {
+        get: (key: string) => {
+          if (key === config.JwtPayloadKey) {
+            return {
+              sub: dbUser[0].email,
+              workspaceId: dbUser[0].workspaceExternalId || 'default',
+              role: dbUser[0].role || 'user'
+            };
           }
-        }
-
-        if (eventName === 'er' || eventName === 'error') { // Error event
-          await client.chat.postMessage({ channel, text: `Error: ${data}`, thread_ts: ts });
-          hasSentMessage = true;
-          break;
-        }
-
-        // Handle text update events - 'u' is the event type for text fragments
-        if (eventName === 'u') {
-          contentResponse += data || '';
-        }
+          return undefined;
+        },
+        req: {
+          valid: (type: string) => {
+            if (type === 'query') {
+              return {
+                query: processedText,
+                groupCount: false,  // We don't need group counts for Slack results
+                page: 10,           // Number of results to show
+                app: null,          // Search all apps
+                entity: null,       // Search all entities
+                offset: 0,
+                debug: false
+              };
+            }
+            return {};
+          }
+        },
+        json: (data: any) => data
+      };
+      
+      try {
+        // Now we can directly call SearchApi since we fixed the destructuring issue
+        const searchResults = await SearchApi(mockContext as any);
         
-        boundary = buffer.indexOf('\n\n');
+        // Extract results from the response
+        if (searchResults && Array.isArray((searchResults as any).results)) {
+          results = (searchResults as any).results;
+          Logger.info(`Found ${results.length} search results from SearchApi`);
+        } else {
+          Logger.warn(`SearchApi returned unexpected structure`);
+        }
+      } catch (apiError) {
+        // If this fails, log the specific error
+        Logger.error(apiError, "Error in SearchApi call");
+        throw new Error(`SearchApi error: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
       }
-      if (hasSentMessage) break;
-    }
-    
-    if (!hasSentMessage && contentResponse) {
-      await client.chat.postMessage({ channel, text: contentResponse, thread_ts: ts });
-    } else if (!hasSentMessage) {
-      // If we get here and there's no content, log the events for debugging
-      Logger.warn(`No content response. Events received: ${JSON.stringify(allEvents)}`);
+    } catch (error: unknown) {
+      // Type the error properly
+      const searchError = error instanceof Error 
+        ? error 
+        : new Error(typeof error === 'string' ? error : 'Unknown error');
+      
+      Logger.error(searchError, "Error in search operation");
       await client.chat.postMessage({ 
         channel, 
-        text: "I received a response, but it was empty. Please try again or contact support.", 
+        text: `I couldn't complete your search for "${processedText}". Please try again later.`, 
         thread_ts: ts 
       });
+      return; // Exit early
     }
+    
+    // Format search results for Slack
+    let messageText = `Search results for: "${processedText}"\n\n`;
+    if (results.length > 0) {
+      // Log a sample result to debug the structure
+      Logger.info(`Sample search result: ${JSON.stringify(results[0])}`);
+      
+      results.slice(0, 5).forEach((result: any, index: number) => {
+        // Extract title from various possible fields
+        let title = 'Untitled';
+        if (result.subject) title = result.subject;
+        else if (result.title) title = result.title;
+        else if (result.name) title = result.name;
+        
+        // Extract content or snippet
+        let snippet = '';
+        if (result.content) snippet = result.content;
+        else if (result.snippet) snippet = result.snippet;
+        else if (result.chunks_summary && result.chunks_summary.length > 0) {
+          // Special handling for email/document chunks
+          snippet = result.chunks_summary[0].chunk || '';
+          // Remove any HTML tags
+          snippet = snippet.replace(/<[^>]*>/g, '');
+        }
+        
+        // Get URL if available
+        const url = result.url || '';
+        
+        // Get document type
+        const docType = result.type || '';
+        
+        // Get relevance score if available
+        let relevance = '';
+        if (result.relevance !== undefined) {
+          const score = parseFloat(result.relevance);
+          if (!isNaN(score)) {
+            relevance = `(Score: ${score.toFixed(2)})`;
+          }
+        }
+        
+        // Build the message with better formatting
+        messageText += `${index + 1}. *${title}*${docType ? ` (${docType})` : ''} ${relevance}\n`;
+        
+        if (snippet) {
+          // Clean the snippet - remove excessive whitespace and truncate
+          snippet = snippet.replace(/\s+/g, ' ').trim();
+          messageText += `   ${snippet.substring(0, 150)}${snippet.length > 150 ? '...' : ''}\n`;
+        } else {
+          // If no snippet, try to provide some useful info from available fields
+          const usefulFields = [];
+          if (result.from) usefulFields.push(`From: ${result.from}`);
+          if (result.to) usefulFields.push(`To: ${Array.isArray(result.to) ? result.to.join(', ') : result.to}`);
+          if (result.timestamp) {
+            const date = new Date(result.timestamp);
+            usefulFields.push(`Date: ${date.toLocaleDateString()}`);
+          }
+          
+          if (usefulFields.length > 0) {
+            messageText += `   ${usefulFields.join(' | ')}\n`;
+          }
+        }
+        
+        if (url) {
+          messageText += `   🔗 ${url}\n`;
+        }
+        messageText += '\n';
+      });
+      
+      if (results.length > 5) {
+        messageText += `... and ${results.length - 5} more results`;
+      }
+    } else {
+      messageText += "No results found for your query.";
+    }
+    
+    await client.chat.postMessage({ 
+      channel, 
+      text: messageText, 
+      thread_ts: ts 
+    });
+
   } catch (error: any) {
     Logger.error(error, "Error processing app_mention event");
     await client.chat.postMessage({ channel, text: `An error occurred: ${error.message}`, thread_ts: ts });
@@ -145,4 +211,3 @@ app.event("app_mention", async ({ event, client }) => {
 });
 
 export default app;
-
