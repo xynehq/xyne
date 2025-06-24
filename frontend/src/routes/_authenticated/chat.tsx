@@ -469,6 +469,16 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
+    if (
+      currentChat &&
+      typeof currentChat.isBookmarked === "boolean" &&
+      currentChat.isBookmarked !== bookmark
+    ) {
+      setBookmark(currentChat.isBookmarked)
+    }
+  }, [currentChat, bookmark])
+
+  useEffect(() => {
     if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
