@@ -3,6 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
+import { handleToolSync } from "./toolSync"
 import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
 import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
@@ -41,7 +42,9 @@ export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthTyp
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
 export const SyncSlackQueue = `sync-${Apps.Slack}-${AuthType.OAuth}`
+export const SyncToolsQueue = `sync-tools`
 
+const TwiceWeekly = `0 0 * * 0,3`
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
@@ -58,6 +61,7 @@ export const init = async () => {
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
   await boss.createQueue(SyncSlackQueue)
+  await boss.createQueue(SyncToolsQueue)
   await initWorkers()
 }
 
@@ -125,7 +129,19 @@ const initWorkers = async () => {
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
 
+  await boss.schedule(
+    SyncToolsQueue,
+    EveryWeek,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
+
   await setupServiceAccountCronjobs()
+
+  await boss.work(SyncToolsQueue, async ([job]) => {
+    Logger.info("SyncToolsQueue worker called")
+    await handleToolSync()
+  })
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
     const startTime = Date.now()

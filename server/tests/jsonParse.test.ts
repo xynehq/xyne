@@ -356,6 +356,9 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
     input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
-    expect(result).toEqual({answer: "This is a plain text answer.\n<question> question What is the capital of France? </question>",})
+    expect(result).toEqual({
+      answer:
+        "This is a plain text answer.\n<question> question What is the capital of France? </question>",
+    })
   })
 })

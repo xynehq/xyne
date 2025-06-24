@@ -1158,7 +1158,8 @@ const Code = ({
     className && /^language-mermaid/.test(className.toLocaleLowerCase())
 
   // Debug logging for inline code detection
-  const codeString = typeof children === 'string' ? children : String(children || '')
+  const codeString =
+    typeof children === "string" ? children : String(children || "")
 
   let codeContent = ""
   if (props.node && props.node.children && props.node.children.length > 0) {
@@ -1251,7 +1252,7 @@ const Code = ({
           return
         }
       }
-      
+
       // Debounce the actual rendering to avoid too many rapid attempts
       mermaidRenderTimeoutRef.current = setTimeout(async () => {
         try {
@@ -1520,11 +1521,9 @@ const Code = ({
   }
 
   // Enhanced inline detection - fallback if inline prop is not set correctly
-  const isActuallyInline = inline || (
-    !className &&
-    !codeString.includes('\n') &&
-    codeString.trim().length > 0
-  )
+  const isActuallyInline =
+    inline ||
+    (!className && !codeString.includes("\n") && codeString.trim().length > 0)
 
   // For regular code blocks, render as plain text without boxing
   if (!isActuallyInline) {
