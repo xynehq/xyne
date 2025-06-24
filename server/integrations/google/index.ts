@@ -139,17 +139,6 @@ let isScriptRunning = false;
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
-let totalMailsToBeIngested=0
-let totalDriveflesToBeIngested = 0
-let totalMailsSkipped= 0  
-let insertedContactsCount = 0
-let insertedEventCount = 0
-let insertedpdfCount = 0
-let insertedDocCount = 0
-let insertedSheetCount = 0
-let insertedSlideCount = 0
-let insertedDriveFileCount = 0
-let totalpdfsBlockedCount = 0
 
 // export const loggerWithChild = (email: string) => {
 //   return Logger.child({ email: email })
@@ -158,6 +147,7 @@ let totalpdfsBlockedCount = 0
 export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "google",
 })
+
 
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 Logger.info("Gmail worker initialized")
@@ -235,6 +225,7 @@ const initializeGmailWorker = () => {
       }
     } else if (result.type === WorkerResponseTypes.ProgressUpdate) {
       if(isScriptRunning) {
+        loggerWithChild({email: result.email}).info(`Sending Progress for ingested mails`)
         sendProgressToServer(result.email,
           result.stats.messageCount,
           result.stats.attachmentCount, 
@@ -824,7 +815,8 @@ const insertCalendarEvents = async (
     },
     events.length,
   )
-  insertedEventCount = events.length
+  loggerWithChild({email: userEmail}).info(`Sending Progress for events ingested`)
+  sendProgressToServer(userEmail,0,0,0,0,0,0,events.length,0,0,0,0,0,0,0,0)
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
@@ -904,10 +896,6 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       },
       messagesTotal - messagesExcludingPromotions,
     )
-
-    totalDriveflesToBeIngested = totalFiles
-    totalMailsToBeIngested = messagesExcludingPromotions
-    totalMailsSkipped = (messagesTotal - messagesExcludingPromotions)
 
     tracker.updateTotal(userEmail, {
       totalDrive: totalFiles,
@@ -1753,7 +1741,8 @@ const insertFilesForUser = async (
             1,
           )
         }
-        insertedpdfCount = pdfsInserted;
+        loggerWithChild({email: userEmail}).info(`Sending Progress for Ingetsed pdfs`)
+        sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,pdfsInserted,0,0,0,0,0,0)
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
@@ -1813,6 +1802,10 @@ const insertFilesForUser = async (
         mime_type: "application/vnd.google-apps.file",
         email: userEmail,
       })
+
+      let insertedDocCount = 0
+      let insertedSlideCount = 0
+      let insertedDriveFileCount = 0
 
       for (const doc of allFiles) {
         // determine the  file type here so we can insert in metrics data
@@ -1895,6 +1888,8 @@ const insertFilesForUser = async (
         `Inserted a total of ${driveFilesInserted} drive files`,
       )
       totalIngestionDuration()
+      loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs, sheets, slides, files`)
+      sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,insertedDocCount,sheetsObj.count, insertedSlideCount, insertedDriveFileCount,0,0)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -2360,6 +2355,7 @@ export const googlePDFsVespa = async (
   )
   // a flag just for the error to know
   // if the file was downloaded or not
+  let totalpdfsBlockedCount = 0
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
@@ -2475,8 +2471,21 @@ export const googlePDFsVespa = async (
       }
     }),
   )
+const results = await Promise.all(pdfPromises)
+const filteredResults = results.filter((v) => !!v)
 
-  return (await Promise.all(pdfPromises)).filter((v) => !!v)
+// Now send the blocked files progress after all PDF processing has completed
+loggerWithChild({ email: userEmail }).info(
+  `Sending Progress for Blocked PDFs: ${totalpdfsBlockedCount}`,
+)
+sendProgressToServer(
+  userEmail,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  totalpdfsBlockedCount,
+)
+
+return filteredResults
+
 }
 
 type Org = { endDate: null | string }
@@ -2763,7 +2772,8 @@ const insertContactsToVespa = async (
       },
       contacts.length + otherContacts.length,
     )
-    insertedContactsCount =  contacts.length + otherContacts.length
+    loggerWithChild({email: owner}).info(`Sending Progress for inserted contacts`)
+    sendProgressToServer(owner, 0,0,0,0,0,0,0,(contacts.length + otherContacts.length),0,0,0,0,0,0,0)
   }
 }
 
@@ -3254,6 +3264,8 @@ export const ServiceAccountIngestMoreUsers = async (
   isScript?: boolean,
 ) => {
   isScriptRunning = isScript!;
+
+
   const jobId = uuidv4()
   const {
     connectorId,
@@ -3374,6 +3386,7 @@ export const ServiceAccountIngestMoreUsers = async (
 
     const userProcessingPromises = uniqueUsersToProcess.map((googleUser) =>
       limit(async () => {
+
         const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
         if (!userEmail) {
@@ -3482,7 +3495,7 @@ export const ServiceAccountIngestMoreUsers = async (
            0,
            0,
            driveFileCount,
-           totalpdfsBlockedCount
+           0
           )
       }
 
@@ -3569,27 +3582,7 @@ export const ServiceAccountIngestMoreUsers = async (
         await Promise.all(servicePromises)
 
         tracker.markUserComplete(userEmail)
-       if(isScriptRunning) {
-        Logger.info(`Updating Progress for Script`)
-        sendProgressToServer(
-          userEmail,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           insertedEventCount,
-           insertedContactsCount,
-           insertedpdfCount,
-           insertedDocCount,
-           insertedSheetCount,
-           insertedSlideCount,
-           insertedDriveFileCount,
-           0,
-           totalpdfsBlockedCount
-          )
-      } 
+          
         return {
           email: userEmail,
           driveToken: driveStartPageTokenVal,
