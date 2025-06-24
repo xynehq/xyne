@@ -4,10 +4,13 @@ import type {
   HeaderBlock,
   DividerBlock,
   ContextBlock,
+  ActionsBlock,
+  View,
 } from "@slack/types";
 
 // Define a union type for all block types we use
-type Block = SectionBlock | HeaderBlock | DividerBlock | ContextBlock | any;
+// Using 'any' for Block type to work around type checking issues with Slack's typing
+type Block = any;
 
 export function createAnalysisParentMessage(
   userId: string,
@@ -230,19 +233,6 @@ export function createSingleResultBlocks(
           resultId: result.id || `result-${index}`,
         }),
       },
-      {
-        type: "button",
-        text: {
-          type: "plain_text",
-          text: "Not helpful",
-          emoji: true,
-        },
-        action_id: "not_helpful",
-        value: JSON.stringify({
-          query: query,
-          resultId: result.id || `result-${index}`,
-        }),
-      },
     ],
   });
 
@@ -337,31 +327,6 @@ export function createSharedResultBlocks(
   return blocks;
 }
 
-/**
- * Create blocks for a notification about feedback received
- * @param query The query that the feedback is for
- * @returns Slack blocks for the feedback confirmation
- */
-export function createFeedbackConfirmationBlocks(query: string): Block[] {
-  return [
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "Thanks for your feedback! We'll use this to improve our search results.",
-      },
-    },
-    {
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `_This message is only visible to you_`,
-        },
-      ],
-    },
-  ];
-}
 
 /**
  * Create blocks for a successful share confirmation
@@ -386,4 +351,170 @@ export function createShareConfirmationBlocks(): Block[] {
       ],
     },
   ];
+}
+
+/**
+ * Create a modal view for search results
+ * @param query The search query string
+ * @param results Array of search results
+ * @returns Slack modal view object
+ */
+export function createSearchResultsModal(
+  query: string,
+  results: any[]
+): View {
+  // Create blocks for the modal content
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "🔍 Knowledge Base Results",
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Results for:* "${query}"`,
+      },
+    },
+    {
+      type: "divider",
+    },
+  ];
+
+  // Display up to 5 results in the modal
+  const displayResults = results.slice(0, 5);
+  for (let i = 0; i < displayResults.length; i++) {
+    const result = displayResults[i];
+    
+    // Extract title with fallbacks
+    let title = "Untitled";
+    if (result.subject) title = result.subject;
+    else if (result.title) title = result.title;
+    else if (result.name) title = result.name;
+
+    // Extract content or snippet
+    let snippet = "";
+    if (result.content) snippet = result.content;
+    else if (result.snippet) snippet = result.snippet;
+    else if (result.chunks_summary && result.chunks_summary.length > 0) {
+      snippet = result.chunks_summary[0].chunk || "";
+      // Remove any HTML tags
+      snippet = snippet.replace(/<[^>]*>/g, "");
+    }
+
+    // Clean and truncate snippet
+    if (snippet) {
+      snippet = snippet.replace(/\s+/g, " ").trim();
+      snippet =
+        snippet.length > 200 ? `${snippet.substring(0, 200)}...` : snippet;
+    }
+
+    // Get metadata
+    const url = result.url || "";
+    const docType = result.type || "";
+    let author = "Unknown";
+    let dateStr = "";
+
+    if (result.from) author = result.from;
+    if (result.timestamp) {
+      const date = new Date(result.timestamp);
+      dateStr = date.toLocaleDateString();
+    }
+
+    // Format metadata text
+    let metadataText = "";
+    if (docType) metadataText += docType + " • ";
+    if (author !== "Unknown") metadataText += "By " + author + " • ";
+    if (dateStr) metadataText += dateStr;
+
+    // Trim trailing separator if needed
+    metadataText = metadataText.replace(/\s•\s$/, "");
+
+    // Add result to blocks
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*${i + 1}. ${title}*\n${snippet ? snippet : ""}`,
+      },
+    });
+
+    if (metadataText) {
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: metadataText,
+          },
+        ],
+      });
+    }
+
+    // Add action buttons for each result
+    blocks.push({
+      type: "actions",
+      block_id: `result_actions_${i}`,
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Share in channel",
+            emoji: true,
+          },
+          style: "primary",
+          action_id: "share_result_modal",
+          value: JSON.stringify({
+            url: url,
+            title: title,
+            query: query,
+            snippet: snippet,
+            metadata: metadataText,
+            resultId: result.id || `result-${i}`,
+          }),
+        }
+      ],
+    });
+
+    // Add divider between results (except after the last one)
+    if (i < displayResults.length - 1) {
+      blocks.push({
+        type: "divider"
+      });
+    }
+  }
+
+  // If there are more results than what's shown in the modal
+  if (results.length > 5) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `_${results.length - 5} more results available. Refine your search for better results._`,
+        },
+      ],
+    });
+  }
+
+  // Create the modal view object
+  return {
+    type: "modal",
+    title: {
+      type: "plain_text",
+      text: "Search Results",
+      emoji: true,
+    },
+    close: {
+      type: "plain_text",
+      text: "Close",
+      emoji: true,
+    },
+    blocks: blocks,
+  };
 }
