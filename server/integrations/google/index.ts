@@ -826,7 +826,8 @@ const insertCalendarEvents = async (
     },
     events.length,
   )
-  loggerWithChild({email: userEmail}).info(`Sending Progress for events ingested`)
+  if(isScriptRunning){
+      loggerWithChild({email: userEmail}).info(`Sending Progress for events ingested`)
           sendProgressToServer({
           userEmail: userEmail,
           messageCount: 0,
@@ -844,6 +845,7 @@ const insertCalendarEvents = async (
           insertedDriveFileCount: 0,
           totalDriveflesToBeIngested: 0,
           totalBlockedPdfs: 0})
+  }
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
@@ -1752,7 +1754,8 @@ const insertFilesForUser = async (
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
           driveFilesInserted++
-          loggerWithChild({email: userEmail}).info(`Sending Progress for Ingetsed pdfs`)
+          if(isScriptRunning){
+                      loggerWithChild({email: userEmail}).info(`Sending Progress for Ingetsed pdfs`)
           sendProgressToServer({
           userEmail: userEmail,
           messageCount: 0,
@@ -1770,6 +1773,7 @@ const insertFilesForUser = async (
           insertedDriveFileCount: 0,
           totalDriveflesToBeIngested: 0,
           totalBlockedPdfs: 0})
+          }
           loggerWithChild({ email: userEmail! }).info(
             `Inserted ${driveFilesInserted} PDFs`,
           )
@@ -1878,7 +1882,8 @@ const insertFilesForUser = async (
               file_type: fileType,
             })
               if(fileType == DriveEntity.Docs) {
-               loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs`)
+              if(isScriptRunning){
+              loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs`)
                 sendProgressToServer({
                 userEmail: userEmail,
                 messageCount: 0,
@@ -1897,8 +1902,10 @@ const insertFilesForUser = async (
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 0})
               }
+             }
               if(fileType == DriveEntity.Slides) {
-                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted slides`)
+              if(isScriptRunning) {
+               loggerWithChild({email: userEmail}).info(`Sending Progress for inserted slides`)
                 sendProgressToServer({
                 userEmail: userEmail,
                 messageCount: 0,
@@ -1917,8 +1924,10 @@ const insertFilesForUser = async (
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 0})
               }
+             }
               if(fileType == DriveEntity.Misc) {
-                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted drive files`)
+              if(isScriptRunning) {
+               loggerWithChild({email: userEmail}).info(`Sending Progress for inserted drive files`)
                 sendProgressToServer({
                 userEmail: userEmail,
                 messageCount: 0,
@@ -1937,6 +1946,7 @@ const insertFilesForUser = async (
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 0})
               }
+            }
   
           }
           loggerWithChild({ email: userEmail! }).info(
@@ -1961,7 +1971,8 @@ const insertFilesForUser = async (
         }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
-      loggerWithChild({email: userEmail}).info(`Sending Progress for inserted sheets`)
+      if(isScriptRunning){
+        loggerWithChild({email: userEmail}).info(`Sending Progress for inserted sheets`)
             sendProgressToServer({
                 userEmail: userEmail,
                 messageCount: 0,
@@ -1979,6 +1990,7 @@ const insertFilesForUser = async (
                 insertedDriveFileCount: 0,
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 0})
+      }
       totalIngestedFiles.inc(
         {
           mime_type: "application/vnd.google-apps.spreadsheet",
@@ -2473,6 +2485,7 @@ export const googlePDFsVespa = async (
         loggerWithChild({ email: userEmail! }).warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
+        if(isScriptRunning){
         loggerWithChild({ email: userEmail }).info(
             `Sending Progress for Blocked PDFs`,
           )
@@ -2493,6 +2506,7 @@ export const googlePDFsVespa = async (
                 insertedDriveFileCount: 0,
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 1})
+        }
         blockedFilesTotal.inc({
           mime_type: pdf.mimeType ?? "google_pdf",
           blocked_type: "MAX_PDF_SIZE_EXCEEDED",
@@ -2886,7 +2900,8 @@ const insertContactsToVespa = async (
       },
       contacts.length + otherContacts.length,
     )
-    loggerWithChild({email: owner}).info(`Sending Progress for inserted contacts`)
+    if(isScriptRunning){
+        loggerWithChild({email: owner}).info(`Sending Progress for inserted contacts`)
 
             sendProgressToServer({
                 userEmail: owner,
@@ -2905,6 +2920,7 @@ const insertContactsToVespa = async (
                 insertedDriveFileCount: 0,
                 totalDriveflesToBeIngested: 0,
                 totalBlockedPdfs: 0})
+    }
   }
 }
 
