@@ -82,8 +82,12 @@ export const GetConnectors = async (c: Context) => {
   return c.json(connectors)
 }
 export const GetProviders = async (c: Context) => {
-  const provider = await getAppGlobalOAuthProvider(db, Apps.Slack)
-  return c.json({ exists: !!provider })
+  try {
+    const provider = await getAppGlobalOAuthProvider(db, Apps.Slack)
+    return c.json({ exists: !!provider })
+  } catch (error) {
+    return c.json({ exists: false })
+  }
 }
 
 export const GetConnectorTools = async (c: Context) => {
@@ -256,7 +260,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     clientId = form.clientId
     clientSecret = form.clientSecret
     scopes = form.scopes
-    isGlobalProvider = form.isGlobalProvider // Set to true as per user requirement
+    isGlobalProvider = form.isGlobalProvider
   }
   const app = form.app
 

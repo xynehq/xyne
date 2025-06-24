@@ -138,7 +138,7 @@ export const SlackOAuthButton = ({
   }
 
   return (
-    <Button onClick={handleOAuth} className={className}>
+    <Button type="button" onClick={handleOAuth} className={className}>
       {text}
     </Button>
   )
@@ -459,11 +459,11 @@ const SlackOAuthTab = ({
         const res = await api.admin.oauth["global-slack-provider"].$get()
         if (!res.ok) {
           // Handle error, maybe log it or show a toast
-          console.error(
-            "Failed to fetch global slack provider status",
-            res.status,
-            res.statusText,
-          )
+          toast({
+            title: "Failed to check global provider",
+            description: "Could not verify global Slack provider status",
+            variant: "destructive",
+          })
           return { exists: false } // Assume no global provider on error
         }
         return res.json()
@@ -482,7 +482,6 @@ const SlackOAuthTab = ({
       const response = await api.admin.oauth.create.$post({
         form: payload,
       })
-      console.log(response)
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(
