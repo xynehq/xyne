@@ -1,6 +1,11 @@
 #!/bin/sh
 set -u
 
+# Skip the entire pre-commit hook if this is a Commitizen commit
+if [ "${CZ_COMMIT:-}" = "true" ]; then
+    exit 0
+fi
+
 # Function to check formatting and then format if necessary
 check_and_format() {
     # Temporarily disable exit on error
@@ -22,19 +27,14 @@ check_and_format() {
 
 # Function to trigger Commitizen
 trigger_commitizen() {
-    # Check if this is a Commitizen commit to avoid recursion
-    if [ "${CZ_COMMIT:-}" = "true" ]; then
-        return 0
-    fi
-
     # Check if user wants to skip Commitizen (escape hatch)
     if [ "${HUSKY_SKIP_COMMITIZEN:-}" = "true" ]; then
-        echo "⏭️  Skipping Commitizen (HUSKY_SKIP_COMMITIZEN=true)"
+        echo "Skipping Commitizen (HUSKY_SKIP_COMMITIZEN=true)"
         return 0
     fi
 
-    echo "🎯 Intercepting commit - launching Commitizen for structured commit message..."
-    echo "💡 To skip Commitizen, use: HUSKY_SKIP_COMMITIZEN=true git commit -m 'message'"
+    echo "Intercepting commit - launching Commitizen for structured commit message..."
+    echo "To skip Commitizen, use: HUSKY_SKIP_COMMITIZEN=true git commit -m 'message'"
 
     # Set environment variable to prevent recursion
     export CZ_COMMIT=true
@@ -49,11 +49,11 @@ trigger_commitizen() {
     CZ_EXIT_CODE=$?
 
     if [ $CZ_EXIT_CODE -eq 0 ]; then
-        echo "✅ Commit created successfully with Commitizen"
+        echo "Commit created successfully with Commitizen"
         # Exit with code 1 to prevent the original commit since we've already committed
         exit 1
     else
-        echo "❌ Commitizen failed or was cancelled"
+        echo "Commitizen failed or was cancelled"
         exit $CZ_EXIT_CODE
     fi
 }
