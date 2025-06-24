@@ -89,7 +89,7 @@ export const updateSyncJob = async (
 export const clearUserSyncJob = async (
   trx: TxnOrClient,
   userEmail: string,
-  appsToDelete: string[] | any,
+  appsToDelete: string[],
 ) => {
   // Convert app names to their corresponding Apps enum values
   appsToDelete = appsToDelete.map(
@@ -111,6 +111,8 @@ export const clearUserSyncJob = async (
       )
     return `Successfully Deleted ${userEmail} ${appsToDelete.join(" ,")} syncJobs`
   } catch (error) {
-    return `Failed to Deleted ${userEmail} ${appsToDelete.join(" ,")} syncJobs`
+    throw new Error(
+      `Failed to delete sync jobs for ${userEmail} ${appsToDelete.join(" , ")} syncJobs: ${error}`,
+    )
   }
 }
