@@ -227,38 +227,19 @@ app.action("share_result", async ({ ack, body, client }) => {
   
   try {
     const actionValue = JSON.parse((body as any).actions[0].value);
-    const { url, title, query, resultId } = actionValue;
+    const { url, title, query, snippet, metadata, resultId } = actionValue;
     
-    // Create a simplified set of blocks for the shared message
-    const blocks = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*${title}*`
-        }
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `Shared by <@${(body as any).user.id}> in response to: "${query}"`
-        }
-      }
-    ];
+    // Use the enhanced shared result blocks that include content
+    const blocks = createSharedResultBlocks(
+      (body as any).user.id,
+      url,
+      title,
+      snippet || '',
+      metadata || '',
+      query
+    );
     
-    // Add link to view original if URL is available
-    if (url) {
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `<${url}|View original document> 🔗`
-        }
-      });
-    }
-    
-    // Share the result in the channel with clean formatting
+    // Share the result in the channel with full content
     await client.chat.postMessage({
       channel: (body as any).channel.id,
       text: `${title} - Shared by <@${(body as any).user.id}>`,

@@ -92,7 +92,7 @@ export function createSearchIntroBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `Hey <@${userId}>! I found ${count} results for your query. Check out the thread for details. 👍`
+        text: `Hey <@${userId}>! I found ${count} results for your query. Check out the thread for details.`
       }
     }
   ];
@@ -222,6 +222,8 @@ export function createSingleResultBlocks(
           url: url, 
           title: title, 
           query: query,
+          snippet: snippet,
+          metadata: metadataText,
           resultId: result.id || `result-${index}`
         })
       },
@@ -263,15 +265,6 @@ export function createMoreResultsBlocks(
         text: `*${remaining} more results available*`
       }
     },
-    {
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `_Only you can see this message_`
-        }
-      ]
-    }
   ];
 }
 
@@ -280,6 +273,8 @@ export function createMoreResultsBlocks(
  * @param userId The Slack user ID of the person sharing
  * @param url The URL of the shared result
  * @param title The title of the shared result
+ * @param snippet The content snippet from the result
+ * @param metadata The metadata string (type, author, date)
  * @param query The query that led to this result
  * @returns Slack blocks for the shared message in channel
  */
@@ -287,16 +282,16 @@ export function createSharedResultBlocks(
   userId: string,
   url: string,
   title: string,
+  snippet: string,
+  metadata: string,
   query: string
 ): Block[] {
-  // Get the full result details from our client to display in the channel
-  return [
+  const blocks = [
     {
-      type: "header",
+      type: "section",
       text: {
-        type: "plain_text",
-        text: title,
-        emoji: true
+        type: "mrkdwn",
+        text: `*${title}*\n${snippet ? snippet : ''}`
       }
     },
     {
@@ -305,18 +300,38 @@ export function createSharedResultBlocks(
         type: "mrkdwn",
         text: `Shared by <@${userId}> in response to: "${query}"`
       }
-    },
-    {
-      type: "divider"
-    },
-    {
+    }
+  ];
+
+  // Add metadata if available
+  if (metadata) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: metadata
+        }
+      ]
+    });
+  }
+
+  blocks.push({
+    type: "divider"
+  });
+
+  // Add link to view original if URL is available
+  if (url) {
+    blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
         text: `<${url}|View original document> 🔗`
       }
-    }
-  ];
+    });
+  }
+
+  return blocks;
 }
 
 /**
