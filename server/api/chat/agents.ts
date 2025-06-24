@@ -775,7 +775,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                   for (const tool of tools) {
                     const parsedTool = selectToolSchema.safeParse(tool)
                     if (parsedTool.success && parsedTool.data.toolSchema) {
-                      console.log(parsedTool.data, " toolSchema")
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
                         parsedTool.data.toolName,
@@ -786,7 +785,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
             }
-            console.log(toolsPrompt, "tools")
 
             const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,
