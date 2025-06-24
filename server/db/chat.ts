@@ -83,6 +83,22 @@ export const updateChatByExternalId = async (
   return selectChatSchema.parse(chatArr[0])
 }
 
+export const updateChatBookmarkStatus = async (
+  trx: TxnOrClient,
+  chatId: string,
+  isBookmarked: boolean,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .update(chats)
+    .set({ isBookmarked })
+    .where(eq(chats.externalId, chatId))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
 export const deleteChatByExternalId = async (
   trx: TxnOrClient,
   chatId: string,

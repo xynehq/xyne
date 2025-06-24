@@ -92,7 +92,7 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import { fetchChats, pageSize, renameChat, bookmarkChat} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
@@ -108,6 +108,7 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
+import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
@@ -657,15 +658,29 @@ export const ChatPage = ({
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
+  const bookmarkChatMutation = useMutation<
+    { chatId: string; isBookmarked: boolean },
+    Error,
+    { chatId: string; isBookmarked: boolean }
+  >({
+    mutationFn: async ({ chatId, isBookmarked }) => {
+      return await bookmarkChat(chatId, isBookmarked)
+    },
+    onSuccess: ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+      queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+    },
+    onError: (error: Error) => {
+      console.error("Failed to bookmark chat:", error)
+    },
+  })
+
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
+      bookmarkChatMutation.mutate({
+        chatId: chatId,
+        isBookmarked: !bookmark,
       })
-      setBookmark(!bookmark)
     }
   }
 
@@ -784,7 +799,7 @@ export const ChatPage = ({
             )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[20px] cursor-pointer dark:stroke-gray-400"
+              className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
               fill={
                 bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
               }

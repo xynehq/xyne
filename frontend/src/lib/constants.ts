@@ -5,6 +5,7 @@ export const CLASS_NAMES = {
   REFERENCE_BOX: "reference-box",
   REFERENCE_PILL: "reference-pill",
   REFERENCE_TRIGGER: "reference-trigger",
+  BOOKMARK_BUTTON: "bookmark-button",
 } as const
 
 export const SELECTORS = {
