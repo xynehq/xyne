@@ -59,6 +59,7 @@ import {
   type ClearUserDataOptions,
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
+import { clearUserSyncJob } from "@/db/syncJob"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api,{module: "admin"})
@@ -753,6 +754,23 @@ export const AdminDeleteUserData = async (c: Context) => {
       { adminEmail: sub, targetEmail: emailToClear, results: deletionResults },
       "User data deletion process completed.",
     )
+    const appsToDelete = options?.servicesToClear
+    const deleteSyncJob = options?.deleteSyncJob
+    if (deleteSyncJob) {
+      const deleteSyncJobResult = await clearUserSyncJob(
+        db,
+        emailToClear,
+        appsToDelete,
+      )
+      loggerWithChild({ email: sub }).info(
+        {
+          adminEmail: sub,
+          targetEmail: emailToClear,
+          results: deleteSyncJobResult,
+        },
+        "User SyncJob deletion process completed.",
+      )
+    }
     return c.json({
       success: true,
       message: `Data deletion process initiated for user ${emailToClear}. Check server logs for details.`,
@@ -760,7 +778,7 @@ export const AdminDeleteUserData = async (c: Context) => {
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    loggerWithChild({email:sub}).error(
+    loggerWithChild({ email: sub }).error(
       error,
       `Failed to clear user data for ${emailToClear}: ${errorMessage}`,
     )

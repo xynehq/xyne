@@ -165,6 +165,7 @@ export const deleteUserDataSchema = z.object({
         .optional(),
       servicesToClear: z.array(z.string()).optional(), // e.g., ["drive", "gmail", "calendar"]
       deleteOnlyIfSoleOwnerInPermissions: z.boolean().optional(),
+      deleteSyncJob: z.boolean().optional().default(false),
     })
     .optional(),
 })

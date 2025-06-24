@@ -7,7 +7,7 @@ import {
 } from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import { Apps, AuthType } from "@/shared/types"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertSyncJob = async (
@@ -84,4 +84,33 @@ export const updateSyncJob = async (
     )
   }
   return parsedRes.data
+}
+
+export const clearUserSyncJob = async (
+  trx: TxnOrClient,
+  userEmail: string,
+  appsToDelete: string[] | any,
+) => {
+  // Convert app names to their corresponding Apps enum values
+  appsToDelete = appsToDelete.map(
+    (app: string): Apps =>
+      app === "drive"
+        ? Apps.GoogleDrive
+        : app === "calendar"
+          ? Apps.GoogleCalendar
+          : (app as Apps),
+  )
+  try {
+    await trx
+      .delete(syncJobs)
+      .where(
+        and(
+          eq(syncJobs.email, userEmail),
+          inArray(syncJobs.app, appsToDelete as Apps[]),
+        ),
+      )
+    return `Successfully Deleted ${userEmail} ${appsToDelete.join(" ,")} syncJobs`
+  } catch (error) {
+    return `Failed to Deleted ${userEmail} ${appsToDelete.join(" ,")} syncJobs`
+  }
 }
