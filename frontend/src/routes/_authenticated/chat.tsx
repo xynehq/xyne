@@ -1157,6 +1157,9 @@ const Code = ({
   const isMermaid =
     className && /^language-mermaid/.test(className.toLocaleLowerCase())
 
+  // Debug logging for inline code detection
+  const codeString = typeof children === 'string' ? children : String(children || '')
+
   let codeContent = ""
   if (props.node && props.node.children && props.node.children.length > 0) {
     codeContent = getCodeString(props.node.children)
@@ -1516,8 +1519,15 @@ const Code = ({
     )
   }
 
+  // Enhanced inline detection - fallback if inline prop is not set correctly
+  const isActuallyInline = inline || (
+    !className &&
+    !codeString.includes('\n') &&
+    codeString.trim().length > 0
+  )
+
   // For regular code blocks, render as plain text without boxing
-  if (!inline) {
+  if (!isActuallyInline) {
     return (
       <pre
         className="text-sm block w-full my-2"
@@ -1541,14 +1551,15 @@ const Code = ({
 
   return (
     <code
-      className={`${className || ""} font-mono`}
+      className={`${className || ""} font-mono bg-gray-100 dark:bg-gray-800 rounded-md px-2 py-1 text-xs`}
       style={{
         overflowWrap: "break-word",
         wordBreak: "break-word",
         maxWidth: "100%",
-        background: "none",
-        padding: 0,
         color: "inherit",
+        display: "inline",
+        fontSize: "0.75rem",
+        verticalAlign: "baseline",
       }}
     >
       {children}
