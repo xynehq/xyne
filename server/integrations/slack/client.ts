@@ -1,66 +1,87 @@
-import { App } from "@slack/bolt";
-import * as dotenv from "dotenv";
-import { db } from "@/db/client";
-import { getUserByEmail } from "@/db/user";
-import { getLogger } from "@/logger";
-import { Subsystem } from "@/types";
-import { sign } from "hono/jwt";
-import { SearchApi } from "@/api/search";
-import config from "@/config";
+import { App } from "@slack/bolt"
+import * as dotenv from "dotenv"
+import { db } from "@/db/client"
+import { getUserByEmail } from "@/db/user"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+import { sign } from "hono/jwt"
+import { SearchApi } from "@/api/search"
+import config from "@/config"
+import { 
+  createSearchIntroBlocks,
+  createSearchHeaderBlocks, 
+  createSingleResultBlocks,
+  createMoreResultsBlocks,
+  createSharedResultBlocks,
+  createShareConfirmationBlocks,
+  createFeedbackConfirmationBlocks
+} from "./formatters"
 
-dotenv.config();
+dotenv.config()
 
-const Logger = getLogger(Subsystem.Slack);
+const Logger = getLogger(Subsystem.Slack)
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   socketMode: true,
   appToken: process.env.SLACK_APP_TOKEN,
-});
+})
 
-const generateToken = async (email: string, role: string, workspaceId: string) => {
+const generateToken = async (
+  email: string,
+  role: string,
+  workspaceId: string,
+) => {
   const payload = {
     sub: email,
     role: role,
     workspaceId,
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60, // Token expires in 2 months
-  };
-  const jwtToken = await sign(payload, process.env.JWT_SECRET!);
-  return jwtToken;
-};
+  }
+  const jwtToken = await sign(payload, process.env.JWT_SECRET!)
+  return jwtToken
+}
 
 app.event("app_mention", async ({ event, client }) => {
-  Logger.info(`Received app_mention event: ${JSON.stringify(event)}`);
+  Logger.info(`Received app_mention event: ${JSON.stringify(event)}`)
 
-  const { user, text, channel, ts } = event;
+  const { user, text, channel, ts } = event
 
   if (!user || !text || !channel || !ts) {
-    Logger.error("Event is missing user, text, channel, or ts", event);
-    return;
+    Logger.error("Event is missing user, text, channel, or ts", event)
+    return
   }
 
   try {
-    await client.conversations.join({ channel });
+    await client.conversations.join({ channel })
 
-    const userInfo = await client.users.info({ user });
+    const userInfo = await client.users.info({ user })
     if (!userInfo.ok || !userInfo.user?.profile?.email) {
-      await client.chat.postMessage({ channel, text: "Could not retrieve your email from Slack.", thread_ts: ts });
-      return;
+      await client.chat.postMessage({
+        channel,
+        text: "Could not retrieve your email from Slack.",
+        thread_ts: ts,
+      })
+      return
     }
-    const userEmail = userInfo.user.profile.email;
+    const userEmail = userInfo.user.profile.email
 
-    const dbUser = await getUserByEmail(db, userEmail);
+    const dbUser = await getUserByEmail(db, userEmail)
     if (!dbUser || !dbUser.length) {
-      await client.chat.postMessage({ channel, text: `User with email ${userEmail} not found in the database.`, thread_ts: ts });
-      return;
+      await client.chat.postMessage({
+        channel,
+        text: `User with email ${userEmail} not found in the database.`,
+        thread_ts: ts,
+      })
+      return
     }
 
-    const processedText = text.replace(/<@.*?>\s*/, "").trim();
+    const processedText = text.replace(/<@.*?>\s*/, "").trim()
 
-    Logger.info(`Calling SearchApi for query: "${processedText}"`);
-    
-    let results: any[] = [];
-    
+    Logger.info(`Calling SearchApi for query: "${processedText}"`)
+
+    let results: any[] = []
+
     try {
       // Create a context object for SearchApi with the necessary parameters
       const mockContext = {
@@ -68,177 +89,119 @@ app.event("app_mention", async ({ event, client }) => {
           if (key === config.JwtPayloadKey) {
             return {
               sub: dbUser[0].email,
-              workspaceId: dbUser[0].workspaceExternalId || 'default',
-              role: dbUser[0].role || 'user'
-            };
+              workspaceId: dbUser[0].workspaceExternalId || "default",
+              role: dbUser[0].role || "user",
+            }
           }
-          return undefined;
+          return undefined
         },
         req: {
           valid: (type: string) => {
-            if (type === 'query') {
+            if (type === "query") {
               return {
                 query: processedText,
-                groupCount: false,  // We don't need group counts for Slack results
-                page: 10,           // Number of results to show
-                app: null,          // Search all apps
-                entity: null,       // Search all entities
+                groupCount: false, // We don't need group counts for Slack results
+                page: 10, // Number of results to show
+                app: null, // Search all apps
+                entity: null, // Search all entities
                 offset: 0,
-                debug: false
-              };
+                debug: false,
+              }
             }
-            return {};
-          }
+            return {}
+          },
         },
-        json: (data: any) => data
-      };
-      
+        json: (data: any) => data,
+      }
+
       try {
         // Now we can directly call SearchApi since we fixed the destructuring issue
-        const searchResults = await SearchApi(mockContext as any);
-        
+        const searchResults = await SearchApi(mockContext as any)
+
         // Extract results from the response
         if (searchResults && Array.isArray((searchResults as any).results)) {
-          results = (searchResults as any).results;
-          Logger.info(`Found ${results.length} search results from SearchApi`);
+          results = (searchResults as any).results
+          Logger.info(`Found ${results.length} search results from SearchApi`)
         } else {
-          Logger.warn(`SearchApi returned unexpected structure`);
+          Logger.warn(`SearchApi returned unexpected structure`)
         }
       } catch (apiError) {
         // If this fails, log the specific error
-        Logger.error(apiError, "Error in SearchApi call");
-        throw new Error(`SearchApi error: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
+        Logger.error(apiError, "Error in SearchApi call")
+        throw new Error(
+          `SearchApi error: ${apiError instanceof Error ? apiError.message : "Unknown error"}`,
+        )
       }
     } catch (error: unknown) {
       // Type the error properly
-      const searchError = error instanceof Error 
-        ? error 
-        : new Error(typeof error === 'string' ? error : 'Unknown error');
-      
-      Logger.error(searchError, "Error in search operation");
-      await client.chat.postMessage({ 
-        channel, 
-        text: `I couldn't complete your search for "${processedText}". Please try again later.`, 
-        thread_ts: ts 
-      });
-      return; // Exit early
+      const searchError =
+        error instanceof Error
+          ? error
+          : new Error(typeof error === "string" ? error : "Unknown error")
+
+      Logger.error(searchError, "Error in search operation")
+      await client.chat.postMessage({
+        channel,
+        text: `I couldn't complete your search for "${processedText}". Please try again later.`,
+        thread_ts: ts,
+      })
+      return // Exit early
     }
     
-    // Format search results for Slack
+    // Format search results for Slack using modular formatters
     if (results.length > 0) {
-      // Log a sample result to debug the structure
-      Logger.info(`Sample search result: ${JSON.stringify(results[0])}`);
+      Logger.info(`Found ${results.length} search results`);
       
-      // Get the best result (first one)
-      const topResult = results[0];
-      
-      // Extract title from various possible fields
-      let title = 'Untitled';
-      if (topResult.subject) title = topResult.subject;
-      else if (topResult.title) title = topResult.title;
-      else if (topResult.name) title = topResult.name;
-      
-      // Extract content or snippet
-      let snippet = '';
-      if (topResult.content) snippet = topResult.content;
-      else if (topResult.snippet) snippet = topResult.snippet;
-      else if (topResult.chunks_summary && topResult.chunks_summary.length > 0) {
-        snippet = topResult.chunks_summary[0].chunk || '';
-        snippet = snippet.replace(/<[^>]*>/g, '');
-      }
-      
-      // Clean and truncate snippet
-      if (snippet) {
-        snippet = snippet.replace(/\s+/g, ' ').trim();
-        snippet = snippet.length > 200 ? `${snippet.substring(0, 200)}...` : snippet;
-      }
-      
-      // Get metadata
-      const url = topResult.url || '';
-      const docType = topResult.type || '';
-      let author = 'Unknown';
-      let dateStr = '';
-      
-      if (topResult.from) author = topResult.from;
-      if (topResult.timestamp) {
-        const date = new Date(topResult.timestamp);
-        dateStr = date.toLocaleDateString();
-      }
-      
-      // Create the main message
-      const contextualIntro = `Hey <@${user}>! Based on your question above, we found a link from your teammates that might have relevant information for you.`;
-      
-      // Build blocks for rich formatting
-      const blocks = [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: contextualIntro
-          }
-        },
-        {
-          type: "divider"
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*<${url}|${title}>*\n${snippet || 'No preview available'}`
-          }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `📄 By ${author}${dateStr ? ` • Updated ${dateStr}` : ''}${docType ? ` • ${docType}` : ''}`
-            }
-          ]
-        },
-        {
-          type: "actions",
-          elements: [
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "Share in channel"
-              },
-              style: "primary",
-              action_id: "share_result",
-              value: JSON.stringify({ url, title, query: processedText })
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "👎 Not helpful"
-              },
-              action_id: "not_helpful",
-              value: JSON.stringify({ query: processedText, resultId: topResult.id || 'unknown' })
-            }
-          ]
-        }
-      ];
-      
-      // Add "See more results" section if there are more results
-      if (results.length > 1) {
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `<${url}|See more results in Glean> (${results.length} total results)`
-          }
-        });
-      }
-      
+      // Initial message with brief info - this is visible in the channel
       await client.chat.postMessage({
         channel,
         thread_ts: ts,
-        blocks: blocks,
-        text: `Search results for: "${processedText}"` // Fallback text
+        text: `Hey <@${user}>! I found ${results.length} results for your query. Check out the thread for details.`,
+        blocks: createSearchIntroBlocks(user, results.length)
       });
+      
+      // Send a thread message with header
+      await client.chat.postMessage({
+        channel,
+        thread_ts: ts,
+        text: `Top ${Math.min(3, results.length)} results for "${processedText}"`,
+        blocks: createSearchHeaderBlocks(processedText, Math.min(3, results.length))
+      });
+      
+      // Display up to 3 results, each in its own message for better visibility
+      const displayResults = results.slice(0, 3);
+      
+      // Send each result as a separate message in the thread
+      for (let i = 0; i < displayResults.length; i++) {
+        const result = displayResults[i];
+        
+        // Create formatted blocks for this result
+        const resultBlocks = createSingleResultBlocks(result, i, processedText);
+        
+        // Get title for fallback text
+        let title = 'Untitled';
+        if (result.subject) title = result.subject;
+        else if (result.title) title = result.title;
+        else if (result.name) title = result.name;
+        
+        // Send this result as its own message in the thread
+        await client.chat.postMessage({
+          channel,
+          thread_ts: ts,
+          blocks: resultBlocks,
+          text: `Result ${i+1}: ${title}` // Fallback text
+        });
+      }
+      
+      // Add "See more results" message if there are more than 3 results
+      if (results.length > 3) {
+        await client.chat.postMessage({
+          channel,
+          thread_ts: ts,
+          blocks: createMoreResultsBlocks(results.length, 3),
+          text: `${results.length - 3} more results available`
+        });
+      }
       
     } else {
       await client.chat.postMessage({
@@ -249,8 +212,12 @@ app.event("app_mention", async ({ event, client }) => {
     }
     
   } catch (error: any) {
-    Logger.error(error, "Error processing app_mention event");
-    await client.chat.postMessage({ channel, text: `An error occurred: ${error.message}`, thread_ts: ts });
+    Logger.error(error, "Error processing app_mention event")
+    await client.chat.postMessage({
+      channel,
+      text: `An error occurred: ${error.message}`,
+      thread_ts: ts,
+    })
   }
 });
 
@@ -260,20 +227,50 @@ app.action("share_result", async ({ ack, body, client }) => {
   
   try {
     const actionValue = JSON.parse((body as any).actions[0].value);
-    const { url, title, query } = actionValue;
+    const { url, title, query, resultId } = actionValue;
     
-    // Share the result in the channel
+    // Create a simplified set of blocks for the shared message
+    const blocks = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${title}*`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Shared by <@${(body as any).user.id}> in response to: "${query}"`
+        }
+      }
+    ];
+    
+    // Add link to view original if URL is available
+    if (url) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `<${url}|View original document> 🔗`
+        }
+      });
+    }
+    
+    // Share the result in the channel with clean formatting
     await client.chat.postMessage({
       channel: (body as any).channel.id,
-      text: `🔗 *${title}*\n${url}\n\n_Shared in response to: "${query}"_`
+      text: `${title} - Shared by <@${(body as any).user.id}>`,
+      blocks: blocks
     });
     
-    // Update the original message to show it was shared
-    await client.chat.update({
+    // Show confirmation only to the user who shared
+    await client.chat.postEphemeral({
       channel: (body as any).channel.id,
-      ts: (body as any).message.ts,
-      blocks: (body as any).message.blocks,
-      text: "Result shared in channel!"
+      user: (body as any).user.id,
+      text: "Result shared in channel successfully!",
+      blocks: createShareConfirmationBlocks()
     });
     
   } catch (error) {
@@ -294,7 +291,8 @@ app.action("not_helpful", async ({ ack, body, client }) => {
     await client.chat.postEphemeral({
       channel: (body as any).channel.id,
       user: (body as any).user.id,
-      text: "Thanks for your feedback! We'll use this to improve our search results."
+      text: "Thanks for your feedback! We'll use this to improve our search results.",
+      blocks: createFeedbackConfirmationBlocks(actionValue.query)
     });
     
   } catch (error) {
@@ -302,4 +300,4 @@ app.action("not_helpful", async ({ ack, body, client }) => {
   }
 });
 
-export default app;
+export default app
