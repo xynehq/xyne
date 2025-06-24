@@ -50,7 +50,7 @@ export const updateMetricsFromThread = ({
   totalGmailToBeIngestedCount.inc({ email, account_type: AuthType.ServiceAccount, status: OperationStatus.Success }, totalMails)
   totalSkippedMails.inc({ email, account_type: AuthType.ServiceAccount, status: OperationStatus.Success }, skippedMail)
   metadataFiles.inc({ file_type: GooglePeopleEntity.Contacts, mime_type: "google_people", email, status: OperationStatus.Success }, contactsCount)
-  metadataFiles.inc({ file_type: CalendarEntity.Event, mime_type: "google_calendar_events", status: "SUCCESS", email }, eventsCount)
+  metadataFiles.inc({ file_type: CalendarEntity.Event, mime_type: "google_calendar_events", status: OperationStatus.Success, email }, eventsCount)
   totalIngestedFiles.inc({ mime_type: DriveMime.PDF, status: OperationStatus.Success, email, file_type: DriveEntity.PDF }, pdfCount)
   totalIngestedFiles.inc({ mime_type: DriveMime.Docs, status: OperationStatus.Success, email, file_type: DriveEntity.Docs }, docCount)
   totalIngestedFiles.inc({ mime_type: DriveMime.Sheets, status: OperationStatus.Success, email, file_type: DriveEntity.Sheets }, sheetsCount)

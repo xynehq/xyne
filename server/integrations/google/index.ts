@@ -1881,8 +1881,7 @@ const insertFilesForUser = async (
               file_type: fileType,
             })
               if(fileType == DriveEntity.Docs) {
-                insertedDocCount++
-                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs`)
+               loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs`)
                 sendProgressToServer({
                 userEmail: userEmail,
                 messageCount: 0,
@@ -1902,7 +1901,6 @@ const insertFilesForUser = async (
                 totalBlockedPdfs: 0})
               }
               if(fileType == DriveEntity.Slides) {
-                insertedSlideCount++
                 loggerWithChild({email: userEmail}).info(`Sending Progress for inserted slides`)
                 sendProgressToServer({
                 userEmail: userEmail,
@@ -1923,7 +1921,6 @@ const insertFilesForUser = async (
                 totalBlockedPdfs: 0})
               }
               if(fileType == DriveEntity.Misc) {
-                insertedDriveFileCount++
                 loggerWithChild({email: userEmail}).info(`Sending Progress for inserted drive files`)
                 sendProgressToServer({
                 userEmail: userEmail,
@@ -3448,7 +3445,7 @@ export const ServiceAccountIngestMoreUsers = async (
     const usersToProcess = await listUsersByEmails(admin, emailsToIngest)
 
     if (usersToProcess.length === 0) {
-      Logger.info(
+      Logger.warn(
         `No valid Google users found for the provided emails: ${emailsToIngest.join(
           ", ",
         )} (jobId: ${jobId}). Aborting ingest more operation.`,
@@ -3482,7 +3479,7 @@ export const ServiceAccountIngestMoreUsers = async (
       )
     }
     if (uniqueUsersToProcess.length === 0) {
-      Logger.info(
+      Logger.warn(
         `No users with valid emails found after deduplication for emails: ${emailsToIngest.join(
           ", ",
         )} (jobId: ${jobId}). Aborting ingest more operation.`,

@@ -435,10 +435,10 @@ interface ProgressMetrics {
   totalBlockedPdfs: number;
 }
 
-export const sendProgressToServer = (metrics: ProgressMetrics) => {
+export const sendProgressToServer = async (metrics: ProgressMetrics) => {
   Logger.info(`Updating Progress for Script`);
 
-  fetch(`${METRICS_SERVER_URL}/update-metrics`, {
+  await fetch(`${METRICS_SERVER_URL}/update-metrics`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
