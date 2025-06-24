@@ -1725,8 +1725,12 @@ export const withToolQueryPrompt = (
   userContext: string,
   toolContext: string,
   toolOutput: string,
+  agentprompt?: string
 ): string => {
   return `
+    # Context of the agent {priority}
+    ${agentprompt || ''}
+
     You are a permission aware retrieval-augmented generation (RAG) system.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
@@ -1740,13 +1744,13 @@ export const withToolQueryPrompt = (
     ---
     **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
 
-    Output should be in the following:
+   ### Response Instructions:
+    - If the query is **asking for structured data** (e.g., list of files, metrics, tables, summaries), return output in requested format.
+    - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
+    - Cite any context-based information using [index] format, matching the provided source indices.
+    - **Do NOT** reject any query. Respond using the available context only.
 
-    - Your response focusing on **Context** and give all citations within response in [index] format.
-    - Response should be concised and appropriate output for the given query.
-    - If the user makes a statement leading to a regular conversation, then you can directly response.
-
-    Make sure you always comply with these steps and only produce valid response.
+    Be concise, accurate, and context-aware in all replies.
   `
 }
 

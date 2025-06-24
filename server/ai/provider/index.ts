@@ -1383,10 +1383,9 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      parsedAgentPrompt.prompt
     )
-    params.systemPrompt = parsedAgentPrompt.prompt
-      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
-      : defaultSystemPrompt
+    params.systemPrompt = defaultSystemPrompt
   } else {
     params.systemPrompt = withToolQueryPrompt(
       userContext,
