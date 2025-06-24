@@ -165,6 +165,7 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
+import { mapGithubToolResponse } from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -181,6 +182,7 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
 const checkAndYieldCitationsForAgent = function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -193,21 +195,19 @@ const checkAndYieldCitationsForAgent = function* (
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
-      if (item.source.docId) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      } else {
-        Logger.error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
-        )
+
+      if (!item?.source?.docId) {
+        Logger.info("[checkAndYieldCitationsForAgent] No docId found for citation, skipping")
+        continue
+      } 
+
+      yield {
+        citation: {
+          index: citationIndex,
+          item: item.source,
+        },
       }
+      yieldedCitations.add(citationIndex)
     }
   }
 }
@@ -292,12 +292,10 @@ async function* getToolContinuationIterator(
       try {
         const parsableBuffer = cleanBuffer(buffer)
         parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
-        // If we have a null answer, break this inner loop and continue outer loop
-        // seen some cases with just "}"
+
         if (parsed.answer === null || parsed.answer === "}") {
           break
         }
-
         // If we have an answer and it's different from what we've seen
         if (parsed.answer && currentAnswer !== parsed.answer) {
           if (currentAnswer === "") {
@@ -565,7 +563,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const maxIterations = 9
           let iterationCount = 0
           let answered = false
-
+          let isCustomMCP = false
           await logAndStreamReasoning({
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
@@ -591,6 +589,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               try {
                 if ("url" in connector.config) {
+                  isCustomMCP = true
                   // MCP SSE
                   const config = connector.config as z.infer<
                     typeof MCPClientConfig
@@ -1034,11 +1033,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                       arguments: toolParams,
                     })
 
-                    // --- Process and Normalize the MCP Response ---
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
 
-                    // Safely parse the response text
                     try {
                       if (
                         mcpToolResponse.content &&
@@ -1048,23 +1045,56 @@ export const MessageWithToolsApi = async (c: Context) => {
                         const parsedJson = JSON.parse(
                           mcpToolResponse.content[0].text,
                         )
-                        formattedContent = flattenObject(parsedJson)
-                          .map(([key, value]) => `- ${key}: ${value}`)
-                          .join("\n")
+                        if (isCustomMCP) {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          // Convert the formatted response into a standard MinimalAgentFragment
+                          let mainContentParts = []
+                          if (parsedJson.title)
+                            mainContentParts.push(`Title: ${parsedJson.title}`)
+                          if (parsedJson.body)
+                            mainContentParts.push(`Body: ${parsedJson.body}`)
+                          if (parsedJson.name)
+                            mainContentParts.push(`Name: ${parsedJson.name}`)
+                          if (parsedJson.description)
+                            mainContentParts.push(
+                              `Description: ${parsedJson.description}`,
+                            )
 
-                        // Convert the formatted response into a standard MinimalAgentFragment
-                        const fragmentId = `mcp-${connectorId}-${toolName}}`
-                        newFragments.push({
-                          id: fragmentId,
-                          content: formattedContent,
-                          source: {
-                            app: Apps.GITHUB_MCP, // Or derive dynamically if possible
-                            docId: "", // Use a unique ID for the doc
-                            title: `Output from tool: ${toolName}`,
-                            entity: SystemEntity.SystemInfo,
-                          },
-                          confidence: 1.0,
-                        })
+                          if (mainContentParts.length > 2) {
+                            formattedContent = mainContentParts.join("\n")
+                          } else {
+                            formattedContent = `Tool Response: ${flattenObject(
+                              parsedJson,
+                            )
+                              .map(([key, value]) => `- ${key}: ${value}`)
+                              .join("\n")}`
+                          }
+
+                          newFragments.push({
+                            id: `${baseFragmentId}-generic`,
+                            content: formattedContent,
+                            source: {
+                              app: Apps.MCP,
+                              docId: "",
+                              title: `Response from ${toolName}`,
+                              entity: SystemEntity.SystemInfo,
+                              url:
+                                parsedJson.html_url ||
+                                parsedJson.url ||
+                                undefined,
+                            },
+                            confidence: 0.8,
+                          })
+                        } else {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          ;({ formattedContent, newFragments } =
+                            mapGithubToolResponse(
+                              toolName,
+                              parsedJson,
+                              baseFragmentId,
+                              sub,
+                            ))
+                        }
                       }
                     } catch (parsingError) {
                       loggerWithChild({ email: sub }).error(

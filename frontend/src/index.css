@@ -124,3 +124,11 @@ html {
   @apply prevent-overflow;
   word-break: break-all;
 }
+
+.doto-heading {
+  font-family: "Doto", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 700;
+  font-style: normal;
+  font-variation-settings: "ROND" 0;
+}
