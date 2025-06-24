@@ -1845,9 +1845,6 @@ const insertFilesForUser = async (
         email: userEmail,
       })
 
-      let insertedDocCount = 0
-      let insertedSlideCount = 0
-      let insertedDriveFileCount = 0
 
       for (const doc of allFiles) {
         // determine the  file type here so we can insert in metrics data
