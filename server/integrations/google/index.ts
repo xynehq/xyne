@@ -1726,6 +1726,8 @@ const insertFilesForUser = async (
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
           driveFilesInserted++
           pdfsInserted++
+          loggerWithChild({email: userEmail}).info(`Sending Progress for Ingetsed pdfs`)
+          sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,pdfsInserted,0,0,0,0,0,0)
           loggerWithChild({ email: userEmail! }).info(
             `Inserted ${driveFilesInserted} PDFs`,
           )
@@ -1741,8 +1743,6 @@ const insertFilesForUser = async (
             1,
           )
         }
-        loggerWithChild({email: userEmail}).info(`Sending Progress for Ingetsed pdfs`)
-        sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,pdfsInserted,0,0,0,0,0,0)
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
@@ -1840,12 +1840,18 @@ const insertFilesForUser = async (
             })
               if(fileType == DriveEntity.Docs) {
                 insertedDocCount++
+                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs`)
+                sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,insertedDocCount,0,0,0,0,0)
               }
               if(fileType == DriveEntity.Slides) {
                 insertedSlideCount++
+                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted slides`)
+                sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,0,0, insertedSlideCount, 0,0,0)
               }
               if(fileType == DriveEntity.Misc) {
                 insertedDriveFileCount++
+                loggerWithChild({email: userEmail}).info(`Sending Progress for inserted drive files`)
+                sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,0,0, 0, insertedDriveFileCount,0,0)
               }
   
           }
@@ -1871,6 +1877,8 @@ const insertFilesForUser = async (
         }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
+      loggerWithChild({email: userEmail}).info(`Sending Progress for inserted sheets`)
+      sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,0,sheetsObj.count, 0, 0,0,0)
       totalIngestedFiles.inc(
         {
           mime_type: "application/vnd.google-apps.spreadsheet",
@@ -1888,9 +1896,7 @@ const insertFilesForUser = async (
         `Inserted a total of ${driveFilesInserted} drive files`,
       )
       totalIngestionDuration()
-      loggerWithChild({email: userEmail}).info(`Sending Progress for inserted docs, sheets, slides, files`)
-      sendProgressToServer(userEmail,0,0,0,0,0,0,0,0,0,insertedDocCount,sheetsObj.count, insertedSlideCount, insertedDriveFileCount,0,0)
-    }
+      }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     loggerWithChild({ email: userEmail! }).error(
