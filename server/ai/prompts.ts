@@ -1233,7 +1233,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     4. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
     5. Output JSON in the following structure:
        {
-         "answer": "<string or null>",
+         "answer": "Formatted response string with citations following the specified format. Use [index] format",
          "queryRewrite": "<string or null>"
        }
        - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
@@ -1740,17 +1740,13 @@ export const withToolQueryPrompt = (
     ---
     **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
 
-    Output should be in the following JSON format:
+    Output should be in the following:
 
-    # Response Format
-    {
-      "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
-    }
-    - "answer" should be concised and appropriate output for the given query.
-    
-    - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    - Your response focusing on **Context** and give all citations within response in [index] format.
+    - Response should be concised and appropriate output for the given query.
+    - If the user makes a statement leading to a regular conversation, then you can directly response.
 
-    Make sure you always comply with these steps and only produce the JSON output described.
+    Make sure you always comply with these steps and only produce valid response.
   `
 }
 

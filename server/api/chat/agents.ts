@@ -197,9 +197,11 @@ const checkAndYieldCitationsForAgent = function* (
       const item = results[citationIndex - 1]
 
       if (!item?.source?.docId) {
-        Logger.info("[checkAndYieldCitationsForAgent] No docId found for citation, skipping")
+        Logger.info(
+          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+        )
         continue
-      } 
+      }
 
       yield {
         citation: {
@@ -290,35 +292,18 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        const parsableBuffer = cleanBuffer(buffer)
-        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
+        yield { text: chunk.text }
 
-        if (parsed.answer === null || parsed.answer === "}") {
-          break
-        }
-        // If we have an answer and it's different from what we've seen
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          if (currentAnswer === "") {
-            // First valid answer - send the whole thing
-            yield { text: parsed.answer }
-          } else {
-            // Subsequent chunks - send only the new part
-            const newText = parsed.answer.slice(currentAnswer.length)
-            yield { text: newText }
-          }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
-          currentAnswer = parsed.answer
-        }
+        yield* checkAndYieldCitationsForAgent(
+          chunk.text,
+          yieldedCitations,
+          results,
+          previousResultsLength,
+        )
       } catch (e) {
-        // If we can't parse the JSON yet, continue accumulating
+        Logger.error(`Error parsing LLM output: ${e}`)
         continue
       }
-      // }
     }
 
     if (chunk.cost) {
@@ -790,14 +775,18 @@ export const MessageWithToolsApi = async (c: Context) => {
                   for (const tool of tools) {
                     const parsedTool = selectToolSchema.safeParse(tool)
                     if (parsedTool.success && parsedTool.data.toolSchema) {
+                      console.log(parsedTool.data, " toolSchema")
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
+                        parsedTool.data.toolName,
+                        parsedTool.data.description ?? "",
                       )}\n\n`
                     }
                   }
                 }
               }
             }
+            console.log(toolsPrompt, "tools")
 
             const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,

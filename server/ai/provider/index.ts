@@ -1134,8 +1134,12 @@ export const mailPromptJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
+  let defaultReasoning = isReasoning
   if (!params.modelId) {
     params.modelId = defaultFastModel
+  }
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
   }
   if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentEmailPromptJson(
@@ -1143,6 +1147,19 @@ export const mailPromptJsonStream = (
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
     )
+  } else if (defaultReasoning) {
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else {
     params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   }
