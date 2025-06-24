@@ -9,6 +9,7 @@ import {
   requestResponseLatency,
 } from "@/metrics/app/app-metrics"
 import config from "@/config"
+import { object } from "zod"
 
 const { JwtPayloadKey } = config
 
@@ -30,41 +31,63 @@ const time = (start: number) => {
 }
 
 export const getLogger = (loggerType: Subsystem) => {
-  const isProduction = process.env.NODE_ENV === "production"
+  const isProduction = process.env.NODE_ENV === "production";
 
+  if (isProduction) {
+    const destination = pino.destination(1); // stdout
+
+    return pino(
+      {
+        name: loggerType,
+        // base: undefined, // remove pid, hostname
+        timestamp: false,
+        formatters: {
+          level: (label) => ({ level: label }),
+          log: (object) => {
+            const { msg, ...rest } = object;
+            return { msg, ...rest };
+          },
+        },
+        mixin(_mergeObject, _level) {
+          const stack = new Error().stack?.split("\n");
+          const caller = stack?.[4]?.trim();
+          return caller && !caller.includes("unknown") ? { caller } : {};
+        },
+      },
+      {
+        write: (str) => {
+          try {
+            const obj = JSON.parse(str);
+            const { level, name, msg, ...rest } = obj;
+            const reordered = JSON.stringify({ level, name, msg, ...rest });
+            destination.write(reordered + "\n");
+          } catch {
+            destination.write(str);
+          }
+        },
+      }
+    );
+  }
+
+  // Dev logger
   return pino({
     name: loggerType,
-    ...(isProduction
-      ? {
-          timestamp: pino.stdTimeFunctions.isoTime,
-          formatters: { level: (label) => ({ level: label }) },
-        }
-      : {
-          transport: {
-            target: "pino-pretty",
-            options: {
-              colorize: true,
-              colorizeObjects: true,
-              errorLikeObjectKeys: [
-                "err",
-                "error",
-                "error_stack",
-                "stack",
-                "apiErrorHandlerCallStack",
-              ],
-              ignore: "pid,hostname",
-            },
-          },
-        }),
-    mixin(_mergeObject, _level) {
-      const stack = new Error().stack?.split("\n")
-      const caller = stack?.[4]?.trim() // This skips internal logger frames
-      return isProduction && caller && !caller.includes("unknown")
-        ? { caller }
-        : {}
+    transport: {
+      target: "pino-pretty",
+      options: {
+        colorize: true,
+        errorLikeObjectKeys: [
+          "err",
+          "error",
+          "error_stack",
+          "stack",
+          "apiErrorHandlerCallStack",
+        ],
+        ignore: "pid,hostname",
+      },
     },
-  })
-}
+  });
+};
 
 const logRequest = (
   logger: Logger,
