@@ -416,49 +416,53 @@ export const checkDownloadsFolder = async (
 }
 
 
-export const sendProgressToServer = (userEmail:string,
-   messageCount:number,
-   attachmentCount: number,
-   failedMessages: number,
-   failedAttachments: number,
-   totalMailsToBeIngested:number,
-   totalMailsSkipped:number,
-   insertedEventCount:number,
-   insertedContactsCount:number,
-   insertedpdfCount:number,
-   insertedDocCount:number,
-   insertedSheetCount:number,
-   insertedSlideCount:number,
-   insertedDriveFileCount:number,
-   totalDriveflesToBeIngested:number,
-   totalBlockedPdfs:number,
-   ) => {
-          Logger.info(`Updating Progress for Script`)
-            fetch(`${METRICS_SERVER_URL}/update-metrics`, {
-            method: "POST",
-              headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
-            },
-            body: JSON.stringify({
-              email: userEmail,
-              messageCount: messageCount,
-              attachmentCount: attachmentCount,
-              failedMessages: failedMessages,
-              failedAttachments: failedAttachments,
-              totalMails: totalMailsToBeIngested,
-              skippedMail: totalMailsSkipped,
-              eventsCount: insertedEventCount,
-              contactsCount: insertedContactsCount,
-              pdfCount: insertedpdfCount,
-              docCount: insertedDocCount,
-              sheetsCount: insertedSheetCount,
-              slidesCount: insertedSlideCount,
-              fileCount: insertedDriveFileCount,
-              totalDriveFiles: totalDriveflesToBeIngested,
-              blockedPdfs: totalBlockedPdfs
-        }),
-      }).catch((err) => {
-            Logger.warn("Failed to send metrics to server", { err })
-   })
+interface ProgressMetrics {
+  userEmail: string;
+  messageCount: number;
+  attachmentCount: number;
+  failedMessages: number;
+  failedAttachments: number;
+  totalMailsToBeIngested: number;
+  totalMailsSkipped: number;
+  insertedEventCount: number;
+  insertedContactsCount: number;
+  insertedpdfCount: number;
+  insertedDocCount: number;
+  insertedSheetCount: number;
+  insertedSlideCount: number;
+  insertedDriveFileCount: number;
+  totalDriveflesToBeIngested: number;
+  totalBlockedPdfs: number;
 }
+
+export const sendProgressToServer = (metrics: ProgressMetrics) => {
+  Logger.info(`Updating Progress for Script`);
+
+  fetch(`${METRICS_SERVER_URL}/update-metrics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
+    },
+    body: JSON.stringify({
+      email: metrics.userEmail,
+      messageCount: metrics.messageCount,
+      attachmentCount: metrics.attachmentCount,
+      failedMessages: metrics.failedMessages,
+      failedAttachments: metrics.failedAttachments,
+      totalMails: metrics.totalMailsToBeIngested,
+      skippedMail: metrics.totalMailsSkipped,
+      eventsCount: metrics.insertedEventCount,
+      contactsCount: metrics.insertedContactsCount,
+      pdfCount: metrics.insertedpdfCount,
+      docCount: metrics.insertedDocCount,
+      sheetsCount: metrics.insertedSheetCount,
+      slidesCount: metrics.insertedSlideCount,
+      fileCount: metrics.insertedDriveFileCount,
+      totalDriveFiles: metrics.totalDriveflesToBeIngested,
+      blockedPdfs: metrics.totalBlockedPdfs,
+    }),
+  }).catch((err) => {
+    Logger.warn("Failed to send metrics to server", { err });
+  });
+};
