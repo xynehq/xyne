@@ -1672,6 +1672,59 @@ export const ChatMessage = ({
                       components={{
                         a: renderMarkdownLink,
                         code: Code,
+                        table: ({ node, ...props }) => (
+                          <div className="overflow-x-auto max-w-full my-2">
+                            <table
+                              style={{
+                                borderCollapse: "collapse",
+                                borderStyle: "hidden",
+                                tableLayout: "auto",
+                                minWidth: "100%",
+                                maxWidth: "none",
+                              }}
+                              className="w-auto dark:bg-slate-800"
+                              {...props}
+                            />
+                          </div>
+                        ),
+                        th: ({ node, ...props }) => (
+                          <th
+                            style={{
+                              border: "none",
+                              padding: "8px 12px",
+                              textAlign: "left",
+                              overflowWrap: "break-word",
+                              wordBreak: "break-word",
+                              maxWidth: "300px",
+                              minWidth: "100px",
+                              whiteSpace: "normal",
+                            }}
+                            className="dark:text-white font-semibold"
+                            {...props}
+                          />
+                        ),
+                        td: ({ node, ...props }) => (
+                          <td
+                            style={{
+                              border: "none",
+                              padding: "8px 12px",
+                              overflowWrap: "break-word",
+                              wordBreak: "break-word",
+                              maxWidth: "300px",
+                              minWidth: "100px",
+                              whiteSpace: "normal",
+                            }}
+                            className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
+                            {...props}
+                          />
+                        ),
+                        tr: ({ node, ...props }) => (
+                          <tr
+                            style={{ border: "none" }}
+                            className="bg-white dark:bg-[#1E1E1E]"
+                            {...props}
+                          />
+                        ),
                       }}
                     />
                   </div>
@@ -1706,10 +1759,10 @@ export const ChatMessage = ({
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
                             tableLayout: "auto",
-                            width: "100%",
-                            maxWidth: "100%",
+                            minWidth: "100%",
+                            maxWidth: "none",
                           }}
-                          className="min-w-full dark:bg-slate-800" // Table background for dark
+                          className="w-auto dark:bg-slate-800" // Table background for dark
                           {...props}
                         />
                       </div>
@@ -1718,11 +1771,15 @@ export const ChatMessage = ({
                       <th
                         style={{
                           border: "none",
-                          padding: "4px 8px",
+                          padding: "8px 12px",
                           textAlign: "left",
                           overflowWrap: "break-word",
+                          wordBreak: "break-word",
+                          maxWidth: "300px",
+                          minWidth: "100px",
+                          whiteSpace: "normal",
                         }}
-                        className="dark:text-white"
+                        className="dark:text-white font-semibold"
                         {...props}
                       />
                     ),
@@ -1730,11 +1787,14 @@ export const ChatMessage = ({
                       <td
                         style={{
                           border: "none",
-                          borderTop: "1px solid #e5e7eb", // Will need dark:border-gray-700
-                          padding: "4px 8px",
+                          padding: "8px 12px",
                           overflowWrap: "break-word",
+                          wordBreak: "break-word",
+                          maxWidth: "300px",
+                          minWidth: "100px",
+                          whiteSpace: "normal",
                         }}
-                        className="dark:border-gray-700 dark:text-white"
+                        className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
                         {...props}
                       />
                     ),
