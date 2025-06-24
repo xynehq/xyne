@@ -6,17 +6,12 @@ import { syncConnectorTools } from "@/db/tool"
 import { getErrorMessage } from "@/utils"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import {
-  syncJobDuration,
-  syncJobError,
-  syncJobSuccess,
-} from "@/metrics/sync/sync-metrics"
-import { Apps } from "@/search/types"
+import { Apps } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Queue).child({ module: "tool-sync" })
 
 export const handleToolSync = async () => {
-  const startTime = Date.now()
+  let client: Client | null = null
   try {
     Logger.info("Starting tool synchronization job")
 
@@ -25,7 +20,7 @@ export const handleToolSync = async () => {
 
       Logger.info({ connector }, "Connector found")
 
-      const client = new Client({
+      client = new Client({
         name: `connector-${connector.id}`,
         version: connector.config.version,
       })
@@ -49,9 +44,6 @@ export const handleToolSync = async () => {
       )
     })
 
-    const endTime = Date.now()
-    syncJobSuccess.inc({ sync_job_name: "tool-sync" }, 1)
-    syncJobDuration.observe({ sync_job_name: "tool-sync" }, endTime - startTime)
     Logger.info("Tool synchronization job finished successfully")
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -59,12 +51,14 @@ export const handleToolSync = async () => {
       error,
       `Unhandled error while syncing tools: ${errorMessage} ${(error as Error).stack}`,
     )
-    syncJobError.inc(
-      {
-        sync_job_name: "tool-sync",
-        sync_job_error_type: `${errorMessage}`,
-      },
-      1,
-    )
+    throw error
+  } finally {
+    if (client) {
+      try {
+        await (client as Client)?.close()
+      } catch (closeError) {
+        Logger.warn(closeError, "Failed to close MCP client")
+      }
+    }
   }
 }

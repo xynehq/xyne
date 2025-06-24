@@ -139,8 +139,39 @@ const initWorkers = async () => {
   await setupServiceAccountCronjobs()
 
   await boss.work(SyncToolsQueue, async ([job]) => {
-    Logger.info("SyncToolsQueue worker called")
-    await handleToolSync()
+    const startTime = Date.now()
+    try {
+      await handleToolSync()
+      const endTime = Date.now()
+      syncJobSuccess.inc(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+        },
+        1,
+      )
+      syncJobDuration.observe(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+        },
+        endTime - startTime,
+      )
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Tools ${errorMessage} ${(error as Error).stack}`,
+      )
+      syncJobError.inc(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+          sync_job_error_type: `${errorMessage}`,
+        },
+        1,
+      )
+    }
   })
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
