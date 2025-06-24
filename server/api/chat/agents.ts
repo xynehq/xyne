@@ -1070,11 +1070,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${flattenObject(
+                            formattedContent = `Tool Response: ${typeof parsedJson !== "string" ? flattenObject(
                               parsedJson,
                             )
                               .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n")}`
+                              .join("\n") : parsedJson}`
                           }
 
                           newFragments.push({
