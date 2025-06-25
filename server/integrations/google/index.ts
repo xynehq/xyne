@@ -141,7 +141,9 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 //   return Logger.child({ email: email })
 // }
 
-export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations,{ module: "google" })
+export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
+  module: "google",
+})
 
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 Logger.info("Gmail worker initialized")
@@ -195,7 +197,7 @@ const initializeGmailWorker = () => {
         )
       }
     } else if (result.type === WorkerResponseTypes.Stats) {
-      loggerWithChild({email: result.userEmail}).info(
+      loggerWithChild({ email: result.userEmail }).info(
         `Main Thread: Received stats for ${result.userEmail}, type: ${result.statType}, count: ${result.count}, jobId: ${jobIdFromResult}`,
       ) // ADD THIS LOG
       if (!jobIdFromResult) {
@@ -213,7 +215,7 @@ const initializeGmailWorker = () => {
           result.count,
         )
       } else {
-        loggerWithChild({email: result.userEmail}).warn(
+        loggerWithChild({ email: result.userEmail }).warn(
           `Main Thread: No active tracker found for jobId: ${jobIdFromResult} when trying to update stats. (User: ${result.userEmail}, StatType: ${result.statType}, Count: ${result.count})`,
         )
       }
@@ -299,7 +301,9 @@ export const listUsersByEmails = async (
         )
         users.push(res.data)
       } catch (error) {
-        loggerWithChild({email: email}).warn(`User ${email} not found: ${error}`)
+        loggerWithChild({ email: email }).warn(
+          `User ${email} not found: ${error}`,
+        )
         // Skip if user doesn't exist
       }
     }
@@ -670,7 +674,7 @@ const insertCalendarEvents = async (
     // Check if the error is specifically the "notACalendarUser" error
     if (error?.response?.status === 403) {
       // Log the issue and return empty results
-      loggerWithChild({email: userEmail!}).warn(
+      loggerWithChild({ email: userEmail! }).warn(
         `User ${userEmail} is not signed up for Google Calendar. Returning empty event set.`,
       )
       return { events: [], calendarEventsToken: "" }
@@ -776,7 +780,7 @@ const insertCalendarEvents = async (
         }
       }
     } catch (error) {
-      loggerWithChild({email: userEmail!}).error(
+      loggerWithChild({ email: userEmail! }).error(
         error,
         `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
       )
@@ -807,7 +811,7 @@ const insertCalendarEvents = async (
 export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // Logger.info("handleGoogleOauthIngestion", job.data)
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
-  const logger = loggerWithChild({email: data.email})
+  const logger = loggerWithChild({ email: data.email })
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -1048,20 +1052,23 @@ const handleGmailIngestionForServiceAccount = async (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const msgId = `${userEmail}_${jobId}_${uuidv4()}` // Make msgId more unique with jobId
-    const timeout = setTimeout(() => {
-      loggerWithChild({email: userEmail!}).error(
-        `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId}, msgId: ${msgId})`,
-      )
-      const promiseHandlers = pendingRequests.get(msgId)
-      if (promiseHandlers) {
-        pendingRequests.delete(msgId)
-        reject(
-          new Error(
-            `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId})`,
-          ),
+    const timeout = setTimeout(
+      () => {
+        loggerWithChild({ email: userEmail! }).error(
+          `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId}, msgId: ${msgId})`,
         )
-      }
-    }, 60*60*60*1000)
+        const promiseHandlers = pendingRequests.get(msgId)
+        if (promiseHandlers) {
+          pendingRequests.delete(msgId)
+          reject(
+            new Error(
+              `Gmail ingestion timeout for user: ${userEmail} (jobId: ${jobId})`,
+            ),
+          )
+        }
+      },
+      60 * 60 * 60 * 1000,
+    )
     // 60hrs timeout
     pendingRequests.set(msgId, {
       userEmail,
@@ -1084,7 +1091,7 @@ const handleGmailIngestionForServiceAccount = async (
       startDate,
       endDate,
     })
-    loggerWithChild({email: userEmail!}).info(
+    loggerWithChild({ email: userEmail! }).info(
       `Sent message to worker for ${userEmail} (jobId: ${jobId}, msgId: ${msgId})`,
     )
   })
@@ -1094,7 +1101,7 @@ const handleGmailIngestionForServiceAccount = async (
 // one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
   const jobId = uuidv4()
-  loggerWithChild({email: data.email!}).info(
+  loggerWithChild({ email: data.email! }).info(
     `handleGoogleServiceAccountIngestion starting with jobId: ${jobId}`,
     data,
   )
@@ -1136,13 +1143,13 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     const usersToProcess = Array.from(uniqueUsersMap.values())
 
     if (usersToProcess.length !== usersToQuery.length) {
-      loggerWithChild({email: data.email!}).warn(
+      loggerWithChild({ email: data.email! }).warn(
         `Removed ${usersToQuery.length - usersToProcess.length} duplicate or unidentifiable (no email) users from initial query (jobId: ${jobId})`,
       )
     }
 
     if (usersToProcess.length === 0) {
-      loggerWithChild({email: data.email!}).warn(
+      loggerWithChild({ email: data.email! }).warn(
         `No users with valid emails to process for connectorId: ${data.connectorId} (jobId: ${jobId}). Aborting.`,
       )
       // Potentially update connector status to Failed or Connected if no users is an acceptable state.
@@ -1151,7 +1158,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
       return
     }
 
-    loggerWithChild({email: data.email!}).info(
+    loggerWithChild({ email: data.email! }).info(
       `Ingesting for ${usersToProcess.length} users (jobId: ${jobId})`,
     )
     tracker.setTotalUsers(usersToProcess.length)
@@ -1177,7 +1184,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
         if (!userEmail) {
-          loggerWithChild({email: userEmail!}).error(
+          loggerWithChild({ email: userEmail! }).error(
             `handleGoogleServiceAccountIngestion: Could not determine a valid email for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping.`,
           )
           tracker.markUserComplete(
@@ -1186,7 +1193,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           return null
         }
 
-        loggerWithChild({email: userEmail!}).info(
+        loggerWithChild({ email: userEmail! }).info(
           `started for ${userEmail} (jobId: ${jobId})`,
         )
         const userJwtClient = createJwtClient(serviceAccountKey, userEmail) // Renamed
@@ -1232,7 +1239,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           totalMail: mailCountExcludingPromotions,
           totalDrive: driveFileCount,
         })
-        loggerWithChild({email: userEmail!}).info(
+        loggerWithChild({ email: userEmail! }).info(
           `Total files: ${driveFileCount}, Total mail: ${mailCountExcludingPromotions} for ${userEmail} (jobId: ${jobId})`,
         )
 
@@ -1260,7 +1267,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           insertCalendarEvents(userJwtClient, userEmail, tracker),
         ])
 
-        loggerWithChild({email: userEmail!}).info(
+        loggerWithChild({ email: userEmail! }).info(
           `Ingestion completed for ${userEmail} (jobId: ${jobId})`,
         )
         tracker.markUserComplete(userEmail)
@@ -1368,12 +1375,16 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           status: ConnectorStatus.Connected,
         })
         .where(eq(connectors.id, connector!.id))
-      loggerWithChild({email: data.email!}).info(`status updated (jobId: ${jobId})`)
-      loggerWithChild({email: data.email!}).info(`job completed (jobId: ${jobId})`)
+      loggerWithChild({ email: data.email! }).info(
+        `status updated (jobId: ${jobId})`,
+      )
+      loggerWithChild({ email: data.email! }).info(
+        `job completed (jobId: ${jobId})`,
+      )
       if (connector!.externalId) closeWs(connector!.externalId)
     })
   } catch (error) {
-    loggerWithChild({email: data.email!}).error(
+    loggerWithChild({ email: data.email! }).error(
       error,
       `handleGoogleServiceAccountIngestion (jobId: ${jobId}) failed: ${(error as Error).message}`,
     )
@@ -1393,11 +1404,11 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
       cause: error as Error,
     })
   } finally {
-    loggerWithChild({email: data.email!}).info(
+    loggerWithChild({ email: data.email! }).info(
       `Main Thread: About to delete tracker for jobId: ${jobId} in handleGoogleServiceAccountIngestion`,
     ) // ADD THIS LOG
     activeJobTrackers.delete(jobId)
-    loggerWithChild({email: data.email!}).info(
+    loggerWithChild({ email: data.email! }).info(
       `handleGoogleServiceAccountIngestion (jobId: ${jobId}) finished. Tracker removed.`,
     )
   }
@@ -1470,7 +1481,7 @@ export const getPresentationToBeIngested = async (
 
     // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
     if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `Text Length exceeded for ${presentation.name}, indexing with empty content`,
       )
       chunks = []
@@ -1510,7 +1521,7 @@ export const getPresentationToBeIngested = async (
 
     return presentationToBeIngested
   } catch (error) {
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Error in getting presentation data with id ${presentation?.id}`,
     )
@@ -1574,7 +1585,7 @@ const googleSlidesVespa = async (
         isNaN(sizeBytes) ? 0 : sizeBytes,
       )
     } catch (error) {
-      loggerWithChild({email: userEmail!}).error(
+      loggerWithChild({ email: userEmail! }).error(
         error,
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
@@ -1630,6 +1641,7 @@ const insertFilesForUser = async (
       let initialCount = pageFiles.length
       try {
         const existenceMap = await ifDocumentsExist(fileIds)
+
 
         pageFiles = filterUnchanged(existenceMap, pageFiles)
 
@@ -1705,7 +1717,9 @@ const insertFilesForUser = async (
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
           driveFilesInserted++
-          loggerWithChild({email: userEmail!}).info(`Inserted ${driveFilesInserted} PDFs`)
+          loggerWithChild({ email: userEmail! }).info(
+            `Inserted ${driveFilesInserted} PDFs`,
+          )
         } catch (error) {
           ingestionErrorsTotal.inc(
             {
@@ -1721,7 +1735,7 @@ const insertFilesForUser = async (
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
-      loggerWithChild({email: userEmail}).info(
+      loggerWithChild({ email: userEmail }).info(
         `Inserted ${driveFilesInserted} files of type ${DriveEntity.PDF}`,
       )
 
@@ -1789,14 +1803,16 @@ const insertFilesForUser = async (
                 ? DriveEntity.Slides
                 : DriveEntity.Misc
 
-        loggerWithChild({email: userEmail!}).info(
+        loggerWithChild({ email: userEmail! }).info(
           `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType}, FileType: ${fileType}`,
         )
         try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
-          driveFilesInserted++;
-          loggerWithChild({email: userEmail!}).info(`Mime type: ${doc.mimeType}`)
+          driveFilesInserted++
+          loggerWithChild({ email: userEmail! }).info(
+            `Mime type: ${doc.mimeType}`,
+          )
 
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
@@ -1808,12 +1824,12 @@ const insertFilesForUser = async (
               file_type: fileType,
             })
           }
-          loggerWithChild({email: userEmail!}).info(
+          loggerWithChild({ email: userEmail! }).info(
             `Inserted file of type ${fileType} with ID: ${doc.docId} and Name: ${doc.title},`,
           )
         } catch (error) {
           const errorMessage = getErrorMessage(error)
-          loggerWithChild({email: userEmail!}).error(
+          loggerWithChild({ email: userEmail! }).error(
             error,
             `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
           )
@@ -1840,13 +1856,17 @@ const insertFilesForUser = async (
         sheetsObj.count,
       )
 
-      loggerWithChild({email: userEmail!}).info(`finished ${initialCount} files`)
-      loggerWithChild({email: userEmail!}).info(`Inserted a total of ${driveFilesInserted} drive files`)
+      loggerWithChild({ email: userEmail! }).info(
+        `finished ${initialCount} files`,
+      )
+      loggerWithChild({ email: userEmail! }).info(
+        `Inserted a total of ${driveFilesInserted} drive files`,
+      )
       totalIngestionDuration()
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    loggerWithChild({email: userEmail!}).error(
+    loggerWithChild({ email: userEmail! }).error(
       error,
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
@@ -1940,7 +1960,7 @@ export const getAllSheetsFromSpreadSheet = async (
         }
       }
     } catch (error) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         error,
         `Failed to fetch sheets '${ranges.join(", ")}' from spreadsheet: ${(error as Error).message}`,
       )
@@ -1968,16 +1988,16 @@ export const getSpreadsheet = async (
     )
   } catch (error) {
     if (error instanceof GaxiosError) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
           `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
       )
     } else if (error instanceof Error) {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `Unexpected error while fetching drive changes: ${error.message}`,
       )
     } else {
-      loggerWithChild({email: email}).error(
+      loggerWithChild({ email: email }).error(
         `An unknown error occurred while fetching drive changes.`,
       )
     }
@@ -2132,7 +2152,7 @@ export const getSheetsListFromOneSpreadsheet = async (
       return []
     }
   } catch (error) {
-    loggerWithChild({email: userEmail}).error(
+    loggerWithChild({ email: userEmail }).error(
       error,
       `Error getting all sheets list from spreadhseet with id ${spreadsheet.id}`,
     )
@@ -2190,7 +2210,7 @@ const googleSheetsVespa = async (
       //   sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
       // }
     } catch (error) {
-      loggerWithChild({email: userEmail!}).error(
+      loggerWithChild({ email: userEmail! }).error(
         error,
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
         error,
@@ -2303,7 +2323,7 @@ export const googlePDFsVespa = async (
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
-  loggerWithChild({email: userEmail!}).info(
+  loggerWithChild({ email: userEmail! }).info(
     `Starting PDF processing for ${pdfsMetadata.length} files for user ${userEmail}`,
   )
   // a flag just for the error to know
@@ -2311,13 +2331,13 @@ export const googlePDFsVespa = async (
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
-      loggerWithChild({email: userEmail!}).info(
+      loggerWithChild({ email: userEmail! }).info(
         `Processing PDF: ID: ${pdf.id}, Name: ${pdf.name} for user ${userEmail}`,
       )
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-        loggerWithChild({email: userEmail!}).warn(
+        loggerWithChild({ email: userEmail! }).warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
         blockedFilesTotal.inc({
@@ -2342,7 +2362,7 @@ export const googlePDFsVespa = async (
       const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
-        loggerWithChild({email: userEmail!}).debug(
+        loggerWithChild({ email: userEmail! }).debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
         const endExtractionTimer = extractionDuration.startTimer({
@@ -2398,7 +2418,7 @@ export const googlePDFsVespa = async (
           updatedAt: new Date(pdf.modifiedTime!).getTime(),
         }
       } catch (error) {
-        loggerWithChild({email: userEmail!}).error(
+        loggerWithChild({ email: userEmail! }).error(
           error,
           `Error getting PDF files: ${error} ${(error as Error).stack}`,
           error,
@@ -2577,7 +2597,7 @@ export const insertContact = async (
 ) => {
   const docId = contact.resourceName || ""
   if (!docId) {
-    loggerWithChild({email: owner}).error(`Id does not exist for ${entity}`)
+    loggerWithChild({ email: owner }).error(`Id does not exist for ${entity}`)
     return
     // throw new ContactMappingError({
     //   integration: Apps.GoogleDrive,
@@ -2668,12 +2688,12 @@ const insertContactsToVespa = async (
     email: owner,
   })
   try {
-    loggerWithChild({email: owner}).info(`Inserting Contacts`)
+    loggerWithChild({ email: owner }).info(`Inserting Contacts`)
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts, owner)
       tracker.updateUserStats(owner, StatType.Contacts, 1)
     }
-    loggerWithChild({email: owner}).info(`Inserting Other Contacts`)
+    loggerWithChild({ email: owner }).info(`Inserting Other Contacts`)
     for (const contact of otherContacts) {
       await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
       tracker.updateUserStats(owner, StatType.Contacts, 1)
@@ -2681,13 +2701,13 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      loggerWithChild({email: owner!}).error(
+      loggerWithChild({ email: owner! }).error(
         error,
         `Could not insert contact: ${(error as Error).stack}`,
       )
       throw error
     } else {
-      loggerWithChild({email: owner!}).error(
+      loggerWithChild({ email: owner! }).error(
         error,
         `Error mapping contact: ${error} ${(error as Error).stack}`,
         error,
@@ -2770,7 +2790,7 @@ export const googleDocsVespa = async (
   connectorId: string,
   userEmail?: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  loggerWithChild({email: userEmail!}).info(
+  loggerWithChild({ email: userEmail! }).info(
     `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
   )
   // sendWebsocketMessage(
@@ -2783,7 +2803,7 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
-      loggerWithChild({email: userEmail!}).info(
+      loggerWithChild({ email: userEmail! }).info(
         `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
       )
       const endDownloadDuration = extractionDuration.startTimer({
@@ -2877,7 +2897,7 @@ export const googleDocsVespa = async (
         return result
       } catch (error) {
         const errorMessage = getErrorMessage(error)
-        loggerWithChild({email: userEmail!}).error(
+        loggerWithChild({ email: userEmail! }).error(
           error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
@@ -2926,7 +2946,7 @@ export async function getGmailCounts(
 
   if (!startDate && !endDate) {
     // No date filters: Use direct profile and label counts for overall totals
-    loggerWithChild({email: email??""}).info(
+    loggerWithChild({ email: email ?? "" }).info(
       "Gmail count: No date filters provided. Fetching overall totals.",
     )
     try {
@@ -2938,11 +2958,11 @@ export async function getGmailCounts(
         client,
       )
       messagesTotal = profile.data.messagesTotal ?? 0
-      loggerWithChild({email: email??""}).info(
+      loggerWithChild({ email: email ?? "" }).info(
         `Gmail count: Overall messagesTotal from profile: ${messagesTotal}`,
       )
     } catch (error) {
-      loggerWithChild({email: email??""}).error(
+      loggerWithChild({ email: email ?? "" }).error(
         error,
         `Error fetching Gmail profile for total count: ${(error as Error).message}`,
       )
@@ -2964,16 +2984,16 @@ export async function getGmailCounts(
         client,
       )
       promotionMessages = promoLabel.data.messagesTotal ?? 0
-      loggerWithChild({email: email??""}).info(
+      loggerWithChild({ email: email ?? "" }).info(
         `Gmail count: Overall promotionMessages from label: ${promotionMessages}`,
       )
     } catch (error: any) {
       if (error.code === 404) {
-        loggerWithChild({email: email??""}).warn(
+        loggerWithChild({ email: email ?? "" }).warn(
           "Promotions label (CATEGORY_PROMOTIONS) not found, assuming 0 promotion messages for overall count.",
         )
       } else {
-        loggerWithChild({email: email??""}).error(
+        loggerWithChild({ email: email ?? "" }).error(
           error,
           `Error fetching Promotions label count (overall): ${error.message}`,
         )
@@ -2982,7 +3002,7 @@ export async function getGmailCounts(
     }
   } else {
     // Date filters are present: Use messages.list with queries
-    loggerWithChild({email: email??""}).info(
+    loggerWithChild({ email: email ?? "" }).info(
       `Gmail count: Date filters present (startDate: ${startDate}, endDate: ${endDate}). Using query-based counts.`,
     )
     const dateFilters: string[] = []
@@ -3011,7 +3031,7 @@ export async function getGmailCounts(
       baseQuery = dateFilters.join(" AND ")
     }
 
-    loggerWithChild({email: email??""}).info(
+    loggerWithChild({ email: email ?? "" }).info(
       `Gmail count query: Final query string for total: "${baseQuery}"`,
     )
     let nextPageToken: any = null
@@ -3039,11 +3059,11 @@ export async function getGmailCounts(
         nextPageToken = messagesResponse.data.nextPageToken || null
       } while (nextPageToken)
 
-      loggerWithChild({email: email??""}).info(
+      loggerWithChild({ email: email ?? "" }).info(
         `Gmail count query: resultSizeEstimate for total (date-filtered): ${messagesTotal}`,
       )
     } catch (error) {
-      loggerWithChild({email: email??""}).error(
+      loggerWithChild({ email: email ?? "" }).error(
         error,
         `Error fetching date-filtered Gmail messages count: ${(error as Error).message}`,
       )
@@ -3054,7 +3074,7 @@ export async function getGmailCounts(
       dateFilters.length > 0
         ? `category:promotions AND ${dateFilters.join(" AND ")}`
         : "category:promotions"
-    loggerWithChild({email: email??""}).info(
+    loggerWithChild({ email: email ?? "" }).info(
       `Gmail count query: Promotions query string (date-filtered): "${promoQuery}"`,
     )
     try {
@@ -3075,14 +3095,14 @@ export async function getGmailCounts(
         promotionMessages += promoMessagesResponse.data.resultSizeEstimate ?? 0
         nextPageToken = promoMessagesResponse.data.nextPageToken || null
       } while (nextPageToken)
-      loggerWithChild({email: email??""}).info(
+      loggerWithChild({ email: email ?? "" }).info(
         `Gmail count query: resultSizeEstimate for promotions (date-filtered): ${promotionMessages}`,
       )
     } catch (error: any) {
       // Check if the error is specifically the "notACalendarUser" error (though this is gmail, the pattern might be similar for disabled services or specific errors)
       // For Gmail, a 404 on promotions with a query might just mean no results, or an invalid query component if not handled carefully.
       // The `category:promotions` is standard; a 404 here is less likely than with labels.get if the category itself is "missing"
-      loggerWithChild({email: email??""}).error(
+      loggerWithChild({ email: email ?? "" }).error(
         error,
         `Error fetching Promotions count (date-filtered): ${error.message}`,
       )
@@ -3094,7 +3114,7 @@ export async function getGmailCounts(
     0,
     messagesTotal - promotionMessages,
   )
-  loggerWithChild({email: email??""}).info(
+  loggerWithChild({ email: email ?? "" }).info(
     `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions} (startDate: ${startDate}, endDate: ${endDate})`,
   )
   return { messagesTotal, messagesExcludingPromotions }
@@ -3112,7 +3132,7 @@ export async function countDriveFiles(
   let nextPageToken: string | undefined
   const dateFilters: string[] = []
 
-  loggerWithChild({email: email??""}).info(`Started Counting Files`)
+  loggerWithChild({ email: email ?? "" }).info(`Started Counting Files`)
   if (startDate) {
     const startDateObj = new Date(startDate)
     const formattedStartDate = startDateObj.toISOString().split("T")[0]
@@ -3149,7 +3169,9 @@ export async function countDriveFiles(
     nextPageToken = res.data.nextPageToken as string | undefined
   } while (nextPageToken)
 
-  loggerWithChild({email: email??""}).info(`Counted ${fileCount} Drive files`)
+  loggerWithChild({ email: email ?? "" }).info(
+    `Counted ${fileCount} Drive files`,
+  )
   return fileCount
 }
 
@@ -3324,7 +3346,7 @@ export const ServiceAccountIngestMoreUsers = async (
           return null // Return null for skipped users
         }
 
-        loggerWithChild({email: userEmail}).info(
+        loggerWithChild({ email: userEmail }).info(
           `Started ingestion for additional user: ${userEmail} (jobId: ${jobId})`,
         )
 
@@ -3356,7 +3378,7 @@ export const ServiceAccountIngestMoreUsers = async (
         let totalMails = 0
         if (insertGmail) {
           try {
-            loggerWithChild({email: userEmail}).info(
+            loggerWithChild({ email: userEmail }).info(
               `Getting Gmail counts for user: ${userEmail} (jobId: ${jobId}) with date range: ${startDate} to ${endDate}`,
             )
             const gmailCounts = await getGmailCounts(
@@ -3368,11 +3390,11 @@ export const ServiceAccountIngestMoreUsers = async (
             mailCountExcludingPromotions =
               gmailCounts.messagesExcludingPromotions
             totalMails = gmailCounts.messagesTotal
-            loggerWithChild({email: userEmail}).info(
+            loggerWithChild({ email: userEmail }).info(
               `Gmail counts for ${userEmail} (jobId: ${jobId}): Total=${gmailCounts.messagesTotal}, Excluding Promotions=${mailCountExcludingPromotions}`,
             )
           } catch (error) {
-            loggerWithChild({email: userEmail}).error(
+            loggerWithChild({ email: userEmail }).error(
               error,
               `Failed to get Gmail counts for user ${userEmail} (jobId: ${jobId}): ${getErrorMessage(error)}`,
             )
