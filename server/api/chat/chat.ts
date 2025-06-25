@@ -3295,7 +3295,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters
+              parsed?.filters || {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -4333,7 +4333,7 @@ export const MessageRetryApi = async (c: Context) => {
                 )
               }
               const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters
+                parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
