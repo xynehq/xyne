@@ -9,9 +9,9 @@ import {
 } from "@/db/schema"
 export type { SelectAgent } // Re-export SelectAgent
 import { createId } from "@paralleldrive/cuid2"
-import type { TxnOrClient } from "@/types"
+import { Subsystem, type TxnOrClient } from "@/types"
 import { z } from "zod"
-import { and, desc, eq, isNull } from "drizzle-orm"
+import { and, desc, eq, isNull, sql } from "drizzle-orm"
 import { UserAgentRole } from "@/shared/types"
 import {
   grantUserAgentPermission,
@@ -20,9 +20,12 @@ import {
   getAgentsMadeByMe,
   getAgentsSharedToMe,
 } from "@/db/userAgentPermission"
+import { db } from "./client"
+import { getLoggerWithChild } from "@/logger"
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
+const loggerWithChild = getLoggerWithChild(Subsystem.Db)
 export const insertAgent = async (
   trx: TxnOrClient,
   agentData: Omit<InsertAgent, "externalId" | "userId" | "workspaceId">,
@@ -258,4 +261,51 @@ export const deleteAgentByExternalIdWithPermissionCheck = async (
   }
 
   return deleteAgentByExternalId(trx, agentExternalId, workspaceId)
+}
+
+export const removeAppIntegrationFromAllAgents = async (
+  trx: TxnOrClient,
+  appIntegrationNameToRemove: string,
+): Promise<void> => {
+  try {
+    // 1. Fetch only the agents that contain the specified app integration
+    const agentsToUpdate = await trx
+      .select()
+      .from(agents)
+      .where(
+        sql`${agents.appIntegrations} @> ${JSON.stringify([
+          appIntegrationNameToRemove,
+        ])}`,
+      )
+
+    loggerWithChild({ email: "rahul@juspay.com" }).info(
+      `Count of agents to update: ${agentsToUpdate.length}`,
+    )
+    if (agentsToUpdate.length === 0) {
+      // No agents to update
+      return
+    }
+
+    // 2. For each agent, remove the app integration and update the record
+    for (const agent of agentsToUpdate) {
+      const currentIntegrations =
+        (agent.appIntegrations as string[] | null) || []
+      const updatedIntegrations = currentIntegrations.filter(
+        (integration) => integration !== appIntegrationNameToRemove,
+      )
+
+      await trx
+        .update(agents)
+        .set({ appIntegrations: updatedIntegrations, updatedAt: new Date() })
+        .where(eq(agents.id, agent.id))
+    }
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Failed to remove app integration "${appIntegrationNameToRemove}" from all agents`,
+    )
+    throw new Error(
+      `Failed to remove app integration: ${appIntegrationNameToRemove}`,
+    )
+  }
 }

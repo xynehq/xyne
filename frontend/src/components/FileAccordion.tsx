@@ -8,6 +8,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
 import { api } from "@/api"
+import { ConfirmModal } from "@/components/ui/confirmModal"
+import {
+  dataSourceFileSchema,
+} from "../../../server/search/types"
+
 interface FileItem {
   docId?: string
   fileName: string
@@ -32,7 +37,17 @@ export default function FileAccordion({
   const [currentPage, setCurrentPage] = useState(1)
   const filesPerPage = 10
 
-  const handleDeleteFile = async (docId: string | undefined) => {
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmModalTitle, setConfirmModalTitle] = useState("")
+  const [confirmModalMessage, setConfirmModalMessage] = useState("")
+  const [confirmAction, setConfirmAction] = useState<
+    (() => Promise<void>) | null
+  >(null)
+
+  const handleDeleteFile = async (
+    docId: string | undefined,
+    fileName: string,
+  ) => {
     if (!docId) {
       toast({
         title: "Error",
@@ -42,32 +57,44 @@ export default function FileAccordion({
       return
     }
 
-    try {
-      const response = await api.search.document.delete.$post({
-        json: { docId, schema: fileSchema }, 
-      })
+    const action = async () => {
+      if (!docId) return
+      try {
+        const response = await api.search.document.delete.$post({
+          json: { docId, schema: dataSourceFileSchema },
+        })
 
-      if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || `Request failed with status ${response.status}`)
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(
+            errorText || `Request failed with status ${response.status}`,
+          )
+        }
+
+        setFiles((prevFiles) => prevFiles.filter((file) => file.docId !== docId))
+        toast({
+          title: "Success",
+          description: "File deleted successfully.",
+        })
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : "An unexpected error occurred during deletion."
+        setError(`Failed to delete file: ${errorMessage}`)
+        toast({
+          title: "Error",
+          description: `Failed to delete file: ${errorMessage}`,
+          variant: "destructive",
+        })
+        console.error("Error deleting file:", err)
       }
-
-      setFiles((prevFiles) => prevFiles.filter((file) => file.docId !== docId))
-      toast({
-        title: "Success",
-        description: "File deleted successfully.",
-      })
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred during deletion."
-      setError(`Failed to delete file: ${errorMessage}`) 
-      toast({
-        title: "Error",
-        description: `Failed to delete file: ${errorMessage}`,
-        variant: "destructive",
-      })
-      console.error("Error deleting file:", err)
     }
+
+    setConfirmModalTitle("Delete File")
+    setConfirmModalMessage(`Are you sure you want to delete the file "${fileName}"?`)
+    setConfirmAction(() => action)
+    setShowConfirmModal(true)
   }
 
   useEffect(() => {
@@ -199,6 +226,19 @@ export default function FileAccordion({
 
   return (
     <div className={`w-full max-w-4xl mx-auto ${className}`}>
+      <ConfirmModal
+        showModal={showConfirmModal}
+        setShowModal={(val) =>
+          setShowConfirmModal(val.open ?? showConfirmModal)
+        }
+        modalTitle={confirmModalTitle}
+        modalMessage={confirmModalMessage}
+        onConfirm={() => {
+          if (confirmAction) {
+            confirmAction()
+          }
+        }}
+      />
       <div className="w-full border dark:border-gray-700 rounded-lg">
         <div className="px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -208,7 +248,6 @@ export default function FileAccordion({
               {files.length})
             </span>
           </div>
-
           {files.length > 0 && (
             <div className="flex items-center gap-4">
               <span className="text-sm text-slate-600 dark:text-slate-400">
@@ -235,7 +274,7 @@ export default function FileAccordion({
           ) : (
             <div className="min-h-[680px]">
               <div className="space-y-2">
-                {currentFiles.map((file) => (
+                {currentFiles.map(file => (
                   <div
                     key={`${file.fileName}-${file.createdAt}`}
                     className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
@@ -255,9 +294,9 @@ export default function FileAccordion({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation() 
-                        handleDeleteFile(file.docId)
+                      onClick={e => {
+                        e.stopPropagation()
+                        handleDeleteFile(file.docId, file.fileName)
                       }}
                       className="text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
                       aria-label="Delete file"

@@ -29,7 +29,7 @@ import {
   type VespaSchema,
   type VespaDataSource,
   datasourceSchema,
-  datasourceFileSchema,
+  dataSourceFileSchema,
   type VespaDataSourceFile,
 } from "@/search/types"
 import {
