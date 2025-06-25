@@ -124,7 +124,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const start = Date.now()
 
     const offset = c.req.query("offset") ?? ""
-    const agentId = c.req.query("agentId") ? "true" : "false"
+    const agentId = c.req.query("agentId") ?? ""
 
     appRequest.inc(
       {
