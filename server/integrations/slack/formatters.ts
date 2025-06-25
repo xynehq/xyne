@@ -516,3 +516,291 @@ export function createSearchResultsModal(query: string, results: any[]): View {
     blocks: blocks,
   };
 }
+
+
+export const createAgentSelectionBlocks = (agents: any[]) => {
+  const blocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*🤖 Select an Agent to Chat With:*",
+      },
+    },
+    {
+      type: "divider",
+    },
+  ];
+
+  if (agents.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_No agents available. Contact your administrator to create agents._",
+      },
+    });
+    return blocks;
+  }
+
+  // Create agent selection options
+  const agentOptions = agents.slice(0, 10).map(agent => ({
+    text: {
+      type: "plain_text",
+      text: agent.name,
+      emoji: true,
+    },
+    value: agent.externalId,
+    description: {
+      type: "plain_text",
+      text: agent.description || "No description available",
+    },
+  }));
+
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "Choose an agent from the dropdown below:",
+    },
+    accessory: {
+      type: "static_select",
+      action_id: "select_agent",
+      placeholder: {
+        type: "plain_text",
+        text: "Select an agent...",
+        emoji: true,
+      },
+      options: agentOptions,
+    },
+  });
+
+  return blocks;
+};
+
+export const createAgentConversationModal = (
+  agentId: string,
+  agentName: string,
+  agentDescription?: string,
+  conversationHistory?: Array<{ role: string; content: string }>
+) => {
+  const blocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*🤖 ${agentName}*\n${agentDescription || "_No description available_"}`,
+      },
+    },
+    {
+      type: "divider",
+    },
+  ];
+
+  // Add conversation history if available
+  if (conversationHistory && conversationHistory.length > 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Conversation History:*",
+      },
+    });
+
+    // Show last 3 messages for context
+    const recentMessages = conversationHistory.slice(-3);
+    recentMessages.forEach(msg => {
+      const roleIcon = msg.role === 'user' ? '👤' : '🤖';
+      const roleText = msg.role === 'user' ? 'You' : agentName;
+      
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, 200)}${msg.content.length > 200 ? '...' : ''}`,
+        },
+      });
+    });
+
+    blocks.push({
+      type: "divider",
+    });
+  }
+
+  // Add input field for new message
+  blocks.push({
+    type: "input",
+    block_id: "message_input",
+    element: {
+      type: "plain_text_input",
+      action_id: "agent_message",
+      placeholder: {
+        type: "plain_text",
+        text: "Type your message to the agent...",
+      },
+      multiline: true,
+      max_length: 1000,
+    },
+    label: {
+      type: "plain_text",
+      text: "Your Message",
+    },
+  });
+
+  return {
+    type: "modal",
+    callback_id: `agent_conversation_${agentId}`,
+    title: {
+      type: "plain_text",
+      text: `Chat: ${agentName}`,
+      emoji: true,
+    },
+    submit: {
+      type: "plain_text",
+      text: "Send Message",
+      emoji: true,
+    },
+    close: {
+      type: "plain_text",
+      text: "Close",
+      emoji: true,
+    },
+    blocks: blocks,
+    private_metadata: JSON.stringify({
+      agent_id: agentId,
+      agent_name: agentName,
+    }),
+  };
+};
+
+export const createAgentResponseBlocks = (
+  agentName: string,
+  userQuestion: string,
+  agentResponse: string,
+  conversationId?: string,
+  citations?: any[],
+  metadata?: any
+) => {
+  const blocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `🤖 *${agentName}* responded:`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Your Question:* ${userQuestion}`,
+      },
+    },
+    {
+      type: "divider",
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Response:*\n${agentResponse}`,
+      },
+    },
+  ];
+
+  // Add citations if available
+  if (citations && citations.length > 0) {
+    blocks.push({
+      type: "divider",
+    });
+
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*📚 Sources:*",
+      },
+    });
+
+    citations.slice(0, 3).forEach((citation, index) => {
+      const citationText = citation.url 
+        ? `<${citation.url}|${citation.title || 'Source'}>`
+        : citation.title || 'Source';
+      
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${index + 1}. ${citationText}`,
+        },
+      });
+    });
+
+    if (citations.length > 3) {
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `_...and ${citations.length - 3} more sources_`,
+          },
+        ],
+      });
+    }
+  }
+
+  // Add action buttons
+  const actionElements = [];
+
+  if (conversationId) {
+    actionElements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Continue Chat",
+        emoji: true,
+      },
+      action_id: "continue_agent_conversation",
+      value: conversationId,
+    });
+  }
+
+  actionElements.push({
+    type: "button",
+    text: {
+      type: "plain_text",
+      text: "Share Response",
+      emoji: true,
+    },
+    style: "primary",
+    action_id: "share_agent_response",
+    value: JSON.stringify({
+      agent_name: agentName,
+      question: userQuestion,
+      response: agentResponse,
+      conversation_id: conversationId,
+    }),
+  });
+
+  if (actionElements.length > 0) {
+    blocks.push({
+      type: "actions",
+      elements: actionElements,
+    });
+  }
+
+  // Add metadata context if available
+  if (metadata) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `_Model: ${metadata.model || 'Unknown'} • Response time: ${metadata.responseTime || 'Unknown'}_`,
+        },
+      ],
+    });
+  }
+
+  return blocks;
+};
