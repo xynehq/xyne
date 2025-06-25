@@ -3,8 +3,13 @@ import { Button } from "@/components/ui/button"
 import { useState } from "react"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { api } from "@/api"
-import { toast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import { datasourceSchema } from "../../../server/search/types"
+
+interface AssociatedAgent {
+  name: string
+  externalId: string
+}
 
 interface DataSourceSidebarProps {
   dataSources: { name: string; docId: string }[]
@@ -21,6 +26,7 @@ export function DataSourceSidebar({
   onAddNewDataSource,
   onDataSourceDeleted,
 }: DataSourceSidebarProps) {
+  const { toast } = useToast()
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalTitle, setConfirmModalTitle] = useState("")
   const [confirmModalMessage, setConfirmModalMessage] = useState("")
@@ -31,46 +37,82 @@ export function DataSourceSidebar({
   const handleDeleteDataSource = async (docId: string, name: string) => {
     if (!docId) return
 
-    const action = async () => {
-      if (!docId) return
-      try {
-        const response = await api.search.document.delete.$post({
-          json: {
-            docId: docId,
-            schema: datasourceSchema,
-          },
-        })
-
-        if (response.ok) {
-          toast({
-            title: "Success",
-            description: "Data source deleted successfully.",
-          })
-          onDataSourceDeleted()
-        } else {
-          const errorText = await response.text()
-          throw new Error(
-            errorText || `Request failed with status ${response.status}`,
-          )
-        }
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "An unexpected error occurred."
-        toast({
-          title: "Error",
-          description: `Failed to delete data source: ${errorMessage}`,
-          variant: "destructive",
-        })
-        console.error("Error deleting data source:", err)
+    try {
+      // Fetch agents associated with the data source
+      const agentRes = await api.datasources[":dataSourceId"].agents.$get({
+        param: { dataSourceId: docId },
+      })
+      if (!agentRes.ok) {
+        throw new Error("Failed to fetch associated agents.")
       }
-    }
+      const associatedAgents: AssociatedAgent[] = await agentRes.json()
 
-    setConfirmModalTitle("Delete Data Source")
-    setConfirmModalMessage(
-      `Are you sure you want to delete the "${name}" data source and all its files?`,
-    )
-    setConfirmAction(() => action)
-    setShowConfirmModal(true)
+      // Prepare the confirmation message
+      let message = `Are you sure you want to delete the "${name}" data source and all its files?`
+      if (associatedAgents.length > 0) {
+        const AGENT_DISPLAY_LIMIT = 8
+        let agentNamesText
+        if (associatedAgents.length > AGENT_DISPLAY_LIMIT) {
+          const firstAgents = associatedAgents
+            .slice(0, AGENT_DISPLAY_LIMIT)
+            .map((agent) => agent.name)
+            .join(", ")
+          const remainingCount = associatedAgents.length - AGENT_DISPLAY_LIMIT
+          agentNamesText = `${firstAgents}, and ${remainingCount} more`
+        } else {
+          agentNamesText = associatedAgents
+            .map((agent) => agent.name)
+            .join(", ")
+        }
+        message += `\n\nThis data source is currently being used by the following agent(s): ${agentNamesText}.`
+      }
+
+      const action = async () => {
+        if (!docId) return
+        try {
+          const response = await api.search.document.delete.$post({
+            json: {
+              docId: docId,
+              schema: datasourceSchema,
+            },
+          })
+
+          if (response.ok) {
+            toast({
+              title: "Success",
+              description: "Data source deleted successfully.",
+            })
+            onDataSourceDeleted()
+          } else {
+            const errorText = await response.text()
+            throw new Error(
+              errorText || `Request failed with status ${response.status}`,
+            )
+          }
+        } catch (err) {
+          const errorMessage =
+            err instanceof Error ? err.message : "An unexpected error occurred."
+          toast({
+            title: "Error",
+            description: `Failed to delete data source: ${errorMessage}`,
+            variant: "destructive",
+          })
+          console.error("Error deleting data source:", err)
+        }
+      }
+
+      setConfirmModalTitle("Delete Data Source")
+      setConfirmModalMessage(message)
+      setConfirmAction(() => action)
+      setShowConfirmModal(true)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Could not fetch agent information for this data source.",
+        variant: "destructive",
+      })
+      console.error("Error fetching agents for data source:", error)
+    }
   }
 
   return (

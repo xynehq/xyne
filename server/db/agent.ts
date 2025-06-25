@@ -278,7 +278,7 @@ export const removeAppIntegrationFromAllAgents = async (
         ])}`,
       )
 
-    loggerWithChild({ email: "rahul@juspay.com" }).info(
+    loggerWithChild().info(
       `Count of agents to update: ${agentsToUpdate.length}`,
     )
     if (agentsToUpdate.length === 0) {
@@ -307,5 +307,30 @@ export const removeAppIntegrationFromAllAgents = async (
     throw new Error(
       `Failed to remove app integration: ${appIntegrationNameToRemove}`,
     )
+  }
+}
+
+export const getAgentsByDataSourceId = async (
+  trx: TxnOrClient,
+  dataSourceId: string,
+): Promise<Pick<SelectAgent, "name" | "externalId">[]> => {
+  try {
+    const agentsWithDataSource = await trx
+      .select({
+        name: agents.name,
+        externalId: agents.externalId,
+      })
+      .from(agents)
+      .where(
+        sql`${agents.appIntegrations} @> ${JSON.stringify([dataSourceId])}`,
+      )
+
+    return agentsWithDataSource
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Failed to get agents for data source ID "${dataSourceId}"`,
+    )
+    throw new Error(`Failed to get agents for data source: ${dataSourceId}`)
   }
 }

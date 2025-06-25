@@ -71,7 +71,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, } from "@/api/dataSource" 
+import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, GetAgentsForDataSourceApi, } from "@/api/dataSource" 
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -241,6 +241,7 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
+  .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(

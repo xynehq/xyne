@@ -23,7 +23,10 @@ import { DeleteDocument } from "@/search/vespa"
 import type { VespaSchema } from "@/search/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
-import { removeAppIntegrationFromAllAgents } from "@/db/agent"
+import {
+  removeAppIntegrationFromAllAgents,
+  getAgentsByDataSourceId,
+} from "@/db/agent"
 import { db } from "@/db/client"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
@@ -348,6 +351,31 @@ export const DeleteDocumentApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Could not delete document due to an internal server error.",
     });
+  }
+}
+
+export const GetAgentsForDataSourceApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const dataSourceId = c.req.param("dataSourceId")
+
+  if (!dataSourceId) {
+    throw new HTTPException(400, { message: "Data source ID is required." })
+  }
+
+  try {
+    const agents = await getAgentsByDataSourceId(db, dataSourceId)
+    return c.json(agents)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({
+      email: userEmail,
+    }).error(
+      error,
+      `Failed to get agents for data source ${dataSourceId}: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to retrieve agents for the data source.",
+    })
   }
 }
 
