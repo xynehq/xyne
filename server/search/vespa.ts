@@ -447,6 +447,15 @@ export const HybridDefaultProfile = (
       )`
   }
 
+  const allApps = Object.values(Apps)
+  let includedApps: Apps[] = []
+
+  if (app) {
+    includedApps = [app]
+    excludedApps = allApps.filter((appItem) => appItem !== app)
+  } else {
+    includedApps = allApps.filter((appItem) => !excludedApps?.includes(appItem))
+  }
   // Start with AllSources and filter out excluded app schemas
   let newSources = AllSources
   if (excludedApps && excludedApps.length > 0) {
@@ -476,11 +485,6 @@ export const HybridDefaultProfile = (
       .join(", ")
   }
 
-  // Start with all apps and filter out excluded ones
-  const allApps = Object.values(Apps)
-  const includedApps = allApps.filter(
-    (appItem) => !excludedApps?.includes(appItem),
-  )
 
   // Build app-specific queries for included apps
   const appQueries: string[] = []

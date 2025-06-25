@@ -852,10 +852,9 @@ export const SearchQueryToolContextPrompt = (
     3. ${XyneTools.Search}: Search *content* across all sources. Params: query (req keywords), limit (opt), excludedIds (opt: string[]).
     4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
       Params: query (req keywords), app (req: MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'), limit (opt), excludedIds (opt: string[]).
-    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), from_days_ago (req), to_days_ago (req), limit (opt), excludedIds (opt: string[])
+    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. Params: query (req keywords), app (opt: If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive', 'googleworkspace'; else inferred based on item_type), entity (opt: specific kind of item if item_type is 'document' or 'file', e.g., 'spreadsheet', 'pdf', 'presentation'), from (req), to (req), limit (opt), 
     6. ${XyneTools.GetMailAttachment}: SPECIALIZED TOOL FOR EMAIL ATTACHMENTS ONLY
       Params: email_search_query (req: keywords to find emails with attachments), attachment_filter (opt: filter by filename/content), file_type (opt: filter by file type like 'pdf', 'doc'), date_from (opt: YYYY-MM-DD), date_to (opt: YYYY-MM-DD), limit (opt), offset (opt).
-    
     
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.

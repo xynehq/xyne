@@ -909,6 +909,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolParameters,
+                parameters: toolParams,
+              })
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,

@@ -264,8 +264,14 @@ export const filteredSearchTool: AgentTool = {
     app: {
       type: "string",
       description:
-        "The app to search in (MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'). Case-insensitive.",
-      required: true,
+        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
+      required: false,
+    },
+    entity: {
+      type: "string",
+      description:
+        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
+      required: false,
     },
     limit: {
       type: "number",
@@ -406,15 +412,27 @@ export const timeSearchTool: AgentTool = {
       description: "The keywords or question to search for.",
       required: true,
     },
-    from_days_ago: {
-      type: "number",
-      description: "Start search N days ago.",
+    from: {
+      type: "string",
+      description: "Start date for search (ISO 8601 format: YYYY-MM-DD).",
       required: true,
     },
-    to_days_ago: {
-      type: "number",
-      description: "End search N days ago (0 means today).",
+    to: {
+      type: "string",
+      description: "End date for search (ISO 8601 format: YYYY-MM-DD).",
       required: true,
+    },
+    app: {
+      type: "string",
+      description:
+        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
+      required: false,
+    },
+    entity: {
+      type: "string",
+      description:
+        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
+      required: false,
     },
     limit: {
       type: "number",
@@ -430,15 +448,19 @@ export const timeSearchTool: AgentTool = {
   execute: async (
     params: {
       query: string
-      from_days_ago: number
-      to_days_ago: number
+      from: string
+      to: string
       limit?: number
       excludedIds?: string[]
+      app?: Apps,
+      entity?: Entity | null,
     },
     span?: Span,
     email?: string,
+    userCtx?: string,
     agentPrompt?: string,
   ) => {
+    console.log("tool params in time search tool", params)
     const execSpan = span?.startSpan("execute_time_search_tool")
     try {
       if (!email) {
@@ -448,8 +470,8 @@ export const timeSearchTool: AgentTool = {
       }
       const searchLimit = params.limit || 10
       execSpan?.setAttribute("query", params.query)
-      execSpan?.setAttribute("from_days_ago", params.from_days_ago)
-      execSpan?.setAttribute("to_days_ago", params.to_days_ago)
+      execSpan?.setAttribute("from", params.from)
+      execSpan?.setAttribute("to", params.to)
       execSpan?.setAttribute("limit", searchLimit)
       if (params.excludedIds && params.excludedIds.length > 0) {
         execSpan?.setAttribute(
@@ -457,12 +479,8 @@ export const timeSearchTool: AgentTool = {
           JSON.stringify(params.excludedIds),
         )
       }
-      const DAY_MS = 24 * 60 * 60 * 1000
-      const now = Date.now()
-      const fromTime = now - params.from_days_ago * DAY_MS
-      const toTime = now - params.to_days_ago * DAY_MS
-      const from = Math.min(fromTime, toTime)
-      const to = Math.max(fromTime, toTime)
+      const from = new Date(params.from).getTime()
+      const to = new Date(params.to).getTime()
       execSpan?.setAttribute("from_date", new Date(from).toISOString())
       execSpan?.setAttribute("to_date", new Date(to).toISOString())
       let searchResults: VespaSearchResponse | null = null
@@ -479,8 +497,8 @@ export const timeSearchTool: AgentTool = {
           searchResults = await searchVespaAgent(
             params.query,
             email,
-            null,
-            null,
+            params.app || null,
+            params.entity || null,
             agentAppEnums,
             {
               limit: searchLimit,
@@ -493,7 +511,8 @@ export const timeSearchTool: AgentTool = {
         }
         execSpan?.setAttribute("agent_prompt", agentPrompt)
       } else {
-        searchResults = await searchVespa(params.query, email, null, null, {
+        console.log(from,to, "from to in time search tool")
+        searchResults = await searchVespa(params.query, email, params.app||null, params.entity || null, {
           limit: searchLimit,
           alpha: 0.5,
           timestampRange: { from, to },
@@ -522,7 +541,7 @@ export const timeSearchTool: AgentTool = {
         .slice(0, 3)
         .map((f) => `- \"${f.source.title || "Untitled"}\"`)
         .join("\n")
-      const summaryText = `Found ${fragments.length} results in time range (\`${params.from_days_ago}\` to \`${params.to_days_ago}\` days ago).\nTop items:\n${topItemsList}`
+      const summaryText = `Found ${fragments.length} results in time range (\`${params.from}\` to \`${params.to}\`).\nTop items:\n${topItemsList}`
       return { result: summaryText, contexts: fragments }
     } catch (error) {
       const errMsg = getErrorMessage(error)
