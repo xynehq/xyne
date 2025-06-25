@@ -72,9 +72,6 @@
     "uuid": "^11.0.0",
     "zod": "^3.24.1",
     "xlsx": "^0.18.5",
-    "canvas": "^3.1.0",
-    "libreoffice": "^0.4.5",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.3.31"
+    "libreoffice": "^0.4.5"
   }
 }

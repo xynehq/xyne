@@ -115,18 +115,20 @@ const convertToPdf = async (
       } catch {
         // File doesn't exist, no need to rename
       }
-    } else if (mimeType.startsWith("image/")) {
-      // For images, use ImageMagick convert
-      const { spawn } = await import("child_process")
-      await new Promise((resolve, reject) => {
-        const proc = spawn("convert", [inputFilePath, outputPdfPath])
-        proc.on("error", reject)
-        proc.on("exit", (code) => {
-          if (code === 0) resolve(undefined)
-          else reject(new Error(`ImageMagick exited with code ${code}`))
-        })
-      })
-    } else {
+    }
+    // else if (mimeType.startsWith("image/")) {  if you want to handle images
+    //   // For images, use ImageMagick convert
+    //   const { spawn } = await import("child_process")
+    //   await new Promise((resolve, reject) => {
+    //     const proc = spawn("convert", [inputFilePath, outputPdfPath])
+    //     proc.on("error", reject)
+    //     proc.on("exit", (code) => {
+    //       if (code === 0) resolve(undefined)
+    //       else reject(new Error(`ImageMagick exited with code ${code}`))
+    //     })
+    //   })
+    // }
+    else {
       throw new Error(`Unsupported file type for PDF conversion: ${mimeType}`)
     }
 
