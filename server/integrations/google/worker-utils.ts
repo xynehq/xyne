@@ -16,11 +16,25 @@ import {
 } from "@/integrations/google/config"
 import crypto from "node:crypto"
 import fs from "fs"
-import { readFile, writeFile } from "fs/promises"
+import { readFile, writeFile, rename, access } from "fs/promises"
 import path from "path"
 import { exec } from "child_process"
 import { promisify } from "util"
 import * as XLSX from "xlsx"
+import os from "os"
+
+const getDefaultLibreOfficePath = () => {
+  switch (os.platform()) {
+    case "darwin":
+      return "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    case "linux":
+      return "/usr/bin/soffice"
+    case "win32":
+      return "C:\\Program Files\\LibreOffice\\program\\soffice.exe"
+    default:
+      return "soffice" // Try PATH
+  }
+}
 
 const execAsync = promisify(exec)
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -67,22 +81,51 @@ const convertToPdf = async (
     ) {
       // For office documents, use LibreOffice
       const libreOfficePath =
-        process.env.LIBREOFFICE_PATH ||
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-      await execAsync(
-        `"${libreOfficePath}" --headless --convert-to pdf --outdir "${tempDir}" "${inputFilePath}"`,
-      )
+        process.env.LIBREOFFICE_PATH || getDefaultLibreOfficePath()
+      // Validate the path exists and is a file
+      if (
+        !fs.existsSync(libreOfficePath) ||
+        !fs.statSync(libreOfficePath).isFile()
+      ) {
+        throw new Error(`Invalid LibreOffice path: ${libreOfficePath}`)
+      }
+      const { spawn } = await import("child_process")
+      await new Promise((resolve, reject) => {
+        const proc = spawn(libreOfficePath, [
+          "--headless",
+          "--convert-to",
+          "pdf",
+          "--outdir",
+          tempDir,
+          inputFilePath,
+        ])
+        proc.on("error", reject)
+        proc.on("exit", (code) => {
+          if (code === 0) resolve(undefined)
+          else reject(new Error(`LibreOffice exited with code ${code}`))
+        })
+      })
       // LibreOffice creates PDF with same base name
       const libreOfficePdfPath = path.join(tempDir, `${inputFileName}.pdf`)
-      if (
-        fs.existsSync(libreOfficePdfPath) &&
-        libreOfficePdfPath !== outputPdfPath
-      ) {
-        fs.renameSync(libreOfficePdfPath, outputPdfPath)
+      try {
+        await access(libreOfficePdfPath)
+        if (libreOfficePdfPath !== outputPdfPath) {
+          await rename(libreOfficePdfPath, outputPdfPath)
+        }
+      } catch {
+        // File doesn't exist, no need to rename
       }
     } else if (mimeType.startsWith("image/")) {
       // For images, use ImageMagick convert
-      await execAsync(`convert "${inputFilePath}" "${outputPdfPath}"`)
+      const { spawn } = await import("child_process")
+      await new Promise((resolve, reject) => {
+        const proc = spawn("convert", [inputFilePath, outputPdfPath])
+        proc.on("error", reject)
+        proc.on("exit", (code) => {
+          if (code === 0) resolve(undefined)
+          else reject(new Error(`ImageMagick exited with code ${code}`))
+        })
+      })
     } else {
       throw new Error(`Unsupported file type for PDF conversion: ${mimeType}`)
     }
@@ -113,13 +156,16 @@ export const getGmailAttachmentChunks = async (
   const { attachmentId, filename, messageId, size, mimeType } =
     attachmentMetadata
   let attachmentChunks: string[] = []
+  let downloadAttachmentFilePath: string | null = null
+  let filePathForProcessing: string | null = null
+
   try {
     const hashInput = `${filename}_${messageId}`
     const fileExt = path.extname(filename)
     const hashFileName = hashPdfFilename(hashInput)
     if (hashFileName == null) return null
     const newfileName = `${hashFileName}${fileExt}`
-    const downloadAttachmentFilePath = path.join(downloadDir, newfileName)
+    downloadAttachmentFilePath = path.join(downloadDir, newfileName)
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -138,7 +184,7 @@ export const getGmailAttachmentChunks = async (
       downloadAttachmentFilePath,
     )
 
-    let filePathForProcessing = downloadAttachmentFilePath
+    filePathForProcessing = downloadAttachmentFilePath
 
     if (mimeType !== "application/pdf") {
       try {
@@ -166,8 +212,6 @@ export const getGmailAttachmentChunks = async (
           )
         }
 
-        // Clean up the original file if conversion failed
-        await deleteDocument(downloadAttachmentFilePath)
         return null
       }
     }
@@ -177,7 +221,6 @@ export const getGmailAttachmentChunks = async (
 
     const pdfSizeMB = size.value / (1024 * 1024)
     if (pdfSizeMB > MAX_GD_PDF_SIZE) {
-      await deleteDocument(filePathForProcessing)
       Logger.error(
         `Ignoring ${filename} as its more than ${MAX_GD_PDF_SIZE} MB`,
       )
@@ -187,11 +230,6 @@ export const getGmailAttachmentChunks = async (
     const docs = await safeLoadPDF(filePathForProcessing)
     if (!docs || docs.length === 0) {
       Logger.warn(`Could not get content for file: ${filename}. Skipping it`)
-
-      await deleteDocument(downloadAttachmentFilePath)
-      if (filePathForProcessing !== downloadAttachmentFilePath) {
-        await deleteDocument(filePathForProcessing)
-      }
       return null
     }
 
@@ -200,13 +238,23 @@ export const getGmailAttachmentChunks = async (
       .flatMap((doc) => chunkDocument(doc.pageContent))
       .map((v) => v.chunk)
       .filter((v) => v.trim())
-
-    await deleteDocument(downloadAttachmentFilePath)
-    if (filePathForProcessing !== downloadAttachmentFilePath) {
-      await deleteDocument(filePathForProcessing)
-    }
   } catch (error) {
     Logger.error(error, `Error in getting gmailAttachmentChunks`)
+  } finally {
+    // Cleanup logic - always delete temporary files
+    try {
+      if (downloadAttachmentFilePath) {
+        await deleteDocument(downloadAttachmentFilePath)
+      }
+      if (
+        filePathForProcessing &&
+        filePathForProcessing !== downloadAttachmentFilePath
+      ) {
+        await deleteDocument(filePathForProcessing)
+      }
+    } catch (cleanupError) {
+      Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
+    }
   }
 
   return attachmentChunks

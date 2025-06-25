@@ -14,8 +14,9 @@ const Logger = getLogger(Subsystem.Utils).child({
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
 
 /**
- * Pages through all mail documents in Vespa, extracting sender and recipient relationships.
- * Returns a nested map: { [hashedFrom]: { [hashedTo]: count } }
+ * Pages through all mail documents in Vespa using continuation-based pagination,
+ * extracting sender and recipient relationships.
+ * Uses continuation tokens for efficient pagination without offset limits.
  */
 export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
   // Simple hashing function using SHA-256
@@ -27,16 +28,18 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
   }
 
   const connectionMap: Record<string, Record<string, number>> = {}
-  let offset = 0
-  const maxOffset = 1000 // Vespa's configured limit
-  // Use a smaller limit to ensure we can paginate properly within Vespa's constraints
+  // Use a reasonable limit for each request
   const actualLimit = Math.min(limit, 200)
+  let continuation: string | undefined = undefined
 
-  while (offset < maxOffset) {
+  while (true) {
     const yql = encodeURIComponent(
       `select * from sources ${mailSchema} where true`,
     )
-    const url = `${vespaEndpoint}/search/?yql=${yql}&hits=${actualLimit}&offset=${offset}&ranking.profile=unranked&presentation.summary=default`
+    let url = `${vespaEndpoint}/search/?yql=${yql}&hits=${actualLimit}&ranking.profile=unranked&presentation.summary=default`
+    if (continuation) {
+      url += `&continuation=${encodeURIComponent(continuation)}`
+    }
 
     try {
       const response = await fetch(url, {
@@ -84,18 +87,10 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
         }
       }
 
-      // If we got fewer results than requested, we've reached the end
-      if (mails.length < actualLimit) {
-        break
-      }
-
-      offset += actualLimit
-
-      // Stop if we're approaching the offset limit
-      if (offset + actualLimit > maxOffset) {
-        Logger.warn(
-          `Reached Vespa offset limit of ${maxOffset}. Some documents may not be processed.`,
-        )
+      // Check for continuation token to determine if more results are available
+      if (data.root.continuation) {
+        continuation = data.root.continuation
+      } else {
         break
       }
     } catch (error) {
@@ -127,4 +122,9 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
   }
 }
 
-await buildUserConnectionMap()
+// if (require.main === module) {
+//   buildUserConnectionMap().catch((error) => {
+//     Logger.error(error, "Failed to build user connection map")
+//     process.exit(1)
+//   })
+// }
