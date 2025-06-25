@@ -70,7 +70,20 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
           ...(fields?.bcc || []),
         ]
 
-        if (!from || !Array.isArray(toList)) continue
+        if (
+          !from ||
+          typeof from !== "string" ||
+          !Array.isArray(toList) ||
+          toList.length === 0
+        )
+          continue
+
+        // Validate that all recipients are strings
+        const validRecipients = toList.filter(
+          (recipient) =>
+            typeof recipient === "string" && recipient.trim().length > 0,
+        )
+        if (validRecipients.length === 0) continue
 
         const hashedFrom = hashEmail(from)
 

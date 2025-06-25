@@ -12,7 +12,7 @@ import { chunkDocument } from "@/chunks"
 import { Apps, type Attachment } from "@/search/types"
 import {
   MAX_ATTACHMENT_PDF_SIZE,
-  MAX_GD_PDF_SIZE,
+  MAX_ATTACHMENT_TEXT_SIZE,
 } from "@/integrations/google/config"
 import crypto from "node:crypto"
 import fs from "fs"
@@ -193,6 +193,14 @@ export const getGmailAttachmentChunks = async (
           mimeType,
         )
       } catch (conversionError) {
+        const textStats = fs.statSync(downloadAttachmentFilePath)
+        const textSizeMB = textStats.size / (1024 * 1024)
+        if (textSizeMB > MAX_ATTACHMENT_TEXT_SIZE) {
+          Logger.warn(
+            `Text file ${filename} is too large (${textSizeMB}MB), skipping`,
+          )
+          return null
+        }
         if (mimeType === "text/plain") {
           const content = await readFile(downloadAttachmentFilePath, "utf8")
           attachmentChunks = chunkDocument(content)
@@ -220,9 +228,9 @@ export const getGmailAttachmentChunks = async (
     size.value = stats.size
 
     const pdfSizeMB = size.value / (1024 * 1024)
-    if (pdfSizeMB > MAX_GD_PDF_SIZE) {
+    if (pdfSizeMB > MAX_ATTACHMENT_PDF_SIZE) {
       Logger.error(
-        `Ignoring ${filename} as its more than ${MAX_GD_PDF_SIZE} MB`,
+        `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PDF_SIZE} MB`,
       )
       return null
     }
