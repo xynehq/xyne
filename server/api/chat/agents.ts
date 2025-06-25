@@ -2249,7 +2249,7 @@ export const AgentMessageApi = async (c: Context) => {
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
                 filters: {
-                  ...(parsed?.filters || {}),
+                  ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
                 },
