@@ -165,16 +165,18 @@ export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 // Schema for prompt generation request
 export const generatePromptSchema = z.object({
   requirements: z.string().min(1, "Requirements are required"),
-  modelId: z.string().optional().refine(
-    (value) => !value || Object.values(Models).includes(value as Models),
-    {
-      message: "Invalid modelId parameter",
-    }
-  ),
+  modelId: z
+    .string()
+    .optional()
+    .refine(
+      (value) => !value || Object.values(Models).includes(value as Models),
+      {
+        message: "Invalid modelId parameter",
+      },
+    ),
 })
 
 export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
-
 
 export const AutocompleteApi = async (c: Context) => {
   let email = ""

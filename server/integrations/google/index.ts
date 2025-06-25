@@ -1642,7 +1642,6 @@ const insertFilesForUser = async (
       try {
         const existenceMap = await ifDocumentsExist(fileIds)
 
-
         pageFiles = filterUnchanged(existenceMap, pageFiles)
 
         const skippedFilesCount = initialCount - pageFiles.length
