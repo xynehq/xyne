@@ -12,6 +12,7 @@ import {
   insert,
   GetDocument,
   UpdateDocument,
+  DeleteDocument,
   updateUserQueryHistory,
   SearchModes,
   searchVespaAgent,
@@ -25,6 +26,11 @@ import {
   APP_INTEGRATION_MAPPING,
   type VespaSearchResponse,
   type VespaUser,
+  type VespaSchema,
+  type VespaDataSource,
+  datasourceSchema,
+  dataSourceFileSchema,
+  type VespaDataSourceFile,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
