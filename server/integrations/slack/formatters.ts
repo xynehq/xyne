@@ -8,8 +8,6 @@ import type {
   View,
 } from "@slack/types";
 
-// Define a union type for all block types we use
-// Using 'any' for Block type to work around type checking issues with Slack's typing
 type Block = any;
 
 export function createAnalysisParentMessage(
@@ -464,7 +462,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
             emoji: true,
           },
           style: "primary",
-          action_id: "share_result_modal",
+          action_id: "share_from_modal",
           value: JSON.stringify({
             url: url,
             title: title,
