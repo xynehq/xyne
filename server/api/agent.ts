@@ -363,7 +363,7 @@ export const ListAgentsApi = async (c: Context) => {
 }
 
 export const GetWorkspaceUsersApi = async (c: Context) => {
-  let email=""
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub
@@ -394,7 +394,7 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
     return c.json(workspaceUsers)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Get Workspace Users Error: ${errMsg} ${(error as Error).stack}`,
     )
@@ -448,7 +448,7 @@ export const GetAgentPermissionsApi = async (c: Context) => {
     return c.json({ userEmails })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    loggerWithChild({email: email}).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Get Agent Permissions Error: ${errMsg} ${(error as Error).stack}`,
     )
