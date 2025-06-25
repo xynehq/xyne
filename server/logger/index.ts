@@ -124,6 +124,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const start = Date.now()
 
     const offset = c.req.query("offset") ?? ""
+    const agentId = c.req.query("agentId") ?? ""
 
     appRequest.inc(
       {
@@ -133,6 +134,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
         app_request_process_status: "received",
         email: sub,
         offset: offset,
+        agent_id: agentId,
       },
       1,
     )
