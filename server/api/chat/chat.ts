@@ -2747,7 +2747,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
-      Logger.info(`Routing to MessageWithToolsApi`)
+      loggerWithChild({email: email}).info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
 
@@ -2763,7 +2763,7 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
       if (!isAgentic && agentDetails) {
-        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
+        loggerWithChild({email: email}).info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
     }
