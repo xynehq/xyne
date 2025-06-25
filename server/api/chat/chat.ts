@@ -3068,7 +3068,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email), // process it for consistency citations
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3548,7 +3548,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email), // process it for consistency citations
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
