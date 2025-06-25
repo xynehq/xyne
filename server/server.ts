@@ -509,6 +509,7 @@ app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
@@ -526,10 +527,32 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
-  "/admin/integrations",
+  "/integrations/fileupload",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
+app.get(
+  "/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+// Catch-all for any other integration routes
+app.get(
+  "/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get("/admin/integrations", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/admin/integrations/google",
   AuthRedirect,
@@ -537,6 +560,16 @@ app.get(
 )
 app.get(
   "/admin/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/*",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
