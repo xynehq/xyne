@@ -411,6 +411,13 @@ function AgentComponent() {
     fetchInitialAgentForChat()
   }, [agentId, showToast])
 
+  // Cleanup EventSource on component unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      cleanupPromptGenerationEventSource()
+    }
+  }, [])
+
   type AgentFilter = "all" | "madeByMe" | "sharedToMe"
 
   const fetchAgents = async (filter: AgentFilter = "all") => {
@@ -527,6 +534,14 @@ function AgentComponent() {
     setSelectedUsers((prev) => prev.filter((user) => user.id !== userId))
   }
 
+  // Helper function to properly cleanup EventSource
+  const cleanupPromptGenerationEventSource = () => {
+    if (promptGenerationEventSourceRef.current) {
+      promptGenerationEventSourceRef.current.close()
+      promptGenerationEventSourceRef.current = null
+    }
+  }
+
   const generatePromptFromRequirements = async (requirements: string) => {
     if (!requirements.trim()) {
       showToast({
@@ -535,6 +550,11 @@ function AgentComponent() {
         variant: "destructive",
       })
       return
+    }
+
+    // Prevent multiple simultaneous connections
+    if (promptGenerationEventSourceRef.current) {
+      cleanupPromptGenerationEventSource()
     }
 
     setIsGeneratingPrompt(true)
@@ -586,8 +606,7 @@ function AgentComponent() {
               description: "Prompt generated successfully!",
             })
           }
-          promptGenerationEventSourceRef.current?.close()
-          promptGenerationEventSourceRef.current = null
+          cleanupPromptGenerationEventSource()
           setIsGeneratingPrompt(false)
         },
       )
@@ -609,8 +628,7 @@ function AgentComponent() {
               variant: "destructive",
             })
           }
-          promptGenerationEventSourceRef.current?.close()
-          promptGenerationEventSourceRef.current = null
+          cleanupPromptGenerationEventSource()
           setIsGeneratingPrompt(false)
         },
       )
@@ -622,8 +640,7 @@ function AgentComponent() {
           description: "Connection error during prompt generation",
           variant: "destructive",
         })
-        promptGenerationEventSourceRef.current?.close()
-        promptGenerationEventSourceRef.current = null
+        cleanupPromptGenerationEventSource()
         setIsGeneratingPrompt(false)
       }
     } catch (error) {
@@ -677,11 +694,7 @@ function AgentComponent() {
     setShowSearchResults(false)
     setIsGeneratingPrompt(false)
     setShouldHighlightPrompt(false)
-    // Close any active prompt generation stream
-    if (promptGenerationEventSourceRef.current) {
-      promptGenerationEventSourceRef.current.close()
-      promptGenerationEventSourceRef.current = null
-    }
+    cleanupPromptGenerationEventSource()
   }
 
   const handleCreateNewAgent = () => {

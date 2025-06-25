@@ -10,18 +10,11 @@ import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { getErrorMessage } from "@/utils"
 import { ChatSSEvents } from "@/shared/types"
-import type { Models } from "@/ai/types"
+import { Models } from "@/ai/types"
+import { generatePromptSchema, type GeneratePromptPayload } from "@/api/search"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
-const { JwtPayloadKey } = config
-
-// Schema for prompt generation request
-export const generatePromptSchema = z.object({
-  requirements: z.string().min(1, "Requirements are required"),
-  modelId: z.string().optional(),
-})
-
-export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
+const { JwtPayloadKey, defaultFastModel } = config
 
 export const GeneratePromptApi = async (c: Context) => {
   let email = ""
@@ -33,13 +26,15 @@ export const GeneratePromptApi = async (c: Context) => {
     const requirements = c.req.query("requirements")
     const modelId = c.req.query("modelId")
 
-    if (!requirements) {
+    // Validate using the schema
+    const parseResult = generatePromptSchema.safeParse({ requirements, modelId })
+    if (!parseResult.success) {
       throw new HTTPException(400, {
-        message: "Requirements parameter is required",
+        message: parseResult.error.errors[0]?.message || "Invalid parameters",
       })
     }
-
-    const validatedBody = { requirements, modelId }
+    
+    const validatedBody = parseResult.data
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -68,7 +63,7 @@ export const GeneratePromptApi = async (c: Context) => {
         const iterator = generatePromptFromRequirements(
           validatedBody.requirements,
           {
-            modelId: modelId as Models,
+            modelId: (validatedBody.modelId as Models) || defaultFastModel,
             json: false,
             stream: true,
           },
