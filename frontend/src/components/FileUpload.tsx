@@ -4,7 +4,7 @@ import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
-import { isValidFile } from "/Users/himansh.varma/Desktop/xyne/server/api/filesutils.ts"
+import { isValidFile } from "../../../shared/filesutils"
 
 interface SelectedFile {
   file: File

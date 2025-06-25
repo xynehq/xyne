@@ -17,7 +17,7 @@ import { NoUserFound } from "@/errors"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { unlink } from "node:fs/promises"
-import { isValidFile } from "@/api/filesutils"
+import { isValidFile } from "../../shared/filesutils"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
