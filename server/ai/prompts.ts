@@ -1233,7 +1233,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     4. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
     5. Output JSON in the following structure:
        {
-         "answer": "Formatted response string with citations following the specified format. Use [index] format",
+         "answer": "<string or null>",
          "queryRewrite": "<string or null>"
        }
        - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
