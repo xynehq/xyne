@@ -13,12 +13,7 @@ const Logger = getLogger(Subsystem.Utils).child({
 // Define your Vespa endpoint
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
 
-/**
- * Pages through all mail documents in Vespa using continuation-based pagination,
- * extracting sender and recipient relationships.
- * Uses continuation tokens for efficient pagination without offset limits.
- */
-export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
+export const buildUserConnectionMap = async (): Promise<void> => {
   // Simple hashing function using SHA-256
   function hashEmail(email: string): string {
     return crypto
@@ -28,93 +23,149 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
   }
 
   const connectionMap: Record<string, Record<string, number>> = {}
-  // Use a reasonable limit for each request
-  const actualLimit = Math.min(limit, 200)
-  let continuation: string | undefined = undefined
+  const processedMailIds = new Set<string>() // Track processed mails to avoid duplicates
+  // Use a reasonable limit for each request to avoid Vespa errors
+  const actualLimit = 400
+  let totalMailsProcessed = 0
+  let requestCount = 0
+  const maxOffset = 1000
 
-  while (true) {
-    const yql = encodeURIComponent(
-      `select * from sources ${mailSchema} where true`,
-    )
-    let url = `${vespaEndpoint}/search/?yql=${yql}&hits=${actualLimit}&ranking.profile=unranked&presentation.summary=default`
-    if (continuation) {
-      url += `&continuation=${encodeURIComponent(continuation)}`
-    }
+  // Multiple query strategies to capture all mails within the 1000 offset limit
+  const queryStrategies = [
+    {
+      query: `select * from sources ${mailSchema} where true order by timestamp desc`,
+      name: "timestamp_desc",
+    },
+    {
+      query: `select * from sources ${mailSchema} where true order by timestamp asc`,
+      name: "timestamp_asc",
+    },
+    {
+      query: `select * from sources ${mailSchema} where true order by docId desc`,
+      name: "docId_desc",
+    },
+    {
+      query: `select * from sources ${mailSchema} where true order by docId asc`,
+      name: "docId_asc",
+    },
+    {
+      query: `select * from sources ${mailSchema} where true order by threadId desc`,
+      name: "threadId_desc",
+    },
+    {
+      query: `select * from sources ${mailSchema} where true order by threadId asc`,
+      name: "threadId_asc",
+    },
+  ]
 
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      })
+  for (const strategy of queryStrategies) {
+    let offset = 0
+    Logger.info(`Starting pass with strategy: ${strategy.name}`)
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(
-          `Failed to fetch documents: ${response.status} - ${errorText}`,
+    while (offset < maxOffset) {
+      requestCount++
+      const yql = encodeURIComponent(strategy.query)
+      let url = `${vespaEndpoint}/search/?yql=${yql}&hits=${actualLimit}&ranking.profile=unranked&presentation.summary=default&offset=${offset}`
+
+      try {
+        Logger.info(
+          `Request ${requestCount}: Fetching batch of up to ${actualLimit} mails at offset ${offset} (${strategy.name})...`,
         )
-      }
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+        })
 
-      const data = await response.json()
-      const mails = data.root.children
-      if (!mails || mails.length === 0) break
-
-      for (const item of mails) {
-        const fields = item.fields
-        const from = fields?.from
-        // Merge to, cc, and bcc into a single recipients list
-        const toList = [
-          ...(fields?.to || []),
-          ...(fields?.cc || []),
-          ...(fields?.bcc || []),
-        ]
-
-        if (
-          !from ||
-          typeof from !== "string" ||
-          !Array.isArray(toList) ||
-          toList.length === 0
-        )
-          continue
-
-        // Validate that all recipients are strings
-        const validRecipients = toList.filter(
-          (recipient) =>
-            typeof recipient === "string" && recipient.trim().length > 0,
-        )
-        if (validRecipients.length === 0) continue
-
-        const hashedFrom = hashEmail(from)
-
-        if (!connectionMap[hashedFrom]) {
-          connectionMap[hashedFrom] = {}
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(
+            `Failed to fetch documents: ${response.status} - ${errorText}`,
+          )
         }
 
-        for (const to of toList) {
-          const hashedTo = hashEmail(to)
-          if (!connectionMap[hashedFrom][hashedTo]) {
-            connectionMap[hashedFrom][hashedTo] = 0
+        const data = await response.json()
+        const mails = data.root.children
+        if (!mails || mails.length === 0) {
+          Logger.info(
+            `No more mails found at offset ${offset} for ${strategy.name}. Moving to next strategy.`,
+          )
+          break
+        }
+
+        Logger.info(`Received ${mails.length} mails in batch ${requestCount}`)
+        let newMailsProcessed = 0
+
+        for (const item of mails) {
+          const fields = item.fields
+          const mailId = fields?.id || fields?.messageId
+
+          // Skip if we've already processed this mail
+          if (mailId && processedMailIds.has(mailId)) {
+            continue
           }
-          connectionMap[hashedFrom][hashedTo] += 1
-        }
-      }
 
-      // Check for continuation token to determine if more results are available
-      if (data.root.continuation) {
-        continuation = data.root.continuation
-      } else {
-        break
+          if (mailId) {
+            processedMailIds.add(mailId)
+          }
+
+          const from = fields?.from
+          // Merge to, cc, and bcc into a single recipients list
+          const toList = [
+            ...(fields?.to || []),
+            ...(fields?.cc || []),
+            ...(fields?.bcc || []),
+          ]
+
+          if (
+            !from ||
+            typeof from !== "string" ||
+            !Array.isArray(toList) ||
+            toList.length === 0
+          )
+            continue
+
+          // Validate that all recipients are strings
+          const validRecipients = toList.filter(
+            (recipient) =>
+              typeof recipient === "string" && recipient.trim().length > 0,
+          )
+          if (validRecipients.length === 0) continue
+
+          const hashedFrom = hashEmail(from)
+
+          if (!connectionMap[hashedFrom]) {
+            connectionMap[hashedFrom] = {}
+          }
+
+          for (const to of toList) {
+            const hashedTo = hashEmail(to)
+            if (!connectionMap[hashedFrom][hashedTo]) {
+              connectionMap[hashedFrom][hashedTo] = 0
+            }
+            connectionMap[hashedFrom][hashedTo] += 1
+          }
+
+          newMailsProcessed++
+        }
+
+        totalMailsProcessed += newMailsProcessed
+        offset += actualLimit
+      } catch (error) {
+        const errMessage = getErrorMessage(error)
+        Logger.error(error, `Error retrieving mail documents: ${errMessage}`)
+        throw new ErrorRetrievingDocuments({
+          cause: error as Error,
+          sources: mailSchema,
+        })
       }
-    } catch (error) {
-      const errMessage = getErrorMessage(error)
-      Logger.error(error, `Error retrieving mail documents: ${errMessage}`)
-      throw new ErrorRetrievingDocuments({
-        cause: error as Error,
-        sources: mailSchema,
-      })
     }
   }
+
+  Logger.info(
+    `Completed all strategies. Total unique mails processed: ${totalMailsProcessed}, Total requests: ${requestCount}`,
+  )
 
   // Write the connectionMap to a CSV file in the root project directory
   const fs = await import("fs/promises")
@@ -135,9 +186,9 @@ export const buildUserConnectionMap = async (limit = 500): Promise<void> => {
   }
 }
 
-// if (require.main === module) {
-//   buildUserConnectionMap().catch((error) => {
-//     Logger.error(error, "Failed to build user connection map")
-//     process.exit(1)
-//   })
-// }
+if (require.main === module) {
+  buildUserConnectionMap().catch((error) => {
+    Logger.error(error, "Failed to build user connection map")
+    process.exit(1)
+  })
+}
