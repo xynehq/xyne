@@ -16,7 +16,7 @@ export const handleToolSync = async () => {
     Logger.info("Starting tool synchronization job")
 
     await db.transaction(async (trx: TxnOrClient) => {
-      const connector = await getConnectorByApp(trx, Apps.GITHUB_MCP)
+      const connector = await getConnectorByApp(trx, Apps.Github)
 
       Logger.info({ connector }, "Connector found")
 

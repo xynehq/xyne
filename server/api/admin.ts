@@ -902,7 +902,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
   )
   switch (form.appType) {
     case "github":
-      app = Apps.GITHUB_MCP
+      app = Apps.Github
       break
     default:
       app = Apps.MCP
