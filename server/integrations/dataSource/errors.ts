@@ -71,7 +71,7 @@ export class ContentExtractionError extends DataSourceError {
   }
 }
 
-export class InsuffientContentError extends DataSourceError {
+export class InsufficientContentError extends DataSourceError {
   constructor(minLength: number, actualLength: number) {
     super(
       `Content too short: ${actualLength} characters (minimum: ${minLength})`,

@@ -4,6 +4,7 @@ import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
+import { isValidFile } from "/Users/himansh.varma/Desktop/xyne/server/api/filesutils.ts"
 
 interface SelectedFile {
   file: File
@@ -62,44 +63,6 @@ export default function FileUpload({
   )
 
   const generateId = () => Math.random().toString(36).substring(2, 9)
-
-  const isValidFile = (file: File) => {
-    // Accept only text, image, pdf, docs, sheets, ppts, and check size limits
-    const maxSize = 15 * 1024 * 1024 // 15MB limit
-
-    // Allowed MIME types
-    const allowedTypes = [
-      "text/plain",
-      "text/csv",
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-powerpoint",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ]
-
-    // Allowed extensions (for fallback)
-    const allowedExtensions = [
-      ".txt",
-      ".csv",
-      ".pdf",
-      ".doc",
-      ".docx",
-      ".xls",
-      ".xlsx",
-      ".ppt",
-      ".pptx",
-    ]
-
-    // Check by MIME type or extension
-    const isAllowedType =
-      allowedTypes.includes(file.type) ||
-      allowedExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
-
-    return file.size <= maxSize && isAllowedType
-  }
 
   // Original processFiles function without path handling
   const processFiles = useCallback(

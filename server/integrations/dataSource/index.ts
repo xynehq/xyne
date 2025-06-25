@@ -30,7 +30,7 @@ import {
   FileConversionError,
   FileProcessingError,
   ContentExtractionError,
-  InsuffientContentError,
+  InsufficientContentError,
   ExternalToolError,
   TimeoutError,
   StorageError,
@@ -40,6 +40,8 @@ import {
   handleDataSourceError,
   isDataSourceError,
 } from "./errors"
+import type { Document } from "@langchain/core/documents"
+import { safeLoadPDF, deleteDocument } from "@/integrations/google/index.ts"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -208,7 +210,7 @@ const processTextContent = async (
     !trimmedContent ||
     trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
   ) {
-    throw new InsuffientContentError(
+    throw new InsufficientContentError(
       DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
       trimmedContent.length,
     )
@@ -238,14 +240,23 @@ const processPdfContent = async (
   convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
-    const content = await readFile(filePath, "utf8")
-    const trimmedContent = content.trim()
+    const docs: Document[] = await safeLoadPDF(filePath)
+    if (!docs || docs.length === 0) {
+      await deleteDocument(filePath)
+      throw new ContentExtractionError(
+        "No content extracted from PDF document",
+        "PDF",
+      )
+    }
+
+    const content = docs.flatMap((doc) => doc.pageContent)
+    const trimmedContent = content.join(" ").trim()
 
     if (
       !trimmedContent ||
       trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
     ) {
-      throw new InsuffientContentError(
+      throw new InsufficientContentError(
         DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
         trimmedContent.length,
       )

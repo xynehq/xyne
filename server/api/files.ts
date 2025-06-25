@@ -17,6 +17,7 @@ import { NoUserFound } from "@/errors"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { unlink } from "node:fs/promises"
+import { isValidFile } from "@/api/filesutils"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
@@ -27,44 +28,6 @@ await mkdir(DOWNLOADS_DIR, { recursive: true })
 
 interface FileUploadToDataSourceResult extends DataSourceUploadResult {
   filename: string
-}
-
-const isValidFile = (file: File) => {
-  // Accept only text, image, pdf, docs, sheets, ppts, and check size limits
-  const maxSize = 15 * 1024 * 1024 // 15MB limit
-
-  // Allowed MIME types
-  const allowedTypes = [
-    "text/plain",
-    "text/csv",
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ]
-
-  // Allowed extensions (for fallback)
-  const allowedExtensions = [
-    ".txt",
-    ".csv",
-    ".pdf",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".ppt",
-    ".pptx",
-  ]
-
-  // Check by MIME type or extension
-  const isAllowedType =
-    allowedTypes.includes(file.type) ||
-    allowedExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
-
-  return file.size <= maxSize && isAllowedType
 }
 
 export const handleFileUpload = async (c: Context) => {
