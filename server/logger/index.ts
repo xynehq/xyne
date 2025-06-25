@@ -31,42 +31,42 @@ const time = (start: number) => {
 }
 
 export const getLogger = (loggerType: Subsystem) => {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production"
 
   if (isProduction) {
-    const destination = pino.destination(1); // stdout
+    const destination = pino.destination(1) // stdout
 
     return pino(
       {
         name: loggerType,
-        // base: undefined, // remove pid, hostname
         timestamp: false,
         formatters: {
           level: (label) => ({ level: label }),
           log: (object) => {
-            const { msg, ...rest } = object;
-            return { msg, ...rest };
+            const { msg, ...rest } = object
+            return { msg, ...rest }
           },
         },
         mixin(_mergeObject, _level) {
-          const stack = new Error().stack?.split("\n");
-          const caller = stack?.[4]?.trim();
-          return caller && !caller.includes("unknown") ? { caller } : {};
+          const rawStack = new Error().stack
+          const stack = rawStack ? rawStack.split("\n") : null
+          const caller = stack?.[4]?.trim()
+          return caller && !caller.includes("unknown") ? { caller } : {}
         },
       },
       {
         write: (str) => {
           try {
-            const obj = JSON.parse(str);
-            const { level, name, msg, ...rest } = obj;
-            const reordered = JSON.stringify({ level, name, msg, ...rest });
-            destination.write(reordered + "\n");
+            const obj = JSON.parse(str)
+            const { level, name, msg, ...rest } = obj
+            const reordered = JSON.stringify({ level, name, msg, ...rest })
+            destination.write(reordered + "\n")
           } catch {
-            destination.write(str);
+            destination.write(str)
           }
         },
-      }
-    );
+      },
+    )
   }
 
   // Dev logger
@@ -86,8 +86,8 @@ export const getLogger = (loggerType: Subsystem) => {
         ignore: "pid,hostname",
       },
     },
-  });
-};
+  })
+}
 
 const logRequest = (
   logger: Logger,
