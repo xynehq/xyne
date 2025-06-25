@@ -10,9 +10,12 @@ const Logger = getLogger(Subsystem.Utils).child({
   module: "useConnectionData",
 })
 
-// Define your Vespa endpoint
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
 
+/**
+ * Fetches all mail documents using parallel batching approach,
+ * extracting sender and recipient relationships efficiently.
+ */
 export const buildUserConnectionMap = async (): Promise<void> => {
   // Simple hashing function using SHA-256
   function hashEmail(email: string): string {
@@ -22,150 +25,169 @@ export const buildUserConnectionMap = async (): Promise<void> => {
       .digest("hex")
   }
 
-  const connectionMap: Record<string, Record<string, number>> = {}
-  const processedMailIds = new Set<string>() // Track processed mails to avoid duplicates
-  // Use a reasonable limit for each request to avoid Vespa errors
-  const actualLimit = 400
-  let totalMailsProcessed = 0
-  let requestCount = 0
-  const maxOffset = 1000
-
-  // Multiple query strategies to capture all mails within the 1000 offset limit
-  const queryStrategies = [
-    {
-      query: `select * from sources ${mailSchema} where true order by timestamp desc`,
-      name: "timestamp_desc",
-    },
-    {
-      query: `select * from sources ${mailSchema} where true order by timestamp asc`,
-      name: "timestamp_asc",
-    },
-    {
-      query: `select * from sources ${mailSchema} where true order by docId desc`,
-      name: "docId_desc",
-    },
-    {
-      query: `select * from sources ${mailSchema} where true order by docId asc`,
-      name: "docId_asc",
-    },
-    {
-      query: `select * from sources ${mailSchema} where true order by threadId desc`,
-      name: "threadId_desc",
-    },
-    {
-      query: `select * from sources ${mailSchema} where true order by threadId asc`,
-      name: "threadId_asc",
-    },
-  ]
-
-  for (const strategy of queryStrategies) {
-    let offset = 0
-    Logger.info(`Starting pass with strategy: ${strategy.name}`)
-
-    while (offset < maxOffset) {
-      requestCount++
-      const yql = encodeURIComponent(strategy.query)
-      let url = `${vespaEndpoint}/search/?yql=${yql}&hits=${actualLimit}&ranking.profile=unranked&presentation.summary=default&offset=${offset}`
-
-      try {
-        Logger.info(
-          `Request ${requestCount}: Fetching batch of up to ${actualLimit} mails at offset ${offset} (${strategy.name})...`,
-        )
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(
-            `Failed to fetch documents: ${response.status} - ${errorText}`,
-          )
-        }
-
-        const data = await response.json()
-        const mails = data.root.children
-        if (!mails || mails.length === 0) {
-          Logger.info(
-            `No more mails found at offset ${offset} for ${strategy.name}. Moving to next strategy.`,
-          )
-          break
-        }
-
-        Logger.info(`Received ${mails.length} mails in batch ${requestCount}`)
-        let newMailsProcessed = 0
-
-        for (const item of mails) {
-          const fields = item.fields
-          const mailId = fields?.id || fields?.messageId
-
-          // Skip if we've already processed this mail
-          if (mailId && processedMailIds.has(mailId)) {
-            continue
-          }
-
-          if (mailId) {
-            processedMailIds.add(mailId)
-          }
-
-          const from = fields?.from
-          // Merge to, cc, and bcc into a single recipients list
-          const toList = [
-            ...(fields?.to || []),
-            ...(fields?.cc || []),
-            ...(fields?.bcc || []),
-          ]
-
-          if (
-            !from ||
-            typeof from !== "string" ||
-            !Array.isArray(toList) ||
-            toList.length === 0
-          )
-            continue
-
-          // Validate that all recipients are strings
-          const validRecipients = toList.filter(
-            (recipient) =>
-              typeof recipient === "string" && recipient.trim().length > 0,
-          )
-          if (validRecipients.length === 0) continue
-
-          const hashedFrom = hashEmail(from)
-
-          if (!connectionMap[hashedFrom]) {
-            connectionMap[hashedFrom] = {}
-          }
-
-          for (const to of toList) {
-            const hashedTo = hashEmail(to)
-            if (!connectionMap[hashedFrom][hashedTo]) {
-              connectionMap[hashedFrom][hashedTo] = 0
-            }
-            connectionMap[hashedFrom][hashedTo] += 1
-          }
-
-          newMailsProcessed++
-        }
-
-        totalMailsProcessed += newMailsProcessed
-        offset += actualLimit
-      } catch (error) {
-        const errMessage = getErrorMessage(error)
-        Logger.error(error, `Error retrieving mail documents: ${errMessage}`)
-        throw new ErrorRetrievingDocuments({
-          cause: error as Error,
-          sources: mailSchema,
-        })
-      }
+  // Helper function to fetch a batch of documents
+  async function fetchBatch(offset: number, limit: number): Promise<any[]> {
+    const searchPayload = {
+      yql: `select * from sources ${mailSchema} where true`,
+      hits: limit,
+      offset,
+      "ranking.profile": "unranked",
+      "presentation.summary": "default",
+      maxOffset: 1000000, // Same as VespaClient - bypass the 1000 limit!
+      maxHits: 1000000, // Also bypass the hits limit!
+      timeout: "10s",
     }
+
+    const response = await fetch(`${vespaEndpoint}/search/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(searchPayload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to fetch batch: ${response.status} - ${errorText}`,
+      )
+    }
+
+    const data = await response.json()
+    return data.root?.children || []
   }
 
-  Logger.info(
-    `Completed all strategies. Total unique mails processed: ${totalMailsProcessed}, Total requests: ${requestCount}`,
-  )
+  // First get total count
+  async function getTotalCount(): Promise<number> {
+    const searchPayload = {
+      yql: `select * from sources ${mailSchema} where true`,
+      hits: 0,
+      summary: "count",
+      maxOffset: 1000000,
+      timeout: "10s",
+    }
+
+    const response = await fetch(`${vespaEndpoint}/search/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(searchPayload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Failed to get count: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    return data.root?.fields?.totalCount || 0
+  }
+
+  const connectionMap: Record<string, Record<string, number>> = {}
+
+  try {
+    Logger.info("Getting total document count...")
+    const totalCount = await getTotalCount()
+    Logger.info(`Total mails in Vespa: ${totalCount}`)
+
+    if (totalCount === 0) {
+      Logger.info("No mails found in Vespa")
+      return
+    }
+
+    // Use parallel batching with safe batch size that respects hits limit
+    const batchSize = 400 // Keep at 400 to respect the hits limit
+    const maxConcurrency = 3
+    const allMails: any[] = []
+
+    // Create batch tasks for ALL documents, not just first 1000
+    const batchTasks = []
+    for (let offset = 0; offset < totalCount; offset += batchSize) {
+      batchTasks.push(async () => {
+        Logger.info(`Fetching batch at offset ${offset}...`)
+        return await fetchBatch(
+          offset,
+          Math.min(batchSize, totalCount - offset),
+        )
+      })
+    }
+
+    // Execute batches with concurrency limit
+    const pLimit = (await import("p-limit")).default
+    const limit = pLimit(maxConcurrency)
+
+    Logger.info(
+      `Executing ${batchTasks.length} batch tasks with concurrency ${maxConcurrency} to fetch ALL ${totalCount} mails...`,
+    )
+    const batchResults = await Promise.all(
+      batchTasks.map((task) => limit(task)),
+    )
+
+    // Flatten results
+    for (const batch of batchResults) {
+      allMails.push(...batch)
+    }
+
+    Logger.info(
+      `Retrieved ${allMails.length} total mails from Vespa (should be close to ${totalCount})`,
+    )
+
+    // Process mails for connection mapping
+    let processedCount = 0
+    for (const mail of allMails) {
+      const fields = mail.fields
+      const from = fields?.from
+      // Merge to, cc, and bcc into a single recipients list
+      const toList = [
+        ...(fields?.to || []),
+        ...(fields?.cc || []),
+        ...(fields?.bcc || []),
+      ]
+
+      if (
+        !from ||
+        typeof from !== "string" ||
+        !Array.isArray(toList) ||
+        toList.length === 0
+      )
+        continue
+
+      // Validate that all recipients are strings
+      const validRecipients = toList.filter(
+        (recipient) =>
+          typeof recipient === "string" && recipient.trim().length > 0,
+      )
+      if (validRecipients.length === 0) continue
+
+      const hashedFrom = hashEmail(from)
+
+      if (!connectionMap[hashedFrom]) {
+        connectionMap[hashedFrom] = {}
+      }
+
+      for (const to of validRecipients) {
+        const hashedTo = hashEmail(to)
+        if (!connectionMap[hashedFrom][hashedTo]) {
+          connectionMap[hashedFrom][hashedTo] = 0
+        }
+        connectionMap[hashedFrom][hashedTo] += 1
+      }
+
+      processedCount++
+    }
+
+    Logger.info(`Processed ${processedCount} mails for connection mapping`)
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(error, `Error retrieving mail documents: ${errMessage}`)
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: mailSchema,
+    })
+  }
 
   // Write the connectionMap to a CSV file in the root project directory
   const fs = await import("fs/promises")
