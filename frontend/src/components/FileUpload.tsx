@@ -110,8 +110,8 @@ export default function FileUpload({
 
       if (invalidFiles > 0) {
         showToast(
-          "Invalid file size",
-          `${invalidFiles} file(s) ignored. Files must be under 15MB.`,
+          "Invalid file(s)",
+          `${invalidFiles} file(s) ignored. Files must be under 15MB and of supported types.`,
           true,
         )
       }

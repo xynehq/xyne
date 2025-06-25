@@ -120,7 +120,7 @@ export const handleFileUpload = async (c: Context) => {
     const invalidFiles = files.filter((file) => !isValidFile(file))
     if (invalidFiles.length > 0) {
       throw new HTTPException(400, {
-        message: `${invalidFiles.length} file(s) rejected. Files must be under 15MB.`,
+        message: `${invalidFiles.length} file(s) rejected. Files must be under 15MB and of supported types.`,
       })
     }
 
