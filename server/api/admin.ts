@@ -777,31 +777,30 @@ export const AdminDeleteUserData = async (c: Context) => {
     const appsToDelete = options?.servicesToClear
     const deleteSyncJob = options?.deleteSyncJob
     if (deleteSyncJob) {
-      try{
-      const deleteSyncJobResult = await clearUserSyncJob(
-        db,
-        emailToClear,
-        appsToDelete || [],
-      )
-      loggerWithChild({ email: sub }).info(
-        {
-          adminEmail: sub,
-          targetEmail: emailToClear,
-          results: deleteSyncJobResult,
-        },
-        "SyncJob deletion process completed.",
-      )
-    }
-    catch(error){
-      loggerWithChild({ email: sub }).error(
-        {
-          adminEmail: sub,
-          targetEmail: emailToClear,
-          results: error,
-        },
-        "Failed to delete user sync jobs.",
-      )
-    }
+      try {
+        const deleteSyncJobResult = await clearUserSyncJob(
+          db,
+          emailToClear,
+          appsToDelete || [],
+        )
+        loggerWithChild({ email: sub }).info(
+          {
+            adminEmail: sub,
+            targetEmail: emailToClear,
+            results: deleteSyncJobResult,
+          },
+          "SyncJob deletion process completed.",
+        )
+      } catch (error) {
+        loggerWithChild({ email: sub }).error(
+          {
+            adminEmail: sub,
+            targetEmail: emailToClear,
+            results: error,
+          },
+          "Failed to delete user sync jobs.",
+        )
+      }
     }
     return c.json({
       success: true,

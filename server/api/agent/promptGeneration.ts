@@ -27,13 +27,16 @@ export const GeneratePromptApi = async (c: Context) => {
     const modelId = c.req.query("modelId")
 
     // Validate using the schema
-    const parseResult = generatePromptSchema.safeParse({ requirements, modelId })
+    const parseResult = generatePromptSchema.safeParse({
+      requirements,
+      modelId,
+    })
     if (!parseResult.success) {
       throw new HTTPException(400, {
         message: parseResult.error.errors[0]?.message || "Invalid parameters",
       })
     }
-    
+
     const validatedBody = parseResult.data
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
