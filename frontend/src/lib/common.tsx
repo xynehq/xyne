@@ -123,7 +123,7 @@ export const getIcon = (
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
   } else if (
-    (app === Apps.GITHUB_MCP && entity === ConnectorType.MCP) ||
+    (app === Apps.Github && entity === ConnectorType.MCP) ||
     entity === SystemEntity.SystemInfo
   ) {
     return <Github size={size?.w || 12} className={classNameVal} />

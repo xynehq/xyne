@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2"
 import { db } from "./client"
+export { db }
 import {
   connectors,
   ingestionStateSchema,
@@ -109,13 +110,12 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
 
 export const getConnectorByApp = async (
   trx: TxnOrClient,
-  userId: number,
   app: Apps,
 ): Promise<SelectConnector> => {
-  const res = await db
+  const res = await trx
     .select()
     .from(connectors)
-    .where(and(eq(connectors.app, app), eq(connectors.userId, userId)))
+    .where(and(eq(connectors.app, app)))
     .limit(1)
   if (res.length) {
     const parsedRes = selectConnectorSchema.safeParse(res[0])
@@ -126,7 +126,7 @@ export const getConnectorByApp = async (
     return parsedRes.data
   } else {
     throw new NoConnectorsFound({
-      message: `Could not get the connector with id: ${userId}`,
+      message: `Could not get the connector with type: ${app}`,
     })
   }
 }

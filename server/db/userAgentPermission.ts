@@ -176,7 +176,10 @@ export const getAgentsMadeByMe = async (
       updatedAt: agents.updatedAt,
     })
     .from(agents)
-    .innerJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
+    .innerJoin(
+      userAgentPermissions,
+      eq(agents.id, userAgentPermissions.agentId),
+    )
     .where(
       and(
         eq(agents.workspaceId, workspaceId),
@@ -216,7 +219,10 @@ export const getAgentsSharedToMe = async (
       updatedAt: agents.updatedAt,
     })
     .from(agents)
-    .innerJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
+    .innerJoin(
+      userAgentPermissions,
+      eq(agents.id, userAgentPermissions.agentId),
+    )
     .where(
       and(
         eq(agents.workspaceId, workspaceId),

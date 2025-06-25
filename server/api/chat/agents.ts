@@ -197,9 +197,11 @@ const checkAndYieldCitationsForAgent = function* (
       const item = results[citationIndex - 1]
 
       if (!item?.source?.docId) {
-        Logger.info("[checkAndYieldCitationsForAgent] No docId found for citation, skipping")
+        Logger.info(
+          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+        )
         continue
-      } 
+      }
 
       yield {
         citation: {
