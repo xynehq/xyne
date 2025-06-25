@@ -2380,6 +2380,421 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
   },
 }
 
+export const getMailAttachment: AgentTool = {
+  name: "get_mail_attachment",
+  description:
+    "SPECIALIZED TOOL FOR EMAIL ATTACHMENTS ONLY. Use this tool when users specifically ask for email attachments, files attached to emails, or attachments from emails. Keywords that MUST trigger this tool: 'attachments', 'attached files', 'email attachments', 'files from emails', 'attachments from newest emails', 'attachments from recent emails', 'PDF attachments', 'document attachments'. DO NOT use metadata_retrieval for attachment queries - this tool handles the complete email-to-attachment workflow.",
+  parameters: {
+    email_search_query: {
+      type: "string",
+      description: "Keywords to search for emails that contain attachments (e.g., 'invoice', 'receipt', 'contract', 'report'). This will be used to find the emails first.",
+      required: true,
+    },
+    attachment_filter: {
+      type: "string",
+      description: "Optional keywords to filter attachments by filename or content (e.g., 'pdf', 'invoice', 'report').",
+      required: false,
+    },
+    file_type: {
+      type: "string",
+      description: "Optional file type filter (e.g., 'pdf', 'doc', 'xlsx', 'jpg'). Case-insensitive.",
+      required: false,
+    },
+    date_from: {
+      type: "string",
+      description: "Optional start date for email search (YYYY-MM-DD format).",
+      required: false,
+    },
+    date_to: {
+      type: "string",
+      description: "Optional end date for email search (YYYY-MM-DD format).",
+      required: false,
+    },
+    limit: {
+      type: "number",
+      description: "Maximum number of attachments to retrieve (default: 20).",
+      required: false,
+    },
+    offset: {
+      type: "number",
+      description: "Number of attachments to skip for pagination (default: 0).",
+      required: false,
+    },
+  },
+  execute: async (
+    params: {
+      email_search_query: string
+      attachment_filter?: string
+      file_type?: string
+      date_from?: string
+      date_to?: string
+      limit?: number
+      offset?: number
+    },
+    span?: Span,
+    email?: string,
+    userCtx?: string,
+    agentPrompt?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_get_mail_attachment_tool")
+    
+    if (!email) {
+      const errorMsg = "Email is required for mail attachment retrieval."
+      execSpan?.setAttribute("error", errorMsg)
+      return { result: errorMsg, error: "Missing email" }
+    }
+
+    // Handle empty or wildcard queries by providing a sensible default
+    let sanitizedQuery = params.email_search_query?.trim() || ""
+    
+    if (!sanitizedQuery || sanitizedQuery === "*") {
+      // Use a broad but valid search query for finding emails with attachments
+      sanitizedQuery = "has:attachment"
+    }
+
+    const searchLimit = Math.min(params.limit || 20, 100) // Cap at 100 for performance
+    const searchOffset = Math.max(params.offset || 0, 0)
+
+    execSpan?.setAttribute("email_search_query", params.email_search_query)
+    execSpan?.setAttribute("limit", searchLimit)
+    execSpan?.setAttribute("offset", searchOffset)
+    if (params.attachment_filter) execSpan?.setAttribute("attachment_filter", params.attachment_filter)
+    if (params.file_type) execSpan?.setAttribute("file_type", params.file_type)
+    if (params.date_from) execSpan?.setAttribute("date_from", params.date_from)
+    if (params.date_to) execSpan?.setAttribute("date_to", params.date_to)
+
+    try {
+      // Check agent permissions if agentPrompt is provided
+      if (agentPrompt) {
+        const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+        execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+        
+        if (!agentAppEnums.includes(Apps.Gmail)) {
+          return {
+            result: "Gmail is not an allowed app for this agent. Cannot retrieve mail attachments.",
+            contexts: [],
+          }
+        }
+      }
+
+      // Step 1: Search for emails that match the criteria
+      Logger.info(`[get_mail_attachment] Step 1: Searching for emails with query: "${params.email_search_query}"`)
+      
+      let timestampRange: { from: number; to: number } | null = null
+      if (params.date_from || params.date_to) {
+        const now = Date.now()
+        const fromTime = params.date_from ? new Date(params.date_from).getTime() : now - (30 * 24 * 60 * 60 * 1000) // Default to 30 days ago
+        const toTime = params.date_to ? new Date(params.date_to).getTime() : now
+        timestampRange = { from: fromTime, to: toTime }
+      }
+
+      let emailSearchResults: VespaSearchResponse | null = null
+      
+      if (agentPrompt) {
+        const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+        emailSearchResults = await searchVespaAgent(
+          params.email_search_query,
+          email,
+          Apps.Gmail,
+          MailEntity.Email,
+          agentAppEnums,
+          {
+            limit: 50, // Default to 50 emails to search for attachments
+            alpha: 0.5,
+            timestampRange,
+            span: execSpan?.startSpan("vespa_search_emails"),
+          },
+        )
+      } else {
+        emailSearchResults = await searchVespa(params.email_search_query, email, Apps.Gmail, MailEntity.Email, {
+          limit: 50, // Default to 50 emails to search for attachments
+          alpha: 0.5,
+          timestampRange,
+          span: execSpan?.startSpan("vespa_search_emails"),
+        })
+      }
+
+      const emailChildren = emailSearchResults?.root?.children || []
+      execSpan?.setAttribute("emails_found", emailChildren.length)
+
+      if (emailChildren.length === 0) {
+        return {
+          result: `No emails found matching "${params.email_search_query}"${timestampRange ? ' in the specified date range' : ''}. Cannot search for attachments without emails.`,
+          contexts: [],
+        }
+      }
+
+      // Step 2: Extract mail IDs from the found emails
+      const mailIds: string[] = []
+      const emailDebugInfo: any[] = []
+      
+      for (const emailItem of emailChildren) {
+        if (emailItem.fields && "sddocname" in emailItem.fields && emailItem.fields.sddocname === mailSchema) {
+          const mailFields = emailItem.fields as any
+          
+          // Debug info for each email
+          const emailInfo = {
+            docId: mailFields.docId,
+            mailId: mailFields.mailId,
+            subject: mailFields.subject,
+            sddocname: mailFields.sddocname,
+            hasAttachmentFilenames: mailFields.attachmentFilenames?.length > 0,
+            attachmentFilenames: mailFields.attachmentFilenames,
+            hasAttachments: mailFields.attachments?.length > 0,
+            attachments: mailFields.attachments
+          }
+          emailDebugInfo.push(emailInfo)
+          
+          if (mailFields.mailId) {
+            mailIds.push(mailFields.mailId)
+          } else if (mailFields.docId) {
+            // Fallback to docId if mailId is not available
+            mailIds.push(mailFields.docId)
+          }
+        }
+      }
+
+      Logger.info(`[get_mail_attachment] Step 2: Extracted ${mailIds.length} mail IDs from ${emailChildren.length} emails`)
+      Logger.info(`[get_mail_attachment] Email debug info: ${JSON.stringify(emailDebugInfo.slice(0, 5), null, 2)}`) // Log first 5 emails
+      Logger.info(`[get_mail_attachment] Extracted mail IDs: ${JSON.stringify(mailIds.slice(0, 10))}`) // Log first 10 mail IDs
+      
+      execSpan?.setAttribute("mail_ids_extracted", mailIds.length)
+
+      if (mailIds.length === 0) {
+        return {
+          result: `Found ${emailChildren.length} emails matching "${params.email_search_query}" but could not extract mail IDs. Cannot search for attachments.`,
+          contexts: [],
+        }
+      }
+
+      // Step 3: Search for attachments from those mail IDs
+      Logger.info(`[get_mail_attachment] Step 3: Searching for attachments from ${mailIds.length} emails`)
+      
+      let yqlConditions: string[] = []
+
+      // Add mail ID filter - try multiple approaches since mailId matching isn't working
+      // Try both mailId and threadId fields, and also try exact matches
+      const mailIdConditions = []
+      
+      // Try mailId field with contains
+      mailIdConditions.push(...mailIds.map(mailId => `mailId contains "${mailId.trim()}"`))
+      
+      // Try threadId field (attachments might be linked via threadId)
+      mailIdConditions.push(...mailIds.map(mailId => `threadId contains "${mailId.trim()}"`))
+      
+      // Try docId field (attachments might be linked via docId)
+      const docIds = emailDebugInfo.map(email => email.docId).filter(Boolean)
+      if (docIds.length > 0) {
+        mailIdConditions.push(...docIds.map(docId => `mailId contains "${docId.trim()}"`))
+        mailIdConditions.push(...docIds.map(docId => `threadId contains "${docId.trim()}"`))
+      }
+      
+      yqlConditions.push(`(${mailIdConditions.join(" or ")})`)
+      
+      Logger.info(`[get_mail_attachment] Trying ${mailIdConditions.length} different ID matching approaches`)
+
+      // Add permissions filter for the current user
+      yqlConditions.push(`permissions contains "${email}"`)
+
+      // Add optional attachment filter for filename or content search
+      if (params.attachment_filter) {
+        const filterQuery = params.attachment_filter.trim()
+        yqlConditions.push(`(filename contains "${filterQuery}" or chunks contains "${filterQuery}")`)
+      }
+
+      // Add optional file type filter
+      if (params.file_type) {
+        const fileType = params.file_type.toLowerCase().trim()
+        // Handle both with and without dot prefix
+        const normalizedFileType = fileType.startsWith('.') ? fileType.substring(1) : fileType
+        yqlConditions.push(`(fileType contains "${normalizedFileType}" or filename contains ".${normalizedFileType}")`)
+      }
+
+      // Construct the complete YQL query for attachments
+      const whereClause = yqlConditions.join(" and ")
+      const yql = `select * from sources mail_attachment where ${whereClause} order by timestamp desc limit ${searchLimit} offset ${searchOffset}`
+
+      execSpan?.setAttribute("attachment_yql_query", yql)
+      Logger.info(`[get_mail_attachment] YQL Query: ${yql}`)
+
+      // Execute the attachment search using Vespa
+      const attachmentSearchPayload = {
+        yql,
+        email,
+        "ranking.profile": "unranked", // Use unranked since we're doing specific ID lookups
+        hits: searchLimit,
+        offset: searchOffset,
+      }
+
+      const VespaClient = (await import("@/search/vespaClient")).default
+      const vespa = new VespaClient()
+      const attachmentResults: VespaSearchResponse = await vespa.search(attachmentSearchPayload)
+
+      const attachmentChildren = attachmentResults?.root?.children || []
+      execSpan?.setAttribute("attachments_found", attachmentChildren.length)
+      
+      // Debug the attachment search results
+      Logger.info(`[get_mail_attachment] Attachment search results: ${JSON.stringify({
+        totalCount: attachmentResults?.root?.fields?.totalCount,
+        childrenCount: attachmentChildren.length,
+        errors: attachmentResults?.root?.errors,
+        coverage: attachmentResults?.root?.coverage
+      }, null, 2)}`)
+      
+      if (attachmentChildren.length > 0) {
+        Logger.info(`[get_mail_attachment] First few attachment results: ${JSON.stringify(attachmentChildren.slice(0, 3), null, 2)}`)
+      }
+
+      // Since no separate attachment records exist, extract attachment info from email records
+      Logger.info(`[get_mail_attachment] No separate attachment records found. Extracting attachment info from email records.`)
+      
+      // Step 4: Extract attachment information directly from email records
+      const fragments: MinimalAgentFragment[] = []
+      
+      for (const emailItem of emailChildren) {
+        if (emailItem.fields && "sddocname" in emailItem.fields && emailItem.fields.sddocname === mailSchema) {
+          const mailFields = emailItem.fields as any
+          
+          // Check if this email has attachments
+          if (mailFields.attachmentFilenames && mailFields.attachmentFilenames.length > 0) {
+            const attachmentFilenames = mailFields.attachmentFilenames
+            const attachments = mailFields.attachments || []
+            
+            // Create a fragment for each attachment
+            for (let i = 0; i < attachmentFilenames.length; i++) {
+              const filename = attachmentFilenames[i]
+              const attachmentMeta = attachments[i] || {}
+              
+              // Apply filters if specified
+              if (params.attachment_filter) {
+                const filterQuery = params.attachment_filter.toLowerCase()
+                if (!filename.toLowerCase().includes(filterQuery)) {
+                  continue // Skip this attachment if it doesn't match the filter
+                }
+              }
+              
+              if (params.file_type) {
+                const fileType = params.file_type.toLowerCase().trim()
+                const normalizedFileType = fileType.startsWith('.') ? fileType.substring(1) : fileType
+                const fileExtension = filename.split('.').pop()?.toLowerCase() || ''
+                const attachmentFileType = attachmentMeta.fileType?.toLowerCase() || ''
+                
+                if (!fileExtension.includes(normalizedFileType) && !attachmentFileType.includes(normalizedFileType)) {
+                  continue // Skip this attachment if it doesn't match the file type
+                }
+              }
+              
+              // Build attachment information
+              let attachmentInfo = `📎 **${filename}**`
+              
+              if (attachmentMeta.fileType) {
+                attachmentInfo += `\n**Type:** ${attachmentMeta.fileType}`
+              }
+              if (attachmentMeta.fileSize) {
+                const sizeInKB = Math.round(attachmentMeta.fileSize / 1024)
+                attachmentInfo += `\n**Size:** ${sizeInKB}KB`
+              }
+              
+              attachmentInfo += `\n**From Email:** ${mailFields.subject || 'No subject'}`
+              attachmentInfo += `\n**Sender:** ${mailFields.from || 'Unknown sender'}`
+              
+              if (mailFields.timestamp) {
+                const date = new Date(mailFields.timestamp).toLocaleDateString()
+                attachmentInfo += `\n**Date:** ${date}`
+              }
+              
+              const citation = searchToCitation(emailItem as VespaSearchResults)
+              
+              fragments.push({
+                id: `email-attachment-${citation.docId}-${i}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                content: attachmentInfo,
+                source: {
+                  ...citation,
+                  title: `📎 ${filename}`,
+                  url: citation.url, // Keep the email URL as the source
+                },
+                confidence: emailItem.relevance || 0.8,
+              })
+            }
+          }
+        }
+      }
+      
+      if (fragments.length === 0) {
+        let noResultsMsg = `Found ${emailChildren.length} emails matching "${params.email_search_query}" but no attachments were found`
+        if (params.attachment_filter) noResultsMsg += ` matching '${params.attachment_filter}'`
+        if (params.file_type) noResultsMsg += ` with file type '${params.file_type}'`
+        noResultsMsg += ` in those emails.`
+
+        return {
+          result: noResultsMsg,
+          contexts: [],
+        }
+      }
+
+      // Build response message
+      let responseText = `Found ${fragments.length} attachment${fragments.length !== 1 ? 's' : ''}`
+      
+      if (params.attachment_filter) {
+        responseText += ` matching '${params.attachment_filter}'`
+      }
+      if (params.file_type) {
+        responseText += ` of type '${params.file_type}'`
+      }
+      
+      responseText += ` from ${emailChildren.length} email${emailChildren.length !== 1 ? 's' : ''} matching "${params.email_search_query}"`
+
+      if (timestampRange) {
+        const fromDate = new Date(timestampRange.from).toLocaleDateString()
+        const toDate = new Date(timestampRange.to).toLocaleDateString()
+        responseText += ` (${fromDate} to ${toDate})`
+      }
+
+      // Add pagination info
+      if (searchOffset > 0) {
+        responseText += ` (items ${searchOffset + 1}-${searchOffset + fragments.length})`
+      }
+
+      // Show top results preview
+      if (fragments.length > 0) {
+        const topItemsList = fragments
+          .slice(0, 3)
+          .map((f, index) => {
+            const filename = f.source.title?.replace('📎 ', '') || 'Unknown file'
+            return `${index + 1}. ${filename}`
+          })
+          .join('\n')
+        responseText += `\n\nAttachments found:\n${topItemsList}`
+      }
+
+      // Add pagination guidance if there might be more results
+      if (fragments.length === searchLimit) {
+        responseText += `\n\n💡 Showing ${searchLimit} results. Use offset parameter to see more.`
+      }
+
+      // Add summary of the search process
+      responseText += `\n\n📧 Search Summary: Found ${emailChildren.length} emails → Extracted ${mailIds.length} mail IDs → Retrieved ${fragments.length} attachments`
+
+      return {
+        result: responseText,
+        contexts: fragments,
+      }
+
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Mail attachment retrieval error: ${errMsg}`)
+
+      return {
+        result: `Error retrieving mail attachments: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
@@ -2389,4 +2804,5 @@ export const agentTools: Record<string, AgentTool> = {
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
+  get_mail_attachment: getMailAttachment,
 }
