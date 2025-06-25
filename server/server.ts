@@ -527,6 +527,11 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
+  "/admin/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
   "/integrations/fileupload",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
