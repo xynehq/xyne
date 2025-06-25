@@ -327,7 +327,6 @@ export function createSharedResultBlocks(
   return blocks;
 }
 
-
 /**
  * Create blocks for a successful share confirmation
  * @returns Slack blocks for the share confirmation
@@ -359,10 +358,7 @@ export function createShareConfirmationBlocks(): Block[] {
  * @param results Array of search results
  * @returns Slack modal view object
  */
-export function createSearchResultsModal(
-  query: string,
-  results: any[]
-): View {
+export function createSearchResultsModal(query: string, results: any[]): View {
   // Create blocks for the modal content
   const blocks: Block[] = [
     {
@@ -389,7 +385,7 @@ export function createSearchResultsModal(
   const displayResults = results.slice(0, 5);
   for (let i = 0; i < displayResults.length; i++) {
     const result = displayResults[i];
-    
+
     // Extract title with fallbacks
     let title = "Untitled";
     if (result.subject) title = result.subject;
@@ -477,14 +473,14 @@ export function createSearchResultsModal(
             metadata: metadataText,
             resultId: result.id || `result-${i}`,
           }),
-        }
+        },
       ],
     });
 
     // Add divider between results (except after the last one)
     if (i < displayResults.length - 1) {
       blocks.push({
-        type: "divider"
+        type: "divider",
       });
     }
   }
@@ -496,7 +492,9 @@ export function createSearchResultsModal(
       elements: [
         {
           type: "mrkdwn",
-          text: `_${results.length - 5} more results available. Refine your search for better results._`,
+          text: `_${
+            results.length - 5
+          } more results available. Refine your search for better results._`,
         },
       ],
     });

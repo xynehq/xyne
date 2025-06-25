@@ -163,7 +163,7 @@ app.event("app_mention", async ({ event, client }) => {
 
     // Check if the message is part of a thread
     const isThreadMessage = event.thread_ts && event.thread_ts !== ts;
-    
+
     // Create a unique interaction ID for this query
     const interactionId = `${channel}_${ts}_${Date.now()}`;
 
@@ -173,13 +173,13 @@ app.event("app_mention", async ({ event, client }) => {
       query: processedText,
       results: results,
       timestamp: Date.now(),
-      isFromThread: Boolean(isThreadMessage) // Explicitly cast to boolean
+      isFromThread: Boolean(isThreadMessage), // Explicitly cast to boolean
     };
-    
+
     // If it's a thread message, respond in that thread with an ephemeral message
     if (isThreadMessage) {
       Logger.info(`Message is part of a thread: ${event.thread_ts}`);
-      
+
       // Send ephemeral message in the thread
       await client.chat.postEphemeral({
         channel,
@@ -191,8 +191,8 @@ app.event("app_mention", async ({ event, client }) => {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*I found ${results.length} results for your query "${processedText}"*\nClick below to view them.`
-            }
+              text: `*I found ${results.length} results for your query "${processedText}"*\nClick below to view them.`,
+            },
           },
           {
             type: "actions",
@@ -203,14 +203,14 @@ app.event("app_mention", async ({ event, client }) => {
                 text: {
                   type: "plain_text",
                   text: "View Results",
-                  emoji: true
+                  emoji: true,
                 },
                 action_id: "view_search_modal",
-                value: interactionId
-              }
-            ]
-          }
-        ]
+                value: interactionId,
+              },
+            ],
+          },
+        ],
       });
     } else {
       // For top-level messages, use the standard ephemeral message
@@ -223,8 +223,8 @@ app.event("app_mention", async ({ event, client }) => {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*I found ${results.length} results for your query "${processedText}"*\nClick below to view them.`
-            }
+              text: `*I found ${results.length} results for your query "${processedText}"*\nClick below to view them.`,
+            },
           },
           {
             type: "actions",
@@ -235,25 +235,29 @@ app.event("app_mention", async ({ event, client }) => {
                 text: {
                   type: "plain_text",
                   text: "View Results",
-                  emoji: true
+                  emoji: true,
                 },
                 action_id: "view_search_modal",
-                value: interactionId
-              }
-            ]
-          }
-        ]
+                value: interactionId,
+              },
+            ],
+          },
+        ],
       });
     }
-    
+
     // Also send a message to trigger_id the user's DM to ensure they notice
     try {
       // Open a DM with the user
       const conversationResponse = await client.conversations.open({
-        users: user
+        users: user,
       });
-      
-      if (conversationResponse.ok && conversationResponse.channel && conversationResponse.channel.id) {
+
+      if (
+        conversationResponse.ok &&
+        conversationResponse.channel &&
+        conversationResponse.channel.id
+      ) {
         // Send a message in DM
         await client.chat.postMessage({
           channel: conversationResponse.channel.id,
@@ -263,8 +267,8 @@ app.event("app_mention", async ({ event, client }) => {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*I found ${results.length} results for your query*\nClick below to view them.`
-              }
+                text: `*I found ${results.length} results for your query*\nClick below to view them.`,
+              },
             },
             {
               type: "actions",
@@ -275,14 +279,14 @@ app.event("app_mention", async ({ event, client }) => {
                   text: {
                     type: "plain_text",
                     text: "View Results",
-                    emoji: true
+                    emoji: true,
                   },
                   action_id: "view_search_modal",
-                  value: interactionId
-                }
-              ]
-            }
-          ]
+                  value: interactionId,
+                },
+              ],
+            },
+          ],
         });
         Logger.info(`Sent DM with search results button for user ${user}`);
       }
@@ -303,57 +307,66 @@ app.event("app_mention", async ({ event, client }) => {
 // Handler for the view search results button - opens the modal when clicked
 app.action("view_search_modal", async ({ ack, body, client }) => {
   await ack();
-  
+
   try {
     const interactionId = (body as any).actions[0].value;
-    
+
     // Retrieve cached search results
     const cachedData = global._searchResultsCache[interactionId];
     if (!cachedData) {
-      throw new Error(`No cached search results found for ID: ${interactionId}`);
+      throw new Error(
+        `No cached search results found for ID: ${interactionId}`
+      );
     }
-    
+
     // Create the modal with search results
-    const modal = createSearchResultsModal(cachedData.query, cachedData.results);
-    
+    const modal = createSearchResultsModal(
+      cachedData.query,
+      cachedData.results
+    );
+
     // Extract channel and original message info from the interaction ID
-    const parts = interactionId.split('_');
+    const parts = interactionId.split("_");
     const channelId = parts[0];
     const threadTs = parts[1];
-    
+
     // Check if this was initiated from a thread
     const isFromThread = cachedData.isFromThread || false;
-    
+
     // If we need to customize the modal for thread functionality
     if (isFromThread) {
       // Modify the modal blocks to add "Share in thread" buttons for each result
       const modifiedBlocks = [...modal.blocks];
-      
+
       // Find action blocks (which contain the buttons) and add "Share in thread" option
       for (let i = 0; i < modifiedBlocks.length; i++) {
         const block = modifiedBlocks[i];
-        if (block.type === "actions" && block.block_id && block.block_id.startsWith("result_actions_")) {
+        if (
+          block.type === "actions" &&
+          block.block_id &&
+          block.block_id.startsWith("result_actions_")
+        ) {
           // Cast the block to ActionsBlock to access elements
           const actionBlock = block as any; // Cast to any to avoid TypeScript errors
-          
+
           // Add "Share in thread" button to this action block
           actionBlock.elements.push({
             type: "button",
             text: {
               type: "plain_text",
               text: "Share in thread",
-              emoji: true
+              emoji: true,
             },
             action_id: "share_in_thread_modal",
-            value: actionBlock.elements[0].value // Reuse the same value from the casted object
+            value: actionBlock.elements[0].value, // Reuse the same value from the casted object
           });
         }
       }
-      
+
       // Use the modified blocks in the modal
       modal.blocks = modifiedBlocks;
     }
-    
+
     // Store channel information in the private_metadata of the modal
     await client.views.open({
       trigger_id: (body as any).trigger_id,
@@ -365,31 +378,33 @@ app.action("view_search_modal", async ({ ack, body, client }) => {
           thread_ts: threadTs,
           user_id: (body as any).user.id,
           query: cachedData.query,
-          is_from_thread: isFromThread
-        })
-      }
+          is_from_thread: isFromThread,
+        }),
+      },
     });
-    
+
     // Clean up the ephemeral message if possible
     try {
       if ((body as any).message && (body as any).message.ts) {
         await client.chat.delete({
           channel: (body as any).channel.id,
-          ts: (body as any).message.ts
+          ts: (body as any).message.ts,
         });
       }
     } catch (deleteErr) {
       // It's okay if we can't delete it
       Logger.warn("Could not delete ephemeral message");
     }
-    
-    Logger.info(`Opened modal with search results for user ${(body as any).user.id}`);
+
+    Logger.info(
+      `Opened modal with search results for user ${(body as any).user.id}`
+    );
   } catch (error) {
     Logger.error(error, "Error opening search results modal");
     await client.chat.postEphemeral({
       channel: (body as any).channel.id,
       user: (body as any).user.id,
-      text: "Sorry, I couldn't open the search results. Please try your search again."
+      text: "Sorry, I couldn't open the search results. Please try your search again.",
     });
   }
 });
@@ -431,7 +446,6 @@ app.action("share_result", async ({ ack, body, client }) => {
   }
 });
 
-
 // Handle button interactions in modal
 app.action("share_result_modal", async ({ ack, body, client }) => {
   await ack();
@@ -440,18 +454,18 @@ app.action("share_result_modal", async ({ ack, body, client }) => {
     // Extract the action value and the view's metadata
     const actionValue = JSON.parse((body as any).actions[0].value);
     const { url, title, query, snippet, metadata, resultId } = actionValue;
-    
+
     // Get the view container and its private_metadata
     const view = (body as any).view;
     if (!view || !view.private_metadata) {
       throw new Error("Cannot access view metadata");
     }
-    
+
     // Parse the metadata to get channel information
     const viewMetadata = JSON.parse(view.private_metadata);
     const channelId = viewMetadata.channel_id;
     const userId = viewMetadata.user_id || (body as any).user.id;
-    
+
     if (!channelId) {
       throw new Error("Channel ID not found in view metadata");
     }
@@ -489,16 +503,16 @@ app.action("share_result_modal", async ({ ack, body, client }) => {
             elements: [
               {
                 type: "mrkdwn",
-                text: "✅ *Result shared in channel successfully!*"
-              }
-            ]
-          }
-        ]
-      }
+                text: "✅ *Result shared in channel successfully!*",
+              },
+            ],
+          },
+        ],
+      },
     });
   } catch (error) {
     Logger.error(error, "Error sharing result from modal");
-    
+
     // Show error message in the modal
     try {
       const view = (body as any).view;
@@ -518,12 +532,12 @@ app.action("share_result_modal", async ({ ack, body, client }) => {
                 elements: [
                   {
                     type: "mrkdwn",
-                    text: "❌ *Error sharing result. Please try again.*"
-                  }
-                ]
-              }
-            ]
-          }
+                    text: "❌ *Error sharing result. Please try again.*",
+                  },
+                ],
+              },
+            ],
+          },
         });
       }
     } catch (viewUpdateError) {
@@ -531,7 +545,6 @@ app.action("share_result_modal", async ({ ack, body, client }) => {
     }
   }
 });
-
 
 // Handle "Share in thread" button clicks from the modal
 app.action("share_in_thread_modal", async ({ ack, body, client }) => {
@@ -541,19 +554,19 @@ app.action("share_in_thread_modal", async ({ ack, body, client }) => {
     // Extract the action value and the view's metadata
     const actionValue = JSON.parse((body as any).actions[0].value);
     const { url, title, query, snippet, metadata, resultId } = actionValue;
-    
+
     // Get the view container and its private_metadata
     const view = (body as any).view;
     if (!view || !view.private_metadata) {
       throw new Error("Cannot access view metadata");
     }
-    
+
     // Parse the metadata to get channel and thread information
     const viewMetadata = JSON.parse(view.private_metadata);
     const channelId = viewMetadata.channel_id;
     const threadTs = viewMetadata.thread_ts;
     const userId = viewMetadata.user_id || (body as any).user.id;
-    
+
     if (!channelId || !threadTs) {
       throw new Error("Channel ID or Thread TS not found in view metadata");
     }
@@ -592,16 +605,16 @@ app.action("share_in_thread_modal", async ({ ack, body, client }) => {
             elements: [
               {
                 type: "mrkdwn",
-                text: "✅ *Result shared in thread successfully!*"
-              }
-            ]
-          }
-        ]
-      }
+                text: "✅ *Result shared in thread successfully!*",
+              },
+            ],
+          },
+        ],
+      },
     });
   } catch (error) {
     Logger.error(error, "Error sharing result in thread from modal");
-    
+
     // Show error message in the modal
     try {
       const view = (body as any).view;
@@ -621,12 +634,12 @@ app.action("share_in_thread_modal", async ({ ack, body, client }) => {
                 elements: [
                   {
                     type: "mrkdwn",
-                    text: "❌ *Error sharing result in thread. Please try again.*"
-                  }
-                ]
-              }
-            ]
-          }
+                    text: "❌ *Error sharing result in thread. Please try again.*",
+                  },
+                ],
+              },
+            ],
+          },
         });
       }
     } catch (viewUpdateError) {
