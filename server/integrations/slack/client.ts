@@ -6,7 +6,9 @@ import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 import { sign } from "hono/jwt";
 import { SearchApi } from "@/api/search";
-import { GetChatApi } from "@/api/chat/chat";
+import { GetChatApi } from "@/api/chat/chat"; // Add MessageWithToolsApi import
+import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
+
 import {
   getAgentsAccessibleToUser,
   getAgentByExternalIdWithPermissionCheck,
@@ -303,7 +305,8 @@ const handleAgentCommand = async (
 ) => {
   try {
     // Parse agent command: format could be "@agentName query" or "agentName query"
-    const agentPattern = /^@?(\w+)\s+(.+)$/;
+    // Updated regex to handle agent names with spaces
+    const agentPattern = /^@?(.+?)\s+(.+)$/;
     const match = agentQuery.match(agentPattern);
 
     if (!match) {
@@ -315,7 +318,10 @@ const handleAgentCommand = async (
       return;
     }
 
-    const [, agentName, query] = match;
+    let [, agentName, query] = match;
+    
+    // Clean up the agent name - remove @ if present and trim
+    agentName = agentName.replace(/^@/, "").trim();
 
     // Get accessible agents for the user
     const agents = await getAgentsAccessibleToUser(
@@ -326,103 +332,44 @@ const handleAgentCommand = async (
       0
     );
 
-    // Find agent by name (case-insensitive)
+    // Find agent by name (case-insensitive exact match)
     const agent = agents.find(
       (a) => a.name.toLowerCase() === agentName.toLowerCase()
     );
 
     if (!agent) {
+      // If exact match fails, try partial matching for better user experience
+      const partialMatches = agents.filter(
+        (a) => a.name.toLowerCase().includes(agentName.toLowerCase()) ||
+               agentName.toLowerCase().includes(a.name.toLowerCase())
+      );
+
+      if (partialMatches.length === 1) {
+        // Use the partial match if there's only one
+        const foundAgent = partialMatches[0];
+        await handleAgentInteraction(client, channel, user, foundAgent, query, dbUser, event);
+        return;
+      } else if (partialMatches.length > 1) {
+        const agentNames = partialMatches.map(a => a.name).join(", ");
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Multiple agents found matching "${agentName}": ${agentNames}. Please be more specific.`,
+        });
+        return;
+      }
+
+      // Show available agents if no match found
+      const agentNames = agents.map(a => a.name).join(", ");
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `Agent "${agentName}" not found. Use \`/agents\` to see available agents.`,
+        text: `Agent "${agentName}" not found. Available agents: ${agentNames}\n\nUse \`/agents\` to see all available agents with descriptions.`,
       });
       return;
     }
 
-    // Create conversation with the agent
-    const conversationId = `agent_${channel}_${user}_${Date.now()}`;
-    const isThreadMessage = event.thread_ts && event.thread_ts !== event.ts;
-
-    // Store conversation context
-    global._agentConversationsCache[conversationId] = {
-      agentId: agent.externalId,
-      agentName: agent.name,
-      userId: dbUser.id,
-      workspaceId: dbUser.workspaceId,
-      channel,
-      user,
-      messages: [{ role: "user", content: query }],
-      timestamp: Date.now(),
-      isFromThread: Boolean(isThreadMessage),
-    };
-
-    // Send initial response
-    const responseBlocks = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🤖 *Chatting with ${agent.name}*\n_${
-            agent.description || "No description available"
-          }_`,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Your question:* ${query}`,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "⏳ Processing your request...",
-        },
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Continue Conversation",
-              emoji: true,
-            },
-            action_id: "continue_agent_conversation",
-            value: conversationId,
-          },
-        ],
-      },
-    ];
-
-    const messagePayload = {
-      channel,
-      user,
-      text: `Chatting with ${agent.name}`,
-      blocks: responseBlocks,
-    };
-
-    if (isThreadMessage) {
-      messagePayload.thread_ts = event.thread_ts;
-    }
-
-    await client.chat.postEphemeral(messagePayload);
-
-    // Call the agent API to get response
-    await callAgentAndRespond(
-      client,
-      channel,
-      user,
-      conversationId,
-      query,
-      agent,
-      dbUser,
-      isThreadMessage ? event.thread_ts : null
-    );
+    await handleAgentInteraction(client, channel, user, agent, query, dbUser, event);
   } catch (error) {
     Logger.error(error, "Error in agent command");
     await client.chat.postEphemeral({
@@ -433,7 +380,102 @@ const handleAgentCommand = async (
   }
 };
 
-// Function to call agent API and respond
+// Extract the agent interaction logic into a separate function for reusability
+const handleAgentInteraction = async (
+  client: any,
+  channel: string,
+  user: string,
+  agent: any,
+  query: string,
+  dbUser: any,
+  event: any
+) => {
+  // Create conversation with the agent
+  const conversationId = `agent_${channel}_${user}_${Date.now()}`;
+  const isThreadMessage = event.thread_ts && event.thread_ts !== event.ts;
+
+  // Store conversation context
+  global._agentConversationsCache[conversationId] = {
+    agentId: agent.externalId,
+    agentName: agent.name,
+    userId: dbUser.id,
+    workspaceId: dbUser.workspaceId,
+    channel,
+    user,
+    messages: [{ role: "user", content: query }],
+    timestamp: Date.now(),
+    isFromThread: Boolean(isThreadMessage),
+  };
+
+  // Send initial response
+  const responseBlocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `🤖 *Chatting with ${agent.name}*\n_${
+          agent.description || "No description available"
+        }_`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Your question:* ${query}`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "⏳ Processing your request...",
+      },
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Continue Conversation",
+            emoji: true,
+          },
+          action_id: "continue_agent_conversation",
+          value: conversationId,
+        },
+      ],
+    },
+  ];
+
+  const messagePayload = {
+    channel,
+    user,
+    text: `Chatting with ${agent.name}`,
+    blocks: responseBlocks,
+  };
+
+  if (isThreadMessage) {
+    messagePayload.thread_ts = event.thread_ts;
+  }
+
+  await client.chat.postEphemeral(messagePayload);
+
+  // Call the agent API to get response
+  await callAgentAndRespond(
+    client,
+    channel,
+    user,
+    conversationId,
+    query,
+    agent,
+    dbUser,
+    isThreadMessage ? event.thread_ts : null
+  );
+};
+
+// Function to call agent API and respond - Direct integration approach
 const callAgentAndRespond = async (
   client: any,
   channel: string,
@@ -445,38 +487,94 @@ const callAgentAndRespond = async (
   threadTs?: string
 ) => {
   try {
-    // Create mock context for agent API call
-    const mockContext = {
-      get: (key: string) => {
-        if (key === config.JwtPayloadKey) {
-          return {
-            sub: dbUser.email,
-            workspaceId: dbUser.workspaceExternalId || "default",
-            role: dbUser.role || "user",
-          };
-        }
-        return undefined;
-      },
-      req: {
-        valid: (type: string) => {
-          if (type === "json") {
-            return {
-              message: query,
-              agentExternalId: agent.externalId,
-              conversationId: conversationId,
-            };
-          }
-          return {};
+    // Instead of trying to mock streaming, let's make a direct HTTP call to the agent endpoint
+    const token = await generateToken(
+      dbUser.email,
+      dbUser.role || "user",
+      dbUser.workspaceExternalId || "default"
+    );
+
+    const response = await fetch(
+      `${process.env.API_BASE_URL || 'http://localhost:3000'}/api/v1/message/create?` +
+      new URLSearchParams({
+        chatId: '', // New chat
+        agentic: 'true',
+        modelId: 'gpt-4o-mini',
+        message: query,
+        isReasoningEnabled: 'false',
+        agentId: agent.externalId,
+      }),
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
         },
-      },
-      json: (data: any) => data,
-    };
+      }
+    );
 
-    // Call the chat API with agent
-    const agentResponse = await GetChatApi(mockContext as any);
+    if (!response.ok) {
+      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+    }
 
-    const responseText =
-      agentResponse.response || "I couldn't generate a response.";
+    // Read the streaming response
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = "";
+    let citations: any[] = [];
+    let chatId = "";
+    let messageId = "";
+
+    if (reader) {
+      let done = false;
+      
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        done = streamDone;
+        
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('event: ') || line.startsWith('data: ')) {
+              const eventType = line.startsWith('event: ') ? line.slice(7).trim() : null;
+              const data = line.startsWith('data: ') ? line.slice(6).trim() : null;
+              
+              if (eventType === 'u' && data) {
+                // Response update - collect the text
+                fullResponse += data;
+              } else if (eventType === 'cu' && data) {
+                // Citations update
+                try {
+                  const citationData = JSON.parse(data);
+                  if (citationData.contextChunks) {
+                    citations = citationData.contextChunks;
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+              } else if (eventType === 'rm' && data) {
+                // Response metadata
+                try {
+                  const metadata = JSON.parse(data);
+                  chatId = metadata.chatId || "";
+                  messageId = metadata.messageId || "";
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+              } else if (eventType === 'e') {
+                // End of stream
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const responseText = fullResponse || `Hello! I'm ${agent.name}. I received your message: "${query}". I'm processing your request...`;
 
     // Update conversation cache
     if (global._agentConversationsCache[conversationId]) {
@@ -486,6 +584,7 @@ const callAgentAndRespond = async (
       });
     }
 
+    // Create response blocks for Slack
     const responseBlocks = [
       {
         type: "section",
@@ -498,7 +597,7 @@ const callAgentAndRespond = async (
         type: "section",
         text: {
           type: "mrkdwn",
-          text: responseText,
+          text: responseText.length > 3000 ? responseText.substring(0, 3000) + "..." : responseText,
         },
       },
       {
@@ -526,13 +625,26 @@ const callAgentAndRespond = async (
               conversationId,
               agentName: agent.name,
               query,
-              response: responseText,
+              response: responseText.length > 500 ? responseText.substring(0, 500) + "..." : responseText,
               threadTs: threadTs,
             }),
           },
         ],
       },
     ];
+
+    // Add citation information if available
+    if (citations.length > 0) {
+      responseBlocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `📚 *Sources:* ${citations.length} reference${citations.length > 1 ? 's' : ''} found`,
+          },
+        ],
+      });
+    }
 
     const messagePayload = {
       channel,
@@ -546,6 +658,7 @@ const callAgentAndRespond = async (
     }
 
     await client.chat.postEphemeral(messagePayload);
+
   } catch (error) {
     Logger.error(error, "Error calling agent API");
     await client.chat.postEphemeral({
