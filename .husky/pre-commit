@@ -1,12 +1,17 @@
 #!/bin/sh
 set -u
 
+# Skip the entire pre-commit hook if this is a Commitizen commit
+if [ "${CZ_COMMIT:-}" = "true" ]; then
+    exit 0
+fi
+
 # Function to check formatting and then format if necessary
 check_and_format() {
     # Temporarily disable exit on error
     set +e
     cd server
-    bunx @biomejs/biome check ../ --formatter-enabled=true --linter-enabled=false --vcs-use-ignore-file=true --organize-imports-enabled=false
+    bunx biome check ../ --formatter-enabled=true --linter-enabled=false --vcs-use-ignore-file=true --organize-imports-enabled=false
     CHECK_STATUS=$?
     # set -e
     if [ $CHECK_STATUS -ne 0 ]; then
@@ -20,5 +25,41 @@ check_and_format() {
     fi
 }
 
-# Run the check and format function
+# Function to trigger Commitizen
+trigger_commitizen() {
+    # Check if user wants to skip Commitizen (escape hatch)
+    if [ "${HUSKY_SKIP_COMMITIZEN:-}" = "true" ]; then
+        echo "Skipping Commitizen (HUSKY_SKIP_COMMITIZEN=true)"
+        return 0
+    fi
+
+    echo "Intercepting commit - launching Commitizen for structured commit message..."
+    echo "To skip Commitizen, use: HUSKY_SKIP_COMMITIZEN=true git commit -m 'message'"
+
+    # Set environment variable to prevent recursion
+    export CZ_COMMIT=true
+
+    # Redirect stdin to allow interactive input  
+    exec < /dev/tty
+
+    # Run Commitizen
+    bun run commit
+
+    # Get the exit code from Commitizen
+    CZ_EXIT_CODE=$?
+
+    if [ $CZ_EXIT_CODE -eq 0 ]; then
+        echo "Commit created successfully with Commitizen"
+        # Exit with code 1 to prevent the original commit since we've already committed
+        exit 1
+    else
+        echo "Commitizen failed or was cancelled"
+        exit $CZ_EXIT_CODE
+    fi
+}
+
+# Run the check and format function first
 check_and_format
+
+# Then trigger Commitizen
+trigger_commitizen

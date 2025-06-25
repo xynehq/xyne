@@ -8,6 +8,8 @@
     "@faker-js/faker": "^9.3.0",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "^0.24.2",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1"
@@ -24,7 +26,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "prepare": "cd .. && husky .husky",
+    "commit": "cz"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.797.0",
@@ -71,5 +74,10 @@
     "together-ai": "^0.13.0",
     "uuid": "^11.0.0",
     "zod": "^3.24.1"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
   }
 }
