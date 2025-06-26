@@ -145,6 +145,7 @@ const constructMailContext = (
       .slice(0, maxSummaryChunks)
       .join("\n")
   }
+  console.log(getRelativeTime(fields.timestamp), "timestamp")
 
   return `App: ${fields.app}
 Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}

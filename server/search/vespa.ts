@@ -344,7 +344,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${userTimestamp})` : ""}
+        ${userTimestamp.length ? `and (${userTimestamp})` : ""}
         ${
           !hasAppOrEntity
             ? `and app contains "${Apps.GoogleWorkspace}"`
@@ -359,7 +359,7 @@ export const HybridDefaultProfile = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         and owner contains @email
-        ${timestampRange ? `and ${userTimestamp}` : ""}
+        ${userTimestamp.length ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
       )`
   }
@@ -376,7 +376,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${mailTimestamp})` : ""}
+        ${mailTimestamp.length ? `and (${mailTimestamp})` : ""}
         and permissions contains @email
         ${mailLabelQuery}
         ${appOrEntityFilter}
@@ -385,6 +385,7 @@ export const HybridDefaultProfile = (
 
   const buildDefaultYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
+    const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
     return ` 
   (
       (
@@ -393,6 +394,7 @@ export const HybridDefaultProfile = (
             ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
       )
       and (permissions contains @email or owner contains @email)
+      ${timestamp.length ? `and (${timestamp})` : ""}
       ${appOrEntityFilter}
   )
   `
@@ -409,7 +411,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${fileTimestamp})` : ""}
+        ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
       )`
@@ -426,7 +428,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${eventTimestamp})` : ""}
+        ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
       )`
@@ -434,7 +436,7 @@ export const HybridDefaultProfile = (
 
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-
+    const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
     return `
       (
         (
@@ -442,6 +444,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
         )
+        ${timestamp.length ? `and (${timestamp})` : ""}
         ${appOrEntityFilter}
         and permissions contains @email
       )`
