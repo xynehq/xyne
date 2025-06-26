@@ -123,6 +123,7 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  type VespaSearchResultsSchema,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -710,6 +711,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
+          let yieldedCitations = new Set<number>() // Track yielded citations across the entire flow
           const previousToolCalls: { tool: string; args: string }[] = []
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
@@ -781,8 +783,36 @@ export const MessageWithToolsApi = async (c: Context) => {
             let toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
-              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
+              // Check if we have referenced document context
+              const hasReferencedContext = fileIds && fileIds.length > 0
+
+              if (hasReferencedContext) {
+                toolsPrompt = `IMPORTANT: The user has referenced specific documents (@mentions) which provide relevant context. 
+
+**SMART CONTEXT + TOOL USAGE STRATEGY**:
+
+1. **FOR INFORMATION AVAILABLE IN REFERENCED CONTEXT**: Use the "REFERENCED DOCUMENT CONTEXT" directly
+2. **FOR INFORMATION NOT IN REFERENCED CONTEXT**: Use appropriate tools to gather additional data
+3. **FOR MULTI-PART QUERIES**: Address EACH part of the user's request:
+   - Extract what you can from referenced documents
+   - Use tools for any additional information requested
+   - Combine both sources in your comprehensive answer
+
+**EXAMPLE**: If user says "explain this sheet and give me latest emails":
+- Part 1: "explain this sheet" → Use referenced document context
+- Part 2: "give me latest emails" → Use email tool (MetadataRetrieval or Search)
+- Result: Comprehensive answer covering BOTH parts
+
+**DECISION FRAMEWORK**:
+- If user asks ONLY about referenced documents → Answer from context (no tools needed)
+- If user asks for ADDITIONAL information beyond referenced documents → Use tools
+- If user asks MULTIPLE questions → Address ALL parts using appropriate sources
+
+AVAILABLE_TOOLS:\n\n`
+              } else {
+                toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
                 AVAILABLE_TOOLS:\n\n`
+              }
 
               // Format each client's tools
               for (const [connectorId, { tools }] of Object.entries(
@@ -801,9 +831,95 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
+            // Fetch context chunks from referenced files if any
+            let contextEnrichedUserContext = ctx
+            if (fileIds && fileIds.length > 0) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
+              )
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
+                )
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  const contextChunks = cleanContext(
+                    results.root.children
+                      ?.map(
+                        (v, i) =>
+                          `Index ${i + 1} \n ${answerContextMap(
+                            v as z.infer<typeof VespaSearchResultsSchema>,
+                            0,
+                            true,
+                          )}`,
+                      )
+                      ?.join("\n"),
+                  )
+
+                  // Enrich the user context with the document context
+                  contextEnrichedUserContext = `${ctx}\n\n--- REFERENCED DOCUMENT CONTEXT ---\n${contextChunks}`
+
+                  // Add referenced documents to gatheredFragments for citations
+                  const referencedFragments: MinimalAgentFragment[] =
+                    results.root.children.map((child: any, index: number) => ({
+                      id: `ref-${index}-${child.docId || `unknown-${index}`}`, // Unique ID for referenced fragment
+                      content: answerContextMap(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      ),
+                      source: searchToCitation(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                      ),
+                      confidence: 1.0, // High confidence for user-referenced documents
+                    }))
+
+                  // Add referenced fragments to the beginning of gatheredFragments for proper citation indexing
+                  gatheredFragments.unshift(...referencedFragments)
+
+                  loggerWithChild({ email: sub }).info(
+                    `Added context from ${fileIds.length} files (${results.root.children.length} chunks) to gatheredFragments`,
+                  )
+
+                  // Debug: Log that we have referenced context
+                  console.log("=== CONTEXT ENRICHED ===")
+                  console.log(`Files referenced: ${fileIds.length}`)
+                  console.log(`Context chunks: ${results.root.children.length}`)
+                  console.log(
+                    `GatheredFragments now has: ${gatheredFragments.length} items`,
+                  )
+                  console.log(
+                    "Referenced fragments added for citations:",
+                    referencedFragments.map(
+                      (f, i) =>
+                        `[${i + 1}] ${f.source.title || f.source.docId}`,
+                    ),
+                  )
+                  console.log(
+                    "Context preview:",
+                    contextChunks.substring(0, 200) + "...",
+                  )
+                  console.log("========================")
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
+                )
+              } finally {
+                contextFetchSpan?.end()
+              }
+            }
+            console.log(
+              "Context Enriched User Context:",
+              contextEnrichedUserContext,
+            )
             const getToolOrAnswerIterator = generateToolSelectionOutput(
               message,
-              ctx,
+              contextEnrichedUserContext,
               toolsPrompt,
               agentScratchpad,
               {
@@ -883,6 +999,52 @@ export const MessageWithToolsApi = async (c: Context) => {
                           data: newText,
                         })
                       }
+
+                      // Check for citations in the answer from referenced documents
+                      console.log("=== CITATION CHECK ===")
+                      console.log("Answer:", parsed.answer)
+                      console.log(
+                        "GatheredFragments:",
+                        gatheredFragments.length,
+                      )
+                      console.log(
+                        "YieldedCitations:",
+                        Array.from(yieldedCitations),
+                      )
+
+                      for (const citationChunk of checkAndYieldCitationsForAgent(
+                        parsed.answer,
+                        yieldedCitations,
+                        gatheredFragments,
+                        0,
+                      )) {
+                        if (citationChunk.citation) {
+                          const { index, item } = citationChunk.citation
+                          console.log("Found citation:", citationChunk.citation)
+
+                          // Handle Gmail docId replacement if needed
+                          if (item && item.app === Apps.Gmail) {
+                            // Gmail-specific URL handling can be added here if needed
+                          }
+
+                          // Add to citations array and build citation map (matching regular chat format)
+                          citations.push(item)
+                          citationMap[index] = citations.length - 1
+
+                          console.log("Citations array now:", citations.length)
+                          console.log("Citation map:", citationMap)
+
+                          stream.writeSSE({
+                            event: ChatSSEvents.CitationsUpdate,
+                            data: JSON.stringify({
+                              contextChunks: citations,
+                              citationMap,
+                            }),
+                          })
+                        }
+                      }
+                      console.log("=== END CITATION CHECK ===")
+
                       currentAnswer = parsed.answer
                     }
                   } catch (err) {
@@ -1348,6 +1510,24 @@ export const MessageWithToolsApi = async (c: Context) => {
                 gatheredFragments,
                 agentPromptForLLM,
               )
+
+              // Debug: Log citation setup
+              console.log("=== CITATION DEBUG ===")
+              console.log(
+                `GatheredFragments count: ${gatheredFragments.length}`,
+              )
+              console.log(
+                "Fragments for citations:",
+                gatheredFragments.map(
+                  (f, i) => `[${i + 1}] ${f.source.title || f.source.docId}`,
+                ),
+              )
+              console.log(
+                "Planning context preview:",
+                (planningContext ?? "").substring(0, 300) + "...",
+              )
+              console.log("======================")
+
               for await (const chunk of continuationIterator) {
                 if (stream.closed) {
                   loggerWithChild({ email: sub }).info(

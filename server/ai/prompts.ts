@@ -834,10 +834,11 @@ export const SearchQueryToolContextPrompt = (
     
     **Tool Calling Principles:**   
     You have tools at your disposal to solve tasks. Follow these principles:  
-    1. **Schema Compliance**: Always follow tool call schemas exactly and provide all required parameters.
-    2. **Tool Availability**: Only call tools that are explicitly provided in the tool context.
-    3. **User Experience**: Never refer to specific tool names when responding. Use natural language (e.g., "I'll search for that" instead of "I'll use the search_tool").
-    4. **Efficiency**: Only call tools when necessary. If you already have sufficient information, respond directly.
+    1. **Smart Context Usage**: If the user has referenced documents (visible in "REFERENCED DOCUMENT CONTEXT"), use that context for relevant parts of the query. For other parts of the query, use tools as needed.
+    2. **Complete Query Coverage**: Always address ALL parts of the user's query. If they ask multiple questions, answer each one using the most appropriate source.
+    3. **Schema Compliance**: Always follow tool call schemas exactly and provide all required parameters.
+    4. **Tool Availability**: Only call tools that are explicitly provided in the tool context.
+    5. **User Experience**: Never refer to specific tool names when responding. Use natural language (e.g., "I'll search for that" instead of "I'll use the search_tool").
     
     **Smart Tool Usage Strategy:**
     
@@ -900,9 +901,16 @@ export const SearchQueryToolContextPrompt = (
     
     ## 3. Information Sufficiency Check
     Evaluate whether you have enough information to provide a complete answer:
-    - **Complete**: You can fully address the user's query
-    - **Partial**: You have some relevant information but need more
+    - **Check Referenced Context**: If "REFERENCED DOCUMENT CONTEXT" exists, identify which parts of the query it can address
+    - **Identify Gaps**: Determine what parts of the query are NOT covered by the referenced context
+    - **Complete**: You can fully address ALL parts of the user's query with available context
+    - **Partial**: You have information for some parts but need tools for other parts of the query
     - **Insufficient**: You need to gather information before answering
+    
+    **MULTI-PART QUERIES**: Break down the user's request into components:
+    - Part A: Can be answered from referenced context → Use context
+    - Part B: Requires additional data → Use appropriate tools
+    - Combine both in your final answer
     
     ## 4. Next Action Decision
     
@@ -919,9 +927,11 @@ export const SearchQueryToolContextPrompt = (
     
     **CRITICAL: Your response must ONLY be valid JSON. No explanations, reasoning, or text outside the JSON structure.**
     
+    **IMPORTANT: When providing an answer, include citations using [number] format for any facts or information from the referenced context or tools.**
+    
     **Response Format:**
     {
-      "answer": "<comprehensive_response_string or null>",
+      "answer": "<comprehensive_response_with_citations or null>",
       "tool": "<actual_tool_name or null>",
       "arguments": {
         "param1": "value1",
@@ -1749,21 +1759,31 @@ export const withToolQueryPrompt = (
     **User Context:**  
     ${userContext}
 
-    **Context:**  
+    **Available Context:**  
     ${toolOutput}
     ---
-    **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
+    
+    **Instructions:**
+    - Answer the user's query comprehensively using all available context
+    - If the context contains information relevant to multiple parts of the query, address all parts
+    - If some requested information is not available in the context, clearly state what is missing
+    - If tools failed to find information, acknowledge this and explain what could not be retrieved
+    - Provide the best possible answer with the available information
 
     Output should be in the following JSON format:
 
     # Response Format
     {
-      "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
+      "answer": "Your comprehensive answer addressing all parts of the user's query, with citations in [number] format for available information and clear statements about missing information"
     }
-    - "answer" should be concised and appropriate output for the given query.
+    - "answer" should address the complete user query, not just parts of it
+    - Include inline citations using square brackets with numbers: [1], [2], [3], etc.
+    - Each citation number must correspond to a source in the context above
+    - Use citations immediately after specific claims or facts from the context
+    - For missing information, clearly explain what could not be found and why
     
     - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-
+    
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
