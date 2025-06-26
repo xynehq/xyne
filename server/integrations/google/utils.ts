@@ -38,7 +38,7 @@ import path from "path"
 import { retryWithBackoff } from "@/utils"
 import config from "@/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
-const {host} = config
+const { host } = config
 const METRICS_SERVER_URL = host ?? "http://localhost:3000"
 
 // TODO: make it even more extensive
@@ -415,34 +415,33 @@ export const checkDownloadsFolder = async (
   }
 }
 
-
 interface ProgressMetrics {
-  userEmail: string;
-  messageCount: number;
-  attachmentCount: number;
-  failedMessages: number;
-  failedAttachments: number;
-  totalMailsToBeIngested: number;
-  totalMailsSkipped: number;
-  insertedEventCount: number;
-  insertedContactsCount: number;
-  insertedpdfCount: number;
-  insertedDocCount: number;
-  insertedSheetCount: number;
-  insertedSlideCount: number;
-  insertedDriveFileCount: number;
-  totalDriveflesToBeIngested: number;
-  totalBlockedPdfs: number;
+  userEmail: string
+  messageCount: number
+  attachmentCount: number
+  failedMessages: number
+  failedAttachments: number
+  totalMailsToBeIngested: number
+  totalMailsSkipped: number
+  insertedEventCount: number
+  insertedContactsCount: number
+  insertedpdfCount: number
+  insertedDocCount: number
+  insertedSheetCount: number
+  insertedSlideCount: number
+  insertedDriveFileCount: number
+  totalDriveflesToBeIngested: number
+  totalBlockedPdfs: number
 }
 
 export const sendProgressToServer = async (metrics: ProgressMetrics) => {
-  Logger.info(`Updating Progress for Script`);
+  Logger.info(`Updating Progress for Script`)
 
   await fetch(`${METRICS_SERVER_URL}/update-metrics`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.METRICS_SECRET}`,
+      Authorization: `Bearer ${process.env.METRICS_SECRET}`,
     },
     body: JSON.stringify({
       email: metrics.userEmail,
@@ -463,6 +462,6 @@ export const sendProgressToServer = async (metrics: ProgressMetrics) => {
       blockedPdfs: metrics.totalBlockedPdfs,
     }),
   }).catch((err) => {
-    Logger.warn("Failed to send metrics to server", { err });
-  });
-};
+    Logger.warn("Failed to send metrics to server", { err })
+  })
+}

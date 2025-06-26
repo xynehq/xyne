@@ -218,14 +218,15 @@ const handleUpdatedMetrics = async (c: Context) => {
   }
 
   const body = await c.req.json()
-  const { email, 
-    messageCount, 
-    attachmentCount, 
-    failedMessages, 
+  const {
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
     failedAttachments,
     totalMails,
     skippedMail,
-    eventsCount, 
+    eventsCount,
     contactsCount,
     pdfCount,
     docCount,
@@ -233,17 +234,17 @@ const handleUpdatedMetrics = async (c: Context) => {
     slidesCount,
     fileCount,
     totalDriveFiles,
-    blockedPdfs
-   } = body
+    blockedPdfs,
+  } = body
   await updateMetricsFromThread({
-    email, 
-    messageCount, 
-    attachmentCount, 
-    failedMessages, 
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
     failedAttachments,
     totalMails,
     skippedMail,
-    eventsCount, 
+    eventsCount,
     contactsCount,
     pdfCount,
     docCount,
@@ -251,8 +252,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     slidesCount,
     fileCount,
     totalDriveFiles,
-    blockedPdfs
-})
+    blockedPdfs,
+  })
 }
 const updateApp = new Hono()
 
@@ -397,7 +398,6 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
-  
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
