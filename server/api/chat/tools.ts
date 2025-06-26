@@ -287,6 +287,7 @@ export const filteredSearchTool: AgentTool = {
     },
     span?: Span,
     email?: string,
+    userCtx?: string,
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("execute_filtered_search_tool")
