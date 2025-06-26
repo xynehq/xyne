@@ -290,35 +290,18 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        const parsableBuffer = cleanBuffer(buffer)
-        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
+        yield { text: chunk.text }
 
-        if (parsed.answer === null || parsed.answer === "}") {
-          break
-        }
-        // If we have an answer and it's different from what we've seen
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          if (currentAnswer === "") {
-            // First valid answer - send the whole thing
-            yield { text: parsed.answer }
-          } else {
-            // Subsequent chunks - send only the new part
-            const newText = parsed.answer.slice(currentAnswer.length)
-            yield { text: newText }
-          }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
-          currentAnswer = parsed.answer
-        }
+        yield* checkAndYieldCitationsForAgent(
+          chunk.text,
+          yieldedCitations,
+          results,
+          previousResultsLength,
+        )
       } catch (e) {
-        // If we can't parse the JSON yet, continue accumulating
+        Logger.error(`Error parsing LLM output: ${e}`)
         continue
       }
-      // }
     }
 
     if (chunk.cost) {
@@ -797,6 +780,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     if (parsedTool.success && parsedTool.data.toolSchema) {
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
+                        parsedTool.data.toolName,
+                        parsedTool.data.description ?? "",
                       )}\n\n`
                     }
                   }
@@ -914,6 +899,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolParameters,
+                parameters: toolParams,
+              })
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,
