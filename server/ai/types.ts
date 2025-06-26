@@ -193,6 +193,7 @@ interface TextQueryItem {
 interface PillValue {
   title: string
   docId: string
+  wholeSheet?: boolean
 }
 
 interface PillQueryItem {

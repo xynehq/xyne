@@ -91,6 +91,9 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       {...(newRef.userMap
         ? { "user-map": JSON.stringify(newRef.userMap) }
         : {})} // Ensure userMap is serialized
+      {...(newRef.wholeSheet !== undefined
+        ? { "data-whole-sheet": String(newRef.wholeSheet) }
+        : {})}
       title={newRef.title}
     >
       {displayIcon}

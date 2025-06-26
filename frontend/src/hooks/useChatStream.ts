@@ -108,6 +108,12 @@ const parseMessageInput = (htmlString: string) => {
             app: el.dataset.app,
             entity: entity,
             imgSrc: imgSrc,
+            wholeSheet:
+              el.dataset.wholeSheet === "true"
+                ? true
+                : el.dataset.wholeSheet === "false"
+                  ? false
+                  : undefined,
           },
         })
       } else if (tagName === "a" && el.getAttribute("href")) {
