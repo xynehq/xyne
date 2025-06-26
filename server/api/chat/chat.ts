@@ -51,6 +51,7 @@ import {
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  getChatMessagesWithEmail,
 } from "@/db/message"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
@@ -401,7 +402,7 @@ export const GetChatApi = async (c: Context) => {
     const { chatId } = body
     const [chat, messages] = await Promise.all([
       getChatByExternalIdWithAuth(db, chatId, email),
-      getChatMessages(db, chatId),
+      getChatMessagesWithEmail(db, chatId, email),
     ])
     return c.json({
       chat: selectPublicChatSchema.parse(chat),
