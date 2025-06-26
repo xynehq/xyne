@@ -911,10 +911,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.ToolParameters,
-                parameters: toolParams,
-              })
+
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,
@@ -961,6 +958,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                   toolName: toolName as AgentToolName,
                 })
 
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ToolParameters,
+                  parameters: toolParams,
+                })
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
                     toolParams,
@@ -968,6 +969,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     email,
                     ctx,
                     agentPromptForLLM,
+                    message,
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
