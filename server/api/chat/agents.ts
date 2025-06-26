@@ -182,6 +182,7 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
 const checkAndYieldCitationsForAgent = function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -194,21 +195,21 @@ const checkAndYieldCitationsForAgent = function* (
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
-      if (item.source.docId) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      } else {
-        Logger.error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
+
+      if (!item?.source?.docId) {
+        Logger.info(
+          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
         )
+        continue
       }
+
+      yield {
+        citation: {
+          index: citationIndex,
+          item: item.source,
+        },
+      }
+      yieldedCitations.add(citationIndex)
     }
   }
 }
@@ -293,12 +294,10 @@ async function* getToolContinuationIterator(
       try {
         const parsableBuffer = cleanBuffer(buffer)
         parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
-        // If we have a null answer, break this inner loop and continue outer loop
-        // seen some cases with just "}"
+
         if (parsed.answer === null || parsed.answer === "}") {
           break
         }
-
         // If we have an answer and it's different from what we've seen
         if (parsed.answer && currentAnswer !== parsed.answer) {
           if (currentAnswer === "") {
@@ -309,12 +308,12 @@ async function* getToolContinuationIterator(
             const newText = parsed.answer.slice(currentAnswer.length)
             yield { text: newText }
           }
-          // yield* checkAndYieldCitationsForAgent(
-          //   parsed.answer,
-          //   yieldedCitations,
-          //   results,
-          //   previousResultsLength,
-          // )
+          yield* checkAndYieldCitationsForAgent(
+            parsed.answer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+          )
           currentAnswer = parsed.answer
         }
       } catch (e) {
@@ -1063,7 +1062,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                               `Description: ${parsedJson.description}`,
                             )
 
-                          if (mainContentParts.length > 0) {
+                          if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
                             formattedContent = `Tool Response: ${flattenObject(
@@ -1077,8 +1076,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                             id: `${baseFragmentId}-generic`,
                             content: formattedContent,
                             source: {
-                              app: Apps.GITHUB_MCP,
-                              docId: `${toolName}-response`,
+                              app: Apps.MCP,
+                              docId: "",
                               title: `Response from ${toolName}`,
                               entity: SystemEntity.SystemInfo,
                               url:
@@ -2252,7 +2251,7 @@ export const AgentMessageApi = async (c: Context) => {
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
                 filters: {
-                  ...parsed?.filters,
+                  ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
                 },

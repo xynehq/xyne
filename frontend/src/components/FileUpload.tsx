@@ -4,6 +4,7 @@ import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
+import { isValidFile } from "../../../shared/filesutils"
 
 interface SelectedFile {
   file: File
@@ -63,35 +64,29 @@ export default function FileUpload({
 
   const generateId = () => Math.random().toString(36).substring(2, 9)
 
-  const isTxtFile = (file: File) => {
-    return (
-      file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")
-    )
-  }
-
   // Original processFiles function without path handling
   const processFiles = useCallback(
     (files: FileList | File[]) => {
       const fileArray = Array.from(files)
-      const txtFiles = fileArray.filter(isTxtFile)
-      const invalidFiles = fileArray.length - txtFiles.length
+      const validFiles = fileArray.filter(isValidFile)
+      const invalidFiles = fileArray.length - validFiles.length
 
       if (invalidFiles > 0) {
         showToast(
-          "Invalid file type",
-          `${invalidFiles} file(s) ignored. Only .txt files are allowed.`,
+          "Invalid file(s)",
+          `${invalidFiles} file(s) ignored. Files must be under 15MB and of supported types.`,
           true,
         )
       }
 
-      if (txtFiles.length === 0) return
+      if (validFiles.length === 0) return
 
       // Create a map to track files by name for deduplication
       const fileMap = new Map<string, File>()
       let duplicateCount = 0
 
       // Keep only the first occurrence of each filename
-      txtFiles.forEach((file) => {
+      validFiles.forEach((file) => {
         if (!fileMap.has(file.name)) {
           fileMap.set(file.name, file)
         } else {
@@ -163,7 +158,7 @@ export default function FileUpload({
           const fileEntry = entry as FileSystemFileEntry
           return new Promise<void>((resolve) => {
             fileEntry.file((file) => {
-              if (isTxtFile(file)) {
+              if (isValidFile(file)) {
                 files.push(file)
               }
               resolve()
@@ -191,17 +186,17 @@ export default function FileUpload({
           processFiles(files)
         }
 
-        // Show warning if any non-txt files were ignored
+        // Show warning if any files were ignored due to size
         if (files.length === 0 && totalItems > 0) {
           showToast(
             "No valid files found",
-            "Only .txt files are allowed. All other file types were ignored.",
+            "Files must be under 15MB. All oversized files were ignored.",
             true,
           )
         }
       })
     },
-    [processFiles, showToast, isTxtFile],
+    [processFiles, showToast, isValidFile],
   )
 
   const handleFolderSelect = useCallback(() => {
@@ -370,7 +365,8 @@ export default function FileUpload({
             Upload Text Files
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Only .txt files are supported
+            Supported formats include text, CSV, PDF, Word, Excel, and
+            PowerPoint files (max 15MB per file).
           </p>
         </div>
       )}
@@ -447,10 +443,11 @@ export default function FileUpload({
                 {isEditingExisting && (
                   <div className="text-center mt-2">
                     <p className="text-gray-600 dark:text-gray-400">
-                      Upload More Text Files
+                      Upload More Files
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Only .txt files are supported
+                      Supported formats include text, CSV, PDF, Word, Excel, and
+                      PowerPoint files (max 15MB per file).
                     </p>
                   </div>
                 )}
@@ -564,7 +561,7 @@ export default function FileUpload({
           directory=""
           className="hidden"
           onChange={handleFolderChange}
-          accept=".txt,text/plain"
+          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
         <input
           ref={fileInputRef}
@@ -572,7 +569,7 @@ export default function FileUpload({
           multiple
           className="hidden"
           onChange={handleFileChange}
-          accept=".txt,text/plain"
+          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
       </div>
     </div>

@@ -71,7 +71,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi } from "@/api/dataSource"
+import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, GetAgentsForDataSourceApi, } from "@/api/dataSource" 
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -105,6 +105,7 @@ import {
   listAgentsSchema,
   updateAgentSchema,
 } from "@/api/agent"
+import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
@@ -297,8 +298,14 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
+  .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .post(
+    "/search/document/delete", 
+    zValidator("json", deleteDocumentSchema),
+    DeleteDocumentApi,
+  )
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
@@ -310,6 +317,7 @@ export const AppRoutes = app
   .get("/tuning/ws/:jobId", TuningWsRoute)
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
@@ -565,6 +573,7 @@ app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
@@ -587,12 +596,53 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
+  "/integrations/fileupload",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+// Catch-all for any other integration routes
+app.get(
+  "/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
   "/admin/integrations/google",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
   "/admin/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/*",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )

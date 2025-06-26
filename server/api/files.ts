@@ -17,6 +17,7 @@ import { NoUserFound } from "@/errors"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { unlink } from "node:fs/promises"
+import { isValidFile } from "../../shared/filesutils"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
@@ -27,10 +28,6 @@ await mkdir(DOWNLOADS_DIR, { recursive: true })
 
 interface FileUploadToDataSourceResult extends DataSourceUploadResult {
   filename: string
-}
-
-const isTxtFile = (file: File) => {
-  return file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")
 }
 
 export const handleFileUpload = async (c: Context) => {
@@ -83,10 +80,10 @@ export const handleFileUpload = async (c: Context) => {
       })
     }
 
-    const invalidFiles = files.filter((file) => !isTxtFile(file))
+    const invalidFiles = files.filter((file) => !isValidFile(file))
     if (invalidFiles.length > 0) {
       throw new HTTPException(400, {
-        message: `${invalidFiles.length} file(s) ignored. Only .txt files are allowed.`,
+        message: `${invalidFiles.length} file(s) rejected. Files must be under 15MB and of supported types.`,
       })
     }
 

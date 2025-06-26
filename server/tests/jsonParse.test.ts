@@ -101,7 +101,6 @@ describe("jsonParseLLMOutput", () => {
     input = cleanBuffer(input)
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
-    console.debug(result)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
 
@@ -330,8 +329,36 @@ Debugging a payment transaction is like being a medical doctor diagnosing a pati
   })
 
   test("should extract JSON from a code block with json specified", () => {
-    const input = "Here is the JSON: ```json\n{\"key\": \"value\"}```"
+    const input = 'Here is the JSON: ```json\n{"key": "value"}```'
     const result = jsonParseLLMOutput(input)
     expect(result).toEqual({ key: "value" })
+  })
+
+  test("should handle XML/HTML tags in the starting of the answer", () => {
+    let input = `<answer>
+    {
+      "answer": "This is a plain text answer."
+    }
+    </answer>`
+    input = cleanBuffer(input)
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
+  })
+
+  test("should handle XML/HTML tags in the starting of the answer and not removing after first line", () => {
+    let input = `<answer>
+        {
+          "answer": "This is a plain text answer.
+<question> question What is the capital of France? </question>"
+        }
+    </answer>`
+    input = cleanBuffer(input)
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({
+      answer:
+        "This is a plain text answer.\n<question> question What is the capital of France? </question>",
+    })
   })
 })

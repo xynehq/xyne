@@ -8,9 +8,10 @@ import {
   NAMESPACE,
   getDataSourceFilesByName,
   getDataSourcesByCreator,
+  GetDocument,
 } from "@/search/vespa"
 import { handleDataSourceFileUpload } from "@/integrations/dataSource"
-import { type VespaDataSource, type VespaSearchResult } from "@/search/types"
+import { type VespaDataSource, type VespaSearchResult, type VespaDataSourceFile, datasourceSchema, dataSourceFileSchema } from "@/search/types"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { type SelectUser } from "@/db/schema"
@@ -18,11 +19,20 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
+import { DeleteDocument } from "@/search/vespa"
+import type { VespaSchema } from "@/search/types"
+import config from "@/config"
+import { getErrorMessage } from "@/utils"
+import {
+  removeAppIntegrationFromAllAgents,
+  getAgentsByDataSourceId,
+} from "@/db/agent"
+import { db } from "@/db/client"
 
-const log = getLogger(Subsystem.Api).child({ module: "dataSourceService" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "dataSourceService",
 })
+const { JwtPayloadKey } = config
 const DOWNLOADS_DIR_DATASOURCE = join(
   process.cwd(),
   "downloads",
@@ -31,11 +41,11 @@ const DOWNLOADS_DIR_DATASOURCE = join(
 ;(async () => {
   try {
     await mkdir(DOWNLOADS_DIR_DATASOURCE, { recursive: true })
-    log.info(
+    loggerWithChild().info(
       `DataSource processing temp directory ensured: ${DOWNLOADS_DIR_DATASOURCE}`,
     )
   } catch (error) {
-    log.error(
+    loggerWithChild().error(
       error,
       `Failed to create DataSource processing temp directory: ${DOWNLOADS_DIR_DATASOURCE}`,
     )
@@ -203,10 +213,176 @@ export async function handleSingleFileUploadToDataSource(
   }
 }
 
+export const deleteDocumentSchema = z.object({
+  docId: z.string().min(1),
+  schema: z.string().min(1),
+})
+
+export const DeleteDocumentApi = async (c: Context) => {
+  try {
+    const { sub: userEmail } = c.get(JwtPayloadKey); 
+
+    const rawData = await c.req.json();
+    const validatedData = deleteDocumentSchema.parse(rawData);
+    const { docId, schema: rawSchema } = validatedData;
+    const validSchemas = [datasourceSchema, dataSourceFileSchema];
+    if (!validSchemas.includes(rawSchema)) {
+      throw new HTTPException(400, {
+        message: `Invalid schema type. Expected 'datasource' or 'datasourceFile', got '${rawSchema}'`
+        });
+      }
+    const schema = rawSchema as VespaSchema;
+
+      const documentData = await GetDocument(schema, docId);
+
+    if (!documentData || !("fields" in documentData) || !documentData.fields) {
+        loggerWithChild({ email: userEmail }).warn(
+        `Document not found or fields missing for docId: ${docId}, schema: ${schema} during delete operation by ${userEmail}`,
+        );
+        throw new HTTPException(404, { message: "Document not found." });
+    }
+
+      const fields = documentData.fields as Record<string, any>;
+      let ownerEmail: string;
+
+    if (schema === datasourceSchema) {
+        ownerEmail = fields.createdBy as string;
+      } else if(schema === dataSourceFileSchema){
+        ownerEmail = fields.uploadedBy as string;
+      }else{
+        loggerWithChild({ email: userEmail }).error(
+          `Unsupported schema type for document deletion: ${schema}. Only dataSource and dataSourceFile schemas are supported.`,
+        );
+        throw new HTTPException(400, {
+          message: "Unsupported schema type for document deletion.",
+        });
+      }
+
+    if (!ownerEmail) {
+        loggerWithChild({ email: userEmail }).error(
+        `Ownership field (createdBy/uploadedBy) missing for document ${docId} of schema ${schema}. Cannot verify ownership for user ${userEmail}.`,
+      );
+      throw new HTTPException(500, {
+        message:
+          "Internal server error: Cannot verify document ownership due to missing data.",
+      });
+    }
+    if (ownerEmail !== userEmail) {
+      loggerWithChild({ email: userEmail }).warn(
+        `User ${userEmail} attempt to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}. Access denied.`,
+      );
+      throw new HTTPException(403, {
+          message: "Forbidden: You do not have permission to delete this document.",
+        });
+    }
+    loggerWithChild({ email: userEmail }).info(
+      `User ${userEmail} authorized to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+    );
+
+    // 
+    if (schema === datasourceSchema) {
+      const dataSourceName = fields.name as string
+      if (!dataSourceName) {
+        loggerWithChild({ email: userEmail }).error(`DataSource name not found for docId: ${docId}`)
+        throw new HTTPException(500, {
+          message: "Internal Server Error: DataSource name missing.",
+        })
+      }
+      let hasMore=true
+      while(hasMore){
+         const filesResponse = await getDataSourceFilesByName(
+        dataSourceName,
+        userEmail,
+      )
+      const filesToDelete =
+        filesResponse.root.children?.map(
+          (child: VespaSearchResult) => child.fields as VespaDataSourceFile,
+        ) || []
+
+      loggerWithChild({ email: userEmail }).info(
+        `Found ${filesToDelete.length} files to delete for datasource ${dataSourceName}`,
+      )
+      if(filesToDelete.length === 0){
+        hasMore = false
+        break
+      }
+      await Promise.all(
+        filesToDelete.map((file) => {
+          if (file.docId) {
+            loggerWithChild({ email: userEmail }).info(
+              `Queueing deletion for file: ${file.fileName} (${file.docId})`,
+            )
+            return DeleteDocument(file.docId, dataSourceFileSchema)
+          }
+          return Promise.resolve()
+        }),
+      )
+      loggerWithChild({ email: userEmail }).info(
+        `All files associated with datasource ${dataSourceName} have been deleted.`,
+      )
+      }
+      loggerWithChild({ email: userEmail }).info(`Deleting files for datasource: ${dataSourceName} (${docId})`)
+      await removeAppIntegrationFromAllAgents(db, docId)
+      loggerWithChild({ email: userEmail }).info(
+        `Removed datasource integration ${docId} from all agents if it existed.`,
+      )
+    }
+
+    await DeleteDocument(docId, schema);
+    loggerWithChild({ email: userEmail }).info(`Successfully deleted document ${docId} with schema ${schema}`);
+    return c.json({ success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessage = error.errors.map(err => `${err.path.join('.')}: ${err.message}`).join(', ');
+      loggerWithChild().warn(`Validation error in DeleteDocumentApi: ${errorMessage}`);
+      throw new HTTPException(400, {
+        message: `Invalid request data: ${errorMessage}`
+      });
+    }
+
+    if (error instanceof HTTPException) {
+      const causeMessage = error.cause instanceof Error ? error.cause.message : String(error.cause);
+      loggerWithChild().warn(`HTTPException in DeleteDocumentApi: ${error.status} ${error.message}${error.cause ? ` - Cause: ${causeMessage}` : ''}`);
+      throw error;
+    }
+
+    const errMsg = getErrorMessage(error);
+    loggerWithChild().error(error, `Delete Document Error: ${errMsg} ${(error as Error).stack}`);
+    throw new HTTPException(500, {
+      message: "Could not delete document due to an internal server error.",
+    });
+  }
+}
+
+export const GetAgentsForDataSourceApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const dataSourceId = c.req.param("dataSourceId")
+
+  if (!dataSourceId) {
+    throw new HTTPException(400, { message: "Data source ID is required." })
+  }
+
+  try {
+    const agents = await getAgentsByDataSourceId(db, dataSourceId)
+    return c.json(agents)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({
+      email: userEmail,
+    }).error(
+      error,
+      `Failed to get agents for data source ${dataSourceId}: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to retrieve agents for the data source.",
+    })
+  }
+}
+
 export const ListDataSourcesApi = async (c: Context) => {
   const jwtPayload = c.var.jwtPayload
   if (!jwtPayload || typeof jwtPayload.sub !== "string") {
-    log.error("JWT payload or sub is missing/invalid in ListDataSourcesApi")
+    loggerWithChild().error("JWT payload or sub is missing/invalid in ListDataSourcesApi")
     return c.json(
       {
         error: "Unauthorized",
@@ -255,7 +431,7 @@ export const ListDataSourceFilesApi = async (c: Context) => {
   }
 
   if (!jwtPayload || typeof jwtPayload.sub !== "string") {
-    log.error("JWT payload or sub is missing/invalid in ListDataSourceFilesApi")
+    loggerWithChild().error("JWT payload or sub is missing/invalid in ListDataSourceFilesApi")
     return c.json(
       {
         error: "Unauthorized",

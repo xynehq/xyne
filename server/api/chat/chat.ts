@@ -276,6 +276,7 @@ const checkAndYieldCitations = function* (
 
 export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
+  parsableBuffer = parsableBuffer.replace(/^\s*<[^>]*>?/, "")
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
 }
@@ -2747,7 +2748,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
-      Logger.info(`Routing to MessageWithToolsApi`)
+      loggerWithChild({ email: email }).info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
 
@@ -2763,7 +2764,9 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
       if (!isAgentic && agentDetails) {
-        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
+        loggerWithChild({ email: email }).info(
+          `Routing to AgentMessageApi for agent ${agentPromptValue}.`,
+        )
         return AgentMessageApi(c)
       }
     }
@@ -3067,7 +3070,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: thinking,
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3292,7 +3295,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters
+              parsed?.filters ?? {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -3547,7 +3550,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: thinking,
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -4330,7 +4333,7 @@ export const MessageRetryApi = async (c: Context) => {
                 )
               }
               const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters
+                parsed?.filters ?? {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
