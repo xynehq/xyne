@@ -42,6 +42,7 @@ import {
 } from "./errors"
 import type { Document } from "@langchain/core/documents"
 import { safeLoadPDF, deleteDocument } from "@/integrations/google/index.ts"
+import { extractTextAndImagesWithChunks } from "@/pdfChunks"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -169,9 +170,12 @@ const createFileMetadata = (
 
 // Core processing functions
 const createVespaDataSourceFile = (
-  chunks: string[],
+  text_chunks: string[],
   options: ProcessingOptions,
   processingMethod: string,
+  image_chunks?: string[],
+  text_chunk_pos?: number[],
+  image_chunk_pos?: number[],
   convertedFrom?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
@@ -184,7 +188,10 @@ const createVespaDataSourceFile = (
     app: Apps.DataSource,
     fileName: options.fileName,
     fileSize: options.fileSize,
-    chunks,
+    chunks: text_chunks,
+    image_chunks: image_chunks || [],
+    chunks_pos: text_chunk_pos || [],
+    image_chunks_pos: image_chunk_pos || [],
     uploadedBy: options.userEmail,
     mimeType: options.mimeType,
     createdAt: now,
@@ -193,7 +200,7 @@ const createVespaDataSourceFile = (
     metadata: createFileMetadata(
       options.fileName,
       options.userEmail,
-      chunks.length,
+      text_chunks.length,
       processingMethod,
       convertedFrom,
     ),
@@ -240,30 +247,9 @@ const processPdfContent = async (
   convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
-    const docs: Document[] = await safeLoadPDF(filePath)
-    if (!docs || docs.length === 0) {
-      await deleteDocument(filePath)
-      throw new ContentExtractionError(
-        "No content extracted from PDF document",
-        "PDF",
-      )
-    }
-
-    const content = docs.flatMap((doc) => doc.pageContent)
-    const trimmedContent = content.join(" ").trim()
-
-    if (
-      !trimmedContent ||
-      trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
-    ) {
-      throw new InsufficientContentError(
-        DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
-        trimmedContent.length,
-      )
-    }
-
-    const chunks = chunkDocument(trimmedContent).map((v) => v.chunk)
-    if (chunks.length === 0) {
+    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+      await extractTextAndImagesWithChunks(filePath, `dsf-${createId()}`)
+    if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
         "PDF",
@@ -271,9 +257,12 @@ const processPdfContent = async (
     }
 
     return createVespaDataSourceFile(
-      chunks,
+      text_chunks,
       options,
       convertedFrom ? "pdf_conversion" : "pdf_processing",
+      image_chunks,
+      text_chunk_pos,
+      image_chunk_pos,
       convertedFrom,
     )
   } catch (error) {
@@ -328,9 +317,9 @@ const convertToPdf = async (
     if (isOfficeFile(mimeType)) {
       await convertOfficeToPdf(inputFilePath, tempDir, outputPdfPath)
     }
-    // else if (isImageFile(mimeType)) {       if we want to support image conversion in the future
-    //   await convertImageToPdf(inputFilePath, outputPdfPath)
-    // }
+    else if (isImageFile(mimeType)) {
+      await convertImageToPdf(inputFilePath, outputPdfPath)
+    }
     else {
       throw new UnsupportedFileTypeError(mimeType, [
         "office documents",

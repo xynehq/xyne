@@ -101,7 +101,6 @@ import {
   MAX_GD_PDF_SIZE,
   MAX_GD_SHEET_ROWS,
   MAX_GD_SHEET_TEXT_LEN,
-  MAX_GD_SLIDES_TEXT_LEN,
   PDFProcessingConcurrency,
   ServiceAccountUserConcurrency,
 } from "@/integrations/google/config"
@@ -697,55 +696,51 @@ const insertCalendarEvents = async (
   })
   // Insert confirmed events
   for (const event of confirmedEvents) {
-    try {
-      const { baseUrl, joiningUrl } = getJoiningLink(event)
-      const { attendeesInfo, attendeesEmails, attendeesNames } =
-        getAttendeesOfEvent(event.attendees ?? [])
-      const { attachmentsInfo, attachmentFilenames } = getAttachments(
-        event.attachments ?? [],
-      )
-      const { isDefaultStartTime, startTime } = getEventStartTime(event)
-      const eventToBeIngested = {
-        docId: event.id ?? "",
-        name: event.summary ?? "",
-        description: getTextFromEventDescription(event?.description ?? ""),
-        url: event.htmlLink ?? "",
-        status: event.status ?? "",
-        location: event.location ?? "",
-        createdAt: new Date(event.created!).getTime(),
-        updatedAt: new Date(event.updated!).getTime(),
-        app: Apps.GoogleCalendar,
-        entity: CalendarEntity.Event,
-        creator: {
-          email: event.creator?.email ?? "",
-          displayName: event.creator?.displayName ?? "",
-        },
-        organizer: {
-          email: event.organizer?.email ?? "",
-          displayName: event.organizer?.displayName ?? "",
-        },
-        attendees: attendeesInfo,
-        attendeesNames: attendeesNames,
-        startTime: startTime,
-        endTime: new Date(event.end?.dateTime!).getTime(),
-        attachmentFilenames,
-        attachments: attachmentsInfo,
-        recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
-        baseUrl,
-        joiningLink: joiningUrl,
-        permissions: getUniqueEmails([
-          event.organizer?.email ?? "",
-          ...attendeesEmails,
-        ]),
-        cancelledInstances: [],
-        defaultStartTime: isDefaultStartTime,
-      }
-
-      await insertWithRetry(eventToBeIngested, eventSchema)
-      tracker.updateUserStats(userEmail, StatType.Events, 1)
-    } catch (error) {
-      Logger.error(`Error inserting the Event:${event.id}`)
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
+    const eventToBeIngested = {
+      docId: event.id ?? "",
+      name: event.summary ?? "",
+      description: getTextFromEventDescription(event?.description ?? ""),
+      url: event.htmlLink ?? "",
+      status: event.status ?? "",
+      location: event.location ?? "",
+      createdAt: new Date(event.created!).getTime(),
+      updatedAt: new Date(event.updated!).getTime(),
+      app: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.creator?.email ?? "",
+        displayName: event.creator?.displayName ?? "",
+      },
+      organizer: {
+        email: event.organizer?.email ?? "",
+        displayName: event.organizer?.displayName ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: startTime,
+      endTime: new Date(event.end?.dateTime!).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+      baseUrl,
+      joiningLink: joiningUrl,
+      permissions: getUniqueEmails([
+        event.organizer?.email ?? "",
+        ...attendeesEmails,
+      ]),
+      cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
     }
+
+    await insertWithRetry(eventToBeIngested, eventSchema)
+    tracker.updateUserStats(userEmail, StatType.Events, 1)
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -1024,6 +1019,7 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { extractTextAndImagesWithChunks } from "@/pdfChunks"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -1438,54 +1434,46 @@ export const getPresentationToBeIngested = async (
   client: GoogleClient,
   email: string,
 ) => {
-  const slides = google.slides({ version: "v1", auth: client })
+  const drive = google.drive({ version: "v3", auth: client })
   try {
-    const presentationData = await retryWithBackoff(
-      () =>
-        slides.presentations.get({
-          presentationId: presentation.id!,
-        }),
-      `Fetching presentation with id ${presentation.id}`,
-      Apps.GoogleDrive,
-      0,
+    // Create PDF filename using similar approach as PDFs and Docs
+    const presentationFileName = `${hashPdfFilename(`${email}_${presentation.id}_${presentation.name}`)}.pdf`
+    const presentationPath = `${downloadDir}/${presentationFileName}`
+
+    loggerWithChild({ email }).debug(
+      `Downloading Google Slides as PDF: ${presentation.name} -> ${presentationFileName}`,
+    )
+
+    // Download the Google Slides presentation as PDF
+    await downloadPresentationAsPDF(
+      drive,
+      presentation.id!,
+      presentationFileName,
       client,
     )
-    const slidesData = presentationData?.data?.slides!
-    let chunks: string[] = []
-    let totalTextLen = 0
 
-    slidesData?.forEach((slide) => {
-      let slideText = ""
-      slide?.pageElements!?.forEach((element) => {
-        if (
-          element.shape &&
-          element.shape.text &&
-          element.shape.text.textElements
-        ) {
-          element.shape.text.textElements.forEach((textElement) => {
-            if (textElement.textRun) {
-              const textContent = textElement.textRun.content!.trim()
-              slideText += textContent + " "
-              totalTextLen += textContent.length
-            }
-          })
-        }
-      })
-
-      if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
-        // Only chunk if the total text length is within the limit
-        const slideChunks = chunkDocument(slideText)
-        chunks.push(...slideChunks.map((c) => c.chunk))
-      }
-    })
-
-    // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
-    if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
-      loggerWithChild({ email: email }).error(
-        `Text Length exceeded for ${presentation.name}, indexing with empty content`,
+    const stats = fs.statSync(presentationPath)
+    const pdfSizeMB = stats.size / (1024 * 1024)
+    if (pdfSizeMB > MAX_GD_PDF_SIZE) {
+      await deleteDocument(presentationPath)
+      loggerWithChild({ email: email }).warn(
+        `Ignoring ${presentation.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
       )
-      chunks = []
+      blockedFilesTotal.inc({
+        mime_type:
+          presentation.mimeType ?? "application/vnd.google-apps.presentation",
+        blocked_type: "MAX_PDF_SIZE_EXCEEDED",
+        email: email,
+        file_type: DriveEntity.Slides,
+        status: "BLOCKED",
+      })
+      return null
     }
+
+    // Use the same chunking approach as PDFs and Docs
+    Logger.info(`Extracting text and images from ${presentationPath}`)
+    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+      await extractTextAndImagesWithChunks(presentationPath, presentation.id!)
 
     const parentsForMetadata = []
     if (presentation?.parents) {
@@ -1495,6 +1483,9 @@ export const getPresentationToBeIngested = async (
         parentsForMetadata.push({ folderName, folderId: parentId })
       }
     }
+
+    // Cleanup the downloaded PDF file
+    await deleteDocument(presentationPath)
 
     const presentationToBeIngested = {
       title: presentation.name!,
@@ -1511,7 +1502,10 @@ export const getPresentationToBeIngested = async (
         ? (presentation.owners[0]?.emailAddress ?? "")
         : "",
       entity: DriveEntity.Slides,
-      chunks,
+      chunks: text_chunks,
+      image_chunks: image_chunks,
+      chunks_pos: text_chunk_pos,
+      image_chunks_pos: image_chunk_pos,
       permissions: presentation.permissions ?? [],
       mimeType: presentation.mimeType ?? "",
       metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -1521,7 +1515,18 @@ export const getPresentationToBeIngested = async (
 
     return presentationToBeIngested
   } catch (error) {
-    loggerWithChild({ email: email }).error(
+    // Clean up PDF file if it exists in case of error
+    const presentationFileName = `${hashPdfFilename(`${email}_${presentation.id}_${presentation.name}`)}.pdf`
+    const presentationPath = `${downloadDir}/${presentationFileName}`
+    if (fs.existsSync(presentationPath)) {
+      try {
+        await deleteDocument(presentationPath)
+      } catch (deleteError) {
+        // Logger.warn(`Could not delete Presentation PDF file ${presentationPath}: ${deleteError}`)
+      }
+    }
+
+    loggerWithChild({ email }).error(
       error,
       `Error in getting presentation data with id ${presentation?.id}`,
     )
@@ -1638,22 +1643,17 @@ const insertFilesForUser = async (
       )
       // Check existence and timestamps for all files in this page right away
       const fileIds = pageFiles.map((file) => file.id!)
+      const existenceMap = await ifDocumentsExist(fileIds)
       let initialCount = pageFiles.length
-      try {
-        const existenceMap = await ifDocumentsExist(fileIds)
+      pageFiles = filterUnchanged(existenceMap, pageFiles)
 
-        pageFiles = filterUnchanged(existenceMap, pageFiles)
-
-        const skippedFilesCount = initialCount - pageFiles.length
-        if (skippedFilesCount > 0) {
-          processedFiles += skippedFilesCount
-          tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
-          loggerWithChild({ email: userEmail! }).info(
-            `Skipped ${skippedFilesCount} unchanged Drive files`,
-          )
-        }
-      } catch (error) {
-        Logger.error(`Could not check the file existance:Insering all files`)
+      const skippedFilesCount = initialCount - pageFiles.length
+      if (skippedFilesCount > 0) {
+        processedFiles += skippedFilesCount
+        tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
+        loggerWithChild({ email: userEmail! }).info(
+          `Skipped ${skippedFilesCount} unchanged Drive files`,
+        )
       }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -2257,8 +2257,43 @@ if (process.env.NODE_ENV !== "production") {
       fs.mkdirSync(downloadDir, { recursive: true })
     }
   }
-
   init()
+}
+
+// Add function to download Google Docs as PDF
+export const downloadDocAsPDF = async (
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+  client: GoogleClient,
+): Promise<void> => {
+  const filePath = path.join(downloadDir, fileName)
+  const file = Bun.file(filePath)
+  const writer = file.writer()
+  const res = await retryWithBackoff(
+    () =>
+      drive.files.export(
+        { fileId: fileId, mimeType: "application/pdf" },
+        { responseType: "stream" },
+      ),
+    `Exporting Google Doc as PDF with fileId ${fileId}`,
+    Apps.GoogleDrive,
+    0,
+    client,
+  )
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => {
+      writer.write(chunk)
+    })
+    res.data.on("end", () => {
+      writer.end()
+      resolve()
+    })
+    res.data.on("error", (err) => {
+      writer.end()
+      reject(err)
+    })
+  })
 }
 
 export const downloadPDF = async (
@@ -2371,13 +2406,9 @@ export const googlePDFsVespa = async (
         })
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
-        const docs: Document[] = await safeLoadPDF(pdfPath)
-        if (!docs || docs.length === 0) {
-          await deleteDocument(pdfPath)
-          return null
-        }
-
-        const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+        Logger.info(`Extracting text and images from ${pdfPath}`)
+        const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+          await extractTextAndImagesWithChunks(pdfPath, pdf.id!)
 
         const parentsForMetadata = []
         if (pdf?.parents) {
@@ -2409,7 +2440,10 @@ export const googlePDFsVespa = async (
           photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
           ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.PDF,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
+          image_chunks: image_chunks,
+          chunks_pos: text_chunk_pos,
+          image_chunks_pos: image_chunk_pos,
           permissions: pdf.permissions ?? [],
           mimeType: pdf.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -2796,7 +2830,7 @@ export const googleDocsVespa = async (
   //   `Scanning ${docsMetadata.length} Google Docs`,
   //   connectorId,
   // )
-  const docs = google.docs({ version: "v1", auth: client })
+  const drive = google.drive({ version: "v3", auth: client })
   const total = docsMetadata.length
   let count = 0
   const limit = pLimit(GoogleDocsConcurrency)
@@ -2811,36 +2845,40 @@ export const googleDocsVespa = async (
         email: userEmail,
       })
       try {
-        const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-          await retryWithBackoff(
-            () =>
-              docs.documents.get({
-                documentId: doc.id as string,
-              }),
-            `Fetching document with documentId ${doc.id}`,
-            Apps.GoogleDrive,
-            0,
-            client,
-          )
-        if (!docResponse || !docResponse.data) {
-          throw new DocsParsingError(
-            `Could not get document content for file: ${doc.id}`,
-          )
-        }
-        const documentContent: docs_v1.Schema$Document = docResponse.data
+        // Create PDF filename using similar approach as PDFs
+        const docFileName = `${hashPdfFilename(`${userEmail}_${doc.id}_${doc.name}`)}.pdf`
+        const docPath = `${downloadDir}/${docFileName}`
 
-        const rawTextContent = documentContent?.body?.content
-          ?.map((e) => extractText(documentContent, e))
-          .join("")
-
-        const footnotes = extractFootnotes(documentContent)
-        const headerFooter = extractHeadersAndFooters(documentContent)
-
-        const cleanedTextContent = postProcessText(
-          rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+        loggerWithChild({ email: userEmail! }).debug(
+          `Downloading Google Doc as PDF: ${doc.name} -> ${docFileName}`,
         )
 
-        const sizeInBytes = Buffer.byteLength(cleanedTextContent, "utf8")
+        // Download the Google Doc as PDF
+        await downloadDocAsPDF(drive, doc.id!, docFileName, client)
+
+        const stats = fs.statSync(docPath)
+        const pdfSizeMB = stats.size / (1024 * 1024)
+        if (pdfSizeMB > MAX_GD_PDF_SIZE) {
+          await deleteDocument(docPath)
+          loggerWithChild({ email: userEmail! }).warn(
+            `Ignoring ${doc.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
+          )
+          blockedFilesTotal.inc({
+            mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
+            blocked_type: "MAX_PDF_SIZE_EXCEEDED",
+            email: userEmail,
+            file_type: DriveEntity.Docs,
+            status: "BLOCKED",
+          })
+          return null
+        }
+
+        // Use the same chunking approach as PDFs
+        Logger.info(`Extracting text and images from ${docPath}`)
+        const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+          await extractTextAndImagesWithChunks(docPath, doc.id!)
+
+        const sizeInBytes = Buffer.byteLength(text_chunks.join(""), "utf8")
         contentFileSize.observe(
           {
             mime_type: doc.mimeType ?? "",
@@ -2849,7 +2887,6 @@ export const googleDocsVespa = async (
           },
           sizeInBytes,
         )
-        const chunks = chunkDocument(cleanedTextContent)
 
         const parentsForMetadata = []
         // Shared files cannot have parents
@@ -2862,6 +2899,9 @@ export const googleDocsVespa = async (
           }
         }
 
+        // Cleanup the downloaded PDF file
+        await deleteDocument(docPath)
+
         const result: VespaFileWithDrivePermission = {
           title: doc.name!,
           url: doc.webViewLink ?? "",
@@ -2871,7 +2911,10 @@ export const googleDocsVespa = async (
           photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
           ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.Docs,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
+          image_chunks: image_chunks,
+          chunks_pos: text_chunk_pos,
+          image_chunks_pos: image_chunk_pos,
           permissions: doc.permissions ?? [],
           mimeType: doc.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -2895,6 +2938,16 @@ export const googleDocsVespa = async (
         )
         return result
       } catch (error) {
+        // Clean up PDF file if it exists in case of error
+        const docFileName = `${hashPdfFilename(`${userEmail}_${doc.id}_${doc.name}`)}.pdf`
+        const docPath = `${downloadDir}/${docFileName}`
+        if (fs.existsSync(docPath)) {
+          try {
+            await deleteDocument(docPath)
+          } catch (deleteError) {
+            // Logger.warn(`Could not delete Doc PDF file ${docPath}: ${deleteError}`)
+          }
+        }
         const errorMessage = getErrorMessage(error)
         loggerWithChild({ email: userEmail! }).error(
           error,
@@ -3678,4 +3731,40 @@ export const ServiceAccountIngestMoreUsers = async (
       `ServiceAccountIngestMoreUsers (jobId: ${jobId}) for connector ${connectorId} finished. Tracker removed.`,
     )
   }
+}
+
+// Add function to download Google Slides presentations as PDF
+export const downloadPresentationAsPDF = async (
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+  client: GoogleClient,
+): Promise<void> => {
+  const filePath = path.join(downloadDir, fileName)
+  const file = Bun.file(filePath)
+  const writer = file.writer()
+  const res = await retryWithBackoff(
+    () =>
+      drive.files.export(
+        { fileId: fileId, mimeType: "application/pdf" },
+        { responseType: "stream" },
+      ),
+    `Exporting Google Slides as PDF with fileId ${fileId}`,
+    Apps.GoogleDrive,
+    0,
+    client,
+  )
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => {
+      writer.write(chunk)
+    })
+    res.data.on("end", () => {
+      writer.end()
+      resolve()
+    })
+    res.data.on("error", (err) => {
+      writer.end()
+      reject(err)
+    })
+  })
 }

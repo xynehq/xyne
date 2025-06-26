@@ -76,6 +76,7 @@ export interface ModelParams {
   reasoning?: boolean
   prompt?: string
   agentPrompt?: string
+  imageFileNames?: string[]
 }
 
 export interface ConverseResponse {
