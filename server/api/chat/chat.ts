@@ -34,11 +34,14 @@ import {
 import config from "@/config"
 import {
   deleteChatByExternalId,
+  deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
   getChatByExternalId,
+  getChatByExternalIdWithAuth,
   getPublicChats,
   insertChat,
   updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
@@ -134,6 +137,7 @@ import {
 import { APIError } from "openai"
 import {
   getChatTraceByExternalId,
+  getChatTraceByExternalIdWithAuth,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -191,7 +195,7 @@ export const GetChatTraceApi = async (c: Context) => {
         message: "chatId and messageId are required query parameters",
       })
     }
-    const trace = await getChatTraceByExternalId(chatId, messageId)
+    const trace = await getChatTraceByExternalIdWithAuth(chatId, messageId, email)
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
@@ -396,7 +400,7 @@ export const GetChatApi = async (c: Context) => {
     const body: z.infer<typeof chatSchema> = c.req.valid("json")
     const { chatId } = body
     const [chat, messages] = await Promise.all([
-      getChatByExternalId(db, chatId),
+      getChatByExternalIdWithAuth(db, chatId, email),
       getChatMessages(db, chatId),
     ])
     return c.json({
@@ -422,7 +426,7 @@ export const ChatRenameApi = async (c: Context) => {
     email = sub || ""
     // @ts-ignore
     const { title, chatId } = c.req.valid("json")
-    await updateChatByExternalId(db, chatId, { title })
+    await updateChatByExternalIdWithAuth(db, chatId, email, { title })
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -448,7 +452,7 @@ export const ChatDeleteApi = async (c: Context) => {
       await deleteChatTracesByChatExternalId(tx, chatId)
       // Second we have to delete all messages associated with that chat
       await deleteMessagesByChatId(tx, chatId)
-      await deleteChatByExternalId(tx, chatId)
+      await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
     return c.json({ success: true })
   } catch (error) {
@@ -492,7 +496,7 @@ export const ChatBookmarkApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { chatId, bookmark } = body
-    await updateChatByExternalId(db, chatId, { isBookmarked: bookmark })
+    await updateChatByExternalIdWithAuth(db, chatId, email, { isBookmarked: bookmark })
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -2872,7 +2876,7 @@ export const MessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalIdWithAuth(db, chatId, email, {})
           let allMessages = await getChatMessages(tx, chatId)
 
           let insertedMsg = await insertMessage(tx, {

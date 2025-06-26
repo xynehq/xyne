@@ -58,6 +58,34 @@ export async function getChatTraceByExternalId(
   }
 }
 
+export async function getChatTraceByExternalIdWithAuth(
+  chatExternalId: string,
+  messageExternalId: string,
+  userEmail: string,
+): Promise<SelectChatTrace | null> {
+  const [trace] = await db
+    .select()
+    .from(chatTrace)
+    .where(
+      and(
+        eq(chatTrace.chatExternalId, chatExternalId),
+        eq(chatTrace.messageExternalId, messageExternalId),
+        eq(chatTrace.email, userEmail),
+      ),
+    )
+
+  if (!trace || !trace.traceJson) return null
+
+  try {
+    return {
+      ...trace,
+      traceJson: JSON.parse(decompressTraceJson(trace.traceJson as Buffer)),
+    }
+  } catch (err) {
+    return null
+  }
+}
+
 export async function updateChatTrace(
   chatExternalId: string,
   messageExternalId: string,

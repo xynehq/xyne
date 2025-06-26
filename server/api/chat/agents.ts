@@ -42,6 +42,7 @@ import {
   getPublicChats,
   insertChat,
   updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
@@ -472,7 +473,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalIdWithAuth(db, chatId, email, {})
           let allMessages = await getChatMessages(tx, chatId)
 
           let insertedMsg = await insertMessage(tx, {
@@ -1814,7 +1815,7 @@ export const AgentMessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalIdWithAuth(db, chatId, email, {})
           let allMessages = await getChatMessages(tx, chatId)
 
           let insertedMsg = await insertMessage(tx, {
