@@ -3457,7 +3457,7 @@ export const ServiceAccountIngestMoreUsers = async (
   )
 
   if (isScript) {
-    Logger
+    Logger.info(`Script is running, initialising gmail worker`)
     initializeGmailWorker()
   }
   let connector: SelectConnector | null = null
@@ -3515,7 +3515,7 @@ export const ServiceAccountIngestMoreUsers = async (
     const uniqueUsersToProcess = Array.from(uniqueUsersMap.values())
 
     if (uniqueUsersToProcess.length !== usersToProcess.length) {
-      Logger.info(
+      Logger.warn(
         `Removed ${usersToProcess.length - uniqueUsersToProcess.length} duplicate or unidentifiable (no email) users from processing list (jobId: ${jobId})`,
       )
     }
@@ -3565,7 +3565,7 @@ export const ServiceAccountIngestMoreUsers = async (
         const userEmail = getValidUserEmailFromGoogleUser(googleUser)
 
         if (!userEmail) {
-          Logger.info(
+          Logger.error(
             `ServiceAccountIngestMoreUsers: Could not determine a valid email address for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping this user's detailed processing.`,
           )
           tracker.markUserComplete(
