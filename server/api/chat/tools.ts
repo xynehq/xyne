@@ -87,9 +87,11 @@ const driveEntityMap = new Map<string, DriveEntity>([
 // Define a mapper for app enums
 const appEnumMap = new Map<string, Apps>([
   ["gmail", Apps.Gmail],
+  ["g-mail", Apps.Gmail],
   ["googlecalendar", Apps.GoogleCalendar],
   ["google-calendar", Apps.GoogleCalendar],
   ["googledrive", Apps.GoogleDrive],
+  ["google-drive", Apps.GoogleDrive],
 ])
 
 const { maxDefaultSummary } = config
@@ -283,7 +285,7 @@ export const searchTool: AgentTool = {
       const fragments = children.map((r) => {
         const citation = searchToCitation(r as any)
         return {
-          id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          id: `${citation.docId}`,
           content: answerContextMap(r as any, maxDefaultSummary),
           source: citation,
           confidence: r.relevance || 0.7,
@@ -402,30 +404,18 @@ export const filteredSearchTool: AgentTool = {
               contexts: [],
             }
           }
-          searchResults = await getItems({
-            email,
-            schema,
-            app: appEnum,
-            entity: null,
-            timestampRange: null,
-            limit: searchLimit,
-            offset: params.offset || 0,
-            asc: params.order_direction === "asc",
-            excludedIds: params.excludedIds,
-          })
-        } else {
-          searchResults = await getItems({
-            email,
-            schema,
-            app: appEnum,
-            entity: null,
-            timestampRange: null,
-            limit: searchLimit,
-            offset: params.offset || 0,
-            asc: params.order_direction === "asc",
-            excludedIds: params.excludedIds,
-          })
         }
+        searchResults = await getItems({
+          email,
+          schema,
+          app: appEnum,
+          entity: null,
+          timestampRange: null,
+          limit: searchLimit,
+          offset: params.offset || 0,
+          asc: params.order_direction === "asc",
+          excludedIds: params.excludedIds,
+        })
       } else {
         if (agentPrompt) {
           const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
@@ -455,6 +445,7 @@ export const filteredSearchTool: AgentTool = {
         }
       }
       const children = searchResults?.root?.children || []
+      // console.log(children.map((r) => r.fields), "children ids in filtered search tool")
       execSpan?.setAttribute("results_count", children.length)
 
       if (children.length === 0)
@@ -466,7 +457,7 @@ export const filteredSearchTool: AgentTool = {
       const fragments = children.map((r) => {
         const citation = searchToCitation(r as any)
         return {
-          id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          id: `${citation.docId}`,
           content: answerContextMap(r as any, maxDefaultSummary),
           source: citation,
           confidence: r.relevance || 0.7,
@@ -475,7 +466,7 @@ export const filteredSearchTool: AgentTool = {
 
       const topItemsList = fragments
         .slice(0, 3)
-        .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+        .map((f) => `- "${f.source.title || "Untitled"}"`)
         .join("\n")
       const summaryText = `Found ${fragments.length} results in \`${app}\`.\nTop items:\n${topItemsList}`
 
@@ -611,44 +602,18 @@ export const timeSearchTool: AgentTool = {
               contexts: [],
             }
           }
-          searchResults = await getItems({
-            email,
-            schema: schemaToUse,
-            app: appToUse!,
-            entity: entityToUse,
-            timestampRange: { from, to },
-            limit: searchLimit,
-            offset: params.offset || 0,
-            asc: params.order_direction === "asc",
-            excludedIds: params.excludedIds,
-          })
-        } else {
-          searchResults = await getItems({
-            email,
-            schema: schemaToUse,
-            app: appToUse!,
-            entity: entityToUse,
-            timestampRange: { from, to },
-            limit: searchLimit,
-            offset: params.offset || 0,
-            asc: params.order_direction === "asc",
-            excludedIds: params.excludedIds,
-          })
-          console.log(
-            {
-              email,
-              schema: schemaToUse,
-              app: appToUse!,
-              entity: entityToUse,
-              timestampRange: { from, to },
-              limit: searchLimit,
-              offset: params.offset || 0,
-              asc: params.order_direction === "asc",
-              excludedIds: params.excludedIds,
-            },
-            "getItems params in time search tool",
-          )
         }
+        searchResults = await getItems({
+          email,
+          schema: schemaToUse,
+          app: appToUse!,
+          entity: entityToUse,
+          timestampRange: { from, to },
+          limit: searchLimit,
+          offset: params.offset || 0,
+          asc: params.order_direction === "asc",
+          excludedIds: params.excludedIds,
+        })
       } else {
         if (agentPrompt) {
           const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
@@ -693,7 +658,7 @@ export const timeSearchTool: AgentTool = {
       const fragments = children.map((r) => {
         const citation = searchToCitation(r as any)
         return {
-          id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          id: `${citation.docId}`,
           content: answerContextMap(r as any, maxDefaultSummary),
           source: citation,
           confidence: r.relevance || 0.7,
@@ -1183,7 +1148,7 @@ export const metadataRetrievalTool: AgentTool = {
               : `Context unavailable for ${citation.title || citation.docId}`
 
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}`,
               content: content,
               source: citation,
               confidence: item.relevance || 0.7, // Use item.relevance if available
@@ -1473,7 +1438,7 @@ export const getSlackThreads: AgentTool = {
               : `Context unavailable for ${citation.title || citation.docId}`
 
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}`,
               content: content,
               source: citation,
               confidence: item.relevance || 0.7, // Use item.relevance if available
@@ -1680,7 +1645,7 @@ export const getSlackMessagesFromUser: AgentTool = {
               : `Context unavailable for ${citation.title || citation.docId}`
 
             return {
-              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              id: `${citation.docId}`,
               content: content,
               source: citation,
               confidence: item.relevance || 0.7, // Use item.relevance if available
@@ -1915,7 +1880,7 @@ export const getSlackRelatedMessages: AgentTool = {
             : `Content unavailable for ${citation.title || citation.docId}`
 
           return {
-            id: `slack-${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            id: `${citation.docId}`,
             content: content,
             source: citation,
             confidence: item.relevance || 0.7,
@@ -2063,7 +2028,7 @@ export const getUserSlackProfile: AgentTool = {
           `slack-profile-${params.user_email}-${Date.now()}`,
         content: profileSummary,
         source: {
-          docId: userProfileDoc.id || profileData.docId || params.user_email,
+          docId: profileData.docId,
           title: `Slack Profile: ${profileData.name || params.user_email}`,
           app: Apps.Slack,
           entity: SlackEntity.User,

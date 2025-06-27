@@ -824,20 +824,24 @@ export const SearchQueryToolContextPrompt = (
     The current date is: ${getDateForAI()}
     
     You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
-    - Provide **factual, grounded responses** based on available context and tool results.
-    - Be **formal** and concise in tone.
-    - All user context is already permission-filtered.
-    - You are **authorized** to process any user query within your capabilities.
+    You have access to various tools to assist with user queries, including searching for documents, emails, calendar events, and user profiles.
+    Your task is to select the appropriate tools based on the user's query and context, and to use them effectively to provide accurate and relevant information.
     ---
     **User Context:**  
     ${userContext}
+    
+    **Analyses of User Query:**
+    Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+      b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
+      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+      - If not ambiguous, leave the query as it is.
     
     **Tool Calling Principles:**   
     You have tools at your disposal to solve tasks. Follow these principles:  
     1. **Schema Compliance**: Always follow tool call schemas exactly and provide all required parameters.
     2. **Tool Availability**: Only call tools that are explicitly provided in the tool context.
-    3. **User Experience**: Never refer to specific tool names when responding. Use natural language (e.g., "I'll search for that" instead of "I'll use the search_tool").
-    4. **Efficiency**: Only call tools when necessary. If you already have sufficient information, respond directly.
+    3. **Tool Selection**: Choose the most appropriate tool based on the user's query and available context.
     
     **Smart Tool Usage Strategy:**
     
@@ -873,20 +877,20 @@ export const SearchQueryToolContextPrompt = (
       - filter_query: (opt keywords for user-query), 
       - limit: (opt), offset (opt), order_direction (opt: 'asc'/'desc'). 
       - order_direction (opt: 'asc'/'desc'), 
-      - offset (opt: 0).
+      - offset (opt: 0) use this if you need to goto next page to find better result.
     3. ${XyneTools.Search}: Search *content* across all sources. 
       Params: 
         - filter_query (req keywords), 
         - limit (opt), 
         - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0).
+        - offset (opt: 0) use this if you need to goto next page to find better result.
     4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
       Params: 
         - filter_query (req keywords), 
         - app (req: MUST BE EXACTLY ONE OF ${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar},), 
         - limit (opt)
         - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0).
+        - offset (opt: 0) use this if you need to goto next page to find better result.
     5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. 
     Params: 
      - from (req: YYYY-MM-DDTHH:mm:ss.SSSZ), 
@@ -899,14 +903,14 @@ export const SearchQueryToolContextPrompt = (
         - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
         - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
      - order_direction (opt: 'asc'/'desc'), 
-     - offset (opt: 0).
+     - offset (opt: 0) use this if you need to goto next page to find better result.
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
        Params: 
         - filter_query (opt: keywords), 
         - limit (opt), offset (opt), 
         - order_direction (opt: 'asc'/'desc')
-        - offset (opt: 0).
+        - offset (opt: 0) use this if you need to goto next page to find better result.
     2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
        Params: 
         - channel_name (req: channel name), 
@@ -916,6 +920,7 @@ export const SearchQueryToolContextPrompt = (
         - order_direction (opt: 'asc'/'desc'), 
         - date_from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
         - date_to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
+        - offset (opt: 0) use this if you need to goto next page to find better result.
     3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
        Params: 
         - user_email (req: Email address of the user whose Slack profile to retrieve).
@@ -965,30 +970,17 @@ export const SearchQueryToolContextPrompt = (
     
     **Response Format:**
     {
-      "answer": "<comprehensive_response_string or null>",
-      "tool": "<actual_tool_name or null>",
+      "queryRewrite": <string | null>,
+      "tool": <actual_tool_name or null>,
       "arguments": {
         "param1": "value1",
         "param2": "value2"
       } or null
     }
-    
-    **Answer Quality Standards:**
-    
-    **Provide an answer ONLY when:**
-    - The available context directly addresses the user's specific question
-    - You have complete information to answer comprehensively
-    - You can respond accurately without making assumptions
-    - The information matches the specificity level requested (exact details if asked for specifics)
-    
-    **Set answer to null when:**
-    - Context is tangentially related but doesn't directly answer the question
-    - Information is incomplete or requires additional data gathering
-    - You would need to make assumptions beyond available context
-    - You lack necessary tools to complete the information gathering process
-    
+    - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
+
     **Strategic Approach:**
-    Your goal is to efficiently gather information and provide accurate, complete responses. Use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
+    Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
   `
 }
 
@@ -1820,6 +1812,7 @@ export const synthesisContextPrompt = (
   return `You are a helpful AI assistant.
 User Query: "${query}" \n
 User Context: ${userCtx}
+Current date for comparison: ${getDateForAI()}
 
 Instruction:
 - Analyze the provided "Context Fragments" to answer the "User Query".
