@@ -226,6 +226,7 @@ type ParsedMessagePart =
         entity?: string
         pillType?: "citation" | "global"
         imgSrc?: string | null
+        wholeSheet?: boolean
       }
     }
   | { type: "link"; value: string }
@@ -249,8 +250,16 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity, pillType, imgSrc } =
-            part.value
+          const {
+            docId,
+            url,
+            title,
+            app,
+            entity,
+            pillType,
+            imgSrc,
+            wholeSheet,
+          } = part.value
 
           const referenceForPill: Reference = {
             id: docId,
@@ -263,6 +272,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
             // Include imgSrc if available, mapping it to photoLink for the Reference type.
             // The Pill component will need to be able to utilize this.
             ...(imgSrc && { photoLink: imgSrc }),
+            // Include wholeSheet if available
+            ...(wholeSheet !== undefined && { wholeSheet: wholeSheet }),
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
