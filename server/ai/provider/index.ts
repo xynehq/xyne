@@ -59,6 +59,7 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  promptGenerationSystemPrompt,
   meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
@@ -1134,8 +1135,12 @@ export const mailPromptJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
+  let defaultReasoning = isReasoning
   if (!params.modelId) {
     params.modelId = defaultFastModel
+  }
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
   }
   if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentEmailPromptJson(
@@ -1143,6 +1148,19 @@ export const mailPromptJsonStream = (
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
     )
+  } else if (defaultReasoning) {
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else {
     params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   }
@@ -1366,10 +1384,9 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      parsedAgentPrompt.prompt
     )
-    params.systemPrompt = parsedAgentPrompt.prompt
-      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
-      : defaultSystemPrompt
+    params.systemPrompt = defaultSystemPrompt
   } else {
     params.systemPrompt = withToolQueryPrompt(
       userContext,
@@ -1423,4 +1440,45 @@ export function generateSynthesisBasedOnToolOutput(
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converse(messages, params)
+}
+
+export const generatePromptFromRequirements = async function* (
+  requirements: string,
+  params: ModelParams,
+): AsyncGenerator<{ text?: string; cost?: number }, void, unknown> {
+  Logger.info("Starting prompt generation from requirements")
+
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = promptGenerationSystemPrompt
+    params.stream = true
+
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [
+          {
+            text: `Please create an effective AI agent prompt based on these requirements: ${requirements}`,
+          },
+        ],
+      },
+    ]
+
+    const iterator = getProviderByModel(params.modelId).converseStream(
+      messages,
+      params,
+    )
+
+    for await (const chunk of iterator) {
+      yield chunk
+    }
+
+    Logger.info("Prompt generation completed successfully")
+  } catch (error) {
+    Logger.error(error, "Error in generatePromptFromRequirements")
+    throw error
+  }
 }

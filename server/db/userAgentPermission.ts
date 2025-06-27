@@ -153,6 +153,92 @@ export const getUserAccessibleAgents = async (
 }
 
 /**
+ * Get agents created by the user (where user is Owner)
+ */
+export const getAgentsMadeByMe = async (
+  trx: TxnOrClient,
+  userId: number,
+  workspaceId: number,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<SelectPublicAgent[]> => {
+  const agentsArr = await trx
+    .selectDistinct({
+      externalId: agents.externalId,
+      name: agents.name,
+      description: agents.description,
+      prompt: agents.prompt,
+      model: agents.model,
+      isPublic: agents.isPublic,
+      appIntegrations: agents.appIntegrations,
+      allowWebSearch: agents.allowWebSearch,
+      createdAt: agents.createdAt,
+      updatedAt: agents.updatedAt,
+    })
+    .from(agents)
+    .innerJoin(
+      userAgentPermissions,
+      eq(agents.id, userAgentPermissions.agentId),
+    )
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        isNull(agents.deletedAt),
+        eq(userAgentPermissions.userId, userId),
+        eq(userAgentPermissions.role, UserAgentRole.Owner),
+      ),
+    )
+    .orderBy(desc(agents.updatedAt))
+    .limit(limit)
+    .offset(offset)
+
+  return z.array(selectPublicAgentSchema).parse(agentsArr)
+}
+
+/**
+ * Get agents shared with the user (where user has a role other than Owner)
+ */
+export const getAgentsSharedToMe = async (
+  trx: TxnOrClient,
+  userId: number,
+  workspaceId: number,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<SelectPublicAgent[]> => {
+  const agentsArr = await trx
+    .selectDistinct({
+      externalId: agents.externalId,
+      name: agents.name,
+      description: agents.description,
+      prompt: agents.prompt,
+      model: agents.model,
+      isPublic: agents.isPublic,
+      appIntegrations: agents.appIntegrations,
+      allowWebSearch: agents.allowWebSearch,
+      createdAt: agents.createdAt,
+      updatedAt: agents.updatedAt,
+    })
+    .from(agents)
+    .innerJoin(
+      userAgentPermissions,
+      eq(agents.id, userAgentPermissions.agentId),
+    )
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        isNull(agents.deletedAt),
+        eq(userAgentPermissions.userId, userId),
+        eq(userAgentPermissions.role, UserAgentRole.Shared),
+      ),
+    )
+    .orderBy(desc(agents.updatedAt))
+    .limit(limit)
+    .offset(offset)
+
+  return z.array(selectPublicAgentSchema).parse(agentsArr)
+}
+
+/**
  * Get agents with permission details for a user
  */
 export const getUserAgentsWithPermissions = async (

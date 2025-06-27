@@ -36,21 +36,20 @@ import {
   type UserQuery,
 } from "@/ai/types"
 import {
-  deleteChatByExternalId,
   deleteMessagesByChatId,
   getChatByExternalId,
   getPublicChats,
   insertChat,
-  updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
-  getChatMessages,
   insertMessage,
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  getChatMessagesWithAuth,
 } from "@/db/message"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
@@ -126,7 +125,6 @@ import {
 } from "@/search/types"
 import { APIError } from "openai"
 import {
-  getChatTraceByExternalId,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -165,6 +163,7 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
+import { mapGithubToolResponse } from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -181,6 +180,7 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
 const checkAndYieldCitationsForAgent = function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -193,21 +193,21 @@ const checkAndYieldCitationsForAgent = function* (
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
-      if (item.source.docId) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      } else {
-        Logger.error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
+
+      if (!item?.source?.docId) {
+        Logger.info(
+          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
         )
+        continue
       }
+
+      yield {
+        citation: {
+          index: citationIndex,
+          item: item.source,
+        },
+      }
+      yieldedCitations.add(citationIndex)
     }
   }
 }
@@ -290,37 +290,18 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        const parsableBuffer = cleanBuffer(buffer)
-        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
-        // If we have a null answer, break this inner loop and continue outer loop
-        // seen some cases with just "}"
-        if (parsed.answer === null || parsed.answer === "}") {
-          break
-        }
+        yield { text: chunk.text }
 
-        // If we have an answer and it's different from what we've seen
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          if (currentAnswer === "") {
-            // First valid answer - send the whole thing
-            yield { text: parsed.answer }
-          } else {
-            // Subsequent chunks - send only the new part
-            const newText = parsed.answer.slice(currentAnswer.length)
-            yield { text: newText }
-          }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
-          currentAnswer = parsed.answer
-        }
+        yield* checkAndYieldCitationsForAgent(
+          chunk.text,
+          yieldedCitations,
+          results,
+          previousResultsLength,
+        )
       } catch (e) {
-        // If we can't parse the JSON yet, continue accumulating
+        Logger.error(`Error parsing LLM output: ${e}`)
         continue
       }
-      // }
     }
 
     if (chunk.cost) {
@@ -472,8 +453,13 @@ export const MessageWithToolsApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -565,7 +551,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const maxIterations = 9
           let iterationCount = 0
           let answered = false
-
+          let isCustomMCP = false
           await logAndStreamReasoning({
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
@@ -591,6 +577,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               try {
                 if ("url" in connector.config) {
+                  isCustomMCP = true
                   // MCP SSE
                   const config = connector.config as z.infer<
                     typeof MCPClientConfig
@@ -793,6 +780,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     if (parsedTool.success && parsedTool.data.toolSchema) {
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
+                        parsedTool.data.toolName,
+                        parsedTool.data.description ?? "",
                       )}\n\n`
                     }
                   }
@@ -910,6 +899,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolParameters,
+                parameters: toolParams,
+              })
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,
@@ -1034,11 +1027,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                       arguments: toolParams,
                     })
 
-                    // --- Process and Normalize the MCP Response ---
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
 
-                    // Safely parse the response text
                     try {
                       if (
                         mcpToolResponse.content &&
@@ -1048,23 +1039,56 @@ export const MessageWithToolsApi = async (c: Context) => {
                         const parsedJson = JSON.parse(
                           mcpToolResponse.content[0].text,
                         )
-                        formattedContent = flattenObject(parsedJson)
-                          .map(([key, value]) => `- ${key}: ${value}`)
-                          .join("\n")
+                        if (isCustomMCP) {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          // Convert the formatted response into a standard MinimalAgentFragment
+                          let mainContentParts = []
+                          if (parsedJson.title)
+                            mainContentParts.push(`Title: ${parsedJson.title}`)
+                          if (parsedJson.body)
+                            mainContentParts.push(`Body: ${parsedJson.body}`)
+                          if (parsedJson.name)
+                            mainContentParts.push(`Name: ${parsedJson.name}`)
+                          if (parsedJson.description)
+                            mainContentParts.push(
+                              `Description: ${parsedJson.description}`,
+                            )
 
-                        // Convert the formatted response into a standard MinimalAgentFragment
-                        const fragmentId = `mcp-${connectorId}-${toolName}}`
-                        newFragments.push({
-                          id: fragmentId,
-                          content: formattedContent,
-                          source: {
-                            app: Apps.GITHUB_MCP, // Or derive dynamically if possible
-                            docId: "", // Use a unique ID for the doc
-                            title: `Output from tool: ${toolName}`,
-                            entity: SystemEntity.SystemInfo,
-                          },
-                          confidence: 1.0,
-                        })
+                          if (mainContentParts.length > 2) {
+                            formattedContent = mainContentParts.join("\n")
+                          } else {
+                            formattedContent = `Tool Response: ${flattenObject(
+                              parsedJson,
+                            )
+                              .map(([key, value]) => `- ${key}: ${value}`)
+                              .join("\n")}`
+                          }
+
+                          newFragments.push({
+                            id: `${baseFragmentId}-generic`,
+                            content: formattedContent,
+                            source: {
+                              app: Apps.MCP,
+                              docId: "",
+                              title: `Response from ${toolName}`,
+                              entity: SystemEntity.SystemInfo,
+                              url:
+                                parsedJson.html_url ||
+                                parsedJson.url ||
+                                undefined,
+                            },
+                            confidence: 0.8,
+                          })
+                        } else {
+                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
+                          ;({ formattedContent, newFragments } =
+                            mapGithubToolResponse(
+                              toolName,
+                              parsedJson,
+                              baseFragmentId,
+                              sub,
+                            ))
+                        }
                       }
                     } catch (parsingError) {
                       loggerWithChild({ email: sub }).error(
@@ -1424,7 +1448,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             })
           } else {
             const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessages(db, chat?.externalId)
+            const allMessages = await getChatMessagesWithAuth(
+              db,
+              chat?.externalId,
+              email,
+            )
             const lastMessage = allMessages[allMessages.length - 1]
 
             await stream.writeSSE({
@@ -1472,7 +1500,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1533,7 +1565,11 @@ export const MessageWithToolsApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -1547,7 +1583,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -1593,7 +1633,11 @@ export const MessageWithToolsApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]
@@ -1657,10 +1701,11 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
+  let email = ""
 
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -1782,8 +1827,13 @@ export const AgentMessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -1993,7 +2043,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2219,7 +2273,7 @@ export const AgentMessageApi = async (c: Context) => {
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
                 filters: {
-                  ...parsed?.filters,
+                  ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
                 },
@@ -2365,7 +2419,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2414,7 +2472,11 @@ export const AgentMessageApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -2462,7 +2524,11 @@ export const AgentMessageApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -2476,7 +2542,11 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -2518,7 +2588,11 @@ export const AgentMessageApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]

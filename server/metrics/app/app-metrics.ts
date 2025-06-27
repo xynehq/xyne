@@ -4,7 +4,13 @@ import { Counter, Summary } from "prom-client"
 export const appRequest = new Counter({
   name: "app_request_count",
   help: "Number of request sent to server",
-  labelNames: ["app_endpoint", "app_request_process_status", "email", "offset"],
+  labelNames: [
+    "app_endpoint",
+    "app_request_process_status",
+    "email",
+    "offset",
+    "agent_id",
+  ],
 })
 metricRegister.registerMetric(appRequest)
 
