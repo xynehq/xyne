@@ -40,6 +40,7 @@ import {
   getPublicChats,
   insertChat,
   updateChatByExternalIdWithAuth,
+  updateChatBookmarkStatus,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
@@ -497,9 +498,7 @@ export const ChatBookmarkApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { chatId, bookmark } = body
-    await updateChatByExternalIdWithAuth(db, chatId, email, {
-      isBookmarked: bookmark,
-    })
+    await updateChatBookmarkStatus(db, chatId, bookmark)
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
