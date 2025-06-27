@@ -73,7 +73,13 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, GetAgentsForDataSourceApi, } from "@/api/dataSource" 
+import {
+  ListDataSourcesApi,
+  ListDataSourceFilesApi,
+  DeleteDocumentApi,
+  deleteDocumentSchema,
+  GetAgentsForDataSourceApi,
+} from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -112,6 +118,16 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+// Import Vespa proxy handlers
+import {
+  validateApiKey,
+  vespaSearchProxy,
+  vespaAutocompleteProxy,
+  vespaGroupSearchProxy,
+  vespaGetItemsProxy,
+  vespaChatContainerByChannelProxy,
+  vespaChatUserByEmailProxy,
+} from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 // Define Zod schema for delete datasource file query parameters
@@ -304,7 +320,7 @@ export const AppRoutes = app
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
-    "/search/document/delete", 
+    "/search/document/delete",
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
@@ -330,6 +346,38 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
+  .get("/auth/generate-api-key", async (c: Context) => {
+    try {
+      // Get user info from JWT token (already authenticated)
+      const payload = c.get("jwtPayload")
+      const email = payload.sub as string
+      const role = payload.role as string
+      const workspaceId = payload.workspaceId as string
+
+      // Generate a long-lived API key (1 day expiration)
+      const apiKeyPayload = {
+        sub: email,
+        role: role,
+        workspaceId,
+        type: "api_key", // Mark as API key for identification
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 1 day expiration
+      }
+
+      const apiKey = await sign(apiKeyPayload, jwtSecret)
+
+      Logger.info(`Generated API key for user: ${email}`)
+
+      return c.json({
+        apiKey,
+        expiresIn: "1 day",
+        instructions:
+          "Use this API key in the x-api-key header for API requests",
+      })
+    } catch (error) {
+      Logger.error("Error generating API key:", error)
+      throw new HTTPException(500, { message: "Failed to generate API key" })
+    }
+  })
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -409,6 +457,20 @@ export const AppRoutes = app
     AdminDeleteUserData,
   )
   .get("/oauth/global-slack-provider", GetProviders)
+
+// Vespa Proxy Routes (for production server proxying)
+app
+  .basePath("/api/vespa")
+  .post("/search", validateApiKey, vespaSearchProxy)
+  .post("/autocomplete", validateApiKey, vespaAutocompleteProxy)
+  .post("/group-search", validateApiKey, vespaGroupSearchProxy)
+  .post("/get-items", validateApiKey, vespaGetItemsProxy)
+  .post(
+    "/chat-container-by-channel",
+    validateApiKey,
+    vespaChatContainerByChannelProxy,
+  )
+  .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -652,6 +714,41 @@ app.get(
 app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
 app.get("/assets/*", serveStatic({ root: "./dist" }))
+// API Key generation page
+app.get("/api-key", AuthRedirect, async (c) => {
+  try {
+    const fs = await import("fs/promises")
+    const path = await import("path")
+
+    // Try multiple possible paths
+    const possiblePaths = [
+      path.join(process.cwd(), "server", "public", "api-key.html"),
+      path.join(__dirname, "public", "api-key.html"),
+      path.join(process.cwd(), "public", "api-key.html"),
+    ]
+
+    Logger.info(`Current working directory: ${process.cwd()}`)
+    Logger.info(`__dirname: ${__dirname}`)
+
+    for (const htmlPath of possiblePaths) {
+      try {
+        Logger.info(`Trying to read file from: ${htmlPath}`)
+        const htmlContent = await fs.readFile(htmlPath, "utf8")
+        Logger.info(`Successfully read file from: ${htmlPath}`)
+        return c.html(htmlContent)
+      } catch (err) {
+        Logger.warn(`Failed to read from ${htmlPath}: ${err}`)
+        continue
+      }
+    }
+
+    throw new Error("Could not find api-key.html in any expected location")
+  } catch (error) {
+    Logger.error("Failed to serve API key page:", error)
+    return c.text(`API Key page not found. Error: ${error}`, 404)
+  }
+})
+
 export const init = async () => {
   await initQueue()
 }

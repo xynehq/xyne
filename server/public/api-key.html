@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Key Generator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #000000 0%, #434343 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .header {
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      color: #1a1a1a;
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #666666;
+      font-size: 1.1rem;
+      line-height: 1.6;
+    }
+
+    .generate-section {
+      margin: 30px 0;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #000000 0%, #434343 100%);
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 50px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+      background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .result-section {
+      margin-top: 30px;
+      display: none;
+    }
+
+    .result-section.show {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .api-key-container {
+      background: #f8f8f8;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      position: relative;
+      word-break: break-all;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #1a1a1a;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #333333;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .copy-btn:hover {
+      background: #1a1a1a;
+    }
+
+    .copy-btn.copied {
+      background: #4a4a4a;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .info-card {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: left;
+    }
+
+    .info-card h4 {
+      color: #1a1a1a;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .info-card p {
+      color: #333333;
+      font-size: 1rem;
+      margin: 0;
+    }
+
+    .usage-instructions {
+      background: #f0f0f0;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    .usage-instructions h4 {
+      color: #1a1a1a;
+      margin-bottom: 12px;
+      font-size: 1.1rem;
+    }
+
+    .usage-instructions code {
+      background: #1a1a1a;
+      color: #ffffff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.9rem;
+    }
+
+    .error-message {
+      background: #f5f5f5;
+      color: #d32f2f;
+      border: 1px solid #e0e0e0;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 20px;
+        margin: 10px;
+      }
+      
+      .header h1 {
+        font-size: 2rem;
+      }
+      
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .api-key-container {
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔑 API Key Generator</h1>
+      <p>Generate a secure API key to access the Vespa proxy endpoints</p>
+    </div>
+
+    <div class="generate-section">
+      <button id="generateBtn" class="btn" onclick="generateApiKey()">
+        <span id="btnText">Generate API Key</span>
+        <span id="loadingSpinner" class="loading" style="display: none;"></span>
+      </button>
+    </div>
+
+    <div id="resultSection" class="result-section">
+      <h3 style="color: #2d3748; margin-bottom: 16px;">🎉 Your API Key</h3>
+      
+      <div class="api-key-container">
+        <button class="copy-btn" onclick="copyToClipboard()">
+          <span id="copyText">📋 Copy</span>
+        </button>
+        <div id="apiKeyDisplay"></div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-card">
+          <h4>Expires In</h4>
+          <p id="expiresIn">-</p>
+        </div>
+        <div class="info-card">
+          <h4>Created At</h4>
+          <p id="createdAt">-</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="errorMessage" class="error-message"></div>
+  </div>
+
+  <script>
+    let currentApiKey = '';
+
+    async function generateApiKey() {
+      const btn = document.getElementById('generateBtn');
+      const btnText = document.getElementById('btnText');
+      const loadingSpinner = document.getElementById('loadingSpinner');
+      const resultSection = document.getElementById('resultSection');
+      const errorMessage = document.getElementById('errorMessage');
+
+      // Reset UI
+      resultSection.classList.remove('show');
+      errorMessage.style.display = 'none';
+      
+      // Show loading state
+      btn.disabled = true;
+      btnText.textContent = 'Generating...';
+      loadingSpinner.style.display = 'inline-block';
+
+      try {
+        const response = await fetch('/api/v1/auth/generate-api-key');
+        const data = await response.json();
+
+        if (response.ok) {
+          currentApiKey = data.apiKey;
+          document.getElementById('apiKeyDisplay').textContent = data.apiKey;
+          document.getElementById('expiresIn').textContent = data.expiresIn;
+          document.getElementById('createdAt').textContent = new Date().toLocaleString();
+          
+          resultSection.classList.add('show');
+          btnText.textContent = 'Generate New Key';
+        } else {
+          showError(data.message || 'Failed to generate API key');
+        }
+      } catch (error) {
+        showError('Network error: ' + error.message);
+      } finally {
+        // Reset loading state
+        btn.disabled = false;
+        loadingSpinner.style.display = 'none';
+      }
+    }
+
+    async function copyToClipboard() {
+      const copyBtn = document.querySelector('.copy-btn');
+      const copyText = document.getElementById('copyText');
+
+      try {
+        await navigator.clipboard.writeText(currentApiKey);
+        
+        // Show success state
+        copyBtn.classList.add('copied');
+        copyText.textContent = '✅ Copied!';
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyText.textContent = '📋 Copy';
+        }, 2000);
+      } catch (error) {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = currentApiKey;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        copyText.textContent = '✅ Copied!';
+        setTimeout(() => {
+          copyText.textContent = '📋 Copy';
+        }, 2000);
+      }
+    }
+
+    function showError(message) {
+      const errorMessage = document.getElementById('errorMessage');
+      errorMessage.textContent = message;
+      errorMessage.style.display = 'block';
+    }
+
+    // Auto-generate API key on page load if user wants
+    document.addEventListener('DOMContentLoaded', function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('auto') === 'true') {
+        generateApiKey();
+      }
+    });
+  </script>
+</body>
+</html> 
