@@ -4,26 +4,20 @@ schema mail {
     # basically the messageId
     field docId type string {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
 
     }
 
     field threadId type string {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
     }
     field mailId type string {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
     }
   # This will map the useremail with the docId, which is required for the Url construction
   # every users has different docId for the same mail
@@ -47,71 +41,55 @@ schema mail {
 
     field timestamp type long {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
     }
 
     field app type string {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       match: exact
     }
 
     field entity type string {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       match: exact
     }
 
     field permissions type array<string> {
       indexing: attribute | summary
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
     }
 
     field from type string {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       index: enable-bm25
     }
 
     field to type array<string> {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       index: enable-bm25
     }
 
     field cc type array<string> {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       index: enable-bm25
     }
 
     field bcc type array<string> {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       index: enable-bm25
     }
 
@@ -121,10 +99,8 @@ schema mail {
 
     field attachmentFilenames type array<string> {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
       index: enable-bm25
     }
 
@@ -140,10 +116,8 @@ schema mail {
     }
     field labels type array<string> {
       indexing: attribute | summary | index
-      attribute {
-          fast-search
-          paged
-      }
+      attribute: fast-search
+      attribute: paged
     }
   }
   field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
