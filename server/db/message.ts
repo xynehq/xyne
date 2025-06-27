@@ -33,14 +33,15 @@ export const insertMessage = async (
   return parsedData.data
 }
 
-export const getChatMessages = async (
+export const getChatMessagesWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
+  email: string,
 ): Promise<SelectMessage[]> => {
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(eq(messages.chatExternalId, chatId))
+    .where(and(eq(messages.chatExternalId, chatId), eq(messages.email, email)))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }
