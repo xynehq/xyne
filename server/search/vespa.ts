@@ -220,8 +220,13 @@ const getVespaClientAndEmail = async (
 ): Promise<VespaClientConfig> => {
   // Check if we have an API_KEY environment variable (JWT token) and production server URL
   const apiKey = process.env.API_KEY
-
   if (apiKey && process.env.PRODUCTION_SERVER_URL) {
+    try {
+      new URL(process.env.PRODUCTION_SERVER_URL)
+    } catch (error) {
+      Logger.error("Invalid PRODUCTION_SERVER_URL format")
+      return { client: vespa, email: emailOrKey }
+    }
     // Create production server client instead of direct Vespa client
     const productionServerClient = new ProductionServerClient(
       process.env.PRODUCTION_SERVER_URL,
@@ -229,21 +234,6 @@ const getVespaClientAndEmail = async (
     return {
       client: productionServerClient,
       email: apiKey, // Pass the JWT token as the "email" - it will be sent as API key
-    }
-  }
-
-  // Check if the emailOrKey parameter itself looks like a JWT token
-  const isJWTToken =
-    emailOrKey.includes(".") && emailOrKey.split(".").length === 3
-
-  if (isJWTToken && process.env.PRODUCTION_SERVER_URL) {
-    // Create production server client instead of direct Vespa client
-    const productionServerClient = new ProductionServerClient(
-      process.env.PRODUCTION_SERVER_URL,
-    )
-    return {
-      client: productionServerClient,
-      email: emailOrKey, // Keep the JWT token, we'll send it to production server
     }
   }
 
@@ -1353,7 +1343,8 @@ export const searchVespa = async (
     ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
 
-  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
+  const { apiKey, ...safePayload } = hybridDefaultPayload
+  span?.setAttribute("vespaPayload", JSON.stringify(safePayload))
   try {
     let result = await client.search<VespaSearchResponse>(hybridDefaultPayload)
     return result
@@ -1381,7 +1372,7 @@ export const searchVespaInFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  const emailorkey = process.env.KEY || email
+  const emailorkey = process.env.API_KEY || email
   // Get appropriate client and email
   const { client, email: resolvedEmail } =
     await getVespaClientAndEmail(emailorkey)
@@ -1779,10 +1770,7 @@ const hashQuery = (query: string) => {
 }
 
 export const updateUserQueryHistory = async (query: string, owner: string) => {
-  // Get appropriate client and email
-  const { client, email: resolvedOwner } = await getVespaClientAndEmail(owner)
-
-  const docId = `query_id-${hashQuery(query + resolvedOwner)}`
+  const docId = `query_id-${hashQuery(query + owner)}`
   const timestamp = new Date().getTime()
 
   try {
@@ -1801,7 +1789,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
       }
     } else {
       await insert(
-        { docId, query_text: query, timestamp, count: 1, owner: resolvedOwner },
+        { docId, query_text: query, timestamp, count: 1, owner: owner },
         userQuerySchema,
       )
     }

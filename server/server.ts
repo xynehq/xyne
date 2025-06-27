@@ -720,32 +720,15 @@ app.get("/api-key", AuthRedirect, async (c) => {
     const fs = await import("fs/promises")
     const path = await import("path")
 
-    // Try multiple possible paths
-    const possiblePaths = [
-      path.join(process.cwd(), "server", "public", "api-key.html"),
-      path.join(__dirname, "public", "api-key.html"),
-      path.join(process.cwd(), "public", "api-key.html"),
-    ]
+    const filePath = path.join(process.cwd(), "public", "api-key.html")
 
-    Logger.info(`Current working directory: ${process.cwd()}`)
-    Logger.info(`__dirname: ${__dirname}`)
+    Logger.info(`Serving api-key.html from: ${filePath}`)
 
-    for (const htmlPath of possiblePaths) {
-      try {
-        Logger.info(`Trying to read file from: ${htmlPath}`)
-        const htmlContent = await fs.readFile(htmlPath, "utf8")
-        Logger.info(`Successfully read file from: ${htmlPath}`)
-        return c.html(htmlContent)
-      } catch (err) {
-        Logger.warn(`Failed to read from ${htmlPath}: ${err}`)
-        continue
-      }
-    }
-
-    throw new Error("Could not find api-key.html in any expected location")
+    const htmlContent = await fs.readFile(filePath, "utf8")
+    return c.html(htmlContent)
   } catch (error) {
     Logger.error("Failed to serve API key page:", error)
-    return c.text(`API Key page not found. Error: ${error}`, 404)
+    return c.text("API Key page not found or inaccessible.", 404)
   }
 })
 
