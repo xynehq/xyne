@@ -58,6 +58,38 @@ import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
+
+interface VespaClientConfig {
+  client: VespaClient
+  email: string
+}
+
+const getVespaClientAndEmail = async (
+  emailOrKey: string,
+): Promise<VespaClientConfig> => {
+  // Check if this might be a key and we have production config
+  if (process.env.PRODUCTION_VESPA_ENDPOINT) {
+    const resolvedEmail = process.env[emailOrKey]
+    if (resolvedEmail) {
+      Logger.info(`Using production Vespa client`)
+      // Create production VespaClient
+      const productionClient = new VespaClient(
+        process.env.PRODUCTION_VESPA_ENDPOINT,
+      )
+      return {
+        client: productionClient,
+        email: resolvedEmail,
+      }
+    }
+  }
+
+  // Default case: use local client and provided email
+  return {
+    client: vespa,
+    email: emailOrKey,
+  }
+}
+
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -200,9 +232,16 @@ export const autocomplete = async (
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
+  const emailorkey = process.env.KEY || email
+
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   const sources = AllSources.split(", ")
     .filter((s) => s !== chatMessageSchema)
     .join(", ")
+
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
@@ -248,14 +287,17 @@ export const autocomplete = async (
   const searchPayload = {
     yql: yqlQuery,
     query,
-    email,
+    email: resolvedEmail,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
     "presentation.summary": "autocomplete",
   }
+
   try {
-    return await vespa.autoComplete(searchPayload)
+    const result = await client.autoComplete(searchPayload)
+    return result
   } catch (error) {
+    Logger.error(`Autocomplete failed with error:`, error)
     throw new ErrorPerformingSearch({
       message: `Error performing autocomplete search`,
       cause: error as Error,
@@ -991,13 +1033,18 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
+  const emailorkey = process.env.KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   let excludedApps: Apps[] = []
   try {
     const connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
-      email,
+      resolvedEmail,
     )
 
     if (!connector || connector.status === "not-connected") {
@@ -1020,12 +1067,12 @@ export const groupVespaSearch = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
   }
   try {
-    return await vespa.groupSearch(hybridDefaultPayload)
+    return await client.groupSearch(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1068,6 +1115,12 @@ export const searchVespa = async (
     recencyDecayRate = 0.02,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.KEY || email
+
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
@@ -1079,7 +1132,7 @@ export const searchVespa = async (
       db,
       Apps.Slack,
       AuthType.OAuth,
-      email,
+      resolvedEmail,
     )
 
     if (!connector || connector.status === "not-connected") {
@@ -1105,7 +1158,7 @@ export const searchVespa = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
@@ -1121,11 +1174,13 @@ export const searchVespa = async (
     ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
+
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    let result = await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    let result = await client.search<VespaSearchResponse>(hybridDefaultPayload)
     return result
   } catch (error) {
+    Logger.error(`Search failed with error:`, error)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -1148,6 +1203,11 @@ export const searchVespaInFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   const isDebugMode = config.isDebugMode || requestDebug || false
 
   let { yql, profile } = HybridDefaultProfileInFiles(
@@ -1160,7 +1220,7 @@ export const searchVespaInFiles = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
@@ -1175,7 +1235,7 @@ export const searchVespaInFiles = async (
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return await client.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1229,6 +1289,11 @@ export const searchVespaAgent = async (
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
@@ -1248,7 +1313,7 @@ export const searchVespaAgent = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
@@ -1266,7 +1331,7 @@ export const searchVespaAgent = async (
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return await client.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1532,7 +1597,10 @@ const hashQuery = (query: string) => {
 }
 
 export const updateUserQueryHistory = async (query: string, owner: string) => {
-  const docId = `query_id-${hashQuery(query + owner)}`
+  // Get appropriate client and email
+  const { client, email: resolvedOwner } = await getVespaClientAndEmail(owner)
+
+  const docId = `query_id-${hashQuery(query + resolvedOwner)}`
   const timestamp = new Date().getTime()
 
   try {
@@ -1551,7 +1619,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
       }
     } else {
       await insert(
-        { docId, query_text: query, timestamp, count: 1, owner },
+        { docId, query_text: query, timestamp, count: 1, owner: resolvedOwner },
         userQuerySchema,
       )
     }
@@ -1609,6 +1677,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
+    // Use default vespa client for this function as it doesn't take an email parameter for routing
     return await vespa.getUsersByNamesAndEmails(searchPayload)
   } catch (error) {
     throw error
@@ -1717,6 +1786,11 @@ export const getItems = async (
     asc,
   } = params
 
+  const emailorkey = process.env.KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   // Construct conditions based on parameters
   let conditions: string[] = []
 
@@ -1798,7 +1872,7 @@ export const getItems = async (
 
   const searchPayload = {
     yql,
-    email,
+    email: resolvedEmail,
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
@@ -1807,7 +1881,7 @@ export const getItems = async (
   }
 
   try {
-    let result = await vespa.getItems(searchPayload)
+    let result = await client.getItems(searchPayload)
     return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({
@@ -2154,6 +2228,10 @@ export const getThreadItems = async (
     filterQuery = null, // New parameter
   } = params
 
+  const emailorkey = process.env.KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
   // Common setup for both search types
   let channelId = undefined
   let userId = undefined
@@ -2171,7 +2249,7 @@ export const getThreadItems = async (
   // Get channel ID if channelName is provided
   if (channelName) {
     try {
-      const resp = await vespa.getChatContainerIdByChannelName(channelName)
+      const resp = await client.getChatContainerIdByChannelName(channelName)
       // console.log(resp.root.children[0].fields.docId)
       // @ts-ignore
       channelId = resp.root.children[0].fields.docId
@@ -2185,7 +2263,7 @@ export const getThreadItems = async (
   // Get user ID if userEmail is provided
   if (userEmail) {
     try {
-      const resp = await vespa.getChatUserByEmail(userEmail)
+      const resp = await client.getChatUserByEmail(userEmail)
       // @ts-ignore
       userId = resp.root.children[0].fields.docId
     } catch (error) {
@@ -2207,7 +2285,7 @@ export const getThreadItems = async (
     const hybridDefaultPayload = {
       yql,
       query: filterQuery,
-      email,
+      email: resolvedEmail,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": 0.5, // Default alpha value
@@ -2221,7 +2299,7 @@ export const getThreadItems = async (
     }
 
     try {
-      return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+      return await client.search<VespaSearchResponse>(hybridDefaultPayload)
     } catch (error) {
       console.error("Vespa hybrid search error:", error)
       throw new ErrorPerformingSearch({
@@ -2237,8 +2315,8 @@ export const getThreadItems = async (
       conditions.push(`entity contains "${entity}"`)
     }
 
-    if (email) {
-      conditions.push(`permissions contains "${email}"`)
+    if (resolvedEmail) {
+      conditions.push(`permissions contains "${resolvedEmail}"`)
     }
 
     if (channelId) {
@@ -2285,7 +2363,7 @@ export const getThreadItems = async (
     }
 
     try {
-      let result = await vespa.getItems(searchPayload)
+      let result = await client.getItems(searchPayload)
       return result
     } catch (error) {
       console.error("Vespa search error:", error)
@@ -2300,11 +2378,16 @@ export const getThreadItems = async (
 export const getSlackUserDetails = async (
   userEmail: string,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.KEY || userEmail
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   try {
-    const resp = await vespa.getChatUserByEmail(userEmail)
+    const resp = await client.getChatUserByEmail(resolvedEmail)
     return resp
   } catch (error) {
-    Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    Logger.error(`Could not fetch the userId with user email ${resolvedEmail}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: chatUserSchema,
