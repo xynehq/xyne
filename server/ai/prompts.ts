@@ -904,6 +904,9 @@ export const SearchQueryToolContextPrompt = (
         - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
      - order_direction (opt: 'asc'/'desc'), 
      - offset (opt: 0) use this if you need to goto next page to find better result.
+    6. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
+       - "Hi", "Hello", "Hey", what is the time in Japan. select this tool with empty params. No parameters needed.
+       
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
        Params: 

@@ -69,6 +69,7 @@ import {
   ChatSSEvents,
   ContextSysthesisState,
   OpenAIError,
+  XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
@@ -712,6 +713,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
+          let planningContext = "" // To build the context for planning
+          let toolsPrompt = "" // To build the context for available tools
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">
@@ -778,7 +781,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentScratchpad =
               evidenceSummary + loopWarningPrompt + reasoningHeader
 
-            let toolsPrompt = ""
+            toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
               toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
@@ -807,7 +810,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultBestModel,
+                modelId: defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -835,13 +838,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
               })
+              const toolName = toolSelection.tool
+              const toolParams = toolSelection.arguments
+
+              if (toolName === XyneTools.Conversational) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Tool ${toolName} selected.`,
+                })
+                break
+              }
+
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Planning,
                 details: `Planning next step with ${gatheredFragments.length} context fragments.`,
               })
-              const toolName = toolSelection.tool
-              const toolParams = toolSelection.arguments
-
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,
@@ -1128,7 +1139,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
-              const planningContext = gatheredFragments.length
+              planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(
                       (f, i) =>
@@ -1277,65 +1288,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
 
               answered = true
-              const continuationIterator = getToolContinuationIterator(
-                message,
-                ctx,
-                toolsPrompt,
-                planningContext ?? "",
-                gatheredFragments,
-                agentPromptForLLM,
-                messagesWithNoErrResponse,
-              )
-              for await (const chunk of continuationIterator) {
-                if (stream.closed) {
-                  loggerWithChild({ email: sub }).info(
-                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
-                }
-                if (chunk.text) {
-                  // if (reasoning && chunk.reasoning) {
-                  //   thinking += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.Reasoning,
-                  //     data: chunk.text,
-                  //   })
-                  //   // reasoningSpan.end()
-                  // }
-                  // if (!chunk.reasoning) {
-                  //   answer += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.ResponseUpdate,
-                  //     data: chunk.text,
-                  //   })
-                  // }
-                  answer += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: chunk.text,
-                  })
-                }
-                if (chunk.citation) {
-                  const { index, item } = chunk.citation
-                  citations.push(item)
-                  citationMap[index] = citations.length - 1
-                  loggerWithChild({ email: sub }).info(
-                    `Found citations and sending it, current count: ${citations.length}`,
-                  )
-                  stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: citations,
-                      citationMap,
-                    }),
-                  })
-                  citationValues[index] = item
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-              }
+
               if (answer.length) {
                 break
               }
@@ -1349,10 +1302,70 @@ export const MessageWithToolsApi = async (c: Context) => {
               } else {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `No tool selected after max iterations. Generating answer with available context.`,
+                  message: `No tool selected for ${iterationCount}. Generating answer with available context.`,
                 })
                 answered = true // Break the loop to generate the final answer
               }
+            }
+          }
+
+          const continuationIterator = getToolContinuationIterator(
+            message,
+            ctx,
+            toolsPrompt,
+            planningContext ?? "",
+            gatheredFragments,
+            agentPromptForLLM,
+            messagesWithNoErrResponse,
+          )
+          for await (const chunk of continuationIterator) {
+            if (stream.closed) {
+              loggerWithChild({ email: sub }).info(
+                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+              )
+              wasStreamClosedPrematurely = true
+              break
+            }
+            if (chunk.text) {
+              // if (reasoning && chunk.reasoning) {
+              //   thinking += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.Reasoning,
+              //     data: chunk.text,
+              //   })
+              //   // reasoningSpan.end()
+              // }
+              // if (!chunk.reasoning) {
+              //   answer += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.ResponseUpdate,
+              //     data: chunk.text,
+              //   })
+              // }
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+            if (chunk.citation) {
+              const { index, item } = chunk.citation
+              citations.push(item)
+              citationMap[index] = citations.length - 1
+              loggerWithChild({ email: sub }).info(
+                `Found citations and sending it, current count: ${citations.length}`,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: citations,
+                  citationMap,
+                }),
+              })
+              citationValues[index] = item
+            }
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
             }
           }
 

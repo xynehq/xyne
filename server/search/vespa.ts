@@ -1797,7 +1797,7 @@ export const getItems = async (
     : ""
 
   // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
+  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
 
   const searchPayload = {
     yql,
@@ -1806,7 +1806,7 @@ export const getItems = async (
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
     hits: limit,
-    offset: offset,
+    ...(offset ? { offset } : {}),
   }
 
   try {
