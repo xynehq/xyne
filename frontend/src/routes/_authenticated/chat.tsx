@@ -1242,13 +1242,13 @@ const Code = ({
 
     const trimmedCode = code.trim()
 
-    // Basic checks for common mermaid diagram types
     const mermaidPatterns = [
       /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
       /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
       /^sequenceDiagram\s*\n/i,
       /^classDiagram\s*\n/i,
       /^stateDiagram\s*\n/i,
+      /^stateDiagram-v2\s*\n/i,
       /^erDiagram\s*\n/i,
       /^journey\s*\n/i,
       /^gantt\s*\n/i,
@@ -1256,7 +1256,18 @@ const Code = ({
       /^gitgraph\s*\n/i,
       /^mindmap\s*\n/i,
       /^timeline\s*\n/i,
+
+      // Additional or experimental diagram types
+      /^zenuml\s*\n/i,             
+      /^quadrantChart\s*\n/i,      
+      /^requirementDiagram\s*\n/i, 
+      /^userJourney\s*\n/i,        
+
+      // Optional aliasing/loose matching for future compatibility
+      /^flowchart\s*\n/i,          
+      /^graph\s*\n/i               
     ]
+
 
     // Check if it starts with a valid mermaid diagram type
     const hasValidStart = mermaidPatterns.some((pattern) =>

@@ -36,21 +36,20 @@ import {
   type UserQuery,
 } from "@/ai/types"
 import {
-  deleteChatByExternalId,
   deleteMessagesByChatId,
   getChatByExternalId,
   getPublicChats,
   insertChat,
-  updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
-  getChatMessages,
   insertMessage,
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  getChatMessagesWithAuth,
 } from "@/db/message"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
@@ -126,7 +125,6 @@ import {
 } from "@/search/types"
 import { APIError } from "openai"
 import {
-  getChatTraceByExternalId,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -292,35 +290,18 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        const parsableBuffer = cleanBuffer(buffer)
-        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
+        yield { text: chunk.text }
 
-        if (parsed.answer === null || parsed.answer === "}") {
-          break
-        }
-        // If we have an answer and it's different from what we've seen
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          if (currentAnswer === "") {
-            // First valid answer - send the whole thing
-            yield { text: parsed.answer }
-          } else {
-            // Subsequent chunks - send only the new part
-            const newText = parsed.answer.slice(currentAnswer.length)
-            yield { text: newText }
-          }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
-          currentAnswer = parsed.answer
-        }
+        yield* checkAndYieldCitationsForAgent(
+          chunk.text,
+          yieldedCitations,
+          results,
+          previousResultsLength,
+        )
       } catch (e) {
-        // If we can't parse the JSON yet, continue accumulating
+        Logger.error(`Error parsing LLM output: ${e}`)
         continue
       }
-      // }
     }
 
     if (chunk.cost) {
@@ -472,8 +453,13 @@ export const MessageWithToolsApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -794,6 +780,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     if (parsedTool.success && parsedTool.data.toolSchema) {
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
+                        parsedTool.data.toolName,
+                        parsedTool.data.description ?? "",
                       )}\n\n`
                     }
                   }
@@ -911,6 +899,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               const toolName = parsed.tool
               const toolParams = parsed.arguments
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolParameters,
+                parameters: toolParams,
+              })
               previousToolCalls.push({
                 tool: toolName,
                 args: toolParams,
@@ -1456,7 +1448,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             })
           } else {
             const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessages(db, chat?.externalId)
+            const allMessages = await getChatMessagesWithAuth(
+              db,
+              chat?.externalId,
+              email,
+            )
             const lastMessage = allMessages[allMessages.length - 1]
 
             await stream.writeSSE({
@@ -1504,7 +1500,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1565,7 +1565,11 @@ export const MessageWithToolsApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -1579,7 +1583,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -1625,7 +1633,11 @@ export const MessageWithToolsApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]
@@ -1689,10 +1701,11 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
+  let email = ""
 
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -1814,8 +1827,13 @@ export const AgentMessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -2025,7 +2043,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2397,7 +2419,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2446,7 +2472,11 @@ export const AgentMessageApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -2494,7 +2524,11 @@ export const AgentMessageApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -2508,7 +2542,11 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -2550,7 +2588,11 @@ export const AgentMessageApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]

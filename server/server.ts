@@ -49,6 +49,7 @@ import {
   AdminDeleteUserData,
   IngestMoreChannelApi,
   StartSlackIngestionApi,
+  GetProviders,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -62,6 +63,7 @@ import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import { createUser, getUserByEmail } from "@/db/user"
+import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
@@ -84,7 +86,7 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat/chat"
-import { UserRole } from "@/shared/types"
+import { UserRole, Apps } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -406,6 +408,7 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
+  .get("/oauth/global-slack-provider", GetProviders)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
