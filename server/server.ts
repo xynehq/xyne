@@ -112,6 +112,7 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+import { updateMetricsFromThread } from "@/metrics/utils"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -206,6 +207,61 @@ const LogOut = async (c: Context) => {
   Logger.info("Cookie deleted, logged out")
   return c.json({ ok: true })
 }
+
+// Update Metrics From Script
+const handleUpdatedMetrics = async (c: Context) => {
+  Logger.info(`Started Adding Metrics`)
+
+  const authHeader = c.req.raw.headers.get("authorization") ?? ""
+  const secret = authHeader.replace(/^Bearer\s+/i, "").trim()
+
+  if (secret !== process.env.METRICS_SECRET) {
+    Logger.warn("Unauthorized metrics update attempt")
+    return c.text("Unauthorized", 401)
+  }
+
+  const body = await c.req.json()
+  const {
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount,
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles,
+    blockedPdfs,
+  } = body
+  await updateMetricsFromThread({
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount,
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles,
+    blockedPdfs,
+  })
+}
+const updateApp = new Hono()
+
+updateApp.post("/update-metrics", handleUpdatedMetrics)
+app.route("/", updateApp)
 
 export const AppRoutes = app
   .basePath("/api/v1")
