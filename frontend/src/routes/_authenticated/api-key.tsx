@@ -10,8 +10,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
-import { Copy, Key, Loader2, Clock, Calendar } from "lucide-react"
+import { Copy, Key, Loader2, Clock, Calendar, ChevronDown } from "lucide-react"
 import { errorComponent } from "@/components/error"
 
 interface ApiKeyResponse {
@@ -199,19 +205,31 @@ const ApiKeyGenerator = () => {
                   placeholder="Enter duration"
                   className="flex-1"
                 />
-                <select
-                  value={durationUnit}
-                  onChange={(e) =>
-                    setDurationUnit(
-                      e.target.value as "minutes" | "hours" | "days",
-                    )
-                  }
-                  className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="minutes">Minutes</option>
-                  <option value="hours">Hours</option>
-                  <option value="days">Days</option>
-                </select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-9 justify-between"
+                    >
+                      {durationUnit.charAt(0).toUpperCase() +
+                        durationUnit.slice(1)}
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => setDurationUnit("minutes")}
+                    >
+                      Minutes
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDurationUnit("hours")}>
+                      Hours
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDurationUnit("days")}>
+                      Days
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 
