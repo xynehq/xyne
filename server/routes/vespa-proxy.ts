@@ -10,13 +10,13 @@ const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa-proxy" })
 // Initialize production Vespa client
 const vespaClient = new VespaClient()
 
-const jwtSecret = process.env.JWT_SECRET!
+const userSecret = process.env.USER_SECRET!
 
 // JWT-based API key validation - same approach as login tokens
 const getEmailFromJWT = async (apiKey: string): Promise<string | null> => {
   try {
     // Verify the JWT token using the same secret as login tokens
-    const payload = await verify(apiKey, jwtSecret)
+    const payload = await verify(apiKey, userSecret)
 
     // Extract email from the 'sub' field (same as login tokens)
     const email = payload.sub as string

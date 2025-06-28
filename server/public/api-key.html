@@ -52,6 +52,62 @@
       margin: 30px 0;
     }
 
+    .expiration-selector {
+      margin-bottom: 20px;
+      text-align: left;
+      max-width: 300px;
+      margin: 0 auto 20px auto;
+    }
+
+    .expiration-selector label {
+      display: block;
+      color: #333333;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .duration-inputs {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .duration-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      background: white;
+      color: #333333;
+      transition: border-color 0.2s ease;
+    }
+
+    .duration-input:focus {
+      outline: none;
+      border-color: #666666;
+      box-shadow: 0 0 0 3px rgba(102, 102, 102, 0.1);
+    }
+
+    .duration-unit {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      background: white;
+      color: #333333;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .duration-unit:focus {
+      outline: none;
+      border-color: #666666;
+      box-shadow: 0 0 0 3px rgba(102, 102, 102, 0.1);
+    }
+
     .btn {
       background: linear-gradient(135deg, #000000 0%, #434343 100%);
       color: white;
@@ -239,10 +295,23 @@
   <div class="container">
     <div class="header">
       <h1>🔑 API Key Generator</h1>
-      <p>Generate a secure API key to access the Vespa proxy endpoints</p>
+      <p>Generate a secure API key to access the Vespa proxy endpoints<br>
+         <small style="color: #888;">Expiration range: 1 minute to 30 days</small></p>
     </div>
 
     <div class="generate-section">
+      <div class="expiration-selector">
+        <label for="durationValue">Expiration Time:</label>
+        <div class="duration-inputs">
+          <input type="number" id="durationValue" min="1" max="43200" value="1" placeholder="Enter duration" class="duration-input" />
+          <select id="durationUnit" class="duration-unit">
+            <option value="minutes">Minutes</option>
+            <option value="hours">Hours</option>
+            <option value="days" selected>Days</option>
+          </select>
+        </div>
+      </div>
+      
       <button id="generateBtn" class="btn" onclick="generateApiKey()">
         <span id="btnText">Generate API Key</span>
         <span id="loadingSpinner" class="loading" style="display: none;"></span>
@@ -283,21 +352,84 @@
       const loadingSpinner = document.getElementById('loadingSpinner');
       const resultSection = document.getElementById('resultSection');
       const errorMessage = document.getElementById('errorMessage');
+      const durationValue = document.getElementById('durationValue');
+      const durationUnit = document.getElementById('durationUnit');
 
       // Reset UI
       resultSection.classList.remove('show');
       errorMessage.style.display = 'none';
       
+      // Validate input
+      const duration = parseInt(durationValue.value);
+      const unit = durationUnit.value;
+      
+      if (!duration || duration < 1) {
+        showError('Please enter a valid duration (minimum 1)');
+        return;
+      }
+
+      // Convert to days for backend
+      let expirationDays;
+      switch (unit) {
+        case 'minutes':
+          expirationDays = duration / (24 * 60); // Convert minutes to days
+          if (duration < 1) {
+            showError('Minimum duration is 1 minute');
+            return;
+          }
+          if (duration > 43200) { // 30 days * 24 hours * 60 minutes
+            showError('Maximum duration is 30 days (43,200 minutes)');
+            return;
+          }
+          break;
+        case 'hours':
+          expirationDays = duration / 24; // Convert hours to days
+          if (duration < 1) {
+            showError('Minimum duration is 1 hour');
+            return;
+          }
+          if (duration > 720) { // 30 days * 24 hours
+            showError('Maximum duration is 30 days (720 hours)');
+            return;
+          }
+          break;
+        case 'days':
+          expirationDays = duration;
+          if (duration < 1) {
+            showError('Minimum duration is 1 day');
+            return;
+          }
+          if (duration > 30) {
+            showError('Maximum duration is 30 days');
+            return;
+          }
+          break;
+        default:
+          expirationDays = duration;
+      }
+
+      // Final validation against backend limits
+      if (expirationDays < (1/1440)) { // 1 minute in days
+        showError('Minimum expiration time is 1 minute');
+        return;
+      }
+
+      // Validate maximum duration (30 days)
+      if (expirationDays > 30) {
+        showError('Maximum expiration time is 30 days');
+        return;
+      }
+
       // Show loading state
       btn.disabled = true;
       btnText.textContent = 'Generating...';
       loadingSpinner.style.display = 'inline-block';
 
       try {
-        const response = await fetch('/api/v1/auth/generate-api-key');
+        const response = await fetch(`/api/v1/auth/generate-api-key?expirationDays=${expirationDays}`);
         const data = await response.json();
 
-        if (response.ok) {
+        if (response.ok && !data.error) {
           currentApiKey = data.apiKey;
           document.getElementById('apiKeyDisplay').textContent = data.apiKey;
           document.getElementById('expiresIn').textContent = data.expiresIn;
@@ -306,7 +438,9 @@
           resultSection.classList.add('show');
           btnText.textContent = 'Generate New Key';
         } else {
-          showError(data.message || 'Failed to generate API key');
+          // Handle both HTTP errors and application errors
+          const errorMessage = data.message || data.error || 'Failed to generate API key';
+          showError(errorMessage);
         }
       } catch (error) {
         showError('Network error: ' + error.message);
