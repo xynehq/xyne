@@ -113,7 +113,9 @@ schema event {
         # An event can have attachments from Google Drive
         field attachments type array<attachment> {}
 
-        field recurrence type array<string> {}
+        field recurrence type array<string> {
+            indexing: attribute | summary
+        }
 
         # Google Meet link or any meeting link from the description
         field joiningLink type string {
@@ -134,7 +136,7 @@ schema event {
         }
     }
 
-     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+     field chunk_embeddings type tensor<bfloat16>(v[384])  {
         indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -158,7 +160,7 @@ schema event {
 
     rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[384])
             query(alpha) double 
             query(recency_decay_rate) double
         }

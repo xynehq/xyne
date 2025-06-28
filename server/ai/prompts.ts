@@ -481,7 +481,8 @@ The context provided will be formatted with specific fields for each type:
 - Location and URLs
 - Time information
 - Organizer and attendees
-- Recurrence patterns
+- Recurrence patterns: Array of RRULE, EXRULE, RDATE and EXDATE lines for a recurring event, as specified in RFC5545. The events reoccur based on this rules.
+- Cancelled Instances: Array of ISO-8601 timestamps of specific occurrences that were cancelled. From all the occurrences of the events this array acts as a list of cancelled instances.
 - Meeting links
 - Relevance score
 ## Slack Message Context Format
@@ -534,6 +535,14 @@ ${retrievedContext}
    - Note any inconsistencies in the data
    - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information.
+5. Recurring events/meetings:
+   - If the event/meeting has a recurrance pattern, try to generate all the possible occurences of that event/meeting from the recurrance pattern.
+   - There will be some recurring events/meetings whose startTime and endTime will be older but they will still be relevant here as they have a recurrance pattern. 
+   - Disregard the original "startTime" and "endTime" beyond using them as the “seed” for computing recurrences. Just use them for figuring out the time references for generating occurences of that recurring events/meetings.
+   - Exclude any generated occurrence whose timestamp exactly matches an entry in "cancelledInstances".
+   - Whenever you have to give date and time of particular occurances of recurring events/meetings, use the generated occurences date and time which make sense according to the user query. 
+   - Mention the original date and time of events/meeting only if specified or asked for.
+   - These generated occurences should only be used as a reference when you try to answer the user query.    
 # Response Format
 You must respond in valid JSON format with the following structure:
 {

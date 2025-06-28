@@ -98,6 +98,7 @@ import {
   searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
+  getAllReoccuringCalendarEvents,
 } from "@/search/vespa"
 import {
   Apps,
@@ -1750,6 +1751,10 @@ async function* generatePointQueryTimeExpansion(
       },
     }
 
+    console.log("combinedResults")
+    console.log(combinedResults.root.children)
+    console.log("combinedResults")
+
     combineSpan?.setAttribute(
       "combined_result_count",
       combinedResults?.root?.children?.length || 0,
@@ -2044,6 +2049,7 @@ async function* generateMetadataQueryAnswer(
     timestampRange.to = to
   } else if (direction === "next") {
     // For "next/upcoming" requests without a valid range, search from now into the future
+    console.log("direction is next")
     timestampRange.from = new Date().getTime()
   }
 
@@ -2230,6 +2236,20 @@ async function* generateMetadataQueryAnswer(
         items = searchResults!.root.children || []
       }
     } else {
+      console.log("params that go into getItems")
+      console.log({
+        email,
+        schema,
+        app: app ?? null,
+        entity: entity ?? null,
+        timestampRange,
+        limit: userSpecifiedCountLimit,
+        asc: sortDirection === "asc",
+      })
+      console.log("params that go into getItems")
+      const allReoccuringevents = await getAllReoccuringCalendarEvents({
+        email,
+      })
       searchResults = await getItems({
         email,
         schema,
@@ -2240,6 +2260,10 @@ async function* generateMetadataQueryAnswer(
         asc: sortDirection === "asc",
       })
       items = searchResults!.root.children || []
+      items = allReoccuringevents.root.children.concat(items)
+      console.log("items")
+      console.log(items)
+      console.log("items")
     }
 
     span?.setAttribute(`retrieved documents length`, items.length)
@@ -2482,6 +2506,7 @@ export async function* UnderstandMessageAndAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  console.log("Entered UnderstandMessageAndAnswer...")
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute(
@@ -2508,6 +2533,7 @@ export async function* UnderstandMessageAndAnswer(
     )
 
     const count = classification.filters.count || chatPageSize
+    console.log("Entered generateMetadataQueryAnswer...")
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -2542,6 +2568,10 @@ export async function* UnderstandMessageAndAnswer(
     }
 
     metadataRagSpan?.end()
+    console.log("hasYieldedAnswer")
+    console.log(hasYieldedAnswer)
+    console.log("hasYieldedAnswer")
+
     if (hasYieldedAnswer) return
   }
 
@@ -2549,6 +2579,7 @@ export async function* UnderstandMessageAndAnswer(
     classification.direction !== null &&
     classification.filters.app === Apps.GoogleCalendar
   ) {
+    console.log("Entered generatePointQueryTimeExpansion bloack")
     // user is talking about an event
     loggerWithChild({ email: email }).info(
       `Direction : ${classification.direction}`,
@@ -3310,6 +3341,10 @@ export const MessageApi = async (c: Context) => {
                 count,
               },
             } as QueryRouterLLMResponse
+
+            console.log("classification")
+            console.log(classification)
+            console.log("classification")
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
