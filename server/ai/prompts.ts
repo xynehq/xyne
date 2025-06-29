@@ -542,6 +542,12 @@ ${retrievedContext}
    - Exclude any generated occurrence whose timestamp exactly matches an entry in "cancelledInstances".
    - Whenever you have to give date and time of particular occurances of recurring events/meetings, use the generated occurences date and time which make sense according to the user query. 
    - Mention the original date and time of events/meeting only if specified or asked for.
+   - Parse each RRULE string to expand every occurrence from the original startTime onward (or within any date range implied by the user's query), treating that seed timestamp solely as the rule's anchor.
+   - Drop any generated occurrence whose exact UTC timestamp appears in cancelledInstances, so cancelled dates never surface.
+   - When asked for a list (e.g. “all meetings this month” or “last three occurrences”), filter the generated series accordingly; when asked “What's next?”, return the first instance strictly after now; when asked if a specific date was skipped, check against both the generated dates and cancelledInstances.
+   - Never present the seed startTime/endTime as the “next” or only occurrence—only reveal that original timestamp if the user explicitly requests “when did this first happen?”.
+   - Always format dates/times in the user's requested timezone and display format, and when a recurrence pattern is non-trivial, note the RRULE (for example, “every Thursday per RRULE:FREQ=WEEKLY;BYDAY=TH”).
+   - If the user's question refers back to the very first instance, state the original startTime and endTime; otherwise rely exclusively on the computed occurrences.
    - These generated occurences should only be used as a reference when you try to answer the user query.    
 # Response Format
 You must respond in valid JSON format with the following structure:

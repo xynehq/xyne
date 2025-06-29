@@ -1823,7 +1823,7 @@ export const getItems = async (
 export const getAllReoccuringCalendarEvents = async (
   params: any,
 ): Promise<VespaSearchResponse> => {
-  const { limit = config.page, offset = 0, email } = params
+  const { offset = 0, email } = params
 
   const yql = `select * from sources event where permissions contains @email`
 
@@ -1831,13 +1831,15 @@ export const getAllReoccuringCalendarEvents = async (
     yql,
     email,
     "ranking.profile": "unranked",
-    hits: limit,
+    hits: 100,
     offset: offset,
   }
 
   try {
     let result = await vespa.getItems(searchPayload)
-    result.root.children = result.root.children.filter((e) => e?.fields?.recurrence?.length > 0)
+    result.root.children = result.root.children.filter(
+      (e) => e?.fields?.recurrence?.length > 0,
+    )
     return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({
@@ -1845,7 +1847,10 @@ export const getAllReoccuringCalendarEvents = async (
       sources: eventSchema,
       message: `getAllReoccuringCalendarEvents failed for schema ${eventSchema}`,
     })
-    Logger.error(searchError, "Error in getAllReoccuringCalendarEvents function")
+    Logger.error(
+      searchError,
+      "Error in getAllReoccuringCalendarEvents function",
+    )
     throw searchError
   }
 }
