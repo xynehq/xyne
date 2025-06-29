@@ -1017,7 +1017,7 @@ export const getSlackThreads: AgentTool = {
       )
 
       const searchQuery = params.filter_query
-      console.log(`[getSlackThreads] Using filter_query: '${searchQuery}'`)
+      Logger.debug(`[getSlackThreads] Using filter_query: '${searchQuery}'`)
 
       if (!searchQuery || searchQuery.trim() === "") {
         execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
