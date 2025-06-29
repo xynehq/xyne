@@ -1,6 +1,237 @@
 [
   {
-    "input": "what is my email",
-    "expected": "user@gmail.com"
+    "input": "What is my email?",
+    "expected": {
+      "tool": "get_user_info",
+      "arguments": {}
+    },
+    "messages": [],
+    "reasoning": false
+  },
+  {
+    "input": "Search for recent AI news",
+    "expected": {
+      "tool": "search",
+      "arguments": {
+        "query": "recent AI news"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Find emails about project alpha",
+    "expected": {
+      "tool": "filtered_search",
+      "arguments": {
+        "query": "project alpha",
+        "app": "gmail"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Show me meetings from the last 7 days",
+    "expected": {
+      "tool": "time_search",
+      "arguments": {
+        "query": "meetings",
+        "from_days_ago": 7,
+        "to_days_ago": 0
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "List my recent emails",
+    "expected": {
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "item_type": "email",
+        "app": "gmail",
+        "limit": 10
+      }
+    },
+    "messages": [],
+    "reasoning": false
+  },
+  {
+    "input": "Find my first documents about budget",
+    "expected": {
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "item_type": "document",
+        "app": "googledrive",
+        "filter_query": "budget",
+        "order_direction": "asc"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Get Slack threads about project beta",
+    "expected": {
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "project beta",
+        "limit": 10
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Find Slack messages from user@example.com about design",
+    "expected": {
+      "tool": "get_slack_messages_from_user",
+      "arguments": {
+        "user_email": "user@example.com",
+        "filter_query": "design",
+        "limit": 20
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Get Slack profile for user@example.com",
+    "expected": {
+      "tool": "get_user_slack_profile",
+      "arguments": {
+        "user_email": "user@example.com"
+      }
+    },
+    "messages": [],
+    "reasoning": false
+  },
+  {
+    "input": "Show Slack messages in #general channel",
+    "expected": {
+      "tool": "get_slack_messages_from_channel",
+      "arguments": {
+        "channel_name": "general",
+        "limit": 20
+      }
+    },
+    "messages": [],
+    "reasoning": false
+  },
+  {
+    "input": "Find Slack messages from 2025-06-01 to 2025-06-15",
+    "expected": {
+      "tool": "get_slack_messages_from_timerange",
+      "arguments": {
+        "date_from": "2025-06-01",
+        "date_to": "2025-06-15",
+        "limit": 20
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Search for recent files in Google Drive, excluding doc123",
+    "expected": {
+      "tool": "filtered_search",
+      "arguments": {
+        "query": "recent files",
+        "app": "googledrive",
+        "excludedIds": ["doc123"]
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "What are my recent calendar events?",
+    "expected": {
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "item_type": "event",
+        "app": "googlecalendar",
+        "limit": 10
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Show me my schedule"
+      },
+      {
+        "role": "assistant",
+        "content": "I can fetch your recent calendar events. Please confirm the time range."
+      }
+    ],
+    "reasoning": true
+  },
+  {
+    "input": "Find Uber receipts in my email",
+    "expected": {
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "item_type": "email",
+        "app": "gmail",
+        "filter_query": "uber receipt"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Search for Slack messages about project alpha in #dev-channel from user@example.com",
+    "expected": {
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "filter_query": "project alpha",
+        "channel_name": "dev-channel",
+        "user_email": "user@example.com"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "What time is it?",
+    "expected": {
+      "tool": "get_user_info",
+      "arguments": {}
+    },
+    "messages": [],
+    "reasoning": false
+  },
+  {
+    "input": "Invalid app query",
+    "expected": {
+      "tool": "filtered_search",
+      "arguments": {
+        "query": "test",
+        "app": "invalid_app"
+      }
+    },
+    "messages": [],
+    "reasoning": true
+  },
+  {
+    "input": "Follow up: more details on AI news",
+    "expected": {
+      "tool": "search",
+      "arguments": {
+        "query": "AI news details"
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Search for recent AI news"
+      },
+      {
+        "role": "assistant",
+        "content": "Found AI news. Want more details?"
+      }
+    ],
+    "reasoning": true
   }
 ]
