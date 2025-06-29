@@ -155,10 +155,9 @@ export interface FilteredSearchParameters
 
 export interface MetadataRetrievalParameters
   extends PaginationParameters,
-    FilterParameters {
+    FilterParameters,
+    AppEntityParameters {
   item_type: string
-  app?: Apps
-  entity?: string
 }
 
 export interface UserInfoParameters {}

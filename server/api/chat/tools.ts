@@ -46,6 +46,7 @@ import {
 import {
   type AgentTool,
   type FilteredSearchParameters,
+  type MetadataRetrievalParameters,
   type MinimalAgentFragment,
   type SearchParameters,
 } from "./types"
@@ -92,15 +93,17 @@ const appEnumMap = new Map<string, Apps>([
   ["google-calendar", Apps.GoogleCalendar],
   ["googledrive", Apps.GoogleDrive],
   ["google-drive", Apps.GoogleDrive],
+  ["slack", Apps.Slack],
 ])
 
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
+
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
   agentSpecificDataSourceIds: string[]
 } {
-  console.log(agentPrompt, "agent pront")
+  Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
 
@@ -112,7 +115,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
-    console.log(agentPromptData, "agent pront afgter parse")
+    Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
     Logger.warn("Failed to parse agentPrompt JSON", {
       error,
@@ -154,41 +157,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       continue
     }
 
-    // Handle app integrations
-    switch (lowerIntegration) {
-      case Apps.GoogleDrive.toLowerCase():
-      case "googledrive":
-      case "googlesheets":
-        if (!agentAppEnums.includes(Apps.GoogleDrive)) {
-          agentAppEnums.push(Apps.GoogleDrive)
-        }
-        break
-      case Apps.DataSource.toLowerCase():
-        if (!agentAppEnums.includes(Apps.DataSource)) {
-          agentAppEnums.push(Apps.DataSource)
-        }
-        break
-      case Apps.Gmail.toLowerCase():
-      case "gmail":
-        if (!agentAppEnums.includes(Apps.Gmail)) {
-          agentAppEnums.push(Apps.Gmail)
-        }
-        break
-      case Apps.GoogleCalendar.toLowerCase():
-      case "googlecalendar":
-        if (!agentAppEnums.includes(Apps.GoogleCalendar)) {
-          agentAppEnums.push(Apps.GoogleCalendar)
-        }
-        break
-      case Apps.Slack.toLowerCase():
-      case "slack":
-        if (!agentAppEnums.includes(Apps.Slack)) {
-          agentAppEnums.push(Apps.Slack)
-        }
-        break
-      default:
-        Logger.warn(`Unknown integration type in agent prompt: ${integration}`)
-        break
+    // Use the appEnumMap for lookup
+    const mappedApp = appEnumMap.get(lowerIntegration)
+    if (mappedApp) {
+      if (!agentAppEnums.includes(mappedApp)) {
+        agentAppEnums.push(mappedApp)
+      }
+    } else {
+      Logger.warn(`Unknown integration type in agent prompt: ${integration}`)
     }
   }
 
@@ -197,6 +173,191 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   return { agentAppEnums, agentSpecificDataSourceIds }
 }
+
+interface UnifiedSearchOptions {
+  email: string
+  query?: string | null
+  app?: Apps | null
+  entity?: Entity | null
+  timestampRange?: {
+    from?: number | string | null
+    to?: number | string | null
+  } | null
+  limit?: number
+  offset?: number
+  orderDirection?: "asc" | "desc"
+  excludedIds?: string[]
+  agentAppEnums?: Apps[]
+  span?: Span
+  schema?: VespaSchema | null
+}
+
+async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
+  result: string
+  contexts: MinimalAgentFragment[]
+  error?: string
+}> {
+  const {
+    email,
+    query,
+    app,
+    entity,
+    timestampRange,
+    limit = 10,
+    offset = 0,
+    orderDirection = "desc",
+    excludedIds,
+    agentAppEnums,
+    span,
+    schema,
+  } = options
+
+  const execSpan = span?.startSpan("execute_vespa_search_helper")
+  execSpan?.setAttribute("email", email)
+  if (query) execSpan?.setAttribute("query", query)
+  if (app) execSpan?.setAttribute("app", app)
+  if (entity) execSpan?.setAttribute("entity", entity)
+  if (limit) execSpan?.setAttribute("limit", limit)
+  if (offset) execSpan?.setAttribute("offset", offset)
+  if (orderDirection) execSpan?.setAttribute("orderDirection", orderDirection)
+  execSpan?.setAttribute("hasTimestampRange", !!timestampRange)
+  execSpan?.setAttribute("hasExcludedIds", (excludedIds?.length || 0) > 0)
+  execSpan?.setAttribute("hasAgentAppEnums", (agentAppEnums?.length || 0) > 0)
+
+  if (!email) {
+    const errorMsg = "Email is required for search execution."
+    execSpan?.setAttribute("error", errorMsg)
+    return { result: errorMsg, error: "Missing email", contexts: [] }
+  }
+
+  let searchResults: VespaSearchResponse | null = null
+  const commonSearchOptions = {
+    limit,
+    alpha: 0.5,
+    excludedIds,
+    span: execSpan?.startSpan("vespa_search_call"),
+    offset,
+    rankProfile:
+      orderDirection === "desc"
+        ? SearchModes.GlobalSorted
+        : SearchModes.NativeRank,
+  }
+
+  const fromTimestamp = timestampRange?.from
+    ? new Date(timestampRange.from).getTime()
+    : undefined
+  const toTimestamp = timestampRange?.to
+    ? new Date(timestampRange.to).getTime()
+    : undefined
+
+  if (query && query.trim() !== "") {
+    if (agentAppEnums && agentAppEnums.length > 0) {
+      if (app && !agentAppEnums.includes(app)) {
+        const errorMsg = `${app} is not an allowed app for this agent. Cannot search.`
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, contexts: [] }
+      }
+      searchResults = await searchVespaAgent(
+        query,
+        email,
+        app ?? null,
+        entity ?? null,
+        agentAppEnums,
+        {
+          ...commonSearchOptions,
+          timestampRange:
+            fromTimestamp && toTimestamp
+              ? { from: fromTimestamp, to: toTimestamp }
+              : undefined,
+        },
+      )
+    } else {
+      searchResults = await searchVespa(
+        query,
+        email,
+        app ?? null,
+        entity ?? null,
+        {
+          ...commonSearchOptions,
+          timestampRange:
+            fromTimestamp && toTimestamp
+              ? { from: fromTimestamp, to: toTimestamp }
+              : undefined,
+        },
+      )
+    }
+  } else if (schema) {
+    // If no query, but a schema is provided, use getItems
+    if (agentAppEnums && agentAppEnums.length > 0) {
+      if (app && !agentAppEnums.includes(app)) {
+        const errorMsg = `${app} is not an allowed app for this agent. Cannot retrieve items.`
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, contexts: [] }
+      }
+    }
+    searchResults = await getItems({
+      email,
+      schema,
+      app: app ?? null,
+      entity: entity ?? null,
+      timestampRange:
+        fromTimestamp && toTimestamp
+          ? { from: fromTimestamp, to: toTimestamp }
+          : null,
+      limit,
+      offset,
+      asc: orderDirection === "asc",
+      excludedIds,
+    })
+  } else {
+    const errorMsg = "No query or schema provided for search."
+    execSpan?.setAttribute("error", errorMsg)
+    return {
+      result: errorMsg,
+      error: "Invalid search parameters",
+      contexts: [],
+    }
+  }
+
+  const children = (searchResults?.root?.children || []).filter(
+    (item): item is VespaSearchResults =>
+      !!(item.fields && "sddocname" in item.fields),
+  )
+  execSpan?.setAttribute("results_count", children.length)
+
+  if (children.length === 0) {
+    return { result: "No results found.", contexts: [] }
+  }
+
+  const fragments: MinimalAgentFragment[] = children.map((r) => {
+    const citation = searchToCitation(r)
+    return {
+      id: `${citation.docId}`,
+      content: answerContextMap(r, maxDefaultSummary),
+      source: citation,
+      confidence: r.relevance || 0.7,
+    }
+  })
+
+  let summaryText = `Found ${fragments.length} results`
+  if (query) summaryText += ` matching '${query}'`
+  if (app) summaryText += ` in \`${app}\``
+  if (timestampRange?.from && timestampRange?.to) {
+    summaryText += ` from ${new Date(timestampRange.from).toLocaleDateString()} to ${new Date(timestampRange.to).toLocaleDateString()}`
+  }
+  if (offset > 0)
+    summaryText += ` (showing items ${offset + 1} to ${offset + fragments.length})`
+
+  const topItemsList = fragments
+    .slice(0, 3)
+    .map((f) => `- "${f.source.title || "Untitled"}"`)
+    .join("\n")
+  summaryText += `.\nTop items:\n${topItemsList}`
+
+  execSpan?.end()
+  return { result: summaryText, contexts: fragments }
+}
+
 // Search Tool (existing)
 export const searchTool: AgentTool = {
   name: "search",
@@ -229,74 +390,30 @@ export const searchTool: AgentTool = {
   ) => {
     const execSpan = span?.startSpan("execute_search_tool")
     try {
-      const searchLimit = params.limit || 10
-      execSpan?.setAttribute("query", params.filter_query)
-      execSpan?.setAttribute("limit", searchLimit)
-      if (params.excludedIds && params.excludedIds.length > 0) {
-        execSpan?.setAttribute(
-          "excludedIds",
-          JSON.stringify(params.excludedIds),
-        )
-      }
       if (!email) {
         const errorMsg = "Email is required for search tool execution."
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, error: "Missing email" }
       }
-      let searchResults: VespaSearchResponse | null = null
 
-      if (!params.filter_query || params.filter_query.trim() === "") {
-        params.filter_query = userMessage || ""
-      }
-
-      if (agentPrompt) {
-        const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-        searchResults = await searchVespaAgent(
-          params.filter_query,
-          email,
-          null,
-          null,
-          agentAppEnums,
-          {
-            limit: searchLimit,
-            alpha: 0.5,
-            excludedIds: params.excludedIds, // Pass excludedIds
-            span: execSpan?.startSpan("vespa_search"),
-          },
-        )
-      } else {
-        searchResults = await searchVespa(
-          params.filter_query,
-          email,
-          null,
-          null,
-          {
-            limit: searchLimit,
-            alpha: 0.5,
-            excludedIds: params.excludedIds, // Pass excludedIds
-            span: execSpan?.startSpan("vespa_search"),
-          },
-        )
-      }
-      const children = searchResults?.root?.children || []
-      execSpan?.setAttribute("results_count", children.length)
-      if (children.length === 0)
-        return { result: "No results found.", contexts: [] }
-      const fragments = children.map((r) => {
-        const citation = searchToCitation(r as any)
+      const queryToUse = params.filter_query || userMessage || ""
+      if (!queryToUse.trim()) {
         return {
-          id: `${citation.docId}`,
-          content: answerContextMap(r as any, maxDefaultSummary),
-          source: citation,
-          confidence: r.relevance || 0.7,
+          result: "No query provided for general search.",
+          error: "Missing query",
         }
+      }
+
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+
+      return await executeVespaSearch({
+        email,
+        query: queryToUse,
+        limit: params.limit,
+        excludedIds: params.excludedIds,
+        agentAppEnums,
+        span: execSpan,
       })
-      const topItemsList = fragments
-        .slice(0, 3)
-        .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-        .join("\n")
-      const summaryText = `Found ${fragments.length} results matching '${params.filter_query}'.\nTop items:\n${topItemsList}`
-      return { result: summaryText, contexts: fragments }
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
@@ -335,6 +452,17 @@ export const filteredSearchTool: AgentTool = {
       description: "Maximum number of results (default: 10).",
       required: false,
     },
+    offset: {
+      type: "number",
+      description: "Number of items to skip for pagination (default: 0).",
+      required: false,
+    },
+    order_direction: {
+      type: "string",
+      description:
+        "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
+      required: false,
+    },
     excludedIds: {
       type: "array",
       description: "Optional list of document IDs to exclude from results.",
@@ -351,25 +479,14 @@ export const filteredSearchTool: AgentTool = {
     userAlpha?: number,
   ) => {
     const execSpan = span?.startSpan("execute_filtered_search_tool")
-    const app = params?.app?.toLowerCase() || null
     try {
-      const searchLimit = params.limit || 10
-      execSpan?.setAttribute("query", params.filter_query)
-      execSpan?.setAttribute("app_original", params.app || null)
-      execSpan?.setAttribute("app_processed", app)
-      execSpan?.setAttribute("limit", searchLimit)
       if (!email) {
         const errorMsg = "Email is required for search tool execution."
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, error: "Missing email" }
       }
-      if (params.excludedIds && params.excludedIds.length > 0) {
-        execSpan?.setAttribute(
-          "excludedIds",
-          JSON.stringify(params.excludedIds),
-        )
-      }
 
+      const app = params?.app?.toLowerCase() || null
       const appEnum: Apps | null = appEnumMap.get(app || "") || null
 
       if (!appEnum) {
@@ -378,104 +495,27 @@ export const filteredSearchTool: AgentTool = {
         return { result: errorMsg, error: "Invalid app" }
       }
 
-      let searchResults: VespaSearchResponse | null = null
-      const commonSearchOptions = {
-        limit: searchLimit,
-        alpha: 0.5,
-        excludedIds: params.excludedIds,
-        span: execSpan?.startSpan("vespa_search"),
-        offset: params.offset || 0,
-        rankProfile:
-          params.order_direction === "desc"
-            ? SearchModes.GlobalSorted
-            : SearchModes.NativeRank,
-      }
       const schema = appToSchemaMapper(appEnum)
-      if (
-        (!params.filter_query || params.filter_query.trim() === "") &&
-        schema
-      ) {
-        execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
-        if (agentPrompt) {
-          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-          if (!agentAppEnums.includes(appEnum)) {
-            return {
-              result: `No results found in ${app} (not included in agent integrations).`,
-              contexts: [],
-            }
-          }
-        }
-        searchResults = await getItems({
-          email,
-          schema,
-          app: appEnum,
-          entity: null,
-          timestampRange: null,
-          limit: searchLimit,
-          offset: params.offset || 0,
-          asc: params.order_direction === "asc",
-          excludedIds: params.excludedIds,
-        })
-      } else {
-        if (agentPrompt) {
-          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-          if (agentAppEnums.includes(appEnum)) {
-            searchResults = await searchVespaAgent(
-              params.filter_query,
-              email,
-              appEnum,
-              null,
-              agentAppEnums,
-              commonSearchOptions,
-            )
-          } else {
-            return {
-              result: `No results found in ${app} (not included in agent integrations).`,
-              contexts: [],
-            }
-          }
-        } else {
-          searchResults = await searchVespa(
-            params.filter_query,
-            email,
-            appEnum,
-            null,
-            commonSearchOptions,
-          )
-        }
-      }
-      const children = searchResults?.root?.children || []
-      // console.log(children.map((r) => r.fields), "children ids in filtered search tool")
-      execSpan?.setAttribute("results_count", children.length)
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
 
-      if (children.length === 0)
-        return {
-          result: `No results found in ${app}.`,
-          contexts: [],
-        }
-
-      const fragments = children.map((r) => {
-        const citation = searchToCitation(r as any)
-        return {
-          id: `${citation.docId}`,
-          content: answerContextMap(r as any, maxDefaultSummary),
-          source: citation,
-          confidence: r.relevance || 0.7,
-        }
+      return await executeVespaSearch({
+        email,
+        query: params.filter_query,
+        app: appEnum,
+        entity: params.entity as Entity,
+        limit: params.limit,
+        offset: params.offset,
+        orderDirection: params.order_direction,
+        excludedIds: params.excludedIds,
+        agentAppEnums,
+        span: execSpan,
+        schema: params.filter_query ? null : schema,
       })
-
-      const topItemsList = fragments
-        .slice(0, 3)
-        .map((f) => `- "${f.source.title || "Untitled"}"`)
-        .join("\n")
-      const summaryText = `Found ${fragments.length} results in \`${app}\`.\nTop items:\n${topItemsList}`
-
-      return { result: summaryText, contexts: fragments }
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
       return {
-        result: `Search error in ${app}: ${errMsg}`,
+        result: `Search error in ${params.app || "filtered search"}: ${errMsg}`,
         error: errMsg,
       }
     } finally {
@@ -484,7 +524,7 @@ export const filteredSearchTool: AgentTool = {
   },
 }
 
-// Time Search Tool (existing)
+// Time Search Tool
 export const timeSearchTool: AgentTool = {
   name: "time_search",
   description:
@@ -535,7 +575,6 @@ export const timeSearchTool: AgentTool = {
     userCtx?: string,
     agentPrompt?: string,
   ) => {
-    console.log("tool params in time search tool", params)
     const execSpan = span?.startSpan("execute_time_search_tool")
     try {
       if (!email) {
@@ -543,133 +582,36 @@ export const timeSearchTool: AgentTool = {
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, error: "Missing email" }
       }
-      const searchLimit = params.limit || 10
-      execSpan?.setAttribute("query", params.filter_query)
-      execSpan?.setAttribute("from", params.from)
-      execSpan?.setAttribute("to", params.to)
-      execSpan?.setAttribute("limit", searchLimit)
-      if (params.excludedIds && params.excludedIds.length > 0) {
-        execSpan?.setAttribute(
-          "excludedIds",
-          JSON.stringify(params.excludedIds),
-        )
+      if (!params.from || !params.to) {
+        const errorMsg =
+          "Both 'from' and 'to' dates are required for time search."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing date range" }
       }
-      const from = new Date(params.from).getTime()
-      const to = new Date(params.to).getTime()
+
       const appToUse = isValidApp(params.app || "")
         ? (params.app as Apps)
         : null
       const entityToUse = isValidEntity(params.entity || "")
         ? (params.entity as Entity)
         : null
-      execSpan?.setAttribute("from_date", new Date(from).toISOString())
-      execSpan?.setAttribute("to_date", new Date(to).toISOString())
-      let searchResults: VespaSearchResponse | null = null
-      const searchOptions = {
-        limit: searchLimit,
-        alpha: 0.5,
-        timestampRange: { from, to },
-        rankProfile:
-          params.order_direction === "desc"
-            ? SearchModes.GlobalSorted
-            : SearchModes.NativeRank,
-        offset: params.offset || 0,
+      const schemaToUse = appToSchemaMapper(appToUse as Apps)
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+
+      return await executeVespaSearch({
+        email,
+        query: params.filter_query,
+        app: appToUse,
+        entity: entityToUse,
+        timestampRange: { from: params.from, to: params.to },
+        limit: params.limit,
+        offset: params.offset,
+        orderDirection: params.order_direction,
         excludedIds: params.excludedIds,
-        span: execSpan?.startSpan("vespa_search"),
-      }
-      // New logic for empty filter_query
-      if (!params.filter_query || params.filter_query.trim() === "") {
-        execSpan?.setAttribute(
-          "vespa_call_type",
-          "getItems_time_range_no_keyword_filter",
-        )
-        let schemaToUse: VespaSchema | null = appToSchemaMapper(
-          appToUse as Apps,
-        )
-
-        if (!schemaToUse) {
-          const errorMsg =
-            "Cannot retrieve items without a specific app or filter query for time range search."
-          execSpan?.setAttribute("error", errorMsg)
-          return { result: errorMsg, error: "Missing app for getItems" }
-        }
-
-        if (agentPrompt) {
-          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-          if (!agentAppEnums.includes(appToUse as Apps)) {
-            return {
-              result: `No results found in the specified time range (app not included in agent integrations).`,
-              contexts: [],
-            }
-          }
-        }
-        searchResults = await getItems({
-          email,
-          schema: schemaToUse,
-          app: appToUse!,
-          entity: entityToUse,
-          timestampRange: { from, to },
-          limit: searchLimit,
-          offset: params.offset || 0,
-          asc: params.order_direction === "asc",
-          excludedIds: params.excludedIds,
-        })
-      } else {
-        if (agentPrompt) {
-          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-          execSpan?.setAttribute(
-            "agent_app_enums",
-            JSON.stringify(agentAppEnums),
-          )
-          if (agentAppEnums.length === 0) {
-            return {
-              result: `No results found in the specified time range.`,
-              contexts: [],
-            }
-          } else {
-            searchResults = await searchVespaAgent(
-              params.filter_query,
-              email,
-              appToUse,
-              entityToUse,
-              agentAppEnums,
-              searchOptions,
-            )
-          }
-          execSpan?.setAttribute("agent_prompt", agentPrompt)
-        } else {
-          console.log(from, to, "from to in time search tool")
-          searchResults = await searchVespa(
-            params.filter_query,
-            email,
-            appToUse,
-            entityToUse,
-            searchOptions,
-          )
-        }
-      }
-      const children = searchResults?.root?.children || []
-      execSpan?.setAttribute("results_count", children.length)
-      if (children.length === 0)
-        return {
-          result: `No results found in the specified time range.`,
-          contexts: [],
-        }
-      const fragments = children.map((r) => {
-        const citation = searchToCitation(r as any)
-        return {
-          id: `${citation.docId}`,
-          content: answerContextMap(r as any, maxDefaultSummary),
-          source: citation,
-          confidence: r.relevance || 0.7,
-        }
+        agentAppEnums,
+        span: execSpan,
+        schema: params.filter_query ? null : schemaToUse, // Only pass schema if no filter_query for getItems
       })
-      const topItemsList = fragments
-        .slice(0, 3)
-        .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-        .join("\n")
-      const summaryText = `Found ${fragments.length} results in time range (\`${params.from}\` to \`${params.to}\`).\nTop items:\n${topItemsList}`
-      return { result: summaryText, contexts: fragments }
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
@@ -798,16 +740,7 @@ export const metadataRetrievalTool: AgentTool = {
     },
   },
   execute: async (
-    params: {
-      item_type: string
-      app?: string
-      entity?: string
-      filter_query?: string
-      limit?: number
-      offset?: number
-      order_direction?: "asc" | "desc"
-      excludedIds?: string[]
-    },
+    params: MetadataRetrievalParameters,
     span?: Span,
     email?: string,
     userCtx?: string,
@@ -819,11 +752,9 @@ export const metadataRetrievalTool: AgentTool = {
       execSpan?.setAttribute("error", errorMsg)
       return { result: errorMsg, error: "Missing email" }
     }
-    console.log(
+    Logger.debug(
+      { params, excludedIds: params.excludedIds },
       "[metadata_retrieval] Input Parameters:",
-      JSON.stringify(params, null, 2) +
-        " EXCLUDED_IDS: " +
-        JSON.stringify(params.excludedIds),
     )
     execSpan?.setAttribute("item_type", params.item_type)
     if (params.app) execSpan?.setAttribute("app_param_original", params.app)
@@ -849,7 +780,7 @@ export const metadataRetrievalTool: AgentTool = {
       if (!mapping) {
         const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
         execSpan?.setAttribute("error", unknownItemMsg)
-        console.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
+        Logger.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
         return { result: unknownItemMsg, error: `Unknown item_type` }
       }
 
@@ -857,15 +788,13 @@ export const metadataRetrievalTool: AgentTool = {
       entity = mapping.defaultEntity
       timestampField = mapping.timestampField
       if (!appToUse) {
-        // Only set appToUse from mapping if not already set by user's 'app' param
         appToUse = mapping.defaultApp
       }
 
-      console.log(
+      Logger.debug(
         `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
       )
 
-      // Initialize finalEntity with the entity derived from item_type (often null for documents)
       let finalEntity: Entity | null = entity
       execSpan?.setAttribute(
         "initial_entity_from_item_type",
@@ -884,7 +813,7 @@ export const metadataRetrievalTool: AgentTool = {
         const mappedToDriveEntity = driveEntityMap.get(llmEntityString) || null
 
         if (mappedToDriveEntity) {
-          finalEntity = mappedToDriveEntity // Override with the more specific DriveEntity
+          finalEntity = mappedToDriveEntity
           execSpan?.setAttribute(
             "mapped_llm_entity_to_drive_enum",
             finalEntity.toString(),
@@ -897,7 +826,7 @@ export const metadataRetrievalTool: AgentTool = {
           // finalEntity remains as initially set (e.g., null if item_type was 'document')
         }
       }
-      console.log(
+      Logger.debug(
         `[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`,
       )
 
@@ -908,9 +837,7 @@ export const metadataRetrievalTool: AgentTool = {
         appToUse ? appToUse.toString() : "null",
       )
 
-      // 3. Sanity check: if user specified an app, ensure it's compatible with the item_type's inferred schema and app
       if (params.app) {
-        // Only if user explicitly provided an app
         let expectedAppForType: Apps | null = null
         if (schema === mailSchema) expectedAppForType = Apps.Gmail
         else if (schema === eventSchema)
@@ -929,271 +856,25 @@ export const metadataRetrievalTool: AgentTool = {
         : undefined
       if (orderByString)
         execSpan?.setAttribute("orderBy_constructed", orderByString)
-      console.log(
+      Logger.debug(
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
 
-      // --- Vespa Call ---
-      let searchResults: VespaSearchResponse | null = null
-      let children: VespaSearchResults[] = []
-      const searchOptionsVespa: {
-        limit: number
-        offset: number
-        excludedIds: string[] | undefined
-        span: Span | undefined
-      } = {
-        limit: params.limit || 10,
-        offset: params.offset || 0,
+      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+
+      return await executeVespaSearch({
+        email,
+        query: params.filter_query,
+        app: appToUse,
+        entity: finalEntity,
+        limit: params.limit,
+        offset: params.offset,
+        orderDirection: params.order_direction,
         excludedIds: params.excludedIds,
+        agentAppEnums,
         span: execSpan,
-      }
-
-      console.log(
-        "[metadata_retrieval] Common Vespa searchOptions:",
-        JSON.stringify(
-          {
-            limit: searchOptionsVespa.limit,
-            offset: searchOptionsVespa.offset,
-            excludedIds: searchOptionsVespa.excludedIds,
-          },
-          null,
-          2,
-        ),
-      )
-
-      if (params.filter_query) {
-        const searchQuery = params.filter_query
-        console.log(
-          `[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`,
-        )
-
-        if (params.order_direction === "desc") {
-          execSpan?.setAttribute("vespa_call_type", "searchVespa_GlobalSorted")
-          // TODO: let rank profile global sorted also respect the direction
-          // currently it's hardcoded to desc
-          if (agentPrompt) {
-            execSpan?.setAttribute(
-              "vespa_call_type",
-              "searchVespa_filtered_sorted_globalsorted_agent",
-            )
-            // Parse agent integrations but still filter by the specified app
-            const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-            execSpan?.setAttribute(
-              "agent_app_enums",
-              JSON.stringify(agentAppEnums),
-            )
-            if (agentAppEnums.length === 0) {
-              return {
-                result: `No results found matching '${searchQuery}' in the specified app.`,
-                contexts: [],
-              }
-            } else {
-              searchResults = await searchVespaAgent(
-                searchQuery,
-                email,
-                appToUse,
-                entity,
-                agentAppEnums,
-                {
-                  limit: searchOptionsVespa.limit,
-                  offset: searchOptionsVespa.offset,
-                  excludedIds: searchOptionsVespa.excludedIds,
-                  rankProfile: SearchModes.GlobalSorted,
-                  span: execSpan?.startSpan(
-                    "vespa_search_filtered_sorted_globalsorted",
-                  ),
-                },
-              )
-            }
-          } else {
-            searchResults = await searchVespa(
-              searchQuery,
-              email,
-              appToUse,
-              entity,
-              {
-                limit: searchOptionsVespa.limit,
-                offset: searchOptionsVespa.offset,
-                excludedIds: searchOptionsVespa.excludedIds,
-                rankProfile: SearchModes.GlobalSorted,
-                span: execSpan?.startSpan(
-                  "vespa_search_filtered_sorted_globalsorted",
-                ),
-              },
-            )
-          }
-        } else {
-          execSpan?.setAttribute(
-            "vespa_call_type",
-            "searchVespa_filter_no_sort",
-          )
-          if (agentPrompt) {
-            execSpan?.setAttribute(
-              "vespa_call_type",
-              "searchVespa_filtered_agent",
-            )
-            // Parse agent integrations but still filter by the specified app
-            const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-            execSpan?.setAttribute(
-              "agent_app_enums",
-              JSON.stringify(agentAppEnums),
-            )
-            if (agentAppEnums.length === 0) {
-              return {
-                result: `No results found matching '${searchQuery}' in the specified app.`,
-                contexts: [],
-              }
-            } else {
-              searchResults = await searchVespaAgent(
-                searchQuery,
-                email,
-                appToUse,
-                entity,
-                agentAppEnums,
-                {
-                  limit: searchOptionsVespa.limit,
-                  offset: searchOptionsVespa.offset,
-                  excludedIds: searchOptionsVespa.excludedIds,
-                  span: execSpan?.startSpan("vespa_search_metadata_filtered"),
-                },
-              )
-            }
-          } else {
-            searchResults = await searchVespa(
-              searchQuery,
-              email,
-              appToUse,
-              entity,
-              {
-                limit: searchOptionsVespa.limit,
-                offset: searchOptionsVespa.offset,
-                excludedIds: searchOptionsVespa.excludedIds,
-                rankProfile: SearchModes.NativeRank,
-                span: execSpan?.startSpan("vespa_search_metadata_filtered"),
-              },
-            )
-          }
-        }
-        children = (searchResults?.root?.children || []).filter(
-          (item): item is VespaSearchResults =>
-            !!(item.fields && "sddocname" in item.fields),
-        )
-      } else {
-        execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
-        if (agentPrompt) {
-          const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-
-          execSpan?.setAttribute(
-            "agent_app_enums",
-            JSON.stringify(agentAppEnums),
-          )
-          if (appToUse === null) {
-            return {
-              result: `Retrieving '${params.item_type}' without a specific app context is not supported when an agent profile is active with app restrictions. Please specify an app or use a filter query.`,
-              contexts: [],
-            }
-          } else if (agentAppEnums.includes(appToUse)) {
-            // appToUse is not null and is allowed
-            const res = await getItems({
-              email,
-              schema,
-              app: appToUse ?? null,
-              entity: entity ?? null,
-              timestampRange: null,
-              limit: searchOptionsVespa.limit,
-              offset: params.offset,
-              asc: params.order_direction === "asc",
-            })
-            children = (res?.root?.children || []).filter(
-              (item): item is VespaSearchResults =>
-                !!(item.fields && "sddocname" in item.fields),
-            )
-          } else {
-            // app is not null but not in agentAppEnums
-            return {
-              result: `${appToUse} is not an allowed app for this agent. Cannot retrieve ${params.item_type}.`,
-              contexts: [],
-            }
-          }
-        } else {
-          searchResults = await getItems({
-            schema,
-            app: appToUse,
-            entity: finalEntity,
-            timestampRange: null,
-            limit: params.limit,
-            offset: params.offset,
-            email,
-            asc: params.order_direction === "asc",
-            excludedIds: params.excludedIds,
-          })
-          children = (searchResults?.root?.children || []).filter(
-            (item): item is VespaSearchResults =>
-              !!(item.fields && "sddocname" in item.fields),
-          )
-        }
-      }
-
-      execSpan?.setAttribute("retrieved_items_count", children.length)
-
-      // --- Format Result ---
-      if (children.length > 0) {
-        const fragments: MinimalAgentFragment[] = children.map(
-          (item: VespaSearchResults): MinimalAgentFragment => {
-            const citation = searchToCitation(item)
-            Logger.debug({ item }, "Processing item in metadata_retrieval tool")
-
-            const content = item.fields
-              ? answerContextMap(item, maxDefaultSummary)
-              : `Context unavailable for ${citation.title || citation.docId}`
-
-            return {
-              id: `${citation.docId}`,
-              content: content,
-              source: citation,
-              confidence: item.relevance || 0.7, // Use item.relevance if available
-            }
-          },
-        )
-
-        let responseText = `Found ${fragments.length} ${params.item_type}(s)`
-        if (params.filter_query) {
-          responseText += ` matching '${params.filter_query}'`
-        }
-        // Use the processed app name if available
-        const appNameForText =
-          (appToUse ? appToUse.toString() : null) || "any app"
-        if (params.app) {
-          responseText += ` in \`${appNameForText}\``
-        }
-        if (params.offset && params.offset > 0) {
-          const currentOffset = params.offset || 0
-          responseText += ` (showing items ${currentOffset + 1} to ${currentOffset + fragments.length})`
-        }
-        const topItemsList = fragments
-          .slice(0, 3)
-          .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-          .join("\n")
-        responseText += `.\nTop items:\n${topItemsList}`
-
-        const successResult: {
-          result: string
-          contexts: MinimalAgentFragment[]
-        } = {
-          result: responseText,
-          contexts: fragments,
-        }
-        return successResult
-      } else {
-        let notFoundMsg = `Could not find the ${params.item_type}`
-        if (params.filter_query)
-          notFoundMsg += ` matching '${params.filter_query}'`
-        const appNameForText =
-          (appToUse ? appToUse.toString() : null) || "any app"
-        if (params.app) notFoundMsg += ` in ${appNameForText}`
-        notFoundMsg += `.`
-        return { result: notFoundMsg, contexts: [] }
-      }
+        schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
+      })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)

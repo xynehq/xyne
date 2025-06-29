@@ -1303,6 +1303,7 @@ export async function generateToolSelectionOutput(
   initialPlanning: string,
   params: ModelParams,
   agentContext?: string,
+  pastActions?: string,
 ): Promise<{
   queryRewrite: string
   tool: string
@@ -1315,6 +1316,7 @@ export async function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
+    pastActions,
   )
 
   const baseMessage = {

@@ -704,11 +704,14 @@ export const MessageWithToolsApi = async (c: Context) => {
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">
+            failureCount: number
           }[] = []
+          const MAX_CONSECUTIVE_TOOL_FAILURES = 2
+
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
               loggerWithChild({ email: sub }).info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
               )
               wasStreamClosedPrematurely = true
               break
@@ -740,7 +743,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"
 
-            if (previousToolCalls.length) {
+            // Check for consecutive failures and add warning
+            const lastToolCall = previousToolCalls[previousToolCalls.length - 1]
+            if (
+              lastToolCall &&
+              lastToolCall.failureCount >= MAX_CONSECUTIVE_TOOL_FAILURES
+            ) {
+              loopWarningPrompt = `
+                   ---
+                   **Critique Past Actions:** You have repeatedly called the tool '${
+                     lastToolCall.tool
+                   }' with arguments ${JSON.stringify(
+                     lastToolCall.args,
+                   )} and it has failed or yielded insufficient results ${
+                     lastToolCall.failureCount
+                   } times consecutively. You are stuck in a loop. You MUST choose a DIFFERENT TOOL or escalate to a "no answer found" state if no other tools are viable.
+                   ---
+                `
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Detected ${lastToolCall.failureCount} consecutive failures for tool ${lastToolCall.tool}. Attempting to change strategy.`,
+              })
+            } else if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
                    **Critique Past Actions:** You have already called some tools ${previousToolCalls
@@ -764,8 +788,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 `
             }
 
-            agentScratchpad =
-              evidenceSummary + loopWarningPrompt + reasoningHeader
+            agentScratchpad = evidenceSummary + reasoningHeader
 
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
@@ -805,6 +828,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 messages: messagesWithNoErrResponse,
               },
               agentPromptForLLM,
+              loopWarningPrompt,
             )
 
             if (
@@ -829,6 +853,23 @@ export const MessageWithToolsApi = async (c: Context) => {
               const toolName = toolSelection.tool
               const toolParams = toolSelection.arguments
 
+              // Update previousToolCalls with failure tracking
+              const lastCallIndex = previousToolCalls.length - 1
+              if (
+                lastCallIndex >= 0 &&
+                previousToolCalls[lastCallIndex].tool === toolName &&
+                JSON.stringify(previousToolCalls[lastCallIndex].args) ===
+                  JSON.stringify(toolParams)
+              ) {
+                previousToolCalls[lastCallIndex].failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: toolName,
+                  args: toolParams,
+                  failureCount: 0, // Reset failure count for a new tool/args combination
+                })
+              }
+
               if (toolName === XyneTools.Conversational) {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -840,10 +881,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Planning,
                 details: `Planning next step with ${gatheredFragments.length} context fragments.`,
-              })
-              previousToolCalls.push({
-                tool: toolName,
-                args: toolParams,
               })
               loggerWithChild({ email: sub }).info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
@@ -1088,6 +1125,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                   error: toolExecutionResponse.error,
                 })
 
+                // If the tool execution resulted in an error or no new contexts, increment failure count
+                const currentToolCall =
+                  previousToolCalls[previousToolCalls.length - 1]
+                if (
+                  currentToolCall &&
+                  (toolExecutionResponse.error ||
+                    !toolExecutionResponse.contexts ||
+                    toolExecutionResponse.contexts.length === 0)
+                ) {
+                  currentToolCall.failureCount++
+                } else if (currentToolCall) {
+                  // If successful, reset failure count for this tool
+                  currentToolCall.failureCount = 0
+                }
+
                 if (toolExecutionResponse.error) {
                   if (iterationCount < maxIterations) {
                     continue // Continue to the next iteration to re-plan
@@ -1281,6 +1333,19 @@ export const MessageWithToolsApi = async (c: Context) => {
                 break
               }
             } else {
+              // If no tool was selected, it's also a form of being stuck or unable to proceed.
+              // Increment failure count for the "no tool selected" state if it's consecutive.
+              const lastCall = previousToolCalls[previousToolCalls.length - 1]
+              if (lastCall && lastCall.tool === "NoToolSelected") {
+                lastCall.failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: "NoToolSelected",
+                  args: {},
+                  failureCount: 1,
+                })
+              }
+
               if (iterationCount < maxIterations) {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,

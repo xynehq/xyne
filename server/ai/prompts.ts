@@ -819,6 +819,7 @@ export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
   agentScratchpad: string,
+  pastActs?: string,
 ): string => {
   return `
     The current date is: ${getDateForAI()}
@@ -937,9 +938,19 @@ export const SearchQueryToolContextPrompt = (
     ---
     ${agentScratchpad || "This is the first iteration. No previous context."}
     ---
+
+    ${
+      pastActs?.length
+        ? `Important:
+        **Critique Past Actions**
+        ${pastActs}
+        `
+        : ""
+    }
     
+    
+
     # Decision Framework
-    
     ## 1. Context Analysis
     Review the conversation history and understand what information has already been gathered.
     
