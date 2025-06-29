@@ -173,7 +173,7 @@ schema chat_message {
     }
   }
 
-  rank-profile default_native inherits initial {
+    rank-profile default_native inherits initial {
     
     first-phase {
       expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
@@ -184,6 +184,35 @@ schema chat_message {
         (
           (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + 
           ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(text)
+      nativeRank(username)
+      nativeRank(name)
+    }
+  }
+
+  rank-profile norm_native_rank inherits initial {
+    
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          ((combined_nativeRank) 
+          / 0.2)* (1 - query(alpha))
+          +
+          ((vector_score - 0.45) 
+          / 0.2) * query(alpha)
         )
       }
       rerank-count: 1000

@@ -177,6 +177,35 @@ schema chat_container {
         }
     }
 
+    rank-profile norm_native_rank inherits initial {
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        global-phase {
+          expression {
+            (
+              ((combined_nativeRank) 
+                / 0.2)* (1 - query(alpha))
+                +
+                ((vector_score - 0.45) 
+                / 0.2) * query(alpha)
+            )
+          }
+          rerank-count: 1000
+        }
+
+        match-features {
+          matchedFieldCount
+          vector_score
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(topic)
+          nativeRank(description)
+        }
+    }
+
     # will be use for single schema query
     rank-profile default_bm25 inherits initial {
 

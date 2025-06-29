@@ -170,7 +170,36 @@ schema chat_user {
         }
 
         global-phase {
-          expression : (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+            expression {
+                (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+            }
+            rerank-count:1000
+        }
+
+        match-features {
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(email)
+          nativeRank(statusText)
+          nativeRank(title)
+          vector_score
+        }
+    }
+
+    rank-profile norm_native_rank inherits initial {
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        global-phase {
+          expression {
+            ((combined_nativeRank) 
+            / 0.2)* (1 - query(alpha))
+            +
+            ((vector_score - 0.45) 
+            / 0.2) * query(alpha)
+          }
           rerank-count: 1000
         }
 
