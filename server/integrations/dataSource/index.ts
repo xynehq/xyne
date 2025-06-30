@@ -42,6 +42,12 @@ import {
 } from "./errors"
 import type { Document } from "@langchain/core/documents"
 import { safeLoadPDF, deleteDocument } from "@/integrations/google/index.ts"
+import { extractTextAndImagesWithChunks } from "@/pdfChunks"
+import {
+  describeImageWithllm,
+  withTempDirectory,
+} from "@/lib/describeImageWithllm"
+import { promises as fsPromises } from "fs"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -169,9 +175,12 @@ const createFileMetadata = (
 
 // Core processing functions
 const createVespaDataSourceFile = (
-  chunks: string[],
+  text_chunks: string[],
   options: ProcessingOptions,
   processingMethod: string,
+  image_chunks?: string[],
+  text_chunk_pos?: number[],
+  image_chunk_pos?: number[],
   convertedFrom?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
@@ -184,7 +193,10 @@ const createVespaDataSourceFile = (
     app: Apps.DataSource,
     fileName: options.fileName,
     fileSize: options.fileSize,
-    chunks,
+    chunks: text_chunks,
+    image_chunks: image_chunks || [],
+    chunks_pos: text_chunk_pos || [],
+    image_chunks_pos: image_chunk_pos || [],
     uploadedBy: options.userEmail,
     mimeType: options.mimeType,
     createdAt: now,
@@ -193,7 +205,7 @@ const createVespaDataSourceFile = (
     metadata: createFileMetadata(
       options.fileName,
       options.userEmail,
-      chunks.length,
+      text_chunks.length,
       processingMethod,
       convertedFrom,
     ),
@@ -234,36 +246,50 @@ const processTextContent = async (
   }
 }
 
+const processImageContent = async (
+  imageBuffer: Buffer,
+  options: ProcessingOptions,
+  convertedFrom?: string,
+): Promise<VespaDataSourceFile> => {
+  try {
+    return withTempDirectory(
+      async (tempDir: string): Promise<VespaDataSourceFile> => {
+        const image_chunk: string = await describeImageWithllm(
+          imageBuffer,
+          tempDir,
+          "provide only a concise and detailed description of the image",
+        )
+        return createVespaDataSourceFile(
+          [],
+          options,
+          convertedFrom ? "image_conversion" : "image_processing",
+          [image_chunk],
+          [],
+          [0],
+          convertedFrom,
+        )
+      },
+    )
+  } catch (error) {
+    if (isDataSourceError(error)) {
+      throw error
+    }
+    throw new ContentExtractionError(
+      error instanceof Error ? error.message : String(error),
+      "image",
+    )
+  }
+}
+
 const processPdfContent = async (
   filePath: string,
   options: ProcessingOptions,
   convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
-    const docs: Document[] = await safeLoadPDF(filePath)
-    if (!docs || docs.length === 0) {
-      await deleteDocument(filePath)
-      throw new ContentExtractionError(
-        "No content extracted from PDF document",
-        "PDF",
-      )
-    }
-
-    const content = docs.flatMap((doc) => doc.pageContent)
-    const trimmedContent = content.join(" ").trim()
-
-    if (
-      !trimmedContent ||
-      trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
-    ) {
-      throw new InsufficientContentError(
-        DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
-        trimmedContent.length,
-      )
-    }
-
-    const chunks = chunkDocument(trimmedContent).map((v) => v.chunk)
-    if (chunks.length === 0) {
+    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+      await extractTextAndImagesWithChunks(filePath, `dsf-${createId()}`)
+    if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
         "PDF",
@@ -271,9 +297,12 @@ const processPdfContent = async (
     }
 
     return createVespaDataSourceFile(
-      chunks,
+      text_chunks,
       options,
       convertedFrom ? "pdf_conversion" : "pdf_processing",
+      image_chunks,
+      text_chunk_pos,
+      image_chunk_pos,
       convertedFrom,
     )
   } catch (error) {
@@ -328,7 +357,7 @@ const convertToPdf = async (
     if (isOfficeFile(mimeType)) {
       await convertOfficeToPdf(inputFilePath, tempDir, outputPdfPath)
     }
-    // else if (isImageFile(mimeType)) {       if we want to support image conversion in the future
+    // else if (isImageFile(mimeType)) {
     //   await convertImageToPdf(inputFilePath, outputPdfPath)
     // }
     else {
@@ -438,50 +467,6 @@ const convertOfficeToPdf = async (
       "office document",
     )
   }
-}
-
-const convertImageToPdf = async (
-  inputFilePath: string,
-  outputPdfPath: string,
-): Promise<void> => {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new TimeoutError(
-          "ImageMagick conversion",
-          DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS,
-        ),
-      )
-    }, DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS)
-
-    const proc = spawn("convert", [inputFilePath, outputPdfPath])
-
-    let stderr = ""
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString()
-    })
-
-    proc.on("error", (error) => {
-      clearTimeout(timeout)
-      reject(
-        new ExternalToolError("ImageMagick", `Not available: ${error.message}`),
-      )
-    })
-
-    proc.on("exit", (code) => {
-      clearTimeout(timeout)
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(
-          new ExternalToolError(
-            "ImageMagick",
-            `Exited with code ${code}. Error: ${stderr}`,
-          ),
-        )
-      }
-    })
-  })
 }
 
 // XLSX processing functions
@@ -603,38 +588,63 @@ export const handleDataSourceFileUpload = async (
       description,
     }
 
-    // Write file to temp location
-    try {
-      const fileBuffer = new Uint8Array(await file.arrayBuffer())
-      await writeFile(tempFilePath, fileBuffer)
-    } catch (error) {
-      throw new FileProcessingError(
-        `Failed to write temporary file: ${error instanceof Error ? error.message : String(error)}`,
-        file.name,
-      )
-    }
-
     let processedFile: VespaDataSourceFile
+    if (isImageFile(mimeType)) {
+      const imageBuffer = Buffer.from(await file.arrayBuffer())
+      processedFile = await processImageContent(imageBuffer, options)
+      try {
+        const baseDir = path.resolve(
+          process.env.IMAGE_DIR || "downloads/xyne_images_db",
+        )
+        const outputDir = path.join(baseDir, processedFile.docId)
+        await fsPromises.mkdir(outputDir, { recursive: true })
 
-    // Process based on file type
-    if (mimeType === "application/pdf") {
-      processedFile = await processPdfContent(tempFilePath, options)
-    } else if (isTextFile(mimeType)) {
-      const content = await file.text()
-      processedFile = await processTextContent(content, options)
-    } else if (isSheetFile(mimeType)) {
-      processedFile = await processSheetContent(tempFilePath, options)
-    } else if (requiresConversion(mimeType)) {
-      // Convert to PDF first
-      const convertedPdfPath = await convertToPdf(tempFilePath, mimeType)
-      filesToCleanup.push(convertedPdfPath)
-      processedFile = await processPdfContent(
-        convertedPdfPath,
-        options,
-        mimeType,
-      )
+        const imageFilename = `${0}.png`
+        const imagePath = path.join(outputDir, imageFilename)
+
+        await fsPromises.writeFile(
+          imagePath,
+          imageBuffer as NodeJS.ArrayBufferView,
+        )
+        Logger.info(`Saved image to: ${imagePath}`)
+      } catch (saveError) {
+        Logger.error(
+          `Failed to save image for ${options.fileName}: ${saveError instanceof Error ? saveError.message : saveError}`,
+        )
+        // Continue processing even if saving fails
+      }
     } else {
-      throw createUnsupportedTypeError(mimeType, getSupportedFileTypes())
+      // Write file to temp location
+      try {
+        const fileBuffer = new Uint8Array(await file.arrayBuffer())
+        await writeFile(tempFilePath, fileBuffer)
+      } catch (error) {
+        throw new FileProcessingError(
+          `Failed to write temporary file: ${error instanceof Error ? error.message : String(error)}`,
+          file.name,
+        )
+      }
+
+      // Process based on file type
+      if (mimeType === "application/pdf") {
+        processedFile = await processPdfContent(tempFilePath, options)
+      } else if (isTextFile(mimeType)) {
+        const content = await file.text()
+        processedFile = await processTextContent(content, options)
+      } else if (isSheetFile(mimeType)) {
+        processedFile = await processSheetContent(tempFilePath, options)
+      } else if (requiresConversion(mimeType)) {
+        // Convert to PDF first
+        const convertedPdfPath = await convertToPdf(tempFilePath, mimeType)
+        filesToCleanup.push(convertedPdfPath)
+        processedFile = await processPdfContent(
+          convertedPdfPath,
+          options,
+          mimeType,
+        )
+      } else {
+        throw createUnsupportedTypeError(mimeType, getSupportedFileTypes())
+      }
     }
 
     // Insert into Vespa

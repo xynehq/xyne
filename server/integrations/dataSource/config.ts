@@ -104,7 +104,7 @@ export const isImageFile = (mimeType: string): boolean => {
 }
 
 export const requiresConversion = (mimeType: string): boolean =>
-  isOfficeFile(mimeType) || isImageFile(mimeType)
+  isOfficeFile(mimeType)
 
 export const getSupportedFileTypes = (): string[] => [
   ...DATASOURCE_CONFIG.SUPPORTED_TEXT_TYPES,
