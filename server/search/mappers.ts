@@ -70,6 +70,54 @@ function countHiTags(str: string): number {
   return matches ? matches.length : 0
 }
 
+export const getSortedScoredImageChunks = (
+  matchfeatures: z.infer<typeof VespaMatchFeatureSchema>,
+  existingImageChunksPosSummary: number[],
+  existingImageChunksSummary: string[],
+  docId: string,
+  maxChunks?: number,
+): ScoredChunk[] => {
+  // return if no chunks summary
+  if (!existingImageChunksSummary?.length) {
+    return []
+  }
+
+  const imageChunksPos = existingImageChunksPosSummary
+  const imageChunkScores =
+    matchfeatures &&
+    "image_chunk_scores" in matchfeatures &&
+    "cells" in
+      (
+        matchfeatures as {
+          image_chunk_scores: { cells: Record<string, number> }
+        }
+      ).image_chunk_scores
+      ? (
+          matchfeatures as {
+            image_chunk_scores: { cells: Record<string, number> }
+          }
+        ).image_chunk_scores.cells
+      : {}
+
+  const imageChunksWithIndices = existingImageChunksSummary.map(
+    (chunk, index) => ({
+      index: index,
+      chunk: `${docId}_${imageChunksPos[index] ?? index}`,
+      score: scale(imageChunkScores[index]) || 0, // Default to 0 if doesn't have score
+    }),
+  )
+
+  const filteredImageChunks = imageChunksWithIndices.filter(
+    ({ index }) => index < imageChunksPos.length,
+  )
+
+  const sortedImageChunks = filteredImageChunks.sort(
+    (a, b) => b.score - a.score,
+  )
+
+  return maxChunks ? sortedImageChunks.slice(0, maxChunks) : sortedImageChunks
+}
+
 export const getSortedScoredChunks = (
   matchfeatures: z.infer<typeof VespaMatchFeatureSchema>,
   existingChunksSummary: string[],
