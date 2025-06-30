@@ -1009,16 +1009,23 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
-
+                    const isValidJSON = (str: string) => {
+                      try {
+                        JSON.parse(str);
+                        return true;
+                      } catch (e) {
+                        return false;
+                      }
+                    }
                     try {
                       if (
                         mcpToolResponse.content &&
                         mcpToolResponse.content[0] &&
                         mcpToolResponse.content[0].text
                       ) {
-                        const parsedJson = JSON.parse(
+                        const parsedJson = isValidJSON(mcpToolResponse.content[0].text) ? JSON.parse(
                           mcpToolResponse.content[0].text,
-                        )
+                        ) :  mcpToolResponse.content[0].text
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
@@ -1037,11 +1044,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${flattenObject(
+                            formattedContent = `Tool Response: ${typeof parsedJson !== "string" ? flattenObject(
                               parsedJson,
                             )
                               .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n")}`
+                              .join("\n") : parsedJson}`
                           }
 
                           newFragments.push({
