@@ -56,46 +56,6 @@ import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
 
-// Define the mapping for DriveEntity outside the execute function
-const driveEntityMap = new Map<string, DriveEntity>([
-  ["sheets", DriveEntity.Sheets],
-  ["spreadsheet", DriveEntity.Sheets],
-  ["slides", DriveEntity.Slides],
-  ["presentation", DriveEntity.Presentation],
-  ["powerpoint", DriveEntity.Presentation],
-  ["pdf", DriveEntity.PDF],
-  ["doc", DriveEntity.Docs],
-  ["docs", DriveEntity.Docs],
-  ["folder", DriveEntity.Folder],
-  ["drawing", DriveEntity.Drawing],
-  ["form", DriveEntity.Form],
-  ["script", DriveEntity.Script],
-  ["site", DriveEntity.Site],
-  ["map", DriveEntity.Map],
-  ["audio", DriveEntity.Audio],
-  ["video", DriveEntity.Video],
-  ["photo", DriveEntity.Photo],
-  ["image", DriveEntity.Image],
-  ["zip", DriveEntity.Zip],
-  ["word", DriveEntity.WordDocument],
-  ["word_document", DriveEntity.WordDocument],
-  ["excel", DriveEntity.ExcelSpreadsheet],
-  ["excel_spreadsheet", DriveEntity.ExcelSpreadsheet],
-  ["text", DriveEntity.Text],
-  ["csv", DriveEntity.CSV],
-])
-
-// Define a mapper for app enums
-const appEnumMap = new Map<string, Apps>([
-  ["gmail", Apps.Gmail],
-  ["g-mail", Apps.Gmail],
-  ["googlecalendar", Apps.GoogleCalendar],
-  ["google-calendar", Apps.GoogleCalendar],
-  ["googledrive", Apps.GoogleDrive],
-  ["google-drive", Apps.GoogleDrive],
-  ["slack", Apps.Slack],
-])
-
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -143,13 +103,10 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       continue
     }
 
-    const lowerIntegration = integration.toLowerCase()
+    const integrationApp = integration.toLowerCase()
 
     // Handle data source IDs
-    if (
-      lowerIntegration.startsWith("ds-") ||
-      lowerIntegration.startsWith("ds_")
-    ) {
+    if (integrationApp.startsWith("ds-") || integrationApp.startsWith("ds_")) {
       agentSpecificDataSourceIds.push(integration)
       if (!agentAppEnums.includes(Apps.DataSource)) {
         agentAppEnums.push(Apps.DataSource)
@@ -157,11 +114,10 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       continue
     }
 
-    // Use the appEnumMap for lookup
-    const mappedApp = appEnumMap.get(lowerIntegration)
-    if (mappedApp) {
-      if (!agentAppEnums.includes(mappedApp)) {
-        agentAppEnums.push(mappedApp)
+    const app = integrationApp as Apps
+    if (app) {
+      if (!agentAppEnums.includes(app)) {
+        agentAppEnums.push(app)
       }
     } else {
       Logger.warn(`Unknown integration type in agent prompt: ${integration}`)
@@ -486,8 +442,8 @@ export const filteredSearchTool: AgentTool = {
         return { result: errorMsg, error: "Missing email" }
       }
 
-      const app = params?.app?.toLowerCase() || null
-      const appEnum: Apps | null = appEnumMap.get(app || "") || null
+      const app = params?.app || null
+      const appEnum: Apps | null = isValidApp(app ?? "") ? (app as Apps) : null
 
       if (!appEnum) {
         const errorMsg = `Error: Invalid app specified: '${params.app}'. Valid apps are 'gmail', 'googlecalendar', 'googledrive'.`
@@ -770,8 +726,9 @@ export const metadataRetrievalTool: AgentTool = {
     try {
       let schema: VespaSchema
       let entity: Entity | null = null
-      let appToUse: Apps | null =
-        appEnumMap.get(params.app?.toLowerCase() || "") || null
+      let appToUse: Apps | null = isValidApp(params.app || "")
+        ? (params.app as Apps)
+        : null
       let timestampField: string
 
       // 2. Map item_type to schema, entity, timestampField, and default appToUse if not already set by user
@@ -795,37 +752,14 @@ export const metadataRetrievalTool: AgentTool = {
         `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
       )
 
-      let finalEntity: Entity | null = entity
+      let finalEntity: Entity | null = isValidEntity(entity ?? "")
+        ? entity
+        : null
       execSpan?.setAttribute(
         "initial_entity_from_item_type",
         finalEntity ? finalEntity.toString() : "null",
       )
 
-      // If LLM provides an entity string, and it's for a Drive document/file, try to map it to a DriveEntity enum
-      if (params.entity && appToUse === Apps.GoogleDrive) {
-        const llmEntityString = params.entity.toLowerCase().trim()
-        execSpan?.setAttribute(
-          "llm_provided_entity_string_for_drive",
-          llmEntityString,
-        )
-
-        // Use the map for lookup
-        const mappedToDriveEntity = driveEntityMap.get(llmEntityString) || null
-
-        if (mappedToDriveEntity) {
-          finalEntity = mappedToDriveEntity
-          execSpan?.setAttribute(
-            "mapped_llm_entity_to_drive_enum",
-            finalEntity.toString(),
-          )
-        } else {
-          execSpan?.setAttribute(
-            "llm_entity_string_not_mapped_to_drive_enum",
-            llmEntityString,
-          )
-          // finalEntity remains as initially set (e.g., null if item_type was 'document')
-        }
-      }
       Logger.debug(
         `[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`,
       )
@@ -838,17 +772,13 @@ export const metadataRetrievalTool: AgentTool = {
       )
 
       if (params.app) {
-        let expectedAppForType: Apps | null = null
-        if (schema === mailSchema) expectedAppForType = Apps.Gmail
-        else if (schema === eventSchema)
-          expectedAppForType = Apps.GoogleCalendar
-        else if (schema === fileSchema) expectedAppForType = Apps.GoogleDrive
-
-        if (expectedAppForType && appToUse !== expectedAppForType) {
-          const mismatchMsg = `Error: Item type '${params.item_type}' (typically in ${expectedAppForType}) is incompatible with specified app '${params.app}'.`
+        if (!isValidApp(params.app)) {
+          const mismatchMsg = `Error: Item type '${params.item_type}' (typically in ${params.app}) is incompatible with specified app '${params.app}'.`
           execSpan?.setAttribute("error", mismatchMsg)
           return { result: mismatchMsg, error: `App/Item type mismatch` }
         }
+
+        appToUse = params.app
       }
 
       const orderByString: string | undefined = params.order_direction
