@@ -2257,19 +2257,19 @@ async function* generateMetadataQueryAnswer(
         asc: sortDirection === "asc",
       })
       items = searchResults!.root.children || []
-      if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
-        const allReoccuringevents = await getAllReoccuringCalendarEvents({
-          email,
-        })
-        console.log("\n\nallReoccuringevents")
-        console.log(allReoccuringevents.root.children)
-        console.log("allReoccuringevents\n\n")
-        items = allReoccuringevents.root.children.concat(items)
-      }
-      console.log("items")
-      console.log(items)
-      console.log("items")
     }
+    if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+      const allReoccuringevents = await getAllReoccuringCalendarEvents({
+        email,
+      })
+      console.log("\n\nallReoccuringevents")
+      console.log(allReoccuringevents.root.children)
+      console.log("allReoccuringevents\n\n")
+      items = allReoccuringevents.root.children.concat(items)
+    }
+    console.log("items")
+    console.log(items)
+    console.log("items")
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -2372,6 +2372,15 @@ async function* generateMetadataQueryAnswer(
       }
 
       items = searchResults.root.children || []
+      if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+        const allReoccuringevents = await getAllReoccuringCalendarEvents({
+          email,
+        })
+        console.log("\n\nallReoccuringevents")
+        console.log(allReoccuringevents.root.children)
+        console.log("allReoccuringevents\n\n")
+        items = allReoccuringevents.root.children.concat(items)
+      }
 
       loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
 
