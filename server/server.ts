@@ -92,6 +92,18 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat/chat"
+import {
+  CreateSharedChatApi,
+  GetSharedChatApi,
+  ListSharedChatsApi,
+  DeleteSharedChatApi,
+  CheckSharedChatApi,
+  createSharedChatSchema,
+  getSharedChatSchema,
+  listSharedChatsSchema,
+  deleteSharedChatSchema,
+  checkSharedChatSchema,
+} from "@/api/chat/sharedChat"
 import { UserRole, Apps } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -308,6 +320,32 @@ export const AppRoutes = app
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+  // Shared chat routes
+  .post(
+    "/chat/share/create",
+    zValidator("json", createSharedChatSchema),
+    CreateSharedChatApi,
+  )
+  .get(
+    "/chat/share",
+    zValidator("query", getSharedChatSchema),
+    GetSharedChatApi,
+  )
+  .get(
+    "/chat/shares",
+    zValidator("query", listSharedChatsSchema),
+    ListSharedChatsApi,
+  )
+  .get(
+    "/chat/share/check",
+    zValidator("query", checkSharedChatSchema),
+    CheckSharedChatApi,
+  )
+  .delete(
+    "/chat/share/delete",
+    zValidator("json", deleteSharedChatSchema),
+    DeleteSharedChatApi,
+  )
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
