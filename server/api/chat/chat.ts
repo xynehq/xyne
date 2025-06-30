@@ -2247,9 +2247,6 @@ async function* generateMetadataQueryAnswer(
         asc: sortDirection === "asc",
       })
       console.log("params that go into getItems")
-      const allReoccuringevents = await getAllReoccuringCalendarEvents({
-        email,
-      })
       searchResults = await getItems({
         email,
         schema,
@@ -2260,7 +2257,15 @@ async function* generateMetadataQueryAnswer(
         asc: sortDirection === "asc",
       })
       items = searchResults!.root.children || []
-      items = allReoccuringevents.root.children.concat(items)
+      if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+        const allReoccuringevents = await getAllReoccuringCalendarEvents({
+          email,
+        })
+        console.log("\n\nallReoccuringevents")
+        console.log(allReoccuringevents.root.children)
+        console.log("allReoccuringevents\n\n")
+        items = allReoccuringevents.root.children.concat(items)
+      }
       console.log("items")
       console.log(items)
       console.log("items")
