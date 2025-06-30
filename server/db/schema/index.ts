@@ -12,6 +12,7 @@ export * from "@/db/schema/chatTrace"
 export * from "@/db/schema/agents"
 export * from "@/db/schema/userAgentPermissions"
 export * from "@/db/schema/McpConnectors"
+export * from "@/db/schema/sharedChats"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"
