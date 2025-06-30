@@ -73,7 +73,13 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, GetAgentsForDataSourceApi, } from "@/api/dataSource" 
+import {
+  ListDataSourcesApi,
+  ListDataSourceFilesApi,
+  DeleteDocumentApi,
+  deleteDocumentSchema,
+  GetAgentsForDataSourceApi,
+} from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -86,6 +92,16 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat/chat"
+import {
+  CreateSharedChatApi,
+  GetSharedChatApi,
+  ListSharedChatsApi,
+  DeleteSharedChatApi,
+  createSharedChatSchema,
+  getSharedChatSchema,
+  listSharedChatsSchema,
+  deleteSharedChatSchema,
+} from "@/api/chat/sharedChat"
 import { UserRole, Apps } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -284,6 +300,27 @@ export const AppRoutes = app
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+  // Shared chat routes
+  .post(
+    "/chat/share/create",
+    zValidator("json", createSharedChatSchema),
+    CreateSharedChatApi,
+  )
+  .get(
+    "/chat/share",
+    zValidator("query", getSharedChatSchema),
+    GetSharedChatApi,
+  )
+  .get(
+    "/chat/shares",
+    zValidator("query", listSharedChatsSchema),
+    ListSharedChatsApi,
+  )
+  .delete(
+    "/chat/share/delete",
+    zValidator("json", deleteSharedChatSchema),
+    DeleteSharedChatApi,
+  )
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
@@ -304,7 +341,7 @@ export const AppRoutes = app
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
-    "/search/document/delete", 
+    "/search/document/delete",
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
