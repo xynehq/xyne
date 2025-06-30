@@ -1400,8 +1400,8 @@ export const getSlackRelatedMessages: AgentTool = {
         params.channel_name ||
         params.user_email ||
         params.thread_id || // Assuming thread_id might be a parameter for this unified tool
-        params.date_from ||
-        params.date_to
+        params.from ||
+        params.to
 
       if (!hasScope && !params.filter_query) {
         return {
@@ -1417,8 +1417,8 @@ export const getSlackRelatedMessages: AgentTool = {
         offset: Math.max(params.offset || 0, 0),
         filterQuery: params.filter_query,
         orderDirection: (params.order_direction || "desc") as "asc" | "desc",
-        dateFrom: params.date_from || null,
-        dateTo: params.date_to || null,
+        dateFrom: params.from || null,
+        dateTo: params.to || null,
         span: execSpan,
       }
 
@@ -1448,14 +1448,12 @@ export const getSlackRelatedMessages: AgentTool = {
       if (params.user_email) searchStrategy.push(`user: ${params.user_email}`)
       if (params.thread_id) searchStrategy.push(`thread: ${params.thread_id}`)
       if (params.date_from || params.date_to) {
-        searchStrategy.push(
-          `dates: ${params.date_from || "*"} to ${params.date_to || "*"}`,
-        )
+        searchStrategy.push(`dates: ${params.from} to ${params.to}`)
       }
       if (params.filter_query)
         searchStrategy.push(`query: "${params.filter_query}"`)
 
-      console.log(
+      Logger.debug(
         `[get_slack_messages] Search strategy: ${searchStrategy.join(", ")}`,
       )
 

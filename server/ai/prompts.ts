@@ -922,8 +922,8 @@ export const SearchQueryToolContextPrompt = (
         - user_email (opt: user email), 
         - limit (opt), offset (opt), 
         - order_direction (opt: 'asc'/'desc'), 
-        - date_from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-        - date_to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
+        - from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
+        - to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
         - offset (opt: 0) use this if you need to goto next page to find better result.
     3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
        Params: 
