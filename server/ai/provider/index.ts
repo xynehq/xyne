@@ -102,7 +102,7 @@ import { is } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.AI)
 
-interface AgentPromptData {
+export interface AgentPromptData {
   name: string
   description: string
   prompt: string
@@ -1316,6 +1316,7 @@ export async function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
+    agentContext,
     pastActions,
   )
 
@@ -1403,7 +1404,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
-      parsedAgentPrompt.prompt,
+      parsedAgentPrompt,
     )
     params.systemPrompt = defaultSystemPrompt
   } else {
