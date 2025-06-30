@@ -111,6 +111,7 @@ schema mail {
     attribute {
       distance-metric: angular
     }
+    attribute: paged
   }
 
   field subject_fuzzy type string {

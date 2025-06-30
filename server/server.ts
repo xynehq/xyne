@@ -71,9 +71,15 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo } from "@/api/auth"
+import { GetUserWorkspaceInfo, GenerateApiKey } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi, DeleteDocumentApi, deleteDocumentSchema, GetAgentsForDataSourceApi, } from "@/api/dataSource" 
+import {
+  ListDataSourcesApi,
+  ListDataSourceFilesApi,
+  DeleteDocumentApi,
+  deleteDocumentSchema,
+  GetAgentsForDataSourceApi,
+} from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -112,12 +118,30 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+// Import Vespa proxy handlers
+import {
+  validateApiKey,
+  vespaSearchProxy,
+  vespaAutocompleteProxy,
+  vespaGroupSearchProxy,
+  vespaGetItemsProxy,
+  vespaChatContainerByChannelProxy,
+  vespaChatUserByEmailProxy,
+} from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
   dataSourceName: z.string().min(1),
   fileName: z.string().min(1),
+})
+
+// Add schema for API key generation
+const generateApiKeySchema = z.object({
+  expirationDays: z.coerce
+    .number()
+    .min(1 / 1440)
+    .max(30), // Allow fractional days, minimum 1 minute (1/1440 days)
 })
 
 export type Variables = JwtVariables
@@ -304,7 +328,7 @@ export const AppRoutes = app
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
-    "/search/document/delete", 
+    "/search/document/delete",
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
@@ -330,6 +354,11 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
+  .get(
+    "/auth/generate-api-key",
+    zValidator("query", generateApiKeySchema),
+    GenerateApiKey,
+  )
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -409,6 +438,20 @@ export const AppRoutes = app
     AdminDeleteUserData,
   )
   .get("/oauth/global-slack-provider", GetProviders)
+
+// Vespa Proxy Routes (for production server proxying)
+app
+  .basePath("/api/vespa")
+  .post("/search", validateApiKey, vespaSearchProxy)
+  .post("/autocomplete", validateApiKey, vespaAutocompleteProxy)
+  .post("/group-search", validateApiKey, vespaGroupSearchProxy)
+  .post("/get-items", validateApiKey, vespaGetItemsProxy)
+  .post(
+    "/chat-container-by-channel",
+    validateApiKey,
+    vespaChatContainerByChannelProxy,
+  )
+  .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -650,8 +693,10 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
+app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+
 export const init = async () => {
   await initQueue()
 }
