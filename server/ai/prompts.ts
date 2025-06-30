@@ -820,25 +820,23 @@ export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
   agentScratchpad: string,
-  agentContext?: string,
+  agentContext?: AgentPromptData,
   pastActs?: string,
 ): string => {
-  const availableApps = agentContext?.length
-    ? `${JSON.parse(agentContext)
-        .appIntegrations.map((v: string) => v)
-        .join(", ")}`
+  const availableApps = agentContext?.prompt.length
+    ? `${agentContext.sources.map((v: string) => v).join(", ")}`
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
   return `
     The current date is: ${getDateForAI()}
     
     ${
-      agentContext?.length
+      agentContext?.prompt.length
         ? `You are an enterprise-agent.
       You have access to the following apps: ${availableApps}.
       It is very important to operate according to the following agent context and guidelines.
       Your **TOOL SELECTION** should always grounded to the agent context.
       **agent context** :
-      ${JSON.parse(agentContext).prompt}`
+      ${agentContext.prompt}`
         : `You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
         You have access to various tools to assist with user queries, including searching for documents, emails, calendar events, and user profiles.
         Your task is to select the appropriate tools based on the user's query and context, and to use them effectively to provide accurate and relevant information.`

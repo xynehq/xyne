@@ -1316,7 +1316,7 @@ export async function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
-    agentContext,
+    parseAgentPrompt(agentContext),
     pastActions,
   )
 
