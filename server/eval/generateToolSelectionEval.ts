@@ -103,13 +103,27 @@ function evaluateResponse({
   return { score }
 }
 
-function saveEvalResults(evaluation: any[], name: string) {
+function saveEvalResults(
+  evaluation: { averageScore: number; results: any[] },
+  name: string,
+) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
   const fileName = `${name}-${timestamp}.json`
-  const filePath = path.join(process.cwd(), "eval-results", "tools", fileName)
+  const filePath = path.join(
+    process.cwd(),
+    "eval-results",
+    "tools",
+    "compare",
+    fileName,
+  )
 
   // Ensure eval-results directory exists
-  const evalResultsDir = path.join(process.cwd(), "eval-results", "tools")
+  const evalResultsDir = path.join(
+    process.cwd(),
+    "eval-results",
+    "tools",
+    "compare",
+  )
   if (!fs.existsSync(evalResultsDir)) {
     fs.mkdirSync(evalResultsDir, { recursive: true })
     Logger.info(`Created directory: ${evalResultsDir}`)
@@ -154,8 +168,9 @@ async function runEvaluation(userCtx: string) {
       `Model params: ${JSON.stringify({ modelId, stream: true, json: true, reasoning: item.reasoning, messages: item.messages }, null, 2)}`,
     )
 
-    sleep(5000)
-    const toolSelectionIterator = generateToolSelectionOutput(
+    await sleep(5000)
+
+    const toolSelectionOutput = await generateToolSelectionOutput(
       item.input,
       userCtx,
       toolsPrompt,
@@ -169,37 +184,47 @@ async function runEvaluation(userCtx: string) {
       },
     )
 
-    let buffer = ""
-    let reasoningOutput = ""
-    let reasoningActive = item.reasoning ?? false
-
-    for await (const chunk of toolSelectionIterator) {
-      if (chunk.text) {
-        if (reasoningActive) {
-          if (chunk.text.includes("<think>")) {
-            reasoningOutput += chunk.text
-          } else if (chunk.text.includes("</think>")) {
-            reasoningActive = false
-            const parts = chunk.text.split("</think>")
-            if (parts[0]) reasoningOutput += parts[0]
-            if (parts[1]) buffer += parts[1].trim()
-          } else {
-            reasoningOutput += chunk.text
-          }
-        } else {
-          buffer += chunk.text
-        }
-      }
-    }
-
-    Logger.info(`Raw LLM output for query "${item.input}": ${buffer}`)
-    if (reasoningOutput) Logger.info(`Reasoning output: ${reasoningOutput}`)
-
     let output: { answer?: string; tool?: string; arguments?: any } = {
       answer: null,
       tool: null,
       arguments: null,
     }
+    let buffer = ""
+    let reasoningOutput = ""
+    let reasoningActive = item.reasoning ?? false
+
+    if (
+      toolSelectionOutput &&
+      typeof toolSelectionOutput === "object" &&
+      typeof toolSelectionOutput[Symbol.asyncIterator] === "function"
+    ) {
+      // Handle streaming case
+      for await (const chunk of toolSelectionOutput) {
+        if (chunk.text) {
+          if (reasoningActive) {
+            if (chunk.text.includes("<think>")) {
+              reasoningOutput += chunk.text
+            } else if (chunk.text.includes("</think>")) {
+              reasoningActive = false
+              const parts = chunk.text.split("</think>")
+              if (parts[0]) reasoningOutput += parts[0]
+              if (parts[1]) buffer += parts[1].trim()
+            } else {
+              reasoningOutput += chunk.text
+            }
+          } else {
+            buffer += chunk.text
+          }
+        }
+      }
+    } else {
+      // Handle direct (non-streaming) object output
+      buffer = JSON.stringify(toolSelectionOutput)
+    }
+
+    Logger.info(`Raw LLM output for query "${item.input}": ${buffer}`)
+    if (reasoningOutput) Logger.info(`Reasoning output: ${reasoningOutput}`)
+
     try {
       output = jsonParseLLMOutput(buffer) || {
         answer: null,
@@ -212,7 +237,6 @@ async function runEvaluation(userCtx: string) {
         `Failed to parse LLM output for query "${item.input}": ${buffer}`,
       )
       Logger.error(`Error: ${err}`)
-      output = { answer: null, tool: null, arguments: null }
     }
 
     const { score } = evaluateResponse({
@@ -220,6 +244,7 @@ async function runEvaluation(userCtx: string) {
       expected: item.expected,
       input: item.input,
     })
+
     results.push({
       ...item,
       output,
@@ -232,8 +257,11 @@ async function runEvaluation(userCtx: string) {
   const avgScore = results.reduce((a, c) => a + c.score, 0) / results.length
   console.log(`Tool Selection eval score: ${avgScore}`)
 
-  // Save results using saveEvalResults
-  const savedFileName = saveEvalResults(results, "tool-selection-eval")
+  const savedFileName = saveEvalResults(
+    { averageScore: avgScore, results },
+    "tool-selection-eval",
+  )
+
   console.log(`Results saved to: ${savedFileName}`)
 }
 
