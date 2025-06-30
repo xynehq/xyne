@@ -2381,7 +2381,6 @@ export const SearchVespaThreads = async (
 
 export const SearchEmailThreads = async (
   threadIdsInput: string[],
-  generateAnswerSpan: Span,
   email: string,
 ): Promise<VespaSearchResponse> => {
   const validThreadIds = threadIdsInput.filter(
