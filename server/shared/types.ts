@@ -480,6 +480,9 @@ export enum XyneTools {
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
 
+  // Conversational tool
+  Conversational = "conversational",
+
   // slack tools
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",
