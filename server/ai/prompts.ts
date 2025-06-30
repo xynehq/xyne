@@ -536,8 +536,9 @@ ${retrievedContext}
    - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information.
 5. Recurring events/meetings:
+   - While asnwering queries related to events/meetings, always consider events with recurrence patterns.
    - If the event/meeting has a recurrance pattern, generate all the occurences of that event/meeting from the recurrance pattern.
-   - Parse each RRULE string to expand every occurrence from the original startTime onward (or within any date range implied by the user's query), treating that seed timestamp solely as the rule's anchor.
+   - Parse each RRULE string to expand every occurrence from the original startTime onward, treating that seed timestamp solely as the rule's anchor.
    - There will be some recurring events/meetings whose startTime and endTime will be older but they will still be relevant here as they have a recurrance pattern. 
    - Disregard the original "startTime" and "endTime" beyond using them as the “seed” for computing recurrences. Just use them for figuring out the time references for generating occurences of that recurring events/meetings.
    - Exclude any generated occurrence whose timestamp exactly matches an entry in "cancelledInstances".
