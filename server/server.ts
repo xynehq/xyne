@@ -97,10 +97,12 @@ import {
   GetSharedChatApi,
   ListSharedChatsApi,
   DeleteSharedChatApi,
+  CheckSharedChatApi,
   createSharedChatSchema,
   getSharedChatSchema,
   listSharedChatsSchema,
   deleteSharedChatSchema,
+  checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
 import { UserRole, Apps } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
@@ -315,6 +317,11 @@ export const AppRoutes = app
     "/chat/shares",
     zValidator("query", listSharedChatsSchema),
     ListSharedChatsApi,
+  )
+  .get(
+    "/chat/share/check",
+    zValidator("query", checkSharedChatSchema),
+    CheckSharedChatApi,
   )
   .delete(
     "/chat/share/delete",

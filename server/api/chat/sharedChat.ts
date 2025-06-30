@@ -32,6 +32,11 @@ export const listSharedChatsSchema = z.object({
   limit: z.string().default("20").transform(Number),
 })
 
+// Schema for checking existing share
+export const checkSharedChatSchema = z.object({
+  chatId: z.string(),
+})
+
 // Create a shared chat link
 export const CreateSharedChatApi = async (c: Context) => {
   // @ts-ignore - Validation handled by middleware
@@ -301,5 +306,72 @@ export const DeleteSharedChatApi = async (c: Context) => {
     Logger.error(error, "Failed to delete shared chat")
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, { message: "Failed to delete shared chat" })
+  }
+}
+
+// Check if a chat has an existing share
+export const CheckSharedChatApi = async (c: Context) => {
+  // @ts-ignore - Validation handled by middleware
+  const { chatId } = c.req.valid("query")
+  const { sub } = c.get("jwtPayload") ?? {}
+  const email = sub || ""
+
+  try {
+    // Get user info
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1)
+
+    if (!user) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+
+    // Get chat info
+    const [chat] = await db
+      .select()
+      .from(chats)
+      .where(and(eq(chats.externalId, chatId), eq(chats.userId, user.id)))
+      .limit(1)
+
+    if (!chat) {
+      throw new HTTPException(404, { message: "Chat not found" })
+    }
+
+    // Check for the most recent active share for this chat
+    const [existingShare] = await db
+      .select({
+        shareToken: sharedChats.shareToken,
+        title: sharedChats.title,
+        createdAt: sharedChats.createdAt,
+        chatExternalId: chats.externalId,
+      })
+      .from(sharedChats)
+      .innerJoin(chats, eq(sharedChats.chatId, chats.id))
+      .where(
+        and(
+          eq(sharedChats.chatId, chat.id),
+          isNull(sharedChats.deletedAt)
+        )
+      )
+      .orderBy(desc(sharedChats.createdAt))
+      .limit(1)
+
+    if (existingShare) {
+      return c.json({
+        exists: true,
+        share: existingShare
+      })
+    }
+
+    return c.json({
+      exists: false,
+      share: null
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to check shared chat")
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, { message: "Failed to check shared chat" })
   }
 }

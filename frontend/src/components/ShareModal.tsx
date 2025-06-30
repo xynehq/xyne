@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { SelectPublicMessage } from "shared/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Copy, ExternalLink, Trash2 } from "lucide-react"
@@ -16,7 +17,7 @@ interface ShareModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   chatId: string | null
-  messages: any[]
+  messages: SelectPublicMessage[]
   onShareComplete?: () => void
 }
 
@@ -55,20 +56,20 @@ export function ShareModal({
 
     setLoadingShares(true)
     try {
-      const response = await api.chat.shares.$get({
-        query: { page: "0", limit: "100" },
+      const response = await api.chat.share.check.$get({
+        query: { chatId },
       })
 
       if (response.ok) {
         const data = await response.json()
-        const existing = data.sharedChats.find(
-          (share: SharedChat) => share.chatExternalId === chatId,
-        )
-        setExistingShare(existing || null)
-        if (existing) {
+        if (data.exists && data.share) {
+          setExistingShare(data.share)
           setShareLink(
-            `${window.location.origin}/chat?shareToken=${existing.shareToken}`,
+            `${window.location.origin}/chat?shareToken=${data.share.shareToken}`,
           )
+        } else {
+          setExistingShare(null)
+          setShareLink("")
         }
       }
     } catch (error) {
