@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { Pencil, ArrowLeft } from "lucide-react"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
 import { Apps, AuthType, IngestionType } from "shared/types"
@@ -115,10 +116,12 @@ export const SlackOAuthButton = ({
   app,
   text,
   setIntegrationStatus,
+  className,
 }: {
   app: Apps
   text: string
   setIntegrationStatus: (status: OAuthIntegrationStatus) => void
+  className?: string
 }) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
@@ -134,7 +137,11 @@ export const SlackOAuthButton = ({
     }
   }
 
-  return <Button onClick={handleOAuth}>{text}</Button>
+  return (
+    <Button type="button" onClick={handleOAuth} className={className}>
+      {text}
+    </Button>
+  )
 }
 
 enum ConnectAction {
@@ -164,48 +171,71 @@ interface SlackOAuthTabProps {
   handleRegularIngestion: () => Promise<void>
   isManualIngestionActive: boolean
   isRegularIngestionActive: boolean
+  userRole: PublicUser["role"]
 }
 
-const submitSlackOAuth = async (
-  value: { clientId: string; clientSecret: string; scopes: string },
-  navigate: ReturnType<typeof useNavigate>,
-) => {
-  const response = await api.admin.oauth.create.$post({
-    form: {
-      clientId: value.clientId,
-      clientSecret: value.clientSecret,
-      scopes: value.scopes.split(",").map((s) => s.trim()),
-      app: Apps.Slack,
-    },
-  })
-  if (!response.ok) {
-    if (response.status === 401) {
-      navigate({ to: "/auth" })
-      throw new Error("Unauthorized")
-    }
-    const errorText = await response.text()
-    throw new Error(
-      `Failed to add Slack integration: ${response.status} ${response.statusText} - ${errorText}`,
-    )
-  }
-  return response.json()
+enum OAuthFormMode {
+  UseGlobal,
+  ProvideOwn,
 }
 
-export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
+export const SlackOAuthForm = ({
+  onSuccess,
+  userRole,
+  mode,
+}: {
+  onSuccess: () => void
+  userRole: PublicUser["role"]
+  mode: OAuthFormMode
+}) => {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const isUsingGlobal = mode === OAuthFormMode.UseGlobal
+
   const form = useForm<{
     clientId: string
     clientSecret: string
     scopes: string
+    isGlobalProvider: boolean
   }>({
-    defaultValues: { clientId: "", clientSecret: "", scopes: "" },
+    defaultValues: {
+      clientId: "",
+      clientSecret: "",
+      scopes: "",
+      isGlobalProvider: false,
+    }, // Default isGlobalProvider to false
     onSubmit: async ({ value }) => {
       try {
-        await submitSlackOAuth(value, navigate)
+        const payload: any = { app: Apps.Slack }
+
+        if (isUsingGlobal) {
+          payload.isUsingGlobalCred = true
+          // No other fields needed for global creds in the payload
+        } else {
+          payload.isUsingGlobalCred = false
+          payload.clientId = value.clientId
+          payload.clientSecret = value.clientSecret
+          payload.scopes = value.scopes.split(",").map((s) => s.trim())
+          payload.isGlobalProvider = value.isGlobalProvider // Send checkbox value when providing own
+        }
+
+        const response = await api.admin.oauth.create.$post({
+          form: payload,
+        })
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            navigate({ to: "/auth" })
+            throw new Error("Unauthorized")
+          }
+          const errorText = await response.text()
+          throw new Error(
+            `Failed to add Slack integration: ${response.status} ${response.statusText} - ${errorText}`,
+          )
+        }
         toast({
           title: "Slack integration added",
-          description: "Bot token accepted. Updating status...",
+          description: "Credentials accepted. Updating status...",
         })
         onSuccess()
       } catch (error) {
@@ -226,78 +256,111 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
       }}
       className="grid w-full max-w-sm items-center gap-1.5"
     >
-      <Label htmlFor="clientId">Client Id</Label>
-      <form.Field
-        name="clientId"
-        validators={{
-          onChange: ({ value }) =>
-            !value ? "Client Id is required" : undefined,
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="clientId"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your Client Id"
+      {!isUsingGlobal && (
+        <>
+          <Label htmlFor="clientId">Client Id</Label>
+          <form.Field
+            name="clientId"
+            validators={{
+              onChange: ({ value }) =>
+                !value ? "Client Id is required" : undefined,
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="clientId"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your Client Id"
+                />
+                {field.state.meta.isTouched &&
+                field.state.meta.errors.length ? (
+                  <p className="text-red-600 dark:text-red-400 text-sm">
+                    {field.state.meta.errors.join(", ")}
+                  </p>
+                ) : null}
+              </>
+            )}
+          />
+          <Label htmlFor="clientSecret">Client Secret</Label>
+          <form.Field
+            name="clientSecret"
+            validators={{
+              onChange: ({ value }) =>
+                !value ? "Client secret is required" : undefined,
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="clientSecret"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your Client secret"
+                />
+                {field.state.meta.isTouched &&
+                field.state.meta.errors.length ? (
+                  <p className="text-red-600 dark:text-red-400 text-sm">
+                    {field.state.meta.errors.join(", ")}
+                  </p>
+                ) : null}
+              </>
+            )}
+          />
+          <Label htmlFor="scopes">Scopes</Label>
+          <form.Field
+            name="scopes"
+            validators={{
+              onChange: ({ value }) =>
+                !value ? "scopes is required" : undefined,
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="scopes"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your scopes (comma-separated)"
+                />
+                {field.state.meta.isTouched &&
+                field.state.meta.errors.length ? (
+                  <p className="text-red-600 dark:text-red-400 text-sm">
+                    {field.state.meta.errors.join(", ")}
+                  </p>
+                ) : null}
+              </>
+            )}
+          />
+        </>
+      )}
+
+      <Button type="submit">{isUsingGlobal ? "Connect" : "Add"}</Button>
+
+      {!isUsingGlobal &&
+        (userRole === "admin" || userRole === "SuperAdmin") && (
+          <div className="flex items-center space-x-2 mt-4">
+            <form.Field
+              name="isGlobalProvider"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  id="isGlobalProvider"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+              )}
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 dark:text-red-400 text-sm">
-                {field.state.meta.errors.join(", ")}
-              </p>
-            ) : null}
-          </>
+            <Label
+              htmlFor="isGlobalProvider"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Use this as Global OAuth Provider
+            </Label>
+          </div>
         )}
-      />
-      <Label htmlFor="clientSecret">Client Secret</Label>
-      <form.Field
-        name="clientSecret"
-        validators={{
-          onChange: ({ value }) =>
-            !value ? "Client secret is required" : undefined,
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="clientSecret"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your Client secret"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 dark:text-red-400 text-sm">
-                {field.state.meta.errors.join(", ")}
-              </p>
-            ) : null}
-          </>
-        )}
-      />
-      <Label htmlFor="scopes">Scopes</Label>
-      <form.Field
-        name="scopes"
-        validators={{
-          onChange: ({ value }) => (!value ? "scopes is required" : undefined),
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="scopes"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your scopes"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 dark:text-red-400 text-sm">
-                {field.state.meta.errors.join(", ")}
-              </p>
-            ) : null}
-          </>
-        )}
-      />
-      <Button type="submit">Add</Button>
     </form>
   )
 }
@@ -379,12 +442,97 @@ const SlackOAuthTab = ({
   handleRegularIngestion,
   isManualIngestionActive,
   isRegularIngestionActive,
+  userRole,
 }: SlackOAuthTabProps) => {
+  const { toast } = useToast() // Get toast hook
+  const [isEditingGlobalCreds, setIsEditingGlobalCreds] = useState(false)
+  const [formMode, setFormMode] = useState<OAuthFormMode>(
+    OAuthFormMode.ProvideOwn,
+  ) // State to control form mode
+  const [isConnectingGlobal, setIsConnectingGlobal] = useState(false) // State for global connect loading
+
+  // Use useQuery to fetch global provider status
+  const { data: globalProviderStatus, isLoading: isLoadingGlobalProvider } =
+    useQuery({
+      queryKey: ["global-slack-provider"],
+      queryFn: async () => {
+        const res = await api.admin.oauth["global-slack-provider"].$get()
+        if (!res.ok) {
+          // Handle error, maybe log it or show a toast
+          toast({
+            title: "Failed to check global provider",
+            description: "Could not verify global Slack provider status",
+            variant: "destructive",
+          })
+          return { exists: false } // Assume no global provider on error
+        }
+        return res.json()
+      },
+    })
+
+  const hasGlobalProvider = globalProviderStatus?.exists ?? false
+
+  const handleConnectGlobalOAuth = async () => {
+    setIsConnectingGlobal(true)
+    try {
+      const payload = {
+        isUsingGlobalCred: true,
+        app: Apps.Slack,
+      }
+      const response = await api.admin.oauth.create.$post({
+        form: payload,
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(
+          `Failed to connect using global credentials: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+      toast({
+        title: "Global credentials connected",
+        description: "Provider created. Updating status...",
+      })
+      refetch() // Refetch connectors to update status
+    } catch (error) {
+      toast({
+        title: "Could not connect using global credentials",
+        description: `Error: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsConnectingGlobal(false)
+    }
+  }
+
+  const connectButtonText =
+    connector?.isGlobal === false
+      ? "Connect Slack Global OAuth"
+      : "Connect Slack OAuth"
+
   return (
     <TabsContent value="oauth">
       <Card>
         <CardHeader>
-          <CardTitle>Slack OAuth</CardTitle>
+          {isEditingGlobalCreds ? (
+            <div className="flex items-center">
+              <div
+                onClick={() => setIsEditingGlobalCreds(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ")
+                    setIsEditingGlobalCreds(false)
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Back"
+                className="mr-2 p-1 cursor-pointer rounded-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </div>
+              <CardTitle>Slack OAuth</CardTitle>
+            </div>
+          ) : (
+            <CardTitle>Slack OAuth</CardTitle>
+          )}
           <CardDescription>
             Connect with slack to start ingestion
           </CardDescription>
@@ -413,42 +561,110 @@ const SlackOAuthTab = ({
                 ></path>
               </svg>
             </div>
-          ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-            <SlackOAuthForm
-              onSuccess={() => {
-                refetch()
-                setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-              }}
-            />
-          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-            <div className="flex flex-col items-center gap-4">
-              <SlackOAuthButton
-                app={Apps.Slack}
-                text="Connect Slack OAuth"
-                setIntegrationStatus={setOAuthIntegrationStatus}
+          ) : isEditingGlobalCreds ? (
+            <>
+              <SlackOAuthForm
+                onSuccess={() => {
+                  refetch() // This should update oauthIntegrationStatus
+                  setIsEditingGlobalCreds(false) // Hide form after successful submission
+                  // After submitting credentials, the state should ideally become OAuthIntegrationStatus.OAuth
+                  // setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth) // This might be set by refetch
+                }}
+                userRole={userRole}
+                mode={formMode} // Pass the form mode
               />
+            </>
+          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
+            // If provider is set up but not connected, show the Connect button
+            <SlackOAuthButton
+              app={Apps.Slack} // Assuming Apps.Slack is the correct app enum value
+              text={connectButtonText} // Use dynamic text
+              setIntegrationStatus={setOAuthIntegrationStatus}
+              className="w-full"
+            />
+          ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused ? (
+            // If no provider is set up or paused, show options to set up
+            <div className="space-y-4">
+              {isLoadingGlobalProvider ? (
+                <div className="flex justify-center">
+                  <svg
+                    className="animate-spin h-5 w-5 text-primary"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  <span className="ml-2">Checking for global provider...</span>
+                </div>
+              ) : hasGlobalProvider ? (
+                <div className="flex items-center justify-between">
+                  <Button
+                    onClick={handleConnectGlobalOAuth} // Call the new handler
+                    disabled={isConnectingGlobal} // Disable while connecting
+                    className="flex-1 mr-2 text-sm"
+                  >
+                    {isConnectingGlobal
+                      ? "Connecting..."
+                      : "Connect using global credentials"}{" "}
+                    {/* Dynamic text */}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setIsEditingGlobalCreds(true)
+                      setFormMode(OAuthFormMode.ProvideOwn) // Set mode to ProvideOwn
+                    }}
+                    aria-label="Edit Credentials"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    No global provider found. Please use your own credentials.
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setIsEditingGlobalCreds(true)
+                      setFormMode(OAuthFormMode.ProvideOwn) // Set mode to ProvideOwn
+                    }}
+                    aria-label="Add Credentials"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
-          ) : null}
-
-          {(oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
+          ) : oauthIntegrationStatus ===
+              OAuthIntegrationStatus.OAuthConnected ||
             oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnecting) && (
+              OAuthIntegrationStatus.OAuthConnecting ? (
+            // If connected or connecting, show the Start Ingestion button
             <Button
               onClick={handleRegularIngestion}
               disabled={isRegularIngestionActive}
             >
               {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
             </Button>
-          )}
-
-          {/* {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting && (
-            <Button
-              onClick={handleRegularIngestion}
-              disabled={isRegularIngestionActive}
-            >
-              {isRegularIngestionActive ? "Ingesting..." : "Start Regular Ingestion"}
-            </Button>
-          )} */}
+          ) : null}
         </CardContent>
       </Card>
     </TabsContent>
@@ -712,6 +928,7 @@ export const Slack = ({
               handleRegularIngestion={handleRegularIngestion}
               isManualIngestionActive={isManualIngestionActive}
               isRegularIngestionActive={isRegularIngestionActive}
+              userRole={user.role}
             />
           </Tabs>
 

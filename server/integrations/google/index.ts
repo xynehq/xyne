@@ -72,6 +72,7 @@ import {
   driveFileToIndexed,
   DriveMime,
   getFile,
+  sendProgressToServer,
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -133,6 +134,8 @@ import {
   totalIngestedFiles,
 } from "@/metrics/google/google-drive-file-metrics"
 import { v4 as uuidv4 } from "uuid"
+
+let isScriptRunning = false
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -220,41 +223,65 @@ const initializeGmailWorker = () => {
         )
       }
     } else if (result.type === WorkerResponseTypes.ProgressUpdate) {
-      Logger.info(
-        `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
-      )
-      totalIngestedMails.inc(
-        {
-          email: result.email,
-          account_type: AuthType.ServiceAccount,
-          status: OperationStatus.Success,
-        },
-        result.stats.messageCount,
-      )
-      totalAttachmentIngested.inc(
-        {
-          email: result.email,
-          account_type: AuthType.ServiceAccount,
-          status: OperationStatus.Success,
-        },
-        result.stats.attachmentCount,
-      )
-      ingestionMailErrorsTotal.inc(
-        {
-          email: result.email,
-          account_type: AuthType.ServiceAccount,
-          status: OperationStatus.Failure,
-        },
-        result.stats.failedMessageCount,
-      )
-      totalAttachmentError.inc(
-        {
-          email: result.email,
-          account_type: AuthType.ServiceAccount,
-          status: OperationStatus.Failure,
-        },
-        result.stats.failedAttachmentCount,
-      )
+      if (isScriptRunning) {
+        loggerWithChild({ email: result.email }).info(
+          `Sending Progress for ingested mails`,
+        )
+        sendProgressToServer({
+          userEmail: result.email,
+          messageCount: result.stats.messageCount,
+          attachmentCount: result.stats.attachmentCount,
+          failedMessages: result.stats.failedMessageCount,
+          failedAttachments: result.stats.failedAttottachmentCount,
+          totalMailsToBeIngested: 0,
+          totalMailsSkipped: 0,
+          insertedEventCount: 0,
+          insertedContactsCount: 0,
+          insertedpdfCount: 0,
+          insertedDocCount: 0,
+          insertedSheetCount: 0,
+          insertedSlideCount: 0,
+          insertedDriveFileCount: 0,
+          totalDriveflesToBeIngested: 0,
+          totalBlockedPdfs: 0,
+        })
+      } else {
+        Logger.info(
+          `Main Thread: Received Progress Update for ${result.email}, type: ${result.type} jobId: ${jobIdFromResult}`,
+        )
+        totalIngestedMails.inc(
+          {
+            email: result.email,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Success,
+          },
+          result.stats.messageCount,
+        )
+        totalAttachmentIngested.inc(
+          {
+            email: result.email,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Success,
+          },
+          result.stats.attachmentCount,
+        )
+        ingestionMailErrorsTotal.inc(
+          {
+            email: result.email,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Failure,
+          },
+          result.stats.failedMessageCount,
+        )
+        totalAttachmentError.inc(
+          {
+            email: result.email,
+            account_type: AuthType.ServiceAccount,
+            status: OperationStatus.Failure,
+          },
+          result.stats.failedAttachmentCount,
+        )
+      }
     }
   }
 
@@ -805,6 +832,29 @@ const insertCalendarEvents = async (
     },
     events.length,
   )
+  if (isScriptRunning) {
+    loggerWithChild({ email: userEmail }).info(
+      `Sending Progress for events ingested`,
+    )
+    sendProgressToServer({
+      userEmail: userEmail,
+      messageCount: 0,
+      attachmentCount: 0,
+      failedMessages: 0,
+      failedAttachments: 0,
+      totalMailsToBeIngested: 0,
+      totalMailsSkipped: 0,
+      insertedEventCount: events.length,
+      insertedContactsCount: 0,
+      insertedpdfCount: 0,
+      insertedDocCount: 0,
+      insertedSheetCount: 0,
+      insertedSlideCount: 0,
+      insertedDriveFileCount: 0,
+      totalDriveflesToBeIngested: 0,
+      totalBlockedPdfs: 0,
+    })
+  }
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
@@ -1628,6 +1678,7 @@ const insertFilesForUser = async (
 ) => {
   try {
     let processedFiles = 0
+
     const iterator = listFiles(googleClient, startDate, endDate)
     const startTimestamp = startDate ? new Date(startDate).getTime() : undefined
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
@@ -1641,7 +1692,6 @@ const insertFilesForUser = async (
       let initialCount = pageFiles.length
       try {
         const existenceMap = await ifDocumentsExist(fileIds)
-
 
         pageFiles = filterUnchanged(existenceMap, pageFiles)
 
@@ -1705,18 +1755,42 @@ const insertFilesForUser = async (
         email: userEmail,
       })
       let driveFilesInserted = 0
+      let pdfsInserted = 0
       for (const doc of pdfs) {
         try {
           processedFiles += 1
           await insertWithRetry(doc, fileSchema)
           totalIngestedFiles.inc({
-            mime_type: doc.mimeType ?? "google_pdf",
-            status: "SUCCESS",
+            mime_type: doc.mimeType ?? DriveMime.PDF,
+            status: OperationStatus.Success,
             email: userEmail,
             file_type: DriveEntity.PDF,
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
           driveFilesInserted++
+          if (isScriptRunning) {
+            loggerWithChild({ email: userEmail }).info(
+              `Sending Progress for Ingetsed pdfs`,
+            )
+            sendProgressToServer({
+              userEmail: userEmail,
+              messageCount: 0,
+              attachmentCount: 0,
+              failedMessages: 0,
+              failedAttachments: 0,
+              totalMailsToBeIngested: 0,
+              totalMailsSkipped: 0,
+              insertedEventCount: 0,
+              insertedContactsCount: 0,
+              insertedpdfCount: 1,
+              insertedDocCount: 0,
+              insertedSheetCount: 0,
+              insertedSlideCount: 0,
+              insertedDriveFileCount: 0,
+              totalDriveflesToBeIngested: 0,
+              totalBlockedPdfs: 0,
+            })
+          }
           loggerWithChild({ email: userEmail! }).info(
             `Inserted ${driveFilesInserted} PDFs`,
           )
@@ -1724,10 +1798,10 @@ const insertFilesForUser = async (
           ingestionErrorsTotal.inc(
             {
               file_type: DriveEntity.PDF,
-              mime_type: doc.mimeType ?? "google_pdf",
+              mime_type: doc.mimeType ?? DriveMime.PDF,
               email: doc.ownerEmail ?? userEmail,
               error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
-              status: "FAILED",
+              status: OperationStatus.Failure,
             },
             1,
           )
@@ -1823,6 +1897,81 @@ const insertFilesForUser = async (
               email: userEmail,
               file_type: fileType,
             })
+            if (fileType == DriveEntity.Docs) {
+              if (isScriptRunning) {
+                loggerWithChild({ email: userEmail }).info(
+                  `Sending Progress for inserted docs`,
+                )
+                sendProgressToServer({
+                  userEmail: userEmail,
+                  messageCount: 0,
+                  attachmentCount: 0,
+                  failedMessages: 0,
+                  failedAttachments: 0,
+                  totalMailsToBeIngested: 0,
+                  totalMailsSkipped: 0,
+                  insertedEventCount: 0,
+                  insertedContactsCount: 0,
+                  insertedpdfCount: 0,
+                  insertedDocCount: 1,
+                  insertedSheetCount: 0,
+                  insertedSlideCount: 0,
+                  insertedDriveFileCount: 0,
+                  totalDriveflesToBeIngested: 0,
+                  totalBlockedPdfs: 0,
+                })
+              }
+            }
+            if (fileType == DriveEntity.Slides) {
+              if (isScriptRunning) {
+                loggerWithChild({ email: userEmail }).info(
+                  `Sending Progress for inserted slides`,
+                )
+                sendProgressToServer({
+                  userEmail: userEmail,
+                  messageCount: 0,
+                  attachmentCount: 0,
+                  failedMessages: 0,
+                  failedAttachments: 0,
+                  totalMailsToBeIngested: 0,
+                  totalMailsSkipped: 0,
+                  insertedEventCount: 0,
+                  insertedContactsCount: 0,
+                  insertedpdfCount: 0,
+                  insertedDocCount: 0,
+                  insertedSheetCount: 0,
+                  insertedSlideCount: 1,
+                  insertedDriveFileCount: 0,
+                  totalDriveflesToBeIngested: 0,
+                  totalBlockedPdfs: 0,
+                })
+              }
+            }
+            if (fileType == DriveEntity.Misc) {
+              if (isScriptRunning) {
+                loggerWithChild({ email: userEmail }).info(
+                  `Sending Progress for inserted drive files`,
+                )
+                sendProgressToServer({
+                  userEmail: userEmail,
+                  messageCount: 0,
+                  attachmentCount: 0,
+                  failedMessages: 0,
+                  failedAttachments: 0,
+                  totalMailsToBeIngested: 0,
+                  totalMailsSkipped: 0,
+                  insertedEventCount: 0,
+                  insertedContactsCount: 0,
+                  insertedpdfCount: 0,
+                  insertedDocCount: 0,
+                  insertedSheetCount: 0,
+                  insertedSlideCount: 0,
+                  insertedDriveFileCount: 1,
+                  totalDriveflesToBeIngested: 0,
+                  totalBlockedPdfs: 0,
+                })
+              }
+            }
           }
           loggerWithChild({ email: userEmail! }).info(
             `Inserted file of type ${fileType} with ID: ${doc.docId} and Name: ${doc.title},`,
@@ -1846,6 +1995,29 @@ const insertFilesForUser = async (
         }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
+      if (isScriptRunning) {
+        loggerWithChild({ email: userEmail }).info(
+          `Sending Progress for inserted sheets`,
+        )
+        sendProgressToServer({
+          userEmail: userEmail,
+          messageCount: 0,
+          attachmentCount: 0,
+          failedMessages: 0,
+          failedAttachments: 0,
+          totalMailsToBeIngested: 0,
+          totalMailsSkipped: 0,
+          insertedEventCount: 0,
+          insertedContactsCount: 0,
+          insertedpdfCount: 0,
+          insertedDocCount: 0,
+          insertedSheetCount: sheetsObj.count,
+          insertedSlideCount: 0,
+          insertedDriveFileCount: 0,
+          totalDriveflesToBeIngested: 0,
+          totalBlockedPdfs: 0,
+        })
+      }
       totalIngestedFiles.inc(
         {
           mime_type: "application/vnd.google-apps.spreadsheet",
@@ -2340,6 +2512,29 @@ export const googlePDFsVespa = async (
         loggerWithChild({ email: userEmail! }).warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
+        if (isScriptRunning) {
+          loggerWithChild({ email: userEmail }).info(
+            `Sending Progress for Blocked PDFs`,
+          )
+          sendProgressToServer({
+            userEmail: userEmail,
+            messageCount: 0,
+            attachmentCount: 0,
+            failedMessages: 0,
+            failedAttachments: 0,
+            totalMailsToBeIngested: 0,
+            totalMailsSkipped: 0,
+            insertedEventCount: 0,
+            insertedContactsCount: 0,
+            insertedpdfCount: 0,
+            insertedDocCount: 0,
+            insertedSheetCount: 0,
+            insertedSlideCount: 0,
+            insertedDriveFileCount: 0,
+            totalDriveflesToBeIngested: 0,
+            totalBlockedPdfs: 1,
+          })
+        }
         blockedFilesTotal.inc({
           mime_type: pdf.mimeType ?? "google_pdf",
           blocked_type: "MAX_PDF_SIZE_EXCEEDED",
@@ -2441,8 +2636,10 @@ export const googlePDFsVespa = async (
       }
     }),
   )
+  const results = await Promise.all(pdfPromises)
+  const filteredResults = results.filter((v) => !!v)
 
-  return (await Promise.all(pdfPromises)).filter((v) => !!v)
+  return filteredResults
 }
 
 type Org = { endDate: null | string }
@@ -2729,6 +2926,30 @@ const insertContactsToVespa = async (
       },
       contacts.length + otherContacts.length,
     )
+    if (isScriptRunning) {
+      loggerWithChild({ email: owner }).info(
+        `Sending Progress for inserted contacts`,
+      )
+
+      sendProgressToServer({
+        userEmail: owner,
+        messageCount: 0,
+        attachmentCount: 0,
+        failedMessages: 0,
+        failedAttachments: 0,
+        totalMailsToBeIngested: 0,
+        totalMailsSkipped: 0,
+        insertedEventCount: 0,
+        insertedContactsCount: contacts.length + otherContacts.length,
+        insertedpdfCount: 0,
+        insertedDocCount: 0,
+        insertedSheetCount: 0,
+        insertedSlideCount: 0,
+        insertedDriveFileCount: 0,
+        totalDriveflesToBeIngested: 0,
+        totalBlockedPdfs: 0,
+      })
+    }
   }
 }
 
@@ -3216,7 +3437,10 @@ export const ServiceAccountIngestMoreUsers = async (
     insertCalendar: boolean
   },
   userId: number,
+  isScript?: boolean,
 ) => {
+  isScriptRunning = isScript!
+
   const jobId = uuidv4()
   const {
     connectorId,
@@ -3232,6 +3456,10 @@ export const ServiceAccountIngestMoreUsers = async (
     `ServiceAccountIngestMoreUsers called with jobId: ${jobId} for connector externalId: ${connectorId} ...`,
   )
 
+  if (isScript) {
+    Logger.info(`Script is running, initialising gmail worker`)
+    initializeGmailWorker()
+  }
   let connector: SelectConnector | null = null
   const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
   activeJobTrackers.set(jobId, tracker)
@@ -3423,6 +3651,28 @@ export const ServiceAccountIngestMoreUsers = async (
           totalDrive: driveFileCount,
         })
 
+        if (isScriptRunning) {
+          Logger.info(`Updating Partial Progress for Script`)
+          sendProgressToServer({
+            userEmail: userEmail,
+            messageCount: 0,
+            attachmentCount: 0,
+            failedMessages: 0,
+            failedAttachments: 0,
+            totalMailsToBeIngested: mailCountExcludingPromotions,
+            totalMailsSkipped: totalMails - mailCountExcludingPromotions,
+            insertedEventCount: 0,
+            insertedContactsCount: 0,
+            insertedpdfCount: 0,
+            insertedDocCount: 0,
+            insertedSheetCount: 0,
+            insertedSlideCount: 0,
+            insertedDriveFileCount: 0,
+            totalDriveflesToBeIngested: driveFileCount,
+            totalBlockedPdfs: 0,
+          })
+        }
+
         const servicePromises: Promise<any>[] = []
         let contactsTokenVal = ""
         let otherContactsTokenVal = ""
@@ -3506,6 +3756,7 @@ export const ServiceAccountIngestMoreUsers = async (
         await Promise.all(servicePromises)
 
         tracker.markUserComplete(userEmail)
+
         return {
           email: userEmail,
           driveToken: driveStartPageTokenVal,

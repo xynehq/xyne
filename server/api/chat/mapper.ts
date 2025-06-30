@@ -53,7 +53,7 @@ export const mapGithubToolResponse = (
         id: `${baseFragmentId}-${issueData.id}`,
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: String(issueData.id),
           title: issueData.title || `Issue #${issueData.number}`,
           entity: SystemEntity.SystemInfo,
@@ -72,7 +72,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-item-${item.id}`,
             content: repoContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: String(item.id),
               title: item.full_name,
               entity: SystemEntity.SystemInfo,
@@ -94,7 +94,7 @@ export const mapGithubToolResponse = (
         id: `${baseFragmentId}-${prData.id}`,
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: String(prData.id),
           title: prData.title || `PR #${prData.number}`,
           entity: SystemEntity.SystemInfo,
@@ -115,7 +115,7 @@ export const mapGithubToolResponse = (
         id: `${baseFragmentId}-${commitData.sha}`,
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: commitData.sha,
           title:
             commitData.commit.message.split("\n")[0] ||
@@ -134,7 +134,7 @@ export const mapGithubToolResponse = (
         id: `${baseFragmentId}-${meData.id}`,
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: String(meData.id),
           title: meData.login,
           entity: SystemEntity.SystemInfo,
@@ -151,7 +151,7 @@ export const mapGithubToolResponse = (
         id: "",
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: statusData.sha,
           title: `PR Status for SHA ${statusData.sha.substring(0, 7)}`,
           entity: SystemEntity.SystemInfo,
@@ -170,7 +170,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-issue-${item.id}`,
             content: issueContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: String(item.id),
               title: item.title || `Issue #${item.number}`,
               entity: SystemEntity.SystemInfo,
@@ -194,7 +194,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-file-${file.sha}`,
             content: fileContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: file.sha,
               title: file.filename,
               entity: SystemEntity.SystemInfo,
@@ -219,7 +219,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-tag-${tag.name}`,
             content: tagContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: tag.name,
               title: `Tag: ${tag.name}`,
               entity: SystemEntity.SystemInfo,
@@ -243,7 +243,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-branch-${branch.name}`,
             content: branchContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: branch.name,
               title: `Branch: ${branch.name}`,
               entity: SystemEntity.SystemInfo,
@@ -267,7 +267,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-comment-${comment.id}`,
             content: commentContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: String(comment.id),
               title: `Comment by ${comment.user?.login}`,
               entity: SystemEntity.SystemInfo,
@@ -295,7 +295,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-user-${user.id}`,
             content: userContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: String(user.id),
               title: user.login,
               entity: SystemEntity.SystemInfo,
@@ -319,7 +319,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-code-${item.sha}`,
             content: codeContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: item.sha,
               title: `${item.name} in ${item.repository.full_name}`,
               entity: SystemEntity.SystemInfo,
@@ -343,7 +343,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-item-${item.sha}`,
             content: itemContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: item.sha,
               title: item.name,
               entity: SystemEntity.SystemInfo,
@@ -371,7 +371,7 @@ export const mapGithubToolResponse = (
           id: `${baseFragmentId}-file-${fileData.sha}`,
           content: formattedContent,
           source: {
-            app: Apps.GITHUB_MCP,
+            app: Apps.Github,
             docId: fileData.sha,
             title: fileData.name,
             entity: SystemEntity.SystemInfo,
@@ -393,7 +393,7 @@ export const mapGithubToolResponse = (
             id: `${baseFragmentId}-review-${review.id}`,
             content: reviewContent,
             source: {
-              app: Apps.GITHUB_MCP,
+              app: Apps.Github,
               docId: String(review.id),
               title: `Review by ${review.user?.login} (${review.state})`,
               entity: SystemEntity.SystemInfo,
@@ -431,7 +431,7 @@ export const mapGithubToolResponse = (
         id: `${baseFragmentId}-generic`,
         content: formattedContent,
         source: {
-          app: Apps.GITHUB_MCP,
+          app: Apps.Github,
           docId: `${toolName}-response`,
           title: `Response from ${toolName}`,
           entity: SystemEntity.SystemInfo,

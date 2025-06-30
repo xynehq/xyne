@@ -36,21 +36,20 @@ import {
   type UserQuery,
 } from "@/ai/types"
 import {
-  deleteChatByExternalId,
   deleteMessagesByChatId,
   getChatByExternalId,
   getPublicChats,
   insertChat,
-  updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
-  getChatMessages,
   insertMessage,
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  getChatMessagesWithAuth,
 } from "@/db/message"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
@@ -69,6 +68,7 @@ import {
   ChatSSEvents,
   ContextSysthesisState,
   OpenAIError,
+  XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
@@ -126,7 +126,6 @@ import {
 } from "@/search/types"
 import { APIError } from "openai"
 import {
-  getChatTraceByExternalId,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -197,9 +196,11 @@ const checkAndYieldCitationsForAgent = function* (
       const item = results[citationIndex - 1]
 
       if (!item?.source?.docId) {
-        Logger.info("[checkAndYieldCitationsForAgent] No docId found for citation, skipping")
+        Logger.info(
+          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+        )
         continue
-      } 
+      }
 
       yield {
         citation: {
@@ -219,6 +220,7 @@ async function* getToolContinuationIterator(
   toolOutput: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string, // New optional parameter
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -230,6 +232,7 @@ async function* getToolContinuationIterator(
       stream: true,
       json: true,
       reasoning: false,
+      messages,
     },
     toolsPrompt,
     toolOutput ?? "",
@@ -290,35 +293,18 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        const parsableBuffer = cleanBuffer(buffer)
-        parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
+        yield { text: chunk.text }
 
-        if (parsed.answer === null || parsed.answer === "}") {
-          break
-        }
-        // If we have an answer and it's different from what we've seen
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          if (currentAnswer === "") {
-            // First valid answer - send the whole thing
-            yield { text: parsed.answer }
-          } else {
-            // Subsequent chunks - send only the new part
-            const newText = parsed.answer.slice(currentAnswer.length)
-            yield { text: newText }
-          }
-          yield* checkAndYieldCitationsForAgent(
-            parsed.answer,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
-          currentAnswer = parsed.answer
-        }
+        yield* checkAndYieldCitationsForAgent(
+          chunk.text,
+          yieldedCitations,
+          results,
+          previousResultsLength,
+        )
       } catch (e) {
-        // If we can't parse the JSON yet, continue accumulating
+        Logger.error(`Error parsing LLM output: ${e}`)
         continue
       }
-      // }
     }
 
     if (chunk.cost) {
@@ -470,8 +456,13 @@ export const MessageWithToolsApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -708,20 +699,22 @@ export const MessageWithToolsApi = async (c: Context) => {
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
-          const previousToolCalls: { tool: string; args: string }[] = []
+          let planningContext = "" // To build the context for planning
+          let toolsPrompt = "" // To build the context for available tools
+          const previousToolCalls: {
+            tool: string
+            args: Record<string, "any">
+            failureCount: number
+          }[] = []
+          const MAX_CONSECUTIVE_TOOL_FAILURES = 2
+
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
               loggerWithChild({ email: sub }).info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
               )
               wasStreamClosedPrematurely = true
               break
-            }
-            let buffer = ""
-            let parsed = {
-              answer: "",
-              tool: "",
-              arguments: {} as any,
             }
             iterationCount++
 
@@ -750,7 +743,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"
 
-            if (previousToolCalls.length) {
+            // Check for consecutive failures and add warning
+            const lastToolCall = previousToolCalls[previousToolCalls.length - 1]
+            if (
+              lastToolCall &&
+              lastToolCall.failureCount >= MAX_CONSECUTIVE_TOOL_FAILURES
+            ) {
+              loopWarningPrompt = `
+                   ---
+                   **Critique Past Actions:** You have repeatedly called the tool '${
+                     lastToolCall.tool
+                   }' with arguments ${JSON.stringify(
+                     lastToolCall.args,
+                   )} and it has failed or yielded insufficient results ${
+                     lastToolCall.failureCount
+                   } times consecutively. You are stuck in a loop. You MUST choose a DIFFERENT TOOL or escalate to a "no answer found" state if no other tools are viable.
+                   ---
+                `
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Detected ${lastToolCall.failureCount} consecutive failures for tool ${lastToolCall.tool}. Attempting to change strategy.`,
+              })
+            } else if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
                    **Critique Past Actions:** You have already called some tools ${previousToolCalls
@@ -766,17 +780,17 @@ export const MessageWithToolsApi = async (c: Context) => {
                  You **MUST** change your strategy.
                   For example: 
                     1.  Choose a **DIFFERENT TOOL**.
-                    2.  Use the **SAME TOOL** but with **DIFFERENT ARGUMENTS**.
+                    2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
+                    3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
   
                   Do NOT make this call again. Formulate a new, distinct plan.
                    ---
                 `
             }
 
-            agentScratchpad =
-              evidenceSummary + loopWarningPrompt + reasoningHeader
+            agentScratchpad = evidenceSummary + reasoningHeader
 
-            let toolsPrompt = ""
+            toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
               toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
@@ -792,6 +806,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     if (parsedTool.success && parsedTool.data.toolSchema) {
                       toolsPrompt += `${constructToolContext(
                         parsedTool.data.toolSchema,
+                        parsedTool.data.toolName,
+                        parsedTool.data.description ?? "",
                       )}\n\n`
                     }
                   }
@@ -799,110 +815,69 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
-            const getToolOrAnswerIterator = generateToolSelectionOutput(
+            const toolSelection = await generateToolSelectionOutput(
               message,
               ctx,
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultBestModel,
-                stream: true,
+                modelId: defaultFastModel,
+                stream: false,
                 json: true,
-                reasoning:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                reasoning: false,
                 messages: messagesWithNoErrResponse,
               },
               agentPromptForLLM,
+              loopWarningPrompt,
             )
 
-            for await (const chunk of getToolOrAnswerIterator) {
-              if (stream.closed) {
-                loggerWithChild({ email: sub }).info(
-                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                )
-                wasStreamClosedPrematurely = true
-                break
-              }
-
-              if (chunk.text) {
-                if (reasoning) {
-                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                    thinking += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: chunk.text,
-                    })
-                  } else {
-                    // first time
-                    if (!chunk.text.includes(StartThinkingToken)) {
-                      let token = chunk.text
-                      if (chunk.text.includes(EndThinkingToken)) {
-                        token = chunk.text.split(EndThinkingToken)[0]
-                        thinking += token
-                      } else {
-                        thinking += token
-                      }
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: token,
-                      })
-                    }
-                  }
-                }
-                if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                  reasoning = false
-                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                }
-                if (!reasoning) {
-                  buffer += chunk.text
-                  try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
-                    if (parsed.answer && currentAnswer !== parsed.answer) {
-                      if (currentAnswer === "") {
-                        loggerWithChild({ email: sub }).info(
-                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.Start,
-                          data: "",
-                        })
-                        // First valid answer - send the whole thing
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: parsed.answer,
-                        })
-                      } else {
-                        // Subsequent chunks - send only the new part
-                        const newText = parsed.answer.slice(
-                          currentAnswer.length,
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: newText,
-                        })
-                      }
-                      currentAnswer = parsed.answer
-                    }
-                  } catch (err) {
-                    const errMessage = (err as Error).message
-                    loggerWithChild({ email: sub }).error(
-                      err,
-                      `Error while parsing LLM output ${errMessage}`,
-                    )
-                    continue
-                  }
-                }
-              }
-              if (chunk.cost) {
-                costArr.push(chunk.cost)
-              }
+            if (
+              toolSelection?.queryRewrite &&
+              toolSelection.queryRewrite.length
+            ) {
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.AnalyzingQuery,
+                details: `Query rewrite detected: ${toolSelection.queryRewrite}`,
+              })
+              streamSpan
+                .startSpan("query_rewrite")
+                .setAttribute("query_rewrite", toolSelection.queryRewrite)
+              message = toolSelection.queryRewrite
             }
 
-            if (parsed.tool && !parsed.answer) {
+            if (toolSelection && toolSelection.tool) {
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
               })
+              const toolName = toolSelection.tool
+              const toolParams = toolSelection.arguments
+
+              // Update previousToolCalls with failure tracking
+              const lastCallIndex = previousToolCalls.length - 1
+              if (
+                lastCallIndex >= 0 &&
+                previousToolCalls[lastCallIndex].tool === toolName &&
+                JSON.stringify(previousToolCalls[lastCallIndex].args) ===
+                  JSON.stringify(toolParams)
+              ) {
+                previousToolCalls[lastCallIndex].failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: toolName,
+                  args: toolParams,
+                  failureCount: 0, // Reset failure count for a new tool/args combination
+                })
+              }
+
+              if (toolName === XyneTools.Conversational) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Tool ${toolName} selected.`,
+                })
+                break
+              }
+
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Planning,
                 details: `Planning next step with ${gatheredFragments.length} context fragments.`,
@@ -959,6 +934,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                   toolName: toolName as AgentToolName,
                 })
 
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ToolParameters,
+                  parameters: toolParams,
+                })
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
                     toolParams,
@@ -966,6 +945,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     email,
                     ctx,
                     agentPromptForLLM,
+                    message,
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
@@ -1039,16 +1019,23 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
-
+                    const isValidJSON = (str: string) => {
+                      try {
+                        JSON.parse(str);
+                        return true;
+                      } catch (e) {
+                        return false;
+                      }
+                    }
                     try {
                       if (
                         mcpToolResponse.content &&
                         mcpToolResponse.content[0] &&
                         mcpToolResponse.content[0].text
                       ) {
-                        const parsedJson = JSON.parse(
+                        const parsedJson = isValidJSON(mcpToolResponse.content[0].text) ? JSON.parse(
                           mcpToolResponse.content[0].text,
-                        )
+                        ) :  mcpToolResponse.content[0].text
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
@@ -1067,11 +1054,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${flattenObject(
+                            formattedContent = `Tool Response: ${typeof parsedJson !== "string" ? flattenObject(
                               parsedJson,
                             )
                               .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n")}`
+                              .join("\n") : parsedJson}`
                           }
 
                           newFragments.push({
@@ -1155,6 +1142,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                   error: toolExecutionResponse.error,
                 })
 
+                // If the tool execution resulted in an error or no new contexts, increment failure count
+                const currentToolCall =
+                  previousToolCalls[previousToolCalls.length - 1]
+                if (
+                  currentToolCall &&
+                  (toolExecutionResponse.error ||
+                    !toolExecutionResponse.contexts ||
+                    toolExecutionResponse.contexts.length === 0)
+                ) {
+                  currentToolCall.failureCount++
+                } else if (currentToolCall) {
+                  // If successful, reset failure count for this tool
+                  currentToolCall.failureCount = 0
+                }
+
                 if (toolExecutionResponse.error) {
                   if (iterationCount < maxIterations) {
                     continue // Continue to the next iteration to re-plan
@@ -1194,7 +1196,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
-              const planningContext = gatheredFragments.length
+              planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(
                       (f, i) =>
@@ -1231,6 +1233,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         stream: false,
                         json: true,
                         reasoning: false,
+                        messages: messagesWithNoErrResponse,
                       },
                     )
 
@@ -1342,70 +1345,97 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
 
               answered = true
-              const continuationIterator = getToolContinuationIterator(
-                message,
-                ctx,
-                toolsPrompt,
-                planningContext ?? "",
-                gatheredFragments,
-                agentPromptForLLM,
-              )
-              for await (const chunk of continuationIterator) {
-                if (stream.closed) {
-                  loggerWithChild({ email: sub }).info(
-                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
-                }
-                if (chunk.text) {
-                  // if (reasoning && chunk.reasoning) {
-                  //   thinking += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.Reasoning,
-                  //     data: chunk.text,
-                  //   })
-                  //   // reasoningSpan.end()
-                  // }
-                  // if (!chunk.reasoning) {
-                  //   answer += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.ResponseUpdate,
-                  //     data: chunk.text,
-                  //   })
-                  // }
-                  answer += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: chunk.text,
-                  })
-                }
-                if (chunk.citation) {
-                  const { index, item } = chunk.citation
-                  citations.push(item)
-                  citationMap[index] = citations.length - 1
-                  loggerWithChild({ email: sub }).info(
-                    `Found citations and sending it, current count: ${citations.length}`,
-                  )
-                  stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: citations,
-                      citationMap,
-                    }),
-                  })
-                  citationValues[index] = item
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-              }
+
               if (answer.length) {
                 break
               }
-            } else if (parsed.answer) {
-              answer = parsed.answer
+            } else {
+              // If no tool was selected, it's also a form of being stuck or unable to proceed.
+              // Increment failure count for the "no tool selected" state if it's consecutive.
+              const lastCall = previousToolCalls[previousToolCalls.length - 1]
+              if (lastCall && lastCall.tool === "NoToolSelected") {
+                lastCall.failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: "NoToolSelected",
+                  args: {},
+                  failureCount: 1,
+                })
+              }
+
+              if (iterationCount < maxIterations) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `No tool selected. Re-planning iteration ${iterationCount + 1}.`,
+                })
+                continue
+              } else {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `No tool selected for ${iterationCount}. Generating answer with available context.`,
+                })
+                answered = true // Break the loop to generate the final answer
+              }
+            }
+          }
+
+          const continuationIterator = getToolContinuationIterator(
+            message,
+            ctx,
+            toolsPrompt,
+            planningContext ?? "",
+            gatheredFragments,
+            agentPromptForLLM,
+            messagesWithNoErrResponse,
+          )
+          for await (const chunk of continuationIterator) {
+            if (stream.closed) {
+              loggerWithChild({ email: sub }).info(
+                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+              )
+              wasStreamClosedPrematurely = true
               break
+            }
+            if (chunk.text) {
+              // if (reasoning && chunk.reasoning) {
+              //   thinking += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.Reasoning,
+              //     data: chunk.text,
+              //   })
+              //   // reasoningSpan.end()
+              // }
+              // if (!chunk.reasoning) {
+              //   answer += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.ResponseUpdate,
+              //     data: chunk.text,
+              //   })
+              // }
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+            if (chunk.citation) {
+              const { index, item } = chunk.citation
+              citations.push(item)
+              citationMap[index] = citations.length - 1
+              loggerWithChild({ email: sub }).info(
+                `Found citations and sending it, current count: ${citations.length}`,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: citations,
+                  citationMap,
+                }),
+              })
+              citationValues[index] = item
+            }
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
             }
           }
 
@@ -1458,7 +1488,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             })
           } else {
             const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessages(db, chat?.externalId)
+            const allMessages = await getChatMessagesWithAuth(
+              db,
+              chat?.externalId,
+              email,
+            )
             const lastMessage = allMessages[allMessages.length - 1]
 
             await stream.writeSSE({
@@ -1506,7 +1540,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1567,7 +1605,11 @@ export const MessageWithToolsApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -1581,7 +1623,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -1627,7 +1673,11 @@ export const MessageWithToolsApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]
@@ -1691,10 +1741,11 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
+  let email = ""
 
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
-    const email = sub
+    email = sub
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -1816,8 +1867,13 @@ export const AgentMessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -2027,7 +2083,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2253,7 +2313,7 @@ export const AgentMessageApi = async (c: Context) => {
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
                 filters: {
-                  ...parsed?.filters,
+                  ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
                 },
@@ -2399,7 +2459,11 @@ export const AgentMessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -2448,7 +2512,11 @@ export const AgentMessageApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -2496,7 +2564,11 @@ export const AgentMessageApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -2510,7 +2582,11 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -2552,7 +2628,11 @@ export const AgentMessageApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]

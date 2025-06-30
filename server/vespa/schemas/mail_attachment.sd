@@ -68,6 +68,7 @@ schema mail_attachment {
     attribute {
       distance-metric: angular
     }
+    attribute: paged
   }
 
   # filename

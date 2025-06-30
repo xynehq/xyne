@@ -3,6 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
+import { handleToolSync } from "./toolSync"
 import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
 import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
@@ -41,7 +42,9 @@ export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthTyp
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
 export const SyncSlackQueue = `sync-${Apps.Slack}-${AuthType.OAuth}`
+export const SyncToolsQueue = `sync-tools`
 
+const TwiceWeekly = `0 0 * * 0,3`
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
@@ -58,6 +61,7 @@ export const init = async () => {
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
   await boss.createQueue(SyncSlackQueue)
+  await boss.createQueue(SyncToolsQueue)
   await initWorkers()
 }
 
@@ -125,7 +129,50 @@ const initWorkers = async () => {
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
 
+  await boss.schedule(
+    SyncToolsQueue,
+    EveryWeek,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
+
   await setupServiceAccountCronjobs()
+
+  await boss.work(SyncToolsQueue, async ([job]) => {
+    const startTime = Date.now()
+    try {
+      await handleToolSync()
+      const endTime = Date.now()
+      syncJobSuccess.inc(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+        },
+        1,
+      )
+      syncJobDuration.observe(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+        },
+        endTime - startTime,
+      )
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Tools ${errorMessage} ${(error as Error).stack}`,
+      )
+      syncJobError.inc(
+        {
+          sync_job_name: SyncToolsQueue,
+          sync_job_auth_type: "sync_tool",
+          sync_job_error_type: `${errorMessage}`,
+        },
+        1,
+      )
+    }
+  })
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
     const startTime = Date.now()

@@ -37,7 +37,11 @@ import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
-import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+import {
+  createOAuthProvider,
+  getAppGlobalOAuthProvider,
+  getOAuthProvider,
+} from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
@@ -77,6 +81,14 @@ export const GetConnectors = async (c: Context) => {
   const user = users[0]
   const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
+}
+export const GetProviders = async (c: Context) => {
+  try {
+    const provider = await getAppGlobalOAuthProvider(db, Apps.Slack)
+    return c.json({ exists: !!provider })
+  } catch (error) {
+    return c.json({ exists: false })
+  }
 }
 
 export const GetConnectorTools = async (c: Context) => {
@@ -216,9 +228,41 @@ export const CreateOAuthProvider = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")
-  const clientId = form.clientId
-  const clientSecret = form.clientSecret
-  const scopes = form.scopes
+  const isUsingGlobalCred = form.isUsingGlobalCred
+
+  let clientId = undefined
+  let scopes = undefined
+  let clientSecret = undefined
+  let isGlobalProvider = undefined
+  if (isUsingGlobalCred) {
+    // get the global connector where the isGlobal flag is true
+    try {
+      const globalProviders = await getAppGlobalOAuthProvider(db, Apps.Slack)
+      if (globalProviders.length > 0) {
+        const globalProvider = globalProviders[0] // Take the first global provider
+        clientId = globalProvider.clientId
+        scopes = globalProvider.oauthScopes // Use oauthScopes instead of scopes to match the schema
+        clientSecret = globalProvider.clientSecret
+      }
+    } catch (error) {
+      loggerWithChild({ email: sub }).error(
+        `Error fetching global OAuth provider: ${getErrorMessage(error)}`,
+      )
+      return c.json(
+        {
+          success: false,
+          message: "No global OAuth provider exist",
+        },
+        500,
+      )
+    }
+  } else {
+    // When not using global creds, use form values and set isGlobalProvider to true
+    clientId = form.clientId
+    clientSecret = form.clientSecret
+    scopes = form.scopes
+    isGlobalProvider = form.isGlobalProvider
+  }
   const app = form.app
 
   return await db.transaction(async (trx) => {
@@ -247,8 +291,10 @@ export const CreateOAuthProvider = async (c: Context) => {
       oauthScopes: scopes,
       workspaceId: user.workspaceId,
       userId: user.id,
+      isGlobal: isGlobalProvider,
       workspaceExternalId: user.workspaceExternalId,
       connectorId: connector.id,
+
       app,
     })
     return c.json({
@@ -777,31 +823,30 @@ export const AdminDeleteUserData = async (c: Context) => {
     const appsToDelete = options?.servicesToClear
     const deleteSyncJob = options?.deleteSyncJob
     if (deleteSyncJob) {
-      try{
-      const deleteSyncJobResult = await clearUserSyncJob(
-        db,
-        emailToClear,
-        appsToDelete || [],
-      )
-      loggerWithChild({ email: sub }).info(
-        {
-          adminEmail: sub,
-          targetEmail: emailToClear,
-          results: deleteSyncJobResult,
-        },
-        "SyncJob deletion process completed.",
-      )
-    }
-    catch(error){
-      loggerWithChild({ email: sub }).error(
-        {
-          adminEmail: sub,
-          targetEmail: emailToClear,
-          results: error,
-        },
-        "Failed to delete user sync jobs.",
-      )
-    }
+      try {
+        const deleteSyncJobResult = await clearUserSyncJob(
+          db,
+          emailToClear,
+          appsToDelete || [],
+        )
+        loggerWithChild({ email: sub }).info(
+          {
+            adminEmail: sub,
+            targetEmail: emailToClear,
+            results: deleteSyncJobResult,
+          },
+          "SyncJob deletion process completed.",
+        )
+      } catch (error) {
+        loggerWithChild({ email: sub }).error(
+          {
+            adminEmail: sub,
+            targetEmail: emailToClear,
+            results: error,
+          },
+          "Failed to delete user sync jobs.",
+        )
+      }
     }
     return c.json({
       success: true,
@@ -932,7 +977,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
   )
   switch (form.appType) {
     case "github":
-      app = Apps.GITHUB_MCP
+      app = Apps.Github
       break
     default:
       app = Apps.MCP
