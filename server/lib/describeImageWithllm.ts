@@ -9,8 +9,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 })
 
 async function callLLMWithPayload(payload: object): Promise<string> {
-  const endpoint =
-    process.env.LLM_API_ENDPOINT || "http://localhost:11434/api/generate"
+  const endpoint = process.env.LLM_API_ENDPOINT!
 
   try {
     Logger.debug(`Calling LLM API at: ${endpoint}`)
@@ -59,6 +58,14 @@ export const describeImageWithllm = async (
   providedTempDir?: string,
   prompt?: string,
 ): Promise<string> => {
+  // Check if LLM endpoint is provided in environment variables
+  if (!process.env.LLM_API_ENDPOINT) {
+    Logger.debug(
+      "LLM_API_ENDPOINT not provided in environment variables, skipping image description",
+    )
+    return "No description returned."
+  }
+
   try {
     const base64Image = image.toString("base64")
 
