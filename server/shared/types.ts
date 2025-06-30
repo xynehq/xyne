@@ -481,6 +481,9 @@ export enum XyneTools {
   TimeSearch = "time_search",
   GetMailAttachment = "get_mail_attachment",
 
+  // Conversational tool
+  Conversational = "conversational",
+
   // slack tools
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",

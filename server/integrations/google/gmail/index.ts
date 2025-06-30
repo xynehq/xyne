@@ -297,21 +297,18 @@ export const parseMail = async (
     if (payload.parts) {
       for (const part of payload.parts) {
         const { body, filename, mimeType } = part
-        if (
-          mimeType === "application/pdf" &&
-          filename &&
-          body &&
-          body.attachmentId
-        ) {
+        if (mimeType && filename && body && body.attachmentId) {
           try {
             const { attachmentId, size } = body
+            const sizeRef = { value: size ? size : 0 }
             const attachmentChunks = await getGmailAttachmentChunks(
               gmail,
               {
                 attachmentId: attachmentId,
                 filename: filename,
-                size: size ? size : 0,
+                size: sizeRef,
                 messageId: messageId,
+                mimeType: mimeType,
               },
               client,
             )
@@ -324,7 +321,7 @@ export const parseMail = async (
               partId: part.partId ? parseInt(part.partId) : null,
               docId: attachmentId,
               filename: filename,
-              fileSize: size,
+              fileSize: sizeRef.value,
               fileType: mimeType,
               chunks: attachmentChunks,
               threadId: threadId,

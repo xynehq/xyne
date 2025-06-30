@@ -33,22 +33,24 @@ import {
 } from "@/ai/types"
 import config from "@/config"
 import {
-  deleteChatByExternalId,
+  deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
   getChatByExternalId,
+  getChatByExternalIdWithAuth,
   getPublicChats,
   insertChat,
-  updateChatByExternalId,
+  updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
-  getChatMessages,
   insertMessage,
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  getChatMessagesWithAuth,
 } from "@/db/message"
+import { eq } from "drizzle-orm"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -57,6 +59,7 @@ import {
   type SelectChat,
   type SelectMessage,
   selectMessageSchema,
+  sharedChats,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -396,8 +399,8 @@ export const GetChatApi = async (c: Context) => {
     const body: z.infer<typeof chatSchema> = c.req.valid("json")
     const { chatId } = body
     const [chat, messages] = await Promise.all([
-      getChatByExternalId(db, chatId),
-      getChatMessages(db, chatId),
+      getChatByExternalIdWithAuth(db, chatId, email),
+      getChatMessagesWithAuth(db, chatId, email),
     ])
     return c.json({
       chat: selectPublicChatSchema.parse(chat),
@@ -422,7 +425,7 @@ export const ChatRenameApi = async (c: Context) => {
     email = sub || ""
     // @ts-ignore
     const { title, chatId } = c.req.valid("json")
-    await updateChatByExternalId(db, chatId, { title })
+    await updateChatByExternalIdWithAuth(db, chatId, email, { title })
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -444,11 +447,19 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
+      // Get the chat's internal ID first
+      const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
+      if (!chat) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+      // Delete shared chats associated with this chat
+      await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
+
       // First delete chat traces to avoid cascade violations
       await deleteChatTracesByChatExternalId(tx, chatId)
       // Second we have to delete all messages associated with that chat
       await deleteMessagesByChatId(tx, chatId)
-      await deleteChatByExternalId(tx, chatId)
+      await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
     return c.json({ success: true })
   } catch (error) {
@@ -492,7 +503,9 @@ export const ChatBookmarkApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { chatId, bookmark } = body
-    await updateChatByExternalId(db, chatId, { isBookmarked: bookmark })
+    await updateChatByExternalIdWithAuth(db, chatId, email, {
+      isBookmarked: bookmark,
+    })
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -2872,8 +2885,13 @@ export const MessageApi = async (c: Context) => {
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
 
-          let existingChat = await updateChatByExternalId(db, chatId, {})
-          let allMessages = await getChatMessages(tx, chatId)
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
 
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -3070,7 +3088,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: thinking,
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3098,7 +3116,11 @@ export const MessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -3295,7 +3317,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters
+              parsed?.filters ?? {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -3550,7 +3572,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: thinking,
+                thinking: processMessage(thinking, citationMap, email),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3580,7 +3602,11 @@ export const MessageApi = async (c: Context) => {
               })
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
-              const allMessages = await getChatMessages(db, chat?.externalId)
+              const allMessages = await getChatMessagesWithAuth(
+                db,
+                chat?.externalId,
+                email,
+              )
               const lastMessage = allMessages[allMessages.length - 1]
 
               await stream.writeSSE({
@@ -3629,7 +3655,11 @@ export const MessageApi = async (c: Context) => {
             stack: (error as Error).stack || "",
           })
           const errFomMap = handleError(error)
-          const allMessages = await getChatMessages(db, chat?.externalId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            chat?.externalId,
+            email,
+          )
           const lastMessage = allMessages[allMessages.length - 1]
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -3679,7 +3709,11 @@ export const MessageApi = async (c: Context) => {
         })
         const errFromMap = handleError(err)
         // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessages(db, chat?.externalId)
+        const allMessages = await getChatMessagesWithAuth(
+          db,
+          chat?.externalId,
+          email,
+        )
         const lastMessage = allMessages[allMessages.length - 1]
         const errorMsgId = assistantMessageId || lastMessage.externalId
         const errorChatId = chat?.externalId || "unknown"
@@ -3693,7 +3727,11 @@ export const MessageApi = async (c: Context) => {
             }),
           })
           // Try to get the last message again for error reporting
-          const allMessages = await getChatMessages(db, errorChatId)
+          const allMessages = await getChatMessagesWithAuth(
+            db,
+            errorChatId,
+            email,
+          )
           if (allMessages.length > 0) {
             const lastMessage = allMessages[allMessages.length - 1]
             await addErrMessageToMessage(lastMessage, errFromMap)
@@ -3738,7 +3776,11 @@ export const MessageApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-      const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessagesWithAuth(
+        db,
+        chat?.externalId,
+        email,
+      )
       // Add the error message to last user message
       if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]
@@ -4333,7 +4375,7 @@ export const MessageRetryApi = async (c: Context) => {
                 )
               }
               const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters
+                parsed?.filters ?? {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,

@@ -65,3 +65,22 @@ export const getOAuthProviderByConnectorId = async (
     throw new Error("Could not get the provider")
   }
 }
+
+export const getAppGlobalOAuthProvider = async(
+  trx: TxnOrClient,
+  app: Apps,
+
+):Promise<SelectOAuthProvider[]> =>{
+  const res = await trx
+    .select()
+    .from(oauthProviders)
+    .where(
+      and(
+      eq(oauthProviders.app,app),eq(oauthProviders.isGlobal ,true)))
+    .limit(1)
+    if (res.length) {
+    return res
+    } else {
+      throw new Error("Could not get the provider")
+    }
+}

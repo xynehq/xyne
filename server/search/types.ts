@@ -52,7 +52,7 @@ export enum Apps {
   Slack = "slack",
 
   MCP = "mcp",
-  GITHUB_MCP = "github_mcp",
+  Github = "github",
   Xyne = "xyne",
   DataSource = "data-source",
 }

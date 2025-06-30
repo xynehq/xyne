@@ -58,6 +58,192 @@ import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
+
+interface VespaClientConfig {
+  client: VespaClient | ProductionServerClient
+  email: string
+}
+
+// Add a new client class for production server communication
+class ProductionServerClient {
+  private baseUrl: string
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl
+  }
+
+  // Proxy method for search
+  async search<T>(payload: any): Promise<T> {
+    const response = await fetch(`${this.baseUrl}/api/vespa/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": payload.apiKey, // Send the key in header
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  // Proxy method for autocomplete
+  async autoComplete(payload: any): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/vespa/autocomplete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": payload.apiKey,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  // Proxy method for group search
+  async groupSearch(payload: any): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/vespa/group-search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": payload.apiKey,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  // Proxy method for getItems
+  async getItems(payload: any): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/vespa/get-items`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": payload.apiKey,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  // Method overloads for getChatContainerIdByChannelName
+  async getChatContainerIdByChannelName(channelName: string): Promise<any>
+  async getChatContainerIdByChannelName(
+    channelName: string,
+    apiKey: string,
+  ): Promise<any>
+  async getChatContainerIdByChannelName(
+    channelName: string,
+    apiKey?: string,
+  ): Promise<any> {
+    const response = await fetch(
+      `${this.baseUrl}/api/vespa/chat-container-by-channel`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "x-api-key": apiKey } : {}),
+        },
+        body: JSON.stringify({ channelName }),
+      },
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  // Method overloads for getChatUserByEmail
+  async getChatUserByEmail(email: string): Promise<any>
+  async getChatUserByEmail(email: string, apiKey: string): Promise<any>
+  async getChatUserByEmail(email: string, apiKey?: string): Promise<any> {
+    const response = await fetch(
+      `${this.baseUrl}/api/vespa/chat-user-by-email`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "x-api-key": apiKey } : {}),
+        },
+        body: JSON.stringify({ email }),
+      },
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Production server error: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    return response.json()
+  }
+}
+
+const getVespaClientAndEmail = async (
+  emailOrKey: string,
+): Promise<VespaClientConfig> => {
+  // Check if we have an API_KEY environment variable (JWT token) and production server URL
+  const apiKey = process.env.API_KEY
+  if (apiKey && process.env.PRODUCTION_SERVER_URL) {
+    try {
+      new URL(process.env.PRODUCTION_SERVER_URL)
+    } catch (error) {
+      Logger.error("Invalid PRODUCTION_SERVER_URL format")
+      return { client: vespa, email: emailOrKey }
+    }
+    // Create production server client instead of direct Vespa client
+    const productionServerClient = new ProductionServerClient(
+      process.env.PRODUCTION_SERVER_URL,
+    )
+    return {
+      client: productionServerClient,
+      email: apiKey, // Pass the JWT token as the "email" - it will be sent as API key
+    }
+  }
+
+  // Default case: use local client and provided email
+  return {
+    client: vespa,
+    email: emailOrKey,
+  }
+}
+
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -200,9 +386,18 @@ export const autocomplete = async (
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
+  const emailorkey = process.env.API_KEY || email
+
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  const isProductionClient = client instanceof ProductionServerClient
+
   const sources = AllSources.split(", ")
     .filter((s) => s !== chatMessageSchema)
     .join(", ")
+
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
@@ -248,14 +443,19 @@ export const autocomplete = async (
   const searchPayload = {
     yql: yqlQuery,
     query,
-    email,
+    email: resolvedEmail,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
     "presentation.summary": "autocomplete",
+    timeout: "5s",
+    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
+
   try {
-    return await vespa.autoComplete(searchPayload)
+    const result = await client.autoComplete(searchPayload)
+    return result
   } catch (error) {
+    Logger.error(`Autocomplete failed with error:`, error)
     throw new ErrorPerformingSearch({
       message: `Error performing autocomplete search`,
       cause: error as Error,
@@ -344,7 +544,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${userTimestamp})` : ""}
+        ${userTimestamp.length ? `and (${userTimestamp})` : ""}
         ${
           !hasAppOrEntity
             ? `and app contains "${Apps.GoogleWorkspace}"`
@@ -359,7 +559,7 @@ export const HybridDefaultProfile = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         and owner contains @email
-        ${timestampRange ? `and ${userTimestamp}` : ""}
+        ${userTimestamp.length ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
       )`
   }
@@ -376,7 +576,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${mailTimestamp})` : ""}
+        ${mailTimestamp.length ? `and (${mailTimestamp})` : ""}
         and permissions contains @email
         ${mailLabelQuery}
         ${appOrEntityFilter}
@@ -385,6 +585,7 @@ export const HybridDefaultProfile = (
 
   const buildDefaultYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
+    const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
     return ` 
   (
       (
@@ -393,6 +594,7 @@ export const HybridDefaultProfile = (
             ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
       )
       and (permissions contains @email or owner contains @email)
+      ${timestamp.length ? `and (${timestamp})` : ""}
       ${appOrEntityFilter}
   )
   `
@@ -409,7 +611,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${fileTimestamp})` : ""}
+        ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
       )`
@@ -426,7 +628,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
-        ${timestampRange ? `and (${eventTimestamp})` : ""}
+        ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
       )`
@@ -434,7 +636,7 @@ export const HybridDefaultProfile = (
 
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-
+    const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
     return `
       (
         (
@@ -442,6 +644,7 @@ export const HybridDefaultProfile = (
           or
           ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
         )
+        ${timestamp.length ? `and (${timestamp})` : ""}
         ${appOrEntityFilter}
         and permissions contains @email
       )`
@@ -991,25 +1194,34 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
-  let excludedApps: Apps[] = []
-  try {
-    const connector = await getConnectorByAppAndEmailId(
-      db,
-      Apps.Slack,
-      AuthType.OAuth,
-      email,
-    )
+  const emailorkey = process.env.API_KEY || email
 
-    if (!connector || connector.status === "not-connected") {
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  const isProductionClient = client instanceof ProductionServerClient
+
+  let excludedApps: Apps[] = []
+  if (!isProductionClient) {
+    try {
+      const connector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.Slack,
+        AuthType.OAuth,
+        resolvedEmail,
+      )
+
+      if (!connector || connector.status === "not-connected") {
+        excludedApps.push(Apps.Slack)
+      }
+    } catch (error) {
+      Logger.error(`Error checking Slack Connector Status: ${error}`)
+      // If there's an error checking sync jobs, exclude Slack to be safe
       excludedApps.push(Apps.Slack)
     }
-  } catch (error) {
-    Logger.error(`Error checking Slack Connector Status: ${error}`)
-    // If there's an error checking sync jobs, exclude Slack to be safe
-    excludedApps.push(Apps.Slack)
   }
 
-  Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
@@ -1020,12 +1232,13 @@ export const groupVespaSearch = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
+    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
   try {
-    return await vespa.groupSearch(hybridDefaultPayload)
+    return await client.groupSearch(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1068,27 +1281,38 @@ export const searchVespa = async (
     recencyDecayRate = 0.02,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.API_KEY || email
+
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
-  // Check if Slack sync job exists for the user
-  let excludedApps: Apps[] = []
-  try {
-    const connector = await getConnectorByAppAndEmailId(
-      db,
-      Apps.Slack,
-      AuthType.OAuth,
-      email,
-    )
+  // Check if using production server client
+  const isProductionClient = client instanceof ProductionServerClient
 
-    if (!connector || connector.status === "not-connected") {
+  // Check if Slack sync job exists for the user (only for local vespa)
+  let excludedApps: Apps[] = []
+  if (!isProductionClient) {
+    try {
+      const connector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.Slack,
+        AuthType.OAuth,
+        resolvedEmail,
+      )
+
+      if (!connector || connector.status === "not-connected") {
+        excludedApps.push(Apps.Slack)
+      }
+    } catch (error) {
+      Logger.error(`Error checking Slack Connector Status: ${error}`)
+      // If there's an error checking sync jobs, exclude Slack to be safe
       excludedApps.push(Apps.Slack)
     }
-  } catch (error) {
-    Logger.error(`Error checking Slack Connector Status: ${error}`)
-    // If there's an error checking sync jobs, exclude Slack to be safe
-    excludedApps.push(Apps.Slack)
   }
 
   let { yql, profile } = HybridDefaultProfile(
@@ -1105,13 +1329,14 @@ export const searchVespa = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
     "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -1120,12 +1345,16 @@ export const searchVespa = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
-  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
+
+  const { apiKey, ...safePayload } = hybridDefaultPayload
+  span?.setAttribute("vespaPayload", JSON.stringify(safePayload))
   try {
-    let result = await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    let result = await client.search<VespaSearchResponse>(hybridDefaultPayload)
     return result
   } catch (error) {
+    Logger.error(`Search failed with error:`, error)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -1148,6 +1377,11 @@ export const searchVespaInFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.API_KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   const isDebugMode = config.isDebugMode || requestDebug || false
 
   let { yql, profile } = HybridDefaultProfileInFiles(
@@ -1160,12 +1394,13 @@ export const searchVespaInFiles = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -1175,7 +1410,7 @@ export const searchVespaInFiles = async (
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return await client.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1229,9 +1464,17 @@ export const searchVespaAgent = async (
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.API_KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
+
+  // Check if using production server client
+  const isProductionClient = client instanceof ProductionServerClient
 
   let { yql, profile } = HybridDefaultProfileForAgent(
     limit,
@@ -1248,13 +1491,14 @@ export const searchVespaAgent = async (
   const hybridDefaultPayload = {
     yql,
     query,
-    email,
+    email: resolvedEmail,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
     "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -1263,10 +1507,11 @@ export const searchVespaAgent = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    return await client.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -1551,7 +1796,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
       }
     } else {
       await insert(
-        { docId, query_text: query, timestamp, count: 1, owner },
+        { docId, query_text: query, timestamp, count: 1, owner: owner },
         userQuerySchema,
       )
     }
@@ -1609,6 +1854,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
+    // Use default vespa client for this function as it doesn't take an email parameter for routing
     return await vespa.getUsersByNamesAndEmails(searchPayload)
   } catch (error) {
     throw error
@@ -1717,6 +1963,13 @@ export const getItems = async (
     asc,
   } = params
 
+  const emailorkey = process.env.API_KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  const isProductionClient = client instanceof ProductionServerClient
+
   // Construct conditions based on parameters
   let conditions: string[] = []
 
@@ -1794,20 +2047,22 @@ export const getItems = async (
     : ""
 
   // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
+  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
 
   const searchPayload = {
     yql,
-    email,
+    email: resolvedEmail,
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
     hits: limit,
-    offset: offset,
+    ...(offset ? { offset } : {}),
+    timeout: "30s",
+    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
 
   try {
-    let result = await vespa.getItems(searchPayload)
+    let result = await client.getItems(searchPayload)
     return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({
@@ -2154,6 +2409,13 @@ export const getThreadItems = async (
     filterQuery = null, // New parameter
   } = params
 
+  const emailorkey = process.env.API_KEY || email
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  const isProductionClient = client instanceof ProductionServerClient
+
   // Common setup for both search types
   let channelId = undefined
   let userId = undefined
@@ -2171,8 +2433,9 @@ export const getThreadItems = async (
   // Get channel ID if channelName is provided
   if (channelName) {
     try {
-      const resp = await vespa.getChatContainerIdByChannelName(channelName)
-      // console.log(resp.root.children[0].fields.docId)
+      const resp = isProductionClient
+        ? await client.getChatContainerIdByChannelName(channelName, emailorkey)
+        : await client.getChatContainerIdByChannelName(channelName)
       // @ts-ignore
       channelId = resp.root.children[0].fields.docId
     } catch (error) {
@@ -2185,7 +2448,9 @@ export const getThreadItems = async (
   // Get user ID if userEmail is provided
   if (userEmail) {
     try {
-      const resp = await vespa.getChatUserByEmail(userEmail)
+      const resp = isProductionClient
+        ? await client.getChatUserByEmail(userEmail, emailorkey)
+        : await client.getChatUserByEmail(userEmail)
       // @ts-ignore
       userId = resp.root.children[0].fields.docId
     } catch (error) {
@@ -2207,21 +2472,23 @@ export const getThreadItems = async (
     const hybridDefaultPayload = {
       yql,
       query: filterQuery,
-      email,
+      email: resolvedEmail,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": 0.5, // Default alpha value
       "input.query(recency_decay_rate)": 0.1, // Default recency decay rate
       maxHits: limit,
       hits: limit,
+      timeout: "20s",
       ...(offset ? { offset } : {}),
       ...(entity ? { entity } : {}),
       ...(channelId ? { channelId } : {}),
       ...(userId ? { userId } : {}),
+      ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
     }
 
     try {
-      return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+      return await client.search<VespaSearchResponse>(hybridDefaultPayload)
     } catch (error) {
       console.error("Vespa hybrid search error:", error)
       throw new ErrorPerformingSearch({
@@ -2237,8 +2504,8 @@ export const getThreadItems = async (
       conditions.push(`entity contains "${entity}"`)
     }
 
-    if (email) {
-      conditions.push(`permissions contains "${email}"`)
+    if (resolvedEmail) {
+      conditions.push(`permissions contains "${resolvedEmail}"`)
     }
 
     if (channelId) {
@@ -2282,10 +2549,11 @@ export const getThreadItems = async (
     const searchPayload = {
       yql,
       "ranking.profile": "unranked",
+      ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
     }
 
     try {
-      let result = await vespa.getItems(searchPayload)
+      let result = await client.getItems(searchPayload)
       return result
     } catch (error) {
       console.error("Vespa search error:", error)
@@ -2300,11 +2568,20 @@ export const getThreadItems = async (
 export const getSlackUserDetails = async (
   userEmail: string,
 ): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.API_KEY || userEmail
+  // Get appropriate client and email
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  const isProductionClient = client instanceof ProductionServerClient
+
   try {
-    const resp = await vespa.getChatUserByEmail(userEmail)
+    const resp = isProductionClient
+      ? await client.getChatUserByEmail(resolvedEmail, emailorkey)
+      : await client.getChatUserByEmail(resolvedEmail)
     return resp
   } catch (error) {
-    Logger.error(`Could not fetch the userId with user email ${userEmail}`)
+    Logger.error(`Could not fetch the userId with user email ${resolvedEmail}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: chatUserSchema,
