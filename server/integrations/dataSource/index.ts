@@ -182,12 +182,12 @@ const createVespaDataSourceFile = (
   text_chunk_pos?: number[],
   image_chunk_pos?: number[],
   convertedFrom?: string,
+  docId?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
-  const fileId = `dsf-${createId()}`
 
   return {
-    docId: fileId,
+    docId: docId || `dsf-${createId()}`,
     description:
       options.description || `File: ${options.fileName} for DataSource`,
     app: Apps.DataSource,
@@ -287,8 +287,9 @@ const processPdfContent = async (
   convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
+    const docId = `dsf-${createId()}`
     const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunks(filePath, `dsf-${createId()}`)
+      await extractTextAndImagesWithChunks(filePath, docId)
     if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
@@ -304,6 +305,7 @@ const processPdfContent = async (
       text_chunk_pos,
       image_chunk_pos,
       convertedFrom,
+      docId,
     )
   } catch (error) {
     if (isDataSourceError(error)) {
