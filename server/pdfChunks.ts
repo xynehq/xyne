@@ -489,9 +489,6 @@ export async function extractTextAndImagesWithChunks(
 
                 image_chunks.push(description)
                 image_chunk_pos.push(globalSeq.value)
-
-                image_chunks.push(description)
-                image_chunk_pos.push(globalSeq.value)
                 globalSeq.value++
                 Logger.debug(
                   `Successfully processed image ${imageName} on page ${pageNum}`,
