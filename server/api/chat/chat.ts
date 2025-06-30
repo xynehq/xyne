@@ -50,6 +50,7 @@ import {
   updateMessage,
   getChatMessagesWithAuth,
 } from "@/db/message"
+import { eq } from "drizzle-orm"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -58,6 +59,7 @@ import {
   type SelectChat,
   type SelectMessage,
   selectMessageSchema,
+  sharedChats,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -134,7 +136,7 @@ import {
 } from "@/search/types"
 import { APIError } from "openai"
 import {
-  getChatTraceByExternalIdWithAuth,
+  getChatTraceByExternalId,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -192,11 +194,7 @@ export const GetChatTraceApi = async (c: Context) => {
         message: "chatId and messageId are required query parameters",
       })
     }
-    const trace = await getChatTraceByExternalIdWithAuth(
-      chatId,
-      messageId,
-      email,
-    )
+    const trace = await getChatTraceByExternalId(chatId, messageId)
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
@@ -449,6 +447,14 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
+      // Get the chat's internal ID first
+      const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
+      if (!chat) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+      // Delete shared chats associated with this chat
+      await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
+
       // First delete chat traces to avoid cascade violations
       await deleteChatTracesByChatExternalId(tx, chatId)
       // Second we have to delete all messages associated with that chat

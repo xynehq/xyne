@@ -32,10 +32,9 @@ export async function insertChatTrace(
   }
 }
 
-export async function getChatTraceByExternalIdWithAuth(
+export async function getChatTraceByExternalId(
   chatExternalId: string,
   messageExternalId: string,
-  userEmail: string,
 ): Promise<SelectChatTrace | null> {
   const [trace] = await db
     .select()
@@ -44,7 +43,6 @@ export async function getChatTraceByExternalIdWithAuth(
       and(
         eq(chatTrace.chatExternalId, chatExternalId),
         eq(chatTrace.messageExternalId, messageExternalId),
-        eq(chatTrace.email, userEmail),
       ),
     )
 

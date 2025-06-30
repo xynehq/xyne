@@ -447,6 +447,7 @@ export const autocomplete = async (
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
     "presentation.summary": "autocomplete",
+    timeout: "5s",
     ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
 
@@ -1335,6 +1336,7 @@ export const searchVespa = async (
     "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -1398,6 +1400,7 @@ export const searchVespaInFiles = async (
     "input.query(alpha)": alpha,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -1495,6 +1498,7 @@ export const searchVespaAgent = async (
     "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
+    timeout: "30s",
     ...(offset
       ? {
           offset,
@@ -2053,6 +2057,7 @@ export const getItems = async (
     "ranking.profile": "unranked",
     hits: limit,
     ...(offset ? { offset } : {}),
+    timeout: "30s",
     ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
 
@@ -2474,6 +2479,7 @@ export const getThreadItems = async (
       "input.query(recency_decay_rate)": 0.1, // Default recency decay rate
       maxHits: limit,
       hits: limit,
+      timeout: "20s",
       ...(offset ? { offset } : {}),
       ...(entity ? { entity } : {}),
       ...(channelId ? { channelId } : {}),
