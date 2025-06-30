@@ -458,7 +458,9 @@ export const filteredSearchTool: AgentTool = {
         email,
         query: params.filter_query,
         app: appEnum,
-        entity: params.entity as Entity,
+        entity: isValidEntity(params.entity || "")
+          ? (params.entity as Entity)
+          : null,
         limit: params.limit,
         offset: params.offset,
         orderDirection: params.order_direction,
