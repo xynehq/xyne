@@ -14,45 +14,60 @@ import os from "os"
 const Logger = getLogger(Subsystem.AI)
 
 // Helper function to convert images to OpenAI format
-const buildOpenAIImageParts = (imagePaths: string[]) => {
+const buildOpenAIImageParts = async (imagePaths: string[]) => {
   const baseDir = path.resolve(
     process.env.IMAGE_DIR || "downloads/xyne_images_db",
   )
-  return imagePaths
-    .map((imgPath) => {
-      // Check if the file already has an extension, if not add .png
-      const match = imgPath.match(/^(.+)_([0-9]+)$/)
-      if (!match) {
-        Logger.error(`Invalid image path: ${imgPath}`)
-        throw new Error(`Invalid image path: ${imgPath}`)
+
+  const imagePromises = imagePaths.map(async (imgPath) => {
+    // Check if the file already has an extension, if not add .png
+    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    if (!match) {
+      Logger.error(`Invalid image path: ${imgPath}`)
+      throw new Error(`Invalid image path: ${imgPath}`)
+    }
+
+    // Validate that the docId doesn't contain path traversal characters
+    const docId = match[1]
+    if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+      Logger.error(`Invalid docId containing path traversal: ${docId}`)
+      throw new Error(`Invalid docId: ${docId}`)
+    }
+
+    const imageDir = path.join(baseDir, docId)
+    const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
+    const absolutePath = path.join(imageDir, fileName)
+
+    // Ensure the resolved path is within baseDir
+    const resolvedPath = path.resolve(imageDir)
+    if (!resolvedPath.startsWith(baseDir)) {
+      Logger.error(`Path traversal attempt detected: ${imageDir}`)
+      throw new Error(`Invalid path: ${imageDir}`)
+    }
+
+    try {
+      // Check if file exists before trying to read it
+      await fs.promises.access(absolutePath, fs.constants.F_OK)
+      const base64Data = await fs.promises.readFile(absolutePath, {
+        encoding: "base64",
+      })
+
+      return {
+        type: "image_url" as const,
+        image_url: {
+          url: `data:image/png;base64,${base64Data}`,
+        },
       }
-      const imageDir = path.join(baseDir, match[1])
-      const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
-      const absolutePath = path.join(imageDir, fileName)
+    } catch (error) {
+      Logger.error(
+        `Failed to read image file ${absolutePath}: ${error instanceof Error ? error.message : error}`,
+      )
+      throw error
+    }
+  })
 
-      try {
-        // Check if file exists before trying to read it
-        if (!fs.existsSync(absolutePath)) {
-          Logger.error(`Image file does not exist: ${absolutePath}`)
-          throw new Error(`Image file not found: ${absolutePath}`)
-        }
-
-        const base64Data = fs.readFileSync(absolutePath, { encoding: "base64" })
-
-        return {
-          type: "image_url" as const,
-          image_url: {
-            url: `data:image/png;base64,${base64Data}`,
-          },
-        }
-      } catch (error) {
-        Logger.error(
-          `Failed to read image file ${absolutePath}: ${error instanceof Error ? error.message : error}`,
-        )
-        throw error
-      }
-    })
-    .filter(Boolean) // Remove any null/undefined entries
+  const results = await Promise.all(imagePromises)
+  return results.filter(Boolean) // Remove any null/undefined entries
 }
 
 export class OpenAIProvider extends BaseProvider {
@@ -109,7 +124,7 @@ export class OpenAIProvider extends BaseProvider {
     // Build image parts if they exist
     const imageParts =
       params.imageFileNames && params.imageFileNames.length > 0
-        ? buildOpenAIImageParts(params.imageFileNames)
+        ? await buildOpenAIImageParts(params.imageFileNames)
         : []
 
     // Find the last user message index to add images only to that message

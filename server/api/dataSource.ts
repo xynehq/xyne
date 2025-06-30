@@ -226,7 +226,6 @@ export const deleteDocumentSchema = z.object({
 })
 
 export const DeleteImages = async (docId: string) => {
-  console.log("Deleting images for docId: ", docId)
   const imageDir = path.resolve(
     process.env.IMAGE_DIR || "downloads/xyne_images_db",
   )

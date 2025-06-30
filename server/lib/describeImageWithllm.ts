@@ -8,33 +8,50 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "describeImageUtil",
 })
 
-import { spawn } from "child_process"
+async function callLLMWithPayload(payload: object): Promise<string> {
+  const endpoint =
+    process.env.LLM_API_ENDPOINT || "http://localhost:11434/api/generate"
 
-function callLLMWithCurlFromFile(jsonFilePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const curlArgs = [
-      "-X",
-      "POST",
-      "-H",
-      "Content-Type: application/json",
-      "--data-binary",
-      `@${jsonFilePath}`,
-      process.env.LLM_API_ENDPOINT || "http://192.168.33.73:11434/api/generate",
-    ]
+  try {
+    Logger.debug(`Calling LLM API at: ${endpoint}`)
 
-    const child = spawn("curl", curlArgs)
-
-    let stdout = ""
-    let stderr = ""
-
-    child.stdout.on("data", (data) => (stdout += data.toString()))
-    child.stderr.on("data", (data) => (stderr += data.toString()))
-
-    child.on("close", (code) => {
-      if (code === 0) resolve(stdout)
-      else reject(new Error(`curl failed with code ${code}: ${stderr}`))
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     })
-  })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    if (!response.body) {
+      throw new Error("No response body received from LLM API")
+    }
+
+    // Handle streaming response by reading the response body
+    const responseText = await response.text()
+
+    if (!responseText.trim()) {
+      throw new Error("Empty response received from LLM API")
+    }
+
+    return responseText
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new Error(
+        `Network error connecting to LLM API at ${endpoint}: ${error.message}`,
+      )
+    }
+
+    if (error instanceof Error) {
+      throw new Error(`LLM API request failed: ${error.message}`)
+    }
+
+    throw new Error(`Unknown error calling LLM API: ${String(error)}`)
+  }
 }
 
 export const describeImageWithllm = async (
@@ -42,18 +59,10 @@ export const describeImageWithllm = async (
   providedTempDir?: string,
   prompt?: string,
 ): Promise<string> => {
-  const tempDir = providedTempDir || path.resolve(__dirname, "../../tmp")
-  let jsonPayloadPath
-
   try {
-    // Only create temp directory if it doesn't exist and no external tempDir provided
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
-    }
-
     const base64Image = image.toString("base64")
 
-    const curlPayload = JSON.stringify({
+    const payload = {
       model: process.env.LLM_MODEL_NAME || "gemma3:12b",
       prompt:
         prompt ||
@@ -61,35 +70,38 @@ export const describeImageWithllm = async (
       images: [base64Image],
       temperature: 0.2,
       num_predict: 512,
-    })
+    }
 
-    jsonPayloadPath = path.join(tempDir, `${uuidv4()}.json`)
-    fs.writeFileSync(jsonPayloadPath, curlPayload)
-
-    const responseText = await callLLMWithCurlFromFile(jsonPayloadPath)
+    Logger.debug("Sending image description request to LLM API")
+    const responseText = await callLLMWithPayload(payload)
 
     let fullResponse = ""
     const lines = responseText.trim().split("\n")
+
     for (const line of lines) {
       if (line.trim()) {
-        const jsonObj = JSON.parse(line)
-        if (jsonObj.response) {
-          fullResponse += jsonObj.response
-        }
-        if (jsonObj.done) {
-          break
+        try {
+          const jsonObj = JSON.parse(line)
+          if (jsonObj.response) {
+            fullResponse += jsonObj.response
+          }
+          if (jsonObj.done) {
+            break
+          }
+        } catch (parseError) {
+          Logger.warn(`Failed to parse JSON line: ${line}`, parseError)
+          // Continue processing other lines
         }
       }
     }
 
-    return fullResponse.trim() || "No description returned."
+    const result = fullResponse.trim() || "No description returned."
+    Logger.debug(`LLM API response: ${result.substring(0, 100)}...`)
+
+    return result
   } catch (err) {
-    Logger.error(err, "Error calling Ollama API")
+    Logger.error(err, "Error calling LLM API for image description")
     return "No description returned."
-  } finally {
-    if (jsonPayloadPath && fs.existsSync(jsonPayloadPath)) {
-      fs.unlinkSync(jsonPayloadPath)
-    }
   }
 }
 
@@ -101,7 +113,7 @@ export const withTempDirectory = async <T>(
 
   try {
     // Create temp directory
-    fs.mkdirSync(tempDir, { recursive: true })
+    await fs.promises.mkdir(tempDir, { recursive: true })
     Logger.debug(`Created temp directory: ${tempDir}`)
 
     // Execute callback with temp directory
@@ -109,10 +121,8 @@ export const withTempDirectory = async <T>(
   } finally {
     // Clean up temp directory and all its contents
     try {
-      if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true })
-        Logger.debug(`Cleaned up temp directory: ${tempDir}`)
-      }
+      await fs.promises.rm(tempDir, { recursive: true, force: true })
+      Logger.debug(`Cleaned up temp directory: ${tempDir}`)
     } catch (cleanupError) {
       Logger.error(cleanupError, `Error cleaning up temp directory: ${tempDir}`)
     }

@@ -453,8 +453,8 @@ const constructDataSourceFileContext = (
     imageContent = imageChunks.map((v) => v.chunk).join("\n")
   } else {
     imageContent = imageChunks
-      .map((v) => v.chunk)
       .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
       .join("\n")
   }
 

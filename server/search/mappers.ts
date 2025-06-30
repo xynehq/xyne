@@ -84,21 +84,31 @@ export const getSortedScoredImageChunks = (
 
   const imageChunksPos = existingImageChunksPosSummary
   const imageChunkScores =
-    (matchfeatures &&
-      "image_chunk_scores" in matchfeatures &&
-      (matchfeatures as any).image_chunk_scores?.cells) ||
-    {}
+    matchfeatures &&
+    "image_chunk_scores" in matchfeatures &&
+    "cells" in
+      (
+        matchfeatures as {
+          image_chunk_scores: { cells: Record<string, number> }
+        }
+      ).image_chunk_scores
+      ? (
+          matchfeatures as {
+            image_chunk_scores: { cells: Record<string, number> }
+          }
+        ).image_chunk_scores.cells
+      : {}
 
   const imageChunksWithIndices = existingImageChunksSummary.map(
     (chunk, index) => ({
       index: index,
-      chunk: `${docId}_${imageChunksPos[index]}`,
+      chunk: `${docId}_${imageChunksPos[index] ?? index}`,
       score: scale(imageChunkScores[index]) || 0, // Default to 0 if doesn't have score
     }),
   )
 
   const filteredImageChunks = imageChunksWithIndices.filter(
-    ({ index }) => index in imageChunksPos,
+    ({ index }) => index < imageChunksPos.length,
   )
 
   const sortedImageChunks = filteredImageChunks.sort(

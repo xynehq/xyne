@@ -3,7 +3,6 @@ import { Subsystem } from "@/types"
 import { createCanvas, Image as CanvasImage, ImageData } from "canvas"
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
 import path from "path"
-import fs from "fs"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import {
@@ -178,7 +177,7 @@ export async function extractTextAndImagesWithChunks(
   return withTempDirectory(async (tempDir) => {
     Logger.info(`Starting PDF processing for: ${pdfPath}`)
 
-    const data = new Uint8Array(fs.readFileSync(pdfPath))
+    const data = new Uint8Array(await fsPromises.readFile(pdfPath))
     const loadingTask = PDFJS.getDocument({
       data,
       wasmUrl: openjpegWasmPath,

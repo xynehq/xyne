@@ -204,8 +204,6 @@ const extractImageFileNames = (
       imageFileNames.push(...fileNames)
     }
   }
-
-  console.log("Final imageFileNames", imageFileNames)
   return { imageFileNames }
 }
 
