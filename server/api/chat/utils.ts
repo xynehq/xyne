@@ -160,14 +160,21 @@ export const extractFileIdsFromMessage = async (
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
+  threadIds: string[]
 }> => {
   const fileIds: string[] = []
+  const threadIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
+  console.log(jsonMessage)
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
+      // Check if this pill has a threadId (for email threads)
+      if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
+        threadIds.push(obj?.value?.threadId)
+      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
@@ -198,7 +205,7 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
-  return { totalValidFileIdsFromLinkCount, fileIds }
+  return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 
 export const handleError = (error: any) => {
