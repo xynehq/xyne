@@ -409,13 +409,6 @@ export const ChatPage = ({
     Record<string, MessageFeedback | null>
   >({})
   const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [shareLink, setShareLink] = useState("")
-  const [isSharing, setIsSharing] = useState(false)
-  const [existingShare, setExistingShare] = useState<any>(null)
-  const [manageSharesOpen, setManageSharesOpen] = useState(false)
-  const [sharedChats, setSharedChats] = useState<any[]>([])
-  const [loadingShares, setLoadingShares] = useState(false)
-
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
     return storedValue ? JSON.parse(storedValue) : true
