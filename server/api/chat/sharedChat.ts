@@ -113,7 +113,7 @@ export const CreateSharedChatApi = async (c: Context) => {
     }
 
     // Generate unique share token
-    const shareToken = nanoid(10)
+    const shareToken = nanoid(15)
 
     // Create shared chat
     const [sharedChat] = await db
