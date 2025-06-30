@@ -281,7 +281,6 @@ export async function extractTextAndImagesWithChunks(
             // Extract image buffer
             const imageName = args[0]
             // Small delay to ensure image object has a chance to resolve
-            await new Promise((resolve) => setTimeout(resolve, 10))
             let imageDict
             try {
               imageDict = page.objs.get(imageName)
@@ -484,8 +483,12 @@ export async function extractTextAndImagesWithChunks(
                   Logger.error(
                     `Failed to save image for ${imageName} on page ${pageNum}: ${saveError instanceof Error ? saveError.message : saveError}`,
                   )
-                  // Continue processing even if saving fails
+                  // Skip adding to chunks if save failed
+                  continue
                 }
+
+                image_chunks.push(description)
+                image_chunk_pos.push(globalSeq.value)
 
                 image_chunks.push(description)
                 image_chunk_pos.push(globalSeq.value)
