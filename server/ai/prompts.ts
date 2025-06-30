@@ -961,20 +961,11 @@ export const SearchQueryToolContextPrompt = (
     - Analysis or computation
     - Multi-step operations
     
-    ## 3. Information Sufficiency Check
-    Evaluate whether you have enough information to provide a complete answer:
-    - **Complete**: You can fully address the user's query
-    - **Partial**: You have some relevant information but need more
-    - **Insufficient**: You need to gather information before answering
-    
     ## 4. Next Action Decision
-    
     ### If Information is Complete:
     - Set "tool" and "arguments" to null
-    - Provide comprehensive answer in "answer" field
     
     ### If More Information Needed:
-    - Set "answer" to null  
     - Choose the most appropriate tool for the next step
     - Provide well-formed arguments
     - Consider using exclusion parameters to avoid duplicate results
