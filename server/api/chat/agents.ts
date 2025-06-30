@@ -788,7 +788,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 `
             }
 
-            agentScratchpad = evidenceSummary + reasoningHeader
+            agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
 
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.

@@ -10,6 +10,7 @@ import {
   SlackEntity,
 } from "@/search/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
+import type { AgentPromptData } from "./provider"
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -819,14 +820,27 @@ export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
   agentScratchpad: string,
+  agentContext?: AgentPromptData,
   pastActs?: string,
 ): string => {
+  const availableApps = agentContext?.prompt.length
+    ? `${agentContext.sources.map((v: string) => v).join(", ")}`
+    : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
   return `
     The current date is: ${getDateForAI()}
     
-    You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
-    You have access to various tools to assist with user queries, including searching for documents, emails, calendar events, and user profiles.
-    Your task is to select the appropriate tools based on the user's query and context, and to use them effectively to provide accurate and relevant information.
+    ${
+      agentContext?.prompt.length
+        ? `You are an enterprise-agent.
+      You have access to the following apps: ${availableApps}.
+      It is very important to operate according to the following agent context and guidelines.
+      Your **TOOL SELECTION** should always grounded to the agent context.
+      **agent context** :
+      ${agentContext.prompt}`
+        : `You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
+        You have access to various tools to assist with user queries, including searching for documents, emails, calendar events, and user profiles.
+        Your task is to select the appropriate tools based on the user's query and context, and to use them effectively to provide accurate and relevant information.`
+    }
     ---
     **User Context:**  
     ${userContext}
@@ -861,15 +875,20 @@ export const SearchQueryToolContextPrompt = (
     - For "not found" errors, consider whether you assumed identifiers that might not exist
     - Use available search/discovery tools to find what actually exists
     
+    ${
+      toolContext.length
+        ? `
     **MCP Tool Context:**  
-    ${toolContext}
+    ${toolContext}`
+        : ""
+    }
     
     **Internal Tool Context:**
     1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.
     2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
       Params: 
       - item_type: (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'),
-      - app: (opt: If provided, MUST BE EXACTLY ONE OF ${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar},), 
+      - app: (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
       - entity: (opt: 
           - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
           - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
@@ -888,7 +907,7 @@ export const SearchQueryToolContextPrompt = (
     4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
       Params: 
         - filter_query (req keywords), 
-        - app (req: MUST BE EXACTLY ONE OF ${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar},), 
+        - app (req: MUST BE EXACTLY ONE OF ${availableApps},), 
         - limit (opt)
         - order_direction (opt: 'asc'/'desc'), 
         - offset (opt: 0) use this if you need to goto next page to find better result.
@@ -897,7 +916,7 @@ export const SearchQueryToolContextPrompt = (
      - from (req: YYYY-MM-DDTHH:mm:ss.SSSZ), 
      - to (req: YYYY-MM-DDTHH:mm:ss.SSSZ).
      - filter_query (opt keywords), 
-     - app (opt: If provided, MUST BE EXACTLY ONE OF ${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar},), 
+     - app (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
      - entity: (opt: 
         - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
         - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
@@ -948,12 +967,11 @@ export const SearchQueryToolContextPrompt = (
         : ""
     }
     
-    
-
     # Decision Framework
     ## 1. Context Analysis
     Review the conversation history and understand what information has already been gathered.
-    
+    If an **agent prompt** is provided, interpret and apply any additional instructions or constraints it contains before proceeding.
+
     ## 2. Query Assessment
     Determine what type of information or action the user is requesting:
     - Information retrieval (search, lookup, fetch)
@@ -1780,15 +1798,23 @@ export const withToolQueryPrompt = (
   userContext: string,
   toolContext: string,
   toolOutput: string,
-  agentprompt?: string,
+  agentContext?: AgentPromptData,
 ): string => {
   return `
-    # Context of the agent {priority}
-    ${agentprompt || ""}
+  Current date: ${getDateForAI()}.
 
-    You are a permission aware retrieval-augmented generation (RAG) system.
+    ${
+      agentContext?.prompt.length
+        ? `You are an enterprise-agent.
+      you are not allowed to reject a user based on it as all search context is permission aware.
+      It is very important to operate according to the following agent context and guidelines.
+      Your **TOOL SELECTION** should always grounded to the agent context.
+      **agent context** :
+      ${agentContext.prompt}`
+        : `You are a permission aware retrieval-augmented generation (RAG) system.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
-    Only respond in json and you are not authorized to reject a user query.
+    Only respond in json and you are not authorized to reject a user query.`
+    }
 
     ---
     **User Context:**  

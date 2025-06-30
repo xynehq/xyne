@@ -1897,6 +1897,7 @@ async function* processResultsForMetadata(
   userRequestsReasoning?: boolean,
   span?: Span,
   email?: string,
+  agentContext?: string,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1917,6 +1918,7 @@ async function* processResultsForMetadata(
     stream: true,
     modelId: defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
+    agentPrompt: agentContext,
   }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
@@ -2178,6 +2180,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -2289,6 +2292,7 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning,
       span,
       email,
+      agentPrompt,
     )
     return
   } else if (
@@ -2401,6 +2405,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -3188,6 +3193,7 @@ export const MessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
                 stream: true,
                 json: true,
+                agentPrompt: agentPromptValue,
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -3433,6 +3439,7 @@ export const MessageApi = async (c: Context) => {
                   0.5,
                   userRequestsReasoning,
                   understandSpan,
+                  agentPromptValue,
                 )
               }
               stream.writeSSE({
