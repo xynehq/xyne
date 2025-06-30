@@ -22,7 +22,10 @@ import {
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
-import { getSortedScoredChunks } from "@/search/mappers"
+import {
+  getSortedScoredChunks,
+  getSortedScoredImageChunks,
+} from "@/search/mappers"
 import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
@@ -87,6 +90,45 @@ const constructFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+  if (fields.matchfeatures) {
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      fields.image_chunks_summary as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => ({
+        chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let imageContent = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    imageContent = imageChunks.map((v) => v.chunk).join("\n")
+  } else {
+    imageContent = imageChunks
+      .map((v) => v.chunk)
+      .slice(0, maxImageChunks)
+      .join("\n")
+  }
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
@@ -95,6 +137,7 @@ ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
+${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 
@@ -416,6 +459,45 @@ const constructDataSourceFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+  if (fields.matchfeatures) {
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      fields.image_chunks_summary as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => ({
+        chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let imageContent = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    imageContent = imageChunks.map((v) => v.chunk).join("\n")
+  } else {
+    imageContent = imageChunks
+      .map((v) => v.chunk)
+      .slice(0, maxImageChunks)
+      .join("\n")
+  }
+
   return `Title: ${fields.fileName || "N/A"}
   App: ${fields.app || "N/A"}
   ${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
@@ -423,6 +505,7 @@ const constructDataSourceFileContext = (
   ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
   ${content ? `Content: ${content}` : ""}
+  ${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
   \nvespa relevance score: ${relevance}\n`
 }
 

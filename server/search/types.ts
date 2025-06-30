@@ -52,7 +52,7 @@ export enum Apps {
   Slack = "slack",
 
   MCP = "mcp",
-  Github = "github",
+  GITHUB_MCP = "github_mcp",
   Xyne = "xyne",
   DataSource = "data-source",
 }
@@ -235,6 +235,9 @@ export const VespaFileSchema = z.object({
   title: z.string(),
   url: z.string().nullable(),
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()).optional(), // Added for image descriptions
+  chunks_pos: z.array(z.number()).optional(), // Added for text chunk positions
+  image_chunks_pos: z.array(z.number()).optional(), // Added for image chunk positions
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),
   photoLink: z.string().nullable(),
@@ -248,12 +251,16 @@ export const VespaFileSchema = z.object({
 const chunkScoresSchema = z.object({
   cells: z.record(z.number()),
 })
+const imagechunkScoresSchema = z.object({
+  cells: z.record(z.number()),
+})
 // Match features for file schema
 const FileMatchFeaturesSchema = z.object({
   "bm25(title)": z.number().optional(),
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
   chunk_scores: chunkScoresSchema,
+  image_chunk_scores: imagechunkScoresSchema,
 })
 
 // Match features for user schema
@@ -341,6 +348,9 @@ export const VespaDataSourceFileSchemaBase = z.object({
   fileName: z.string().optional(),
   fileSize: z.number().optional(), // long
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()).optional(), // Added for image descriptions
+  chunks_pos: z.array(z.number()).optional(), // Added for text chunk positions
+  image_chunks_pos: z.array(z.number()).optional(), // Added for image chunk positions
   uploadedBy: z.string(),
   duration: z.number().optional(), // long
   mimeType: z.string().optional(),
@@ -362,6 +372,11 @@ export const VespaDataSourceFileSearchSchema =
     .merge(defaultVespaFieldsSchema)
     .extend({
       chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+      image_chunks_summary: z
+        .array(z.union([z.string(), scoredChunk]))
+        .optional(),
+      chunks_pos_summary: z.array(z.number()).optional(),
+      image_chunks_pos_summary: z.array(z.number()).optional(),
     })
 export type VespaDataSourceFileSearch = z.infer<
   typeof VespaDataSourceFileSearchSchema
@@ -375,6 +390,11 @@ export const VespaFileSearchSchema = VespaFileSchema.extend({
   .merge(defaultVespaFieldsSchema)
   .extend({
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    image_chunks_summary: z
+      .array(z.union([z.string(), scoredChunk]))
+      .optional(),
+    chunks_pos_summary: z.array(z.number()).optional(),
+    image_chunks_pos_summary: z.array(z.number()).optional(),
   })
 
 // basically GetDocument doesn't return sddocname

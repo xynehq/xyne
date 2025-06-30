@@ -11,10 +11,16 @@ export const scopes = [
   "https://www.googleapis.com/auth/calendar.events.readonly",
 ]
 
+// PDF processing limits (applies to native PDFs, Docs converted to PDF, Slides converted to PDF)
 export const MAX_GD_PDF_SIZE = 15 // In MB
+
+// Native Google Sheets processing limits (Sheets are still processed in native format)
 export const MAX_GD_SHEET_ROWS = 3000
 export const MAX_GD_SHEET_TEXT_LEN = 300000
-export const MAX_GD_SLIDES_TEXT_LEN = 300000
+
+// DEPRECATED: No longer used since Slides are now converted to PDF
+// export const MAX_GD_SLIDES_TEXT_LEN = 300000
+
 export const ServiceAccountUserConcurrency = 2
 export const GoogleDocsConcurrency = 8
 export const GmailConcurrency = 8
