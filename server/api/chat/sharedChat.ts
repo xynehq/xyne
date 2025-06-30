@@ -350,10 +350,7 @@ export const CheckSharedChatApi = async (c: Context) => {
       .from(sharedChats)
       .innerJoin(chats, eq(sharedChats.chatId, chats.id))
       .where(
-        and(
-          eq(sharedChats.chatId, chat.id),
-          isNull(sharedChats.deletedAt)
-        )
+        and(eq(sharedChats.chatId, chat.id), isNull(sharedChats.deletedAt)),
       )
       .orderBy(desc(sharedChats.createdAt))
       .limit(1)
@@ -361,13 +358,13 @@ export const CheckSharedChatApi = async (c: Context) => {
     if (existingShare) {
       return c.json({
         exists: true,
-        share: existingShare
+        share: existingShare,
       })
     }
 
     return c.json({
       exists: false,
-      share: null
+      share: null,
     })
   } catch (error) {
     Logger.error(error, "Failed to check shared chat")
