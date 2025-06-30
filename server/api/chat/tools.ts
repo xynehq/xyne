@@ -527,12 +527,21 @@ export const timeSearchTool: AgentTool = {
     },
   },
   execute: async (
-    params: SearchParameters,
+    params: {
+      query: string
+      from: string
+      to: string
+      limit?: number
+      excludedIds?: string[]
+      app?: Apps,
+      entity?: Entity | null,
+    },
     span?: Span,
     email?: string,
     userCtx?: string,
     agentPrompt?: string,
   ) => {
+    console.log("tool params in time search tool", params)
     const execSpan = span?.startSpan("execute_time_search_tool")
     try {
       if (!email) {
@@ -540,36 +549,81 @@ export const timeSearchTool: AgentTool = {
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, error: "Missing email" }
       }
-      if (!params.from || !params.to) {
-        const errorMsg =
-          "Both 'from' and 'to' dates are required for time search."
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Missing date range" }
+      const searchLimit = params.limit || 10
+      execSpan?.setAttribute("query", params.query)
+      execSpan?.setAttribute("from", params.from)
+      execSpan?.setAttribute("to", params.to)
+      execSpan?.setAttribute("limit", searchLimit)
+      if (params.excludedIds && params.excludedIds.length > 0) {
+        execSpan?.setAttribute(
+          "excludedIds",
+          JSON.stringify(params.excludedIds),
+        )
+      }
+      const from = new Date(params.from).getTime()
+      const to = new Date(params.to).getTime()
+      execSpan?.setAttribute("from_date", new Date(from).toISOString())
+      execSpan?.setAttribute("to_date", new Date(to).toISOString())
+      let searchResults: VespaSearchResponse | null = null
+      if (agentPrompt) {
+        // Parse agent integrations but still filter by the specified app
+        const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+        execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
+        if (agentAppEnums.length === 0) {
+          return {
+            result: `No results found in the specified time range.`,
+            contexts: [],
+          }
+        } else {
+          searchResults = await searchVespaAgent(
+            params.query,
+            email,
+            params.app || null,
+            params.entity || null,
+            agentAppEnums,
+            {
+              limit: searchLimit,
+              alpha: 0.5,
+              timestampRange: { from, to },
+              excludedIds: params.excludedIds, // Pass excludedIds
+              span: execSpan?.startSpan("vespa_search"),
+            },
+          )
+        }
+        execSpan?.setAttribute("agent_prompt", agentPrompt)
+      } else {
+        console.log(from,to, "from to in time search tool")
+        searchResults = await searchVespa(params.query, email, params.app||null, params.entity || null, {
+          limit: searchLimit,
+          alpha: 0.5,
+          timestampRange: { from, to },
+          excludedIds: params.excludedIds, // Pass excludedIds
+          span: execSpan?.startSpan("vespa_search"),
+        })
       }
 
-      const appToUse = isValidApp(params.app || "")
-        ? (params.app as Apps)
-        : null
-      const entityToUse = isValidEntity(params.entity || "")
-        ? (params.entity as Entity)
-        : null
-      const schemaToUse = appToSchemaMapper(appToUse as Apps)
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-
-      return await executeVespaSearch({
-        email,
-        query: params.filter_query,
-        app: appToUse,
-        entity: entityToUse,
-        timestampRange: { from: params.from, to: params.to },
-        limit: params.limit,
-        offset: params.offset,
-        orderDirection: params.order_direction,
-        excludedIds: params.excludedIds,
-        agentAppEnums,
-        span: execSpan,
-        schema: params.filter_query ? null : schemaToUse, // Only pass schema if no filter_query for getItems
+      const children = searchResults?.root?.children || []
+      execSpan?.setAttribute("results_count", children.length)
+      if (children.length === 0)
+        return {
+          result: `No results found in the specified time range.`,
+          contexts: [],
+        }
+      const fragments = children.map((r) => {
+        const citation = searchToCitation(r as any)
+        return {
+          id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          content: answerContextMap(r as any, maxDefaultSummary),
+          source: citation,
+          confidence: r.relevance || 0.7,
+        }
       })
+      const topItemsList = fragments
+        .slice(0, 3)
+        .map((f) => `- \"${f.source.title || "Untitled"}\"`)
+        .join("\n")
+      const summaryText = `Found ${fragments.length} results in time range (\`${params.from}\` to \`${params.to}\`).\nTop items:\n${topItemsList}`
+      return { result: summaryText, contexts: fragments }
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)

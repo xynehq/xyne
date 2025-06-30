@@ -910,7 +910,6 @@ export const SearchQueryToolContextPrompt = (
        6. ${XyneTools.GetMailAttachment}: SPECIALIZED TOOL FOR EMAIL ATTACHMENTS ONLY
       Params: email_search_query (req: keywords to find emails with attachments), attachment_filter (opt: filter by filename/content), file_type (opt: filter by file type like 'pdf', 'doc'), date_from (opt: YYYY-MM-DD), date_to (opt: YYYY-MM-DD), limit (opt), offset (opt).
     
-    
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
        Params: 

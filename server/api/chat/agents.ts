@@ -882,6 +882,16 @@ export const MessageWithToolsApi = async (c: Context) => {
                 type: AgentReasoningStepType.Planning,
                 details: `Planning next step with ${gatheredFragments.length} context fragments.`,
               })
+              const toolName = parsed.tool
+              const toolParams = parsed.arguments
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.ToolParameters,
+                parameters: toolParams,
+              })
+              previousToolCalls.push({
+                tool: toolName,
+                args: toolParams,
+              })
               loggerWithChild({ email: sub }).info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
                   toolParams,
