@@ -372,7 +372,6 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "chat_message") {
-    console.log(result)
     // Slack message link logic
     let slackUrl = ""
     if (result.threadId) {
