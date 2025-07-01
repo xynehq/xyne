@@ -654,7 +654,7 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
+app.get("/chat", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
