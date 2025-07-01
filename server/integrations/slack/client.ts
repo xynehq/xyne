@@ -11,6 +11,9 @@ import {
   createSearchResultsModal,
   createShareConfirmationBlocks,
   createSharedResultBlocks,
+  createAgentResponseModal,
+  createSharedAgentResponseBlocks,
+  createAllSourcesModal,
 } from "./formatters";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
@@ -42,11 +45,25 @@ interface SearchCacheEntry {
   isFromThread: boolean;
 }
 
+/**
+ * Interface for the data cached for each agent interaction.
+ */
+interface AgentCacheEntry {
+  query: string;
+  agentName: string;
+  response: string;
+  citations: any[];
+  timestamp: number;
+  isFromThread: boolean;
+}
+
 // --- Global Cache with TTL Management ---
 declare global {
   var _searchResultsCache: Record<string, SearchCacheEntry>;
+  var _agentResponseCache: Record<string, AgentCacheEntry>;
 }
 global._searchResultsCache = global._searchResultsCache || {};
+global._agentResponseCache = global._agentResponseCache || {};
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 /**
@@ -55,12 +72,23 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 const cleanupCache = () => {
   const now = Date.now();
   let cleanedCount = 0;
+  
+  // Clean search cache
   for (const key in global._searchResultsCache) {
     if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
       delete global._searchResultsCache[key];
       cleanedCount++;
     }
   }
+  
+  // Clean agent cache
+  for (const key in global._agentResponseCache) {
+    if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
+      delete global._agentResponseCache[key];
+      cleanedCount++;
+    }
+  }
+  
   if (cleanedCount > 0) {
     Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
   }
@@ -73,9 +101,12 @@ setInterval(cleanupCache, 5 * 60 * 1000);
  */
 const ACTION_IDS = {
   VIEW_SEARCH_MODAL: "view_search_modal",
+  VIEW_AGENT_MODAL: "view_agent_modal",
   SHARE_RESULT_DIRECTLY: "share_result",
   SHARE_FROM_MODAL: "share_from_modal", // For sharing to the channel
   SHARE_IN_THREAD_FROM_MODAL: "share_in_thread_from_modal", // For sharing to a thread
+  SHARE_AGENT_FROM_MODAL: "share_agent_from_modal", // For sharing agent responses
+  VIEW_ALL_SOURCES: "view_all_sources", // For viewing all sources in a modal
 };
 
 
@@ -409,66 +440,47 @@ const handleAgentSearchCommand = async (
         return;
       }
 
-      // Format the response for Slack
-      const blocks = [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `🤖 *Response from @${agentName}:*\n\n${finalResponse}`
-          }
-        }
-      ];
+      // Cache the agent response
+      const interactionId = `agent_${user}_${messageTs}_${Date.now()}`;
+      global._agentResponseCache[interactionId] = {
+        query,
+        agentName,
+        response: finalResponse,
+        citations,
+        isFromThread: isThreadMessage,
+        timestamp: Date.now()
+      };
 
-      // Add citations if available
-      if (citations.length > 0) {
-        blocks.push({
-          type: "divider"
-        });
-        
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `📚 *Sources (${citations.length}):*`
-          }
-        });
-
-        citations.slice(0, 5).forEach((citation, index) => {
-          blocks.push({
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `*${index + 1}.* ${citation.title || 'Untitled'}\n${citation.url ? `<${citation.url}|View Source>` : citation.snippet?.substring(0, 100) || 'No preview available'}...`
-            }
-          });
-        });
-
-        if (citations.length > 5) {
-          blocks.push({
-            type: "context",
-            elements: [{
-              type: "mrkdwn",
-              text: `_... and ${citations.length - 5} more sources_`
-            }]
-          });
-        }
-      }
-
-      // Add context info
-      blocks.push({
-        type: "context",
-        elements: [{
-          type: "mrkdwn",
-          text: `💡 _Agent: ${selectedAgent.name} | Model: ${selectedAgent.model} | ${citations.length > 0 ? 'With sources' : 'Direct response'}_`
-        }]
-      });
-
+      // Show button to view the agent response instead of full response
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `Response from @${agentName}`,
-        blocks: blocks,
+        text: `🤖 Agent "@${agentName}" response is ready.`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `🤖 Agent *@${agentName}* has responded to your query: "_${query}_"\n${citations.length > 0 ? `📚 Found ${citations.length} relevant sources` : '💭 Direct response from agent'}\nClick the button to view the full response.`
+            }
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                style: "primary",
+                text: {
+                  type: "plain_text",
+                  text: "View Agent Response",
+                  emoji: true
+                },
+                action_id: ACTION_IDS.VIEW_AGENT_MODAL,
+                value: interactionId
+              }
+            ]
+          }
+        ],
         ...(isThreadMessage && { thread_ts: threadTs }),
       });
 
@@ -679,6 +691,172 @@ app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, asy
     await client.views.update({ view_id: view.id, hash: view.hash, view: updatedView });
   } catch (error: any) {
     Logger.error(error, "Error sharing result to thread from modal");
+  }
+});
+
+/**
+ * Handles opening the agent response modal.
+ */
+app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
+  await ack();
+  const interactionId = (body as any).actions[0].value;
+  
+  try {
+    // Check for the special "no_interaction_id" case
+    if (interactionId === "no_interaction_id") {
+      throw new Error("Cannot open modal: No interaction ID available");
+    }
+    
+    const cachedData = global._agentResponseCache[interactionId];
+    if (!cachedData) throw new Error(`No cached agent response found. It may have expired.`);
+
+    const { query, agentName, response, citations, isFromThread } = cachedData;
+    const modal = createAgentResponseModal(query, agentName, response, citations, interactionId);
+
+    if (isFromThread) {
+      // Modify buttons for thread sharing if needed
+      modal.blocks = modal.blocks.map(block => {
+        if (block.type === "actions" && (block as any).elements) {
+          return {
+            ...block,
+            elements: (block as any).elements.map((element: any) => ({
+              ...element,
+              action_id: element.action_id === ACTION_IDS.SHARE_FROM_MODAL 
+                ? ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL 
+                : element.action_id
+            }))
+          };
+        }
+        return block;
+      });
+    }
+
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        ...modal,
+        callback_id: `agent_response_modal`,
+        private_metadata: JSON.stringify({
+          channel_id: (body as any).channel?.id,
+          thread_ts: (body as any).container?.thread_ts,
+          user_id: (body as any).user.id,
+        }),
+      },
+    });
+    Logger.info(`Opened agent response modal for user ${(body as any).user.id}`);
+  } catch (error: any) {
+    Logger.error(error, `Error opening agent modal for interaction ${interactionId}`);
+    await client.chat.postEphemeral({ 
+      channel: (body as any).channel!.id, 
+      user: (body as any).user.id, 
+      text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.` 
+    });
+  }
+});
+
+/**
+ * Handles sharing an agent response from the modal to the main channel.
+ */
+app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action }) => {
+  await ack();
+  const view = (body as any).view;
+  try {
+    if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
+    
+    const interactionId = (action as any).value;
+    
+    // Check for the special "no_interaction_id" case
+    if (interactionId === "no_interaction_id") {
+      throw new Error("Cannot share: No interaction ID available");
+    }
+    
+    // Get agent response from cache
+    const agentResponseData = global._agentResponseCache[interactionId];
+    if (!agentResponseData) {
+      throw new Error("Agent response data not found in cache. The response may have expired.");
+    }
+    
+    const { agentName, query, response, citations } = agentResponseData;
+    const { channel_id, user_id } = JSON.parse(view.private_metadata);
+
+    if (!channel_id) throw new Error("Channel ID not found in modal metadata.");
+
+    await client.chat.postMessage({
+      channel: channel_id,
+      text: `Agent response from @${agentName} - Shared by <@${user_id}>`,
+      blocks: createSharedAgentResponseBlocks(user_id, agentName, query, response, citations || []),
+    });
+
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as any).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in channel successfully!*" }] } : b);
+    
+    const updatedView: View = {
+        type: 'modal',
+        title: view.title,
+        blocks: newBlocks,
+        private_metadata: view.private_metadata,
+        callback_id: view.callback_id,
+    };
+    if (view.close) {
+        updatedView.close = view.close;
+    }
+
+    await client.views.update({ view_id: view.id, hash: view.hash, view: updatedView });
+  } catch (error: any) {
+    Logger.error(error, "Error sharing agent response to channel from modal");
+  }
+});
+
+/**
+ * Handles opening a modal to view all sources/citations.
+ */
+app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
+  await ack();
+  const interactionId = (body as any).actions[0].value;
+  
+  try {
+    // Check for the special "no_interaction_id" case
+    if (interactionId === "no_interaction_id") {
+      throw new Error("Cannot open sources: No interaction ID available");
+    }
+    
+    const cachedData = global._agentResponseCache[interactionId];
+    if (!cachedData) throw new Error(`No cached agent response found. It may have expired.`);
+
+    const { query, agentName, citations } = cachedData;
+    
+    if (!citations || citations.length === 0) {
+      throw new Error("No sources available for this response.");
+    }
+
+    const modal = createAllSourcesModal(agentName, query, citations);
+
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: modal,
+    });
+    
+    Logger.info(`Opened all sources modal for user ${(body as any).user.id}`);
+  } catch (error: any) {
+    Logger.error(error, `Error opening sources modal for interaction ${interactionId}`);
+    // For modal interactions, we need to get channel from the view's private_metadata
+    const view = (body as any).view;
+    let channelId;
+    try {
+      if (view?.private_metadata) {
+        const metadata = JSON.parse(view.private_metadata);
+        channelId = metadata.channel_id;
+      }
+    } catch (parseError) {
+      Logger.warn("Could not parse modal private_metadata for error message");
+    }
+    
+    if (channelId) {
+      await client.chat.postEphemeral({ 
+        channel: channelId, 
+        user: (body as any).user.id, 
+        text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.` 
+      });
+    }
   }
 });
 
