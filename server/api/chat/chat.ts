@@ -181,13 +181,21 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
+// Interface for email search result fields
+interface EmailSearchResultFields {
+  app: Apps
+  threadId?: string
+  docId: string
+  [key: string]: any // Allow other fields
+}
+
 // Function to extract thread IDs from search results
 function extractThreadIdsFromResults(results: VespaSearchResult[]): string[] {
   const threadIds: string[] = []
   const seenThreadIds = new Set<string>()
   
   for (const result of results) {
-    const fields = result.fields as any
+    const fields = result.fields as EmailSearchResultFields
     // Check if it's an email result
     if (fields.app === Apps.Gmail && fields.threadId) {
       if (!seenThreadIds.has(fields.threadId)) {
@@ -200,19 +208,18 @@ function extractThreadIdsFromResults(results: VespaSearchResult[]): string[] {
   return threadIds
 }
 
-// Function to expand email threads in search results - NO LIMITS VERSION
-async function expandEmailThreadsInResults(
-  results: VespaSearchResult[],
+// Helper function to merge thread results into existing results
+async function mergeThreadResults(
+  existingResults: VespaSearchResult[],
+  threadIds: string[],
   email: string,
   span?: Span
-): Promise<VespaSearchResult[]> {
-  // Extract unique thread IDs from email results
-  const threadIds = extractThreadIdsFromResults(results)
-  
+): Promise<{ mergedResults: VespaSearchResult[], addedCount: number, threadInfo: Record<string, number> }> {
   if (threadIds.length === 0) {
-    return results // No email threads to expand
-  } 
-  const threadSpan = span?.startSpan("expand_email_threads")
+    return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
+  }
+
+  const threadSpan = span?.startSpan("fetch_email_threads")
   threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
   
   try {
@@ -221,49 +228,71 @@ async function expandEmailThreadsInResults(
     if (!threadResults.root.children || threadResults.root.children.length === 0) {
       threadSpan?.setAttribute("no_thread_results", true)
       threadSpan?.end()
-      return results
+      return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
     }
     
     // Create a set of existing docIds to avoid duplicates
     const existingDocIds = new Set(
-      results.map((child: any) => child.fields.docId)
+      existingResults.map((child: any) => child.fields.docId)
     )
     
-    // Simply add all thread emails without any limits
-    const expandedResults = [...results]
+    // Merge thread results
+    const mergedResults = [...existingResults]
     let addedCount = 0
+    let threadInfo: Record<string, number> = {}
     
     for (const child of threadResults.root.children) {
       const docId = (child as any).fields.docId
+      const threadId = (child as any).fields.threadId
       
       // Skip if already in results
       if (!existingDocIds.has(docId)) {
-        expandedResults.push(child)
+        mergedResults.push(child)
         existingDocIds.add(docId)
         addedCount++
+        
+        // Track count per thread for logging
+        if (threadId) {
+          threadInfo[threadId] = (threadInfo[threadId] || 0) + 1
+        }
       }
     }
     
-    loggerWithChild({ email }).info(
-      `Added ${addedCount} additional emails from ${threadIds.length} threads to search results (no limits applied)`
-    )
-    
     threadSpan?.setAttribute("added_email_count", addedCount)
-    threadSpan?.setAttribute("original_result_count", results.length)
-    threadSpan?.setAttribute("final_result_count", expandedResults.length)
     threadSpan?.setAttribute("total_thread_emails_found", threadResults.root.children.length)
+    threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
     threadSpan?.end()
     
-    return expandedResults
+    return { mergedResults, addedCount, threadInfo }
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
-      `Error expanding email threads: ${getErrorMessage(error)}`
+      `Error fetching email threads: ${getErrorMessage(error)}`
     )
     threadSpan?.setAttribute("error", getErrorMessage(error))
     threadSpan?.end()
-    return results // Return original results on error
+    return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
   }
+}
+
+// Function to expand email threads in search results
+export async function expandEmailThreadsInResults(
+  results: VespaSearchResult[],
+  email: string,
+  span?: Span
+): Promise<VespaSearchResult[]> {
+  // Extract unique thread IDs from email results
+  const threadIds = extractThreadIdsFromResults(results)
+  
+  const { mergedResults, addedCount } = await mergeThreadResults(results, threadIds, email, span)
+  
+  if (addedCount > 0) {
+    loggerWithChild({ email }).info(
+      `Added ${addedCount} additional emails from ${threadIds.length} threads to search results`
+    )
+  }
+  
+  return mergedResults
 }
 
 const extractImageFileNames = (

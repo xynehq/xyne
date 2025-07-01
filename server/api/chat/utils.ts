@@ -68,6 +68,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
       app: (fields as VespaMail).app,
       entity: (fields as VespaMail).entity,
+      threadId: (fields as VespaMail).threadId,
     }
   } else if (result.fields.sddocname === eventSchema) {
     return {
@@ -165,7 +166,6 @@ export const extractFileIdsFromMessage = async (
   const fileIds: string[] = []
   const threadIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
-  console.log(jsonMessage)
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
   for (const obj of jsonMessage) {

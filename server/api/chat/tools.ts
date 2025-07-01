@@ -57,6 +57,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
+import { expandEmailThreadsInResults } from "./chat"
 
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -277,6 +278,15 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       error: "Invalid search parameters",
       contexts: [],
     }
+  }
+
+  // Expand email threads if results contain emails
+  if (searchResults?.root?.children && searchResults.root.children.length > 0) {
+    searchResults.root.children = await expandEmailThreadsInResults(
+      searchResults.root.children,
+      email,
+      execSpan
+    )
   }
 
   const children = (searchResults?.root?.children || []).filter(

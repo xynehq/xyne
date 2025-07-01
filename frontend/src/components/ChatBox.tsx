@@ -984,7 +984,6 @@ export const ChatBox = ({
   }
 
   const handleSelectGlobalResult = (result: SearchResult) => {
-    // Log the result to debug if threadId is present
     let resultUrl = result.url
     if (!resultUrl && result.app === Apps.Gmail) {
       const identifier = result.threadId || result.docId

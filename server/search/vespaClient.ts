@@ -1208,7 +1208,8 @@ class VespaClient {
       const payload = {
         yql: yqlQuery,
         email: email, // Pass the user's email for permissions check
-        hits: 100, // Add a reasonable limit
+        hits: 200, // Increased limit to fetch more thread emails
+        maxHits: 10000, // Set a high maxHits to ensure we get all thread emails
         "ranking.profile": "unranked", // Use unranked for simple retrieval
       }
 

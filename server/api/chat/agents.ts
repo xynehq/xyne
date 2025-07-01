@@ -1944,7 +1944,7 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
-              undefined,
+              [],
               agentPromptForLLM,
             )
             stream.writeSSE({
