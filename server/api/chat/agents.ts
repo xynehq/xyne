@@ -195,9 +195,9 @@ const checkAndYieldCitationsForAgent = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
 
-      if (!item?.source?.docId) {
+      if (!item?.source?.docId || !item.source?.url) {
         Logger.info(
-          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+          "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
         )
         continue
       }
@@ -1011,10 +1011,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                     let newFragments: MinimalAgentFragment[] = []
                     const isValidJSON = (str: string) => {
                       try {
-                        JSON.parse(str);
-                        return true;
+                        JSON.parse(str)
+                        return true
                       } catch (e) {
-                        return false;
+                        return false
                       }
                     }
                     try {
@@ -1023,9 +1023,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                         mcpToolResponse.content[0] &&
                         mcpToolResponse.content[0].text
                       ) {
-                        const parsedJson = isValidJSON(mcpToolResponse.content[0].text) ? JSON.parse(
+                        const parsedJson = isValidJSON(
                           mcpToolResponse.content[0].text,
-                        ) :  mcpToolResponse.content[0].text
+                        )
+                          ? JSON.parse(mcpToolResponse.content[0].text)
+                          : mcpToolResponse.content[0].text
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
@@ -1044,11 +1046,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${typeof parsedJson !== "string" ? flattenObject(
-                              parsedJson,
-                            )
-                              .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n") : parsedJson}`
+                            formattedContent = `Tool Response: ${
+                              typeof parsedJson !== "string"
+                                ? flattenObject(parsedJson)
+                                    .map(([key, value]) => `- ${key}: ${value}`)
+                                    .join("\n")
+                                : parsedJson
+                            }`
                           }
 
                           newFragments.push({

@@ -19,6 +19,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -35,6 +36,7 @@ import {
   type Entity,
   type VespaChatMessage,
   type VespaChatUser,
+  type VespaDataSourceFile,
   type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
@@ -146,6 +148,7 @@ interface UnifiedSearchOptions {
   agentAppEnums?: Apps[]
   span?: Span
   schema?: VespaSchema | null
+  dataSourceIds?: string[] | undefined
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -225,6 +228,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
             fromTimestamp && toTimestamp
               ? { from: fromTimestamp, to: toTimestamp }
               : undefined,
+          dataSourceIds: options.dataSourceIds ?? undefined,
         },
       )
     } else {
@@ -286,6 +290,21 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   }
 
   const fragments: MinimalAgentFragment[] = children.map((r) => {
+    if (r.fields.sddocname === dataSourceFileSchema) {
+      const fields = r.fields as VespaDataSourceFile
+      return {
+        id: `${fields.docId}`,
+        content: answerContextMap(r, maxDefaultSummary),
+        source: {
+          docId: fields.docId,
+          title: fields.fileName || "Untitled",
+          url: "",
+          app: fields.app || Apps.DataSource,
+          entity: "" as Entity,
+        },
+        confidence: r.relevance || 0.7,
+      }
+    }
     const citation = searchToCitation(r)
     return {
       id: `${citation.docId}`,
@@ -360,7 +379,8 @@ export const searchTool: AgentTool = {
         }
       }
 
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
@@ -369,6 +389,7 @@ export const searchTool: AgentTool = {
         excludedIds: params.excludedIds,
         agentAppEnums,
         span: execSpan,
+        dataSourceIds: agentSpecificDataSourceIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -452,8 +473,8 @@ export const filteredSearchTool: AgentTool = {
       }
 
       const schema = appToSchemaMapper(appEnum)
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
       return await executeVespaSearch({
         email,
         query: params.filter_query,
@@ -468,6 +489,7 @@ export const filteredSearchTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         schema: params.filter_query ? null : schema,
+        dataSourceIds: agentSpecificDataSourceIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -554,7 +576,8 @@ export const timeSearchTool: AgentTool = {
         ? (params.entity as Entity)
         : null
       const schemaToUse = appToSchemaMapper(appToUse as Apps)
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
@@ -569,6 +592,7 @@ export const timeSearchTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         schema: params.filter_query ? null : schemaToUse, // Only pass schema if no filter_query for getItems
+        dataSourceIds: agentSpecificDataSourceIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -792,7 +816,8 @@ export const metadataRetrievalTool: AgentTool = {
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
 
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
@@ -806,6 +831,7 @@ export const metadataRetrievalTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
+        dataSourceIds: agentSpecificDataSourceIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)

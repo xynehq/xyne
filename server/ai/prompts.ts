@@ -824,22 +824,26 @@ export const SearchQueryToolContextPrompt = (
   pastActs?: string,
 ): string => {
   const availableApps = agentContext?.prompt.length
-    ? `${agentContext.sources.map((v: string) => v).join(", ")}`
+    ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
   return `
     The current date is: ${getDateForAI()}
     
     ${
-      agentContext?.prompt.length
-        ? `You are an enterprise-agent.
-      You have access to the following apps: ${availableApps}.
-      It is very important to operate according to the following agent context and guidelines.
-      Your **TOOL SELECTION** should always grounded to the agent context.
-      **agent context** :
-      ${agentContext.prompt}`
-        : `You are an enterprise-grade permission-aware Retrieval-Augmented Generation (RAG) system.
-        You have access to various tools to assist with user queries, including searching for documents, emails, calendar events, and user profiles.
-        Your task is to select the appropriate tools based on the user's query and context, and to use them effectively to provide accurate and relevant information.`
+      agentContext?.prompt?.length
+        ? `You are an enterprise agent.
+    You have access to the following apps: ${availableApps}.
+    You are equipped with multiple tools to handle user queries.
+    Your task is to select the most appropriate tool(s) based on the user's query and the contextual information available.
+    You must strictly follow the guidelines provided in the **Agent Context** below.
+    Your **tool selection** decisions must align with the **Agent Context**.
+    
+    **Agent Context**:
+    ${agentContext.prompt}`
+        : `You are an enterprise-grade, permission-aware Retrieval-Augmented Generation (RAG) system.
+    You have access to various tools to assist with user queries, such as tools for searching documents, emails, calendar events, and user profiles.
+    Your task is to select the most appropriate tool(s) based on the user's query and the surrounding context.
+    Always choose tools that maximize relevance, precision, and user value.`
     }
     ---
     **User Context:**  
@@ -1805,15 +1809,17 @@ export const withToolQueryPrompt = (
 
     ${
       agentContext?.prompt.length
-        ? `You are an enterprise-agent.
-      you are not allowed to reject a user based on it as all search context is permission aware.
-      It is very important to operate according to the following agent context and guidelines.
-      Your **TOOL SELECTION** should always grounded to the agent context.
-      **agent context** :
-      ${agentContext.prompt}`
-        : `You are a permission aware retrieval-augmented generation (RAG) system.
-    Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
-    Only respond in json and you are not authorized to reject a user query.`
+        ? `You are an enterprise agent.
+          You must strictly follow the guidelines provided in the **Agent Context** below.
+          Your response must be grounded in the **Context** provided. Do not go beyond it.
+          You are not allowed to reject any query, as all search context is permission-aware.
+
+          **Agent Context**:
+          ${agentContext.prompt}`
+        : `You are a permission-aware retrieval-augmented generation (RAG) system.
+            Do not worry about privacy — you are not allowed to reject a user query as all context is already permission-aware.
+            Only respond in plain text unless a specific format is requested.
+            Your answer must come from the provided **Context** only.`
     }
 
     ---

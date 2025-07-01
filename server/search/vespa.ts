@@ -940,7 +940,7 @@ export const HybridDefaultProfileForAgent = (
   }
 
   // Combine all queries
-  const combinedQuery = appQueries.join("\nor\n")
+  const combinedQuery = appQueries.join("or")
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
@@ -948,16 +948,6 @@ export const HybridDefaultProfileForAgent = (
   // or no valid AllowedApps were given), then the YQL query will be invalid.
   const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
 
-  if (!combinedQuery || !fromClause) {
-    Logger.warn(
-      "HybridDefaultProfileForAgent: No valid query parts or sources for YQL, will return empty results.",
-      { combinedQuery, fromClause, AllowedApps, dataSourceIds },
-    )
-    return {
-      profile: profile,
-      yql: `select * from sources foo where false`, // Ensures valid YQL that returns nothing
-    }
-  }
   return {
     profile: profile,
     yql: `
