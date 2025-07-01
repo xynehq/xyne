@@ -147,7 +147,7 @@ import {
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
+// import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
 import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
@@ -179,6 +179,33 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+const extractImageFileNames = (
+  context: string,
+): { imageFileNames: string[] } => {
+  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
+  const imageContentRegex =
+    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score|$)/g
+  const matches = [...context.matchAll(imageContentRegex)]
+
+  let imageFileNames: string[] = []
+
+  for (const match of matches) {
+    const imageContent = match[1].trim()
+    if (imageContent) {
+      // Split by newlines and filter out empty strings
+      const fileNames = imageContent
+        .split("\n")
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+        // Additional safety: split by spaces and filter out empty strings
+        // in case multiple filenames are on the same line
+        .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
+      imageFileNames.push(...fileNames)
+    }
+  }
+  return { imageFileNames }
+}
 
 export const GetChatTraceApi = async (c: Context) => {
   let email = ""
@@ -279,7 +306,6 @@ const checkAndYieldCitations = function* (
 
 export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
-  parsableBuffer = parsableBuffer.replace(/^\s*<[^>]*>?/, "")
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
 }
@@ -927,6 +953,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const contextSpan = querySpan?.startSpan("build_context")
         const initialContext = buildContext(totalResults, maxSummaryCount)
 
+        const { imageFileNames } = extractImageFileNames(initialContext)
+
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
         contextSpan?.setAttribute("number_of_chunks", totalResults.length)
@@ -949,6 +977,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
             agentPrompt,
+            imageFileNames,
           },
         )
 
@@ -1086,6 +1115,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
     contextSpan?.setAttribute(
@@ -1107,6 +1138,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       messages,
+      imageFileNames,
     })
 
     const answer = yield* processIterator(
@@ -1209,6 +1241,8 @@ async function* generateAnswerFromGivenContext(
       ?.join("\n"),
   )
 
+  const { imageFileNames } = extractImageFileNames(initialContext)
+
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
@@ -1240,6 +1274,7 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
+      imageFileNames,
     },
     true,
   )
@@ -1296,6 +1331,8 @@ async function* generateAnswerFromGivenContext(
       }`,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
     searchVespaSpan?.setAttribute("context", initialContext || "")
     searchVespaSpan?.setAttribute(
@@ -1311,6 +1348,7 @@ async function* generateAnswerFromGivenContext(
         stream: true,
         modelId: defaultBestModel,
         reasoning: config.isReasoning && userRequestsReasoning,
+        imageFileNames,
       },
       true,
     )
@@ -1794,6 +1832,8 @@ async function* generatePointQueryTimeExpansion(
       startIndex,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
     contextSpan?.setAttribute(
@@ -1810,6 +1850,7 @@ async function* generatePointQueryTimeExpansion(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
+      imageFileNames,
     })
 
     const answer = yield* processIterator(
@@ -1897,6 +1938,7 @@ async function* processResultsForMetadata(
   userRequestsReasoning?: boolean,
   span?: Span,
   email?: string,
+  agentContext?: string,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1913,10 +1955,13 @@ async function* processResultsForMetadata(
     `full_context maxed to ${chunksCount}`,
   )
   const context = buildContext(items, chunksCount)
+  const { imageFileNames } = extractImageFileNames(context)
   const streamOptions = {
     stream: true,
     modelId: defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
+    imageFileNames,
+    agentPrompt: agentContext,
   }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
@@ -2178,6 +2223,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -2289,6 +2335,7 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning,
       span,
       email,
+      agentPrompt,
     )
     return
   } else if (
@@ -2401,6 +2448,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -2761,7 +2809,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
-      loggerWithChild({ email: email }).info(`Routing to MessageWithToolsApi`)
+      Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
 
@@ -2777,9 +2825,7 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
       if (!isAgentic && agentDetails) {
-        loggerWithChild({ email: email }).info(
-          `Routing to AgentMessageApi for agent ${agentPromptValue}.`,
-        )
+        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
     }
@@ -3088,7 +3134,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email),
+                thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3188,6 +3234,7 @@ export const MessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
                 stream: true,
                 json: true,
+                agentPrompt: agentPromptValue,
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -3317,7 +3364,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters ?? {}
+              parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -3433,6 +3480,7 @@ export const MessageApi = async (c: Context) => {
                   0.5,
                   userRequestsReasoning,
                   understandSpan,
+                  agentPromptValue,
                 )
               }
               stream.writeSSE({
@@ -3572,7 +3620,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email),
+                thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -4375,7 +4423,7 @@ export const MessageRetryApi = async (c: Context) => {
                 )
               }
               const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters ?? {}
+                parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,

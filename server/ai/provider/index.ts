@@ -102,7 +102,7 @@ import { is } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.AI)
 
-interface AgentPromptData {
+export interface AgentPromptData {
   name: string
   description: string
   prompt: string
@@ -1296,14 +1296,19 @@ export const temporalEventClassification = async (
   }
 }
 
-export function generateToolSelectionOutput(
+export async function generateToolSelectionOutput(
   userQuery: string,
   userContext: string,
   toolContext: string,
   initialPlanning: string,
   params: ModelParams,
   agentContext?: string,
-): AsyncIterableIterator<ConverseResponse> {
+  pastActions?: string,
+): Promise<{
+  queryRewrite: string
+  tool: string
+  arguments: Record<string, any>
+} | null> {
   params.json = true
 
   let defaultReasoning = isReasoning
@@ -1311,6 +1316,8 @@ export function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
+    parseAgentPrompt(agentContext),
+    pastActions,
   )
 
   const baseMessage = {
@@ -1325,8 +1332,21 @@ export function generateToolSelectionOutput(
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
 
-  return getProviderByModel(params.modelId).converseStream(messages, params)
+  if (text) {
+    const jsonVal = jsonParseLLMOutput(text)
+    return {
+      queryRewrite: jsonVal.queryRewrite || "",
+      tool: jsonVal.tool,
+      arguments: jsonVal.arguments || {},
+    }
+  } else {
+    throw new Error("Failed to rewrite query")
+  }
 }
 
 export function generateSearchQueryOrAnswerFromConversation(
@@ -1384,7 +1404,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
-      parsedAgentPrompt.prompt
+      parsedAgentPrompt,
     )
     params.systemPrompt = defaultSystemPrompt
   } else {
