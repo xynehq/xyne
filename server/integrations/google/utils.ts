@@ -38,8 +38,8 @@ import path from "path"
 import { retryWithBackoff } from "@/utils"
 import config from "@/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
-const { host } = config
-const METRICS_SERVER_URL = host ?? "http://localhost:3000"
+const { prodMetricScriptURL } = config
+const METRICS_SERVER_URL = prodMetricScriptURL ?? "http://localhost:3000"
 
 // TODO: make it even more extensive
 export const mimeTypeMap: Record<string, DriveEntity> = {
