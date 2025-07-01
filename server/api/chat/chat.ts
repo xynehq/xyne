@@ -216,7 +216,7 @@ async function expandEmailThreadsInResults(
   threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
   
   try {
-    const threadResults = await SearchEmailThreads(threadIds, threadSpan!, email)
+    const threadResults = await SearchEmailThreads(threadIds, email)
     
     if (!threadResults.root.children || threadResults.root.children.length === 0) {
       threadSpan?.setAttribute("no_thread_results", true)
@@ -1365,7 +1365,7 @@ async function* generateAnswerFromGivenContext(
     threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
     
     try {
-      const threadResults = await SearchEmailThreads(threadIds, threadSpan!, email)
+      const threadResults = await SearchEmailThreads(threadIds, email)
       loggerWithChild({ email: email }).info(
         `Thread search results: ${JSON.stringify({
           threadIds,
