@@ -655,12 +655,10 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, async (c, next) => {
-  const url = new URL(c.req.url)
-  if (url.searchParams.has('shareToken')) {
+  if (c.req.query('shareToken')) {
     const staticHandler = serveStatic({ path: "./dist/index.html" })
     return await staticHandler(c, next)
   }
-  // Otherwise redirect to home
   return c.redirect("/")
 })
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
