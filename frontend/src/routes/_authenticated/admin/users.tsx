@@ -140,8 +140,15 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <UsersListPage user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <UsersListPage
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   errorComponent: errorComponent,
 })
@@ -162,6 +169,7 @@ interface User {
 interface UsersListPageProps {
   user: any
   workspace: any
+  agentWhiteList: boolean
 }
 
 const formatSyncDate = (dateInput?: Date | null | undefined): string => {
@@ -234,7 +242,11 @@ const getRoleBadgeVariant = (role: UserRole) => {
   }
 }
 
-function UsersListPage({ user: currentUser, workspace }: UsersListPageProps) {
+function UsersListPage({
+  user: currentUser,
+  workspace,
+  agentWhiteList,
+}: UsersListPageProps) {
   const {} = useTheme()
 
   const [users, setUsers] = useState<User[]>([])
@@ -536,6 +548,7 @@ function UsersListPage({ user: currentUser, workspace }: UsersListPageProps) {
         <Sidebar
           photoLink={currentUser?.photoLink ?? ""}
           role={currentUser?.role}
+          isAgentMode={agentWhiteList}
         />
         <div className="flex-grow ml-[52px] p-6">
           <div className="space-y-6">
@@ -588,6 +601,7 @@ function UsersListPage({ user: currentUser, workspace }: UsersListPageProps) {
         <Sidebar
           photoLink={currentUser?.photoLink ?? ""}
           role={currentUser?.role}
+          isAgentMode={agentWhiteList}
         />
         <div className="flex-grow ml-[52px] min-h-screen flex items-center justify-center dark:bg-gray-900">
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg">
@@ -604,6 +618,7 @@ function UsersListPage({ user: currentUser, workspace }: UsersListPageProps) {
       <Sidebar
         photoLink={currentUser?.photoLink ?? ""}
         role={currentUser?.role}
+        isAgentMode={agentWhiteList}
       />
       <div className="flex-grow ml-[52px] p-6 space-y-6">
         <div className="flex items-center justify-between">
