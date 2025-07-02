@@ -968,7 +968,7 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
         callback_id: `agent_response_modal`,
         private_metadata: JSON.stringify({
           channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts,
+          thread_ts: (body as BlockAction).container.thread_ts,
           user_id: (body as BlockAction).user.id,
         }),
       },
@@ -992,11 +992,11 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
 /**
  * Handles sharing an agent response from the modal to the main channel.
  */
-app.action<BlockAction<ButtonAction>>(
+app.action(
   ACTION_IDS.SHARE_AGENT_FROM_MODAL,
   async ({ ack, body, client, action }) => {
     await ack();
-    const view = body.view;
+    const view = (body as BlockAction).view;
     try {
       if (!view || !view.private_metadata)
         throw new Error("Cannot access required modal metadata.");
@@ -1073,11 +1073,11 @@ app.action<BlockAction<ButtonAction>>(
 /**
  * Handles sharing an agent response from the modal to a thread.
  */
-app.action<BlockAction<ButtonAction>>(
+app.action(
   ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL,
   async ({ ack, body, client, action }) => {
     await ack();
-    const view = body.view;
+    const view = (body as BlockAction).view;
     try {
       if (!view || !view.private_metadata)
         throw new Error("Cannot access required modal metadata.");
