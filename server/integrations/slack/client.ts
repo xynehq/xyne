@@ -1,7 +1,7 @@
-import { App, LogLevel } from "@slack/bolt";
+import { App, LogLevel, type AllMiddlewareArgs, type SlackActionMiddlewareArgs } from "@slack/bolt";
 import type { BlockAction, ButtonAction } from "@slack/bolt";
 import type { View } from "@slack/types";
-import type { WebClient } from "@slack/web-api";
+import type { WebClient, UsersInfoResponse } from "@slack/web-api";
 import * as dotenv from "dotenv";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
@@ -79,6 +79,16 @@ interface AgentCacheEntry {
   isFromThread: boolean;
 }
 
+interface DbUser {
+    id: number;
+    name: string;
+    email: string;
+    externalId: string;
+    workspaceId: number;
+    workspaceExternalId: string;
+    role: string;
+}
+
 // --- Global Cache with TTL Management ---
 declare global {
   var _searchResultsCache: Record<string, SearchCacheEntry>;
@@ -87,32 +97,38 @@ declare global {
 global._searchResultsCache = global._searchResultsCache || {};
 global._agentResponseCache = global._agentResponseCache || {};
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const MODAL_RESULTS_DISPLAY_LIMIT = 5;
+const SNIPPET_TRUNCATION_LENGTH = 200;
 
 /**
  * Periodically cleans up expired entries from the search results cache.
  */
 const cleanupCache = () => {
-  const now = Date.now();
-  let cleanedCount = 0;
-  
-  // Clean search cache
-  for (const key in global._searchResultsCache) {
-    if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
-      delete global._searchResultsCache[key];
-      cleanedCount++;
+  try {
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    // Clean search cache
+    for (const key in global._searchResultsCache) {
+      if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
+        delete global._searchResultsCache[key];
+        cleanedCount++;
+      }
     }
-  }
-  
-  // Clean agent cache
-  for (const key in global._agentResponseCache) {
-    if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
-      delete global._agentResponseCache[key];
-      cleanedCount++;
+    
+    // Clean agent cache
+    for (const key in global._agentResponseCache) {
+      if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
+        delete global._agentResponseCache[key];
+        cleanedCount++;
+      }
     }
-  }
-  
-  if (cleanedCount > 0) {
-    Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
+    
+    if (cleanedCount > 0) {
+      Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
+    }
+  } catch (error) {
+    Logger.error(error, "Error occurred during cache cleanup.");
   }
 };
 setInterval(cleanupCache, 5 * 60 * 1000);
@@ -128,6 +144,7 @@ const ACTION_IDS = {
   SHARE_FROM_MODAL: "share_from_modal", // For sharing to the channel
   SHARE_IN_THREAD_FROM_MODAL: "share_in_thread_from_modal", // For sharing to a thread
   SHARE_AGENT_FROM_MODAL: "share_agent_from_modal", // For sharing agent responses
+  SHARE_AGENT_IN_THREAD_FROM_MODAL: "share_agent_in_thread_from_modal", // For sharing agent responses to a thread
   VIEW_ALL_SOURCES: "view_all_sources", // For viewing all sources in a modal
 };
 
@@ -197,10 +214,10 @@ app.event("app_mention", async ({ event, client }) => {
 // --- Command Logic ---
 
 const handleAgentsCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
-  dbUser: any
+  dbUser: DbUser
 ) => {
   Logger.info(`Listing agents for user ${dbUser.email}`);
 
@@ -268,11 +285,11 @@ const handleAgentsCommand = async (
 };
 
 const handleAgentSearchCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   agentCommand: string,
-  dbUser: any,
+  dbUser: DbUser,
   messageTs: string,
   threadTs: string | undefined
 ) => {
@@ -540,11 +557,11 @@ const handleAgentSearchCommand = async (
 };
 
 const handleSearchQuery = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   query: string,
-  dbUser: any,
+  dbUser: DbUser,
   messageTs: string,
   threadTs: string | undefined
 ) => {
@@ -586,7 +603,7 @@ const handleSearchQuery = async (
   });
 };
 
-const handleHelpCommand = async (client: any, channel: string, user: string) => {
+const handleHelpCommand = async (client: WebClient, channel: string, user: string) => {
   const botUserId = (await client.auth.test()).user_id;
   await client.chat.postEphemeral({
     channel, user,
@@ -605,9 +622,12 @@ const handleHelpCommand = async (client: any, channel: string, user: string) => 
 
 // --- Action Handlers ---
 
-app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }: any) => {
+app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
   await ack();
-  const interactionId = body.actions[0].value;
+  const action = (body as BlockAction).actions[0];
+  if (action.type !== 'button') return;
+
+  const interactionId = action.value;
   const cachedData = global._searchResultsCache[interactionId];
 
   try {
@@ -631,110 +651,116 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }: any) => {
     }
 
     await client.views.open({
-      trigger_id: body.trigger_id,
+      trigger_id: (body as BlockAction).trigger_id,
       view: {
         ...modal,
         callback_id: `search_results_modal`,
         private_metadata: JSON.stringify({
-          channel_id: body.channel?.id,
-          thread_ts: (body.container as any)?.thread_ts,
-          user_id: body.user.id,
+          channel_id: (body as BlockAction).channel?.id,
+          thread_ts: (body as BlockAction).container?.thread_ts,
+          user_id: (body as BlockAction).user.id,
         }),
       },
     });
     Logger.info(`Opened search results modal for user ${body.user.id}`);
   } catch (error: any) {
     Logger.error(error, `Error opening search modal for interaction ${interactionId}`);
-    await client.chat.postEphemeral({ channel: body.channel!.id, user: body.user.id, text: `Sorry, I couldn't open the results. ${error.message}. Please try again.` });
+    await client.chat.postEphemeral({ channel: (body as BlockAction).channel!.id, user: (body as BlockAction).user.id, text: `Sorry, I couldn't open the results. ${error.message}. Please try again.` });
   }
 });
 
 /**
  * Handles sharing a result from the modal to the main channel.
  */
-app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, async ({ ack, body, client, action }: any) => {
+const handleShareAction = async (
+  { ack, body, client, action }: SlackActionMiddlewareArgs<BlockAction<ButtonAction>> & AllMiddlewareArgs,
+  isThreadShare: boolean,
+) => {
   await ack();
   const view = body.view;
   try {
-    if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
-    
+    if (!view || !view.private_metadata)
+      throw new Error("Cannot access required modal metadata.");
+
     const { url, title, query, snippet, metadata } = JSON.parse(action.value);
-    const { channel_id, user_id } = JSON.parse(view.private_metadata);
+    const { channel_id, thread_ts, user_id } = JSON.parse(
+      view.private_metadata,
+    );
 
     if (!channel_id) throw new Error("Channel ID not found in modal metadata.");
+    if (isThreadShare && !thread_ts)
+      throw new Error("Thread timestamp not found for a thread share action.");
 
     await client.chat.postMessage({
       channel: channel_id,
+      thread_ts: isThreadShare ? thread_ts : undefined,
       text: `${title} - Shared by <@${user_id}>`,
-      blocks: createSharedResultBlocks(user_id, url, title, snippet || "", metadata || "", query),
+      blocks: createSharedResultBlocks(
+        user_id,
+        url,
+        title,
+        snippet || "",
+        metadata || "",
+        query,
+      ),
     });
 
-    const newBlocks = view.blocks.map((b: any) => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in channel successfully!*" }] } : b);
-    
+    const newBlocks = view.blocks.map((b: any) =>
+      b.block_id === action.block_id
+        ? {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: `✅ *Result shared in ${isThreadShare ? "thread" : "channel"} successfully!*`,
+              },
+            ],
+          }
+        : b,
+    );
+
     const updatedView: View = {
-        type: 'modal',
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
+      type: "modal",
+      title: view.title,
+      blocks: newBlocks,
+      private_metadata: view.private_metadata,
+      callback_id: view.callback_id,
     };
     if (view.close) {
-        updatedView.close = view.close;
+      updatedView.close = view.close;
     }
 
-    await client.views.update({ view_id: view.id, hash: view.hash, view: updatedView });
-  } catch (error: any) {
-    Logger.error(error, "Error sharing result to channel from modal");
-  }
-});
-
-/**
- * Handles sharing a result from the modal to a thread.
- */
-app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async ({ ack, body, client, action }: any) => {
-  await ack();
-  const view = body.view;
-  try {
-    if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
-
-    const { url, title, query, snippet, metadata } = JSON.parse(action.value);
-    const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
-
-    if (!channel_id) throw new Error("Channel ID not found in modal metadata.");
-    if (!thread_ts) throw new Error("Thread timestamp not found for a thread share action.");
-
-    await client.chat.postMessage({
-      channel: channel_id,
-      thread_ts: thread_ts,
-      text: `${title} - Shared by <@${user_id}>`,
-      blocks: createSharedResultBlocks(user_id, url, title, snippet || "", metadata || "", query),
+    await client.views.update({
+      view_id: view.id,
+      hash: view.hash,
+      view: updatedView,
     });
-
-    const newBlocks = view.blocks.map((b: any) => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in thread successfully!*" }] } : b);
-
-    const updatedView: View = {
-        type: 'modal',
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
-    };
-    if (view.close) {
-        updatedView.close = view.close;
-    }
-
-    await client.views.update({ view_id: view.id, hash: view.hash, view: updatedView });
   } catch (error: any) {
-    Logger.error(error, "Error sharing result to thread from modal");
+    Logger.error(
+      error,
+      `Error sharing result to ${isThreadShare ? "thread" : "channel"} from modal`,
+    );
   }
-});
+};
+
+app.action<BlockAction<ButtonAction>>(
+  ACTION_IDS.SHARE_FROM_MODAL,
+  (context) => handleShareAction(context, false),
+);
+
+app.action<BlockAction<ButtonAction>>(
+  ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL,
+  (context) => handleShareAction(context, true),
+);
 
 /**
  * Handles opening the agent response modal.
  */
-app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }: any) => {
+app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
   await ack();
-  const interactionId = (body as any).actions[0].value;
+  const action = (body as BlockAction).actions[0];
+  if (action.type !== 'button') return;
+  const interactionId = action.value;
   
   try {
     // Check for the special "no_interaction_id" case
@@ -767,23 +793,23 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }: any) => {
     }
 
     await client.views.open({
-      trigger_id: (body as any).trigger_id,
+      trigger_id: (body as BlockAction).trigger_id,
       view: {
         ...modal,
         callback_id: `agent_response_modal`,
         private_metadata: JSON.stringify({
-          channel_id: (body as any).channel?.id,
-          thread_ts: (body as any).container?.thread_ts,
-          user_id: (body as any).user.id,
+          channel_id: (body as BlockAction).channel?.id,
+          thread_ts: (body as BlockAction).container.thread_ts,
+          user_id: (body as BlockAction).user.id,
         }),
       },
     });
-    Logger.info(`Opened agent response modal for user ${(body as any).user.id}`);
+    Logger.info(`Opened agent response modal for user ${(body as BlockAction).user.id}`);
   } catch (error: any) {
     Logger.error(error, `Error opening agent modal for interaction ${interactionId}`);
     await client.chat.postEphemeral({ 
-      channel: (body as any).channel!.id, 
-      user: (body as any).user.id, 
+      channel: (body as BlockAction).channel!.id, 
+      user: (body as BlockAction).user.id, 
       text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.` 
     });
   }
@@ -792,13 +818,13 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }: any) => {
 /**
  * Handles sharing an agent response from the modal to the main channel.
  */
-app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action }: any) => {
+app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action }) => {
   await ack();
-  const view = (body as any).view;
+  const view = (body as BlockAction).view;
   try {
     if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
     
-    const interactionId = (action as any).value;
+    const interactionId = (action as ButtonAction).value;
     
     // Check for the special "no_interaction_id" case
     if (interactionId === "no_interaction_id") {
@@ -822,7 +848,7 @@ app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action
       blocks: createSharedAgentResponseBlocks(user_id, agentName, query, response, citations || []),
     });
 
-    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as any).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in channel successfully!*" }] } : b);
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as ButtonAction).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in channel successfully!*" }] } : b);
     
     const updatedView: View = {
         type: 'modal',
@@ -844,13 +870,13 @@ app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action
 /**
  * Handles sharing an agent response from the modal to a thread.
  */
-app.action("share_agent_in_thread_from_modal", async ({ ack, body, client, action }: any) => {
+app.action(ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL, async ({ ack, body, client, action }) => {
   await ack();
-  const view = (body as any).view;
+  const view = (body as BlockAction).view;
   try {
     if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
     
-    const interactionId = (action as any).value;
+    const interactionId = (action as ButtonAction).value;
     
     // Check for the special "no_interaction_id" case
     if (interactionId === "no_interaction_id") {
@@ -876,7 +902,7 @@ app.action("share_agent_in_thread_from_modal", async ({ ack, body, client, actio
       blocks: createSharedAgentResponseBlocks(user_id, agentName, query, response, citations || []),
     });
 
-    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as any).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in thread successfully!*" }] } : b);
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as ButtonAction).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in thread successfully!*" }] } : b);
     
     const updatedView: View = {
         type: 'modal',
@@ -898,9 +924,11 @@ app.action("share_agent_in_thread_from_modal", async ({ ack, body, client, actio
 /**
  * Handles opening a modal to view all sources/citations.
  */
-app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
+app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
   await ack();
-  const interactionId = (body as any).actions[0].value;
+  const action = (body as BlockAction).actions[0];
+  if (action.type !== 'button') return;
+  const interactionId = action.value;
   
   try {
     // Check for the special "no_interaction_id" case
@@ -920,18 +948,18 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
     const modal = createAllSourcesModal(agentName, query, citations);
 
     await client.views.open({
-      trigger_id: (body as any).trigger_id,
+      trigger_id: (body as BlockAction).trigger_id,
       view: modal,
     });
     
-    Logger.info(`Opened all sources modal for user ${(body as any).user.id}`);
+    Logger.info(`Opened all sources modal for user ${(body as BlockAction).user.id}`);
   } catch (error: any) {
     Logger.error(error, `Error opening sources modal for interaction ${interactionId}`);
     
     // Try to show an error modal instead of ephemeral message since we're in a modal context
     try {
       await client.views.open({
-        trigger_id: (body as any).trigger_id,
+        trigger_id: (body as BlockAction).trigger_id,
         view: {
           type: "modal",
           title: {
@@ -958,7 +986,7 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
     } catch (modalError) {
       Logger.error(modalError, "Failed to show error modal");
       // If we can't show a modal, try to get channel info from the current modal
-      const view = (body as any).view;
+      const view = (body as BlockAction).view;
       let channelId;
       try {
         if (view?.private_metadata) {
@@ -972,7 +1000,7 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
       if (channelId) {
         await client.chat.postEphemeral({ 
           channel: channelId, 
-          user: (body as any).user.id, 
+          user: (body as BlockAction).user.id, 
           text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.` 
         });
       }

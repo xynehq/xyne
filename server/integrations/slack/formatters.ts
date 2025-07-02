@@ -4,33 +4,16 @@ import type {
   HeaderBlock,
   ActionsBlock,
   View,
+  Block,
+  KnownBlock,
 } from "@slack/types";
-
-// Use a more flexible type to handle various block configurations
-type Block = any;
-
-// More specific types for common blocks
-type ActionBlock = {
-  type: "actions";
-  elements: any[];
-  block_id?: string;
-};
-
-type CustomContextBlock = {
-  type: "context";
-  elements: any[];
-};
-
-type CustomDividerBlock = {
-  type: "divider";
-};
 
 export function createAnalysisParentMessage(
   userId: string,
   text: string,
   analysisType: string,
   status: "working" | "complete" | "error" | "failed"
-): any[] {
+): (KnownBlock | Block)[] {
   const statusInfo = {
     working: { icon: "⏳", text: "In Progress" },
     complete: { icon: "✅", text: "Complete" },
@@ -67,7 +50,7 @@ export function createAnalysisParentMessage(
   ];
 }
 
-export function createErrorBlocks(error: string, sessionId: string): any[] {
+export function createErrorBlocks(error: string, sessionId: string): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
@@ -104,7 +87,7 @@ export function createErrorBlocks(error: string, sessionId: string): any[] {
 export function createSearchIntroBlocks(
   userId: string,
   count: number
-): any[] {
+): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
@@ -125,7 +108,7 @@ export function createSearchIntroBlocks(
 export function createSearchHeaderBlocks(
   query: string,
   count: number
-): any[] {
+): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
@@ -158,7 +141,7 @@ export function createSingleResultBlocks(
   result: any,
   index: number,
   query: string
-): any[] {
+): (KnownBlock | Block)[] {
   // Extract title with fallbacks
   let title = "Untitled";
   if (result.subject) title = result.subject;
@@ -261,7 +244,7 @@ export function createSingleResultBlocks(
 export function createMoreResultsBlocks(
   totalCount: number,
   shownCount: number
-): any[] {
+): (KnownBlock | Block)[] {
   const remaining = totalCount - shownCount;
   return [
     {
@@ -291,7 +274,7 @@ export function createSharedResultBlocks(
   snippet: string,
   metadata: string,
   query: string
-): any[] {
+): (KnownBlock | Block)[] {
   const blocks = [
     {
       type: "section",
@@ -344,7 +327,7 @@ export function createSharedResultBlocks(
  * Create blocks for a successful share confirmation
  * @returns Slack blocks for the share confirmation
  */
-export function createShareConfirmationBlocks(): any[] {
+export function createShareConfirmationBlocks(): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
@@ -373,7 +356,7 @@ export function createShareConfirmationBlocks(): any[] {
  */
 export function createSearchResultsModal(query: string, results: any[]): View {
   // Create blocks for the modal content
-  const blocks: any[] = [];
+  const blocks: (KnownBlock | Block)[] = [];
   
   blocks.push({
     type: "header",
@@ -534,7 +517,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
 
 
 export const createAgentSelectionBlocks = (agents: any[]) => {
-  const blocks = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
       text: {
@@ -599,7 +582,7 @@ export const createAgentConversationModal = (
   agentDescription?: string,
   conversationHistory?: Array<{ role: string; content: string }>
 ) => {
-  const blocks = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
       text: {
@@ -696,7 +679,7 @@ export const createAgentResponseBlocks = (
   citations?: any[],
   metadata?: any
 ) => {
-  const blocks = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
       text: {
@@ -849,7 +832,7 @@ export function createAgentResponseModal(
     .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
     .trim();
 
-  const blocks: Block[] = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
       text: {
@@ -970,7 +953,7 @@ export function createAgentResponseModal(
         text: "Share in Thread",
         emoji: true,
       },
-      action_id: "share_agent_in_thread_from_modal",
+      action_id: "share_agent_in_thread_from_modal", // Use the constant here
       value: interactionId,
     });
   }
@@ -1012,7 +995,7 @@ export function createSharedAgentResponseBlocks(
   query: string,
   response: string,
   citations: any[] = []
-): any[] {
+): (KnownBlock | Block)[] {
   // Clean up and format the main response body for Slack markdown
   const displayResponse = response
     .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
@@ -1025,7 +1008,7 @@ export function createSharedAgentResponseBlocks(
     .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
     .trim();
 
-  const blocks: Block[] = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
       text: {
@@ -1151,9 +1134,9 @@ export function createAllSourcesModal(
   query: string,
   citations: any[]
 ): View {
-  const blocks: Block[] = [
+  const blocks: (KnownBlock | Block)[] = [
     {
-      type: "header",
+      type: "section",
       text: {
         type: "plain_text",
         text: `📚 All Sources from /${agentName}`,
