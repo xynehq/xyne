@@ -31,6 +31,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  UserRoleChangeSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -50,6 +51,10 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  ListAllUsers,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
+  UpdateUser,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -407,11 +412,15 @@ export const AppRoutes = app
     zValidator("form", addServiceConnectionSchema),
     AddServiceConnection,
   )
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
+  .get("/list_users", ListAllUsers)
   .post(
     "/google/service_account/ingest_more",
     zValidator("json", serviceAccountIngestMoreSchema),
     ServiceAccountIngestMoreUsersApi,
   )
+  .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
   // create the provider + connector
   .post(
     "/oauth/create",
@@ -655,7 +664,7 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, async (c, next) => {
-  if (c.req.query('shareToken')) {
+  if (c.req.query("shareToken")) {
     const staticHandler = serveStatic({ path: "./dist/index.html" })
     return await staticHandler(c, next)
   }

@@ -5,6 +5,7 @@ import {
   Plug,
   Plus,
   History,
+  User,
   Sun,
   Moon,
   LogOut,
@@ -222,6 +223,29 @@ export const Sidebar = ({
               />
             </Tooltip>
           </div>
+
+          {/* Users List Icon - Admin only */}
+          {role === UserRole.SuperAdmin || role === UserRole.Admin ? (
+            <Link
+              to="/admin/users"
+              className={`flex w-8 h-8 rounded-md items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px] ${
+                location.pathname === "/admin/users"
+                  ? "bg-[#D8DFE680] dark:bg-gray-700"
+                  : ""
+              }`}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <User
+                    size={18}
+                    stroke="#384049"
+                    className="dark:stroke-[#F1F3F4]"
+                  />
+                </TooltipTrigger>
+                <Tip side="right" info="Show Users" />
+              </Tooltip>
+            </Link>
+          ) : null}
         </div>
         <div className="mt-auto mb-4 flex justify-center">
           <DropdownMenu>
