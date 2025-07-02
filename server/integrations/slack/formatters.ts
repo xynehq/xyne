@@ -50,7 +50,10 @@ export function createAnalysisParentMessage(
   ];
 }
 
-export function createErrorBlocks(error: string, sessionId: string): (KnownBlock | Block)[] {
+export function createErrorBlocks(
+  error: string,
+  sessionId: string
+): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
@@ -357,7 +360,7 @@ export function createShareConfirmationBlocks(): (KnownBlock | Block)[] {
 export function createSearchResultsModal(query: string, results: any[]): View {
   // Create blocks for the modal content
   const blocks: (KnownBlock | Block)[] = [];
-  
+
   blocks.push({
     type: "header",
     text: {
@@ -366,7 +369,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
       emoji: true,
     },
   });
-  
+
   blocks.push({
     type: "section",
     text: {
@@ -374,7 +377,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
       text: `*Results for:* "${query}"`,
     },
   });
-  
+
   blocks.push({
     type: "divider",
   });
@@ -515,7 +518,6 @@ export function createSearchResultsModal(query: string, results: any[]): View {
   };
 }
 
-
 export const createAgentSelectionBlocks = (agents: any[]) => {
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -542,7 +544,7 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
   }
 
   // Create agent selection options
-  const agentOptions = agents.slice(0, 10).map(agent => ({
+  const agentOptions = agents.slice(0, 10).map((agent) => ({
     text: {
       type: "plain_text",
       text: agent.name,
@@ -587,7 +589,9 @@ export const createAgentConversationModal = (
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*🤖 ${agentName}*\n${agentDescription || "_No description available_"}`,
+        text: `*🤖 ${agentName}*\n${
+          agentDescription || "_No description available_"
+        }`,
       },
     },
     {
@@ -607,15 +611,17 @@ export const createAgentConversationModal = (
 
     // Show last 3 messages for context
     const recentMessages = conversationHistory.slice(-3);
-    recentMessages.forEach(msg => {
-      const roleIcon = msg.role === 'user' ? '👤' : '🤖';
-      const roleText = msg.role === 'user' ? 'You' : agentName;
-      
+    recentMessages.forEach((msg) => {
+      const roleIcon = msg.role === "user" ? "👤" : "🤖";
+      const roleText = msg.role === "user" ? "You" : agentName;
+
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, 200)}${msg.content.length > 200 ? '...' : ''}`,
+          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, 200)}${
+            msg.content.length > 200 ? "..." : ""
+          }`,
         },
       });
     });
@@ -721,10 +727,10 @@ export const createAgentResponseBlocks = (
     });
 
     citations.slice(0, 3).forEach((citation, index) => {
-      const citationText = citation.url 
-        ? `<${citation.url}|${citation.title || 'Source'}>`
-        : citation.title || 'Source';
-      
+      const citationText = citation.url
+        ? `<${citation.url}|${citation.title || "Source"}>`
+        : citation.title || "Source";
+
       blocks.push({
         type: "section",
         text: {
@@ -735,15 +741,15 @@ export const createAgentResponseBlocks = (
     });
 
     if (citations.length > 3) {
-    blocks.push({
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `_...and ${citations.length - 3} more sources_`,
-        },
-      ],
-    } as any);
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `_...and ${citations.length - 3} more sources_`,
+          },
+        ],
+      } as any);
     }
   }
 
@@ -794,7 +800,9 @@ export const createAgentResponseBlocks = (
       elements: [
         {
           type: "mrkdwn",
-          text: `_Model: ${metadata.model || 'Unknown'} • Response time: ${metadata.responseTime || 'Unknown'}_`,
+          text: `_Model: ${metadata.model || "Unknown"} • Response time: ${
+            metadata.responseTime || "Unknown"
+          }_`,
         },
       ],
     } as any);
@@ -837,7 +845,9 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 */${agentName}* responded to: "_${query.length > 100 ? query.substring(0, 100) + "..." : query}_"`,
+        text: `🤖 */${agentName}* responded to: "_${
+          query.length > 100 ? query.substring(0, 100) + "..." : query
+        }_"`,
       },
     },
     {
@@ -884,14 +894,20 @@ export function createAgentResponseModal(
       }
 
       // Clean the title from any HTML tags and extra whitespace
-      title = title.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      title = title
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (title.length > 150) {
         title = `${title.substring(0, 150)}...`;
       }
 
       let snippet = citation.snippet || citation.content || "";
       if (snippet) {
-        snippet = snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+        snippet = snippet
+          .replace(/<[^>]+>/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
         snippet =
           snippet.length > 80 ? `${snippet.substring(0, 80)}...` : snippet;
       }
@@ -900,9 +916,9 @@ export function createAgentResponseModal(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${i + 1}. ${
-            url ? `<${url}|${title}>` : title
-          }*\n${snippet || "_No preview available_"}`,
+          text: `*${i + 1}. ${url ? `<${url}|${title}>` : title}*\n${
+            snippet || "_No preview available_"
+          }`,
         },
       });
     }
@@ -1065,14 +1081,20 @@ export function createSharedAgentResponseBlocks(
         title = slackLinkMatch[2];
       }
 
-      title = title.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      title = title
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (title.length > 300) {
         title = `${title.substring(0, 300)}...`;
       }
 
       let snippet = citation.snippet || citation.content || "";
       if (snippet) {
-        snippet = snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+        snippet = snippet
+          .replace(/<[^>]+>/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
         snippet =
           snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
       }
@@ -1081,9 +1103,9 @@ export function createSharedAgentResponseBlocks(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${index + 1}. ${
-            url ? `<${url}|${title}>` : title
-          }*\n${snippet || "_No preview available_"}`,
+          text: `*${index + 1}. ${url ? `<${url}|${title}>` : title}*\n${
+            snippet || "_No preview available_"
+          }`,
         },
       });
     });
@@ -1147,7 +1169,9 @@ export function createAllSourcesModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Query:* "${query.length > 100 ? query.substring(0, 100) + "..." : query}"`,
+        text: `*Query:* "${
+          query.length > 100 ? query.substring(0, 100) + "..." : query
+        }"`,
       },
     },
     {
@@ -1167,22 +1191,25 @@ export function createAllSourcesModal(
   let totalCharacters = 200; // Start with header characters
   const maxCharacters = 40000; // Conservative limit for modal content
   const maxSources = Math.min(citations.length, 20); // Limit sources to prevent modal overflow
-  
+
   for (let i = 0; i < maxSources; i++) {
     const citation = citations[i];
-    
+
     const title = citation.title || citation.name || "Untitled";
     const url = citation.url || "";
     let snippet = citation.snippet || citation.content || "";
-    
+
     // Clean and truncate snippet more aggressively for the sources modal
     if (snippet) {
       snippet = snippet.replace(/\s+/g, " ").trim();
-      snippet = snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+      snippet =
+        snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
     }
 
-    const sourceText = `*${i + 1}. ${title}*\n${snippet ? snippet : "No preview available"}${url ? `\n<${url}|View Source>` : ""}`;
-    
+    const sourceText = `*${i + 1}. ${title}*\n${
+      snippet ? snippet : "No preview available"
+    }${url ? `\n<${url}|View Source>` : ""}`;
+
     // Check if adding this source would exceed our character limit
     if (totalCharacters + sourceText.length > maxCharacters) {
       // Add a note about remaining sources
@@ -1190,12 +1217,14 @@ export function createAllSourcesModal(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `_...and ${citations.length - i} more sources (content truncated due to display limits)_`,
+          text: `_...and ${
+            citations.length - i
+          } more sources (content truncated due to display limits)_`,
         },
       });
       break;
     }
-    
+
     totalCharacters += sourceText.length;
 
     blocks.push({
