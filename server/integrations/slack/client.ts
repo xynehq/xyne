@@ -1,4 +1,7 @@
-import { App, AppMentionEvent, BlockAction, ButtonAction, LogLevel, WebClient, View } from "@slack/bolt";
+import { App, LogLevel } from "@slack/bolt";
+import type { BlockAction, ButtonAction } from "@slack/bolt";
+import type { View } from "@slack/types";
+import type { WebClient } from "@slack/web-api";
 import * as dotenv from "dotenv";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
@@ -27,7 +30,7 @@ import { getTracer } from "@/tracer";
 
 dotenv.config();
 
-const Logger = getLogger(Subsystem.Slack, { logLevel: LogLevel.INFO });
+const Logger = getLogger(Subsystem.Slack);
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -139,6 +142,11 @@ app.event("app_mention", async ({ event, client }) => {
   try {
     await client.conversations.join({ channel });
 
+    if (!user) {
+      Logger.warn("No user ID found in app_mention event");
+      return;
+    }
+
     const userInfo = await client.users.info({ user });
     if (!userInfo.ok || !userInfo.user?.profile?.email) {
       Logger.warn(`Could not retrieve email for user ${user}.`);
@@ -176,18 +184,20 @@ app.event("app_mention", async ({ event, client }) => {
     }
   } catch (error: any) {
     Logger.error(error, "Error processing app_mention event");
-    await client.chat.postEphemeral({
-      channel,
-      user,
-      text: `An unexpected error occurred: ${error.message}. Please try again.`,
-    });
+    if (user) {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `An unexpected error occurred: ${error.message}. Please try again.`,
+      });
+    }
   }
 });
 
 // --- Command Logic ---
 
 const handleAgentsCommand = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   dbUser: any
@@ -258,7 +268,7 @@ const handleAgentsCommand = async (
 };
 
 const handleAgentSearchCommand = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   agentCommand: string,
@@ -266,13 +276,20 @@ const handleAgentSearchCommand = async (
   messageTs: string,
   threadTs: string | undefined
 ) => {
-  // Parse the command: /agent_name query
-  const match = agentCommand.match(/^\/(\w+)\s+(.+)$/);
+  // Add debug logging to see what we're processing
+  Logger.info(`Processing agent command: "${agentCommand}" (length: ${agentCommand.length})`);
+  
+  // Parse the command: /agent_name query - trim any leading/trailing whitespace
+  const trimmedCommand = agentCommand.trim();
+  const match = trimmedCommand.match(/^\/([\w-]+)\s+(.+)$/);
+  
+  Logger.info(`Trimmed command: "${trimmedCommand}", Match result: ${match ? `[${match[0]}, ${match[1]}, ${match[2]}]` : 'null'}`);
+  
   if (!match) {
     await client.chat.postEphemeral({
       channel,
       user,
-      text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/support_bot how to reset password`",
+      text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/public-test-agent how to reset password`",
     });
     return;
   }
@@ -523,7 +540,7 @@ const handleAgentSearchCommand = async (
 };
 
 const handleSearchQuery = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   query: string,
@@ -569,7 +586,7 @@ const handleSearchQuery = async (
   });
 };
 
-const handleHelpCommand = async (client: WebClient, channel: string, user: string) => {
+const handleHelpCommand = async (client: any, channel: string, user: string) => {
   const botUserId = (await client.auth.test()).user_id;
   await client.chat.postEphemeral({
     channel, user,
@@ -588,7 +605,7 @@ const handleHelpCommand = async (client: WebClient, channel: string, user: strin
 
 // --- Action Handlers ---
 
-app.action<ButtonAction>(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }: any) => {
+app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }: any) => {
   await ack();
   const interactionId = body.actions[0].value;
   const cachedData = global._searchResultsCache[interactionId];
@@ -910,24 +927,55 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
     Logger.info(`Opened all sources modal for user ${(body as any).user.id}`);
   } catch (error: any) {
     Logger.error(error, `Error opening sources modal for interaction ${interactionId}`);
-    // For modal interactions, we need to get channel from the view's private_metadata
-    const view = (body as any).view;
-    let channelId;
-    try {
-      if (view?.private_metadata) {
-        const metadata = JSON.parse(view.private_metadata);
-        channelId = metadata.channel_id;
-      }
-    } catch (parseError) {
-      Logger.warn("Could not parse modal private_metadata for error message");
-    }
     
-    if (channelId) {
-      await client.chat.postEphemeral({ 
-        channel: channelId, 
-        user: (body as any).user.id, 
-        text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.` 
+    // Try to show an error modal instead of ephemeral message since we're in a modal context
+    try {
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: "modal",
+          title: {
+            type: "plain_text",
+            text: "Error",
+            emoji: true,
+          },
+          close: {
+            type: "plain_text",
+            text: "Close",
+            emoji: true,
+          },
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `❌ *Error opening sources*\n\n${error.message}\n\nPlease try again or contact support if the issue persists.`,
+              },
+            },
+          ],
+        },
       });
+    } catch (modalError) {
+      Logger.error(modalError, "Failed to show error modal");
+      // If we can't show a modal, try to get channel info from the current modal
+      const view = (body as any).view;
+      let channelId;
+      try {
+        if (view?.private_metadata) {
+          const metadata = JSON.parse(view.private_metadata);
+          channelId = metadata.channel_id;
+        }
+      } catch (parseError) {
+        Logger.warn("Could not parse modal private_metadata for error message");
+      }
+      
+      if (channelId) {
+        await client.chat.postEphemeral({ 
+          channel: channelId, 
+          user: (body as any).user.id, 
+          text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.` 
+        });
+      }
     }
   }
 });

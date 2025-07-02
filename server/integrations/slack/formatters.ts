@@ -2,20 +2,35 @@
 import type {
   SectionBlock,
   HeaderBlock,
-  DividerBlock,
-  ContextBlock,
   ActionsBlock,
   View,
 } from "@slack/types";
 
+// Use a more flexible type to handle various block configurations
 type Block = any;
+
+// More specific types for common blocks
+type ActionBlock = {
+  type: "actions";
+  elements: any[];
+  block_id?: string;
+};
+
+type CustomContextBlock = {
+  type: "context";
+  elements: any[];
+};
+
+type CustomDividerBlock = {
+  type: "divider";
+};
 
 export function createAnalysisParentMessage(
   userId: string,
   text: string,
   analysisType: string,
   status: "working" | "complete" | "error" | "failed"
-): Block[] {
+): any[] {
   const statusInfo = {
     working: { icon: "⏳", text: "In Progress" },
     complete: { icon: "✅", text: "Complete" },
@@ -52,7 +67,7 @@ export function createAnalysisParentMessage(
   ];
 }
 
-export function createErrorBlocks(error: string, sessionId: string): Block[] {
+export function createErrorBlocks(error: string, sessionId: string): any[] {
   return [
     {
       type: "section",
@@ -89,7 +104,7 @@ export function createErrorBlocks(error: string, sessionId: string): Block[] {
 export function createSearchIntroBlocks(
   userId: string,
   count: number
-): Block[] {
+): any[] {
   return [
     {
       type: "section",
@@ -110,7 +125,7 @@ export function createSearchIntroBlocks(
 export function createSearchHeaderBlocks(
   query: string,
   count: number
-): Block[] {
+): any[] {
   return [
     {
       type: "section",
@@ -143,7 +158,7 @@ export function createSingleResultBlocks(
   result: any,
   index: number,
   query: string
-): Block[] {
+): any[] {
   // Extract title with fallbacks
   let title = "Untitled";
   if (result.subject) title = result.subject;
@@ -188,7 +203,7 @@ export function createSingleResultBlocks(
   // Trim trailing separator if needed
   metadataText = metadataText.replace(/\s•\s$/, "");
 
-  const blocks = [
+  const blocks: any[] = [
     {
       type: "section",
       text: {
@@ -207,7 +222,7 @@ export function createSingleResultBlocks(
           text: metadataText,
         },
       ],
-    });
+    } as any);
   }
 
   blocks.push({
@@ -232,7 +247,7 @@ export function createSingleResultBlocks(
         }),
       },
     ],
-  });
+  } as any);
 
   return blocks;
 }
@@ -246,7 +261,7 @@ export function createSingleResultBlocks(
 export function createMoreResultsBlocks(
   totalCount: number,
   shownCount: number
-): Block[] {
+): any[] {
   const remaining = totalCount - shownCount;
   return [
     {
@@ -276,7 +291,7 @@ export function createSharedResultBlocks(
   snippet: string,
   metadata: string,
   query: string
-): Block[] {
+): any[] {
   const blocks = [
     {
       type: "section",
@@ -304,12 +319,12 @@ export function createSharedResultBlocks(
           text: metadata,
         },
       ],
-    });
+    } as any);
   }
 
   blocks.push({
     type: "divider",
-  });
+  } as any);
 
   // Add link to view original if URL is available
   if (url) {
@@ -329,7 +344,7 @@ export function createSharedResultBlocks(
  * Create blocks for a successful share confirmation
  * @returns Slack blocks for the share confirmation
  */
-export function createShareConfirmationBlocks(): Block[] {
+export function createShareConfirmationBlocks(): any[] {
   return [
     {
       type: "section",
@@ -358,26 +373,28 @@ export function createShareConfirmationBlocks(): Block[] {
  */
 export function createSearchResultsModal(query: string, results: any[]): View {
   // Create blocks for the modal content
-  const blocks: Block[] = [
-    {
-      type: "header",
-      text: {
-        type: "plain_text",
-        text: "🔍 Knowledge Base Results",
-        emoji: true,
-      },
+  const blocks: any[] = [];
+  
+  blocks.push({
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "🔍 Knowledge Base Results",
+      emoji: true,
     },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*Results for:* "${query}"`,
-      },
+  });
+  
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*Results for:* "${query}"`,
     },
-    {
-      type: "divider",
-    },
-  ];
+  });
+  
+  blocks.push({
+    type: "divider",
+  });
 
   // Display up to 5 results in the modal
   const displayResults = results.slice(0, 5);
@@ -438,7 +455,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
     });
 
     if (metadataText) {
-      blocks.push({
+      (blocks as any[]).push({
         type: "context",
         elements: [
           {
@@ -446,11 +463,11 @@ export function createSearchResultsModal(query: string, results: any[]): View {
             text: metadataText,
           },
         ],
-      });
+      } as any);
     }
 
     // Add action buttons for each result
-    blocks.push({
+    (blocks as any[]).push({
       type: "actions",
       block_id: `result_actions_${i}`,
       elements: [
@@ -473,19 +490,19 @@ export function createSearchResultsModal(query: string, results: any[]): View {
           }),
         },
       ],
-    });
+    } as any);
 
     // Add divider between results (except after the last one)
     if (i < displayResults.length - 1) {
-      blocks.push({
+      (blocks as any[]).push({
         type: "divider",
-      });
+      } as any);
     }
   }
 
   // If there are more results than what's shown in the modal
   if (results.length > 5) {
-    blocks.push({
+    (blocks as any[]).push({
       type: "context",
       elements: [
         {
@@ -495,7 +512,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
           } more results available. Refine your search for better results._`,
         },
       ],
-    });
+    } as any);
   }
 
   // Create the modal view object
@@ -571,7 +588,7 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
       },
       options: agentOptions,
     },
-  });
+  } as any);
 
   return blocks;
 };
@@ -643,7 +660,7 @@ export const createAgentConversationModal = (
       type: "plain_text",
       text: "Your Message",
     },
-  });
+  } as any);
 
   return {
     type: "modal",
@@ -735,15 +752,15 @@ export const createAgentResponseBlocks = (
     });
 
     if (citations.length > 3) {
-      blocks.push({
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `_...and ${citations.length - 3} more sources_`,
-          },
-        ],
-      });
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `_...and ${citations.length - 3} more sources_`,
+        },
+      ],
+    } as any);
     }
   }
 
@@ -784,7 +801,7 @@ export const createAgentResponseBlocks = (
     blocks.push({
       type: "actions",
       elements: actionElements,
-    });
+    } as any);
   }
 
   // Add metadata context if available
@@ -797,7 +814,7 @@ export const createAgentResponseBlocks = (
           text: `_Model: ${metadata.model || 'Unknown'} • Response time: ${metadata.responseTime || 'Unknown'}_`,
         },
       ],
-    });
+    } as any);
   }
 
   return blocks;
@@ -822,25 +839,22 @@ export function createAgentResponseModal(
 ): View {
   // Clean up and format the main response body for Slack mrkdwn
   const displayResponse = response
+    .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
     .replace(/\[\d+\]/g, "") // Remove citation numbers
     .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
+    .replace(/^#{1,}\s*(.+)$/gm, "*$1*") // Convert # headings to *bold* format
     .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
+    .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
+    .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
+    .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
     .trim();
 
   const blocks: Block[] = [
     {
-      type: "header",
-      text: {
-        type: "plain_text",
-        text: `🤖 Response from /${agentName}`,
-        emoji: true,
-      },
-    },
-    {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Your Query:*\n>${query}`,
+        text: `🤖 */${agentName}* responded to: "_${query.length > 100 ? query.substring(0, 100) + "..." : query}_"`,
       },
     },
     {
@@ -850,9 +864,9 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Response:*\n${
-          displayResponse.length > 2500
-            ? displayResponse.substring(0, 2500) +
+        text: `${
+          displayResponse.length > 2000
+            ? displayResponse.substring(0, 2000) +
               "\n\n..._[Response truncated for display]_"
             : displayResponse
         }`,
@@ -860,7 +874,7 @@ export function createAgentResponseModal(
     },
   ];
 
-  // Add citations if available
+  // Add citations if available (keep original order but limit to prevent excessive scrolling)
   if (citations && citations.length > 0) {
     blocks.push({ type: "divider" });
     blocks.push({
@@ -871,7 +885,8 @@ export function createAgentResponseModal(
       },
     });
 
-    const displayCitations = citations.slice(0, 5);
+    // Limit citations in modal to prevent excessive scrolling
+    const displayCitations = citations.slice(0, 2);
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
       const rawTitle = citation.title || citation.name || "Untitled";
@@ -887,15 +902,15 @@ export function createAgentResponseModal(
 
       // Clean the title from any HTML tags and extra whitespace
       title = title.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-      if (title.length > 300) {
-        title = `${title.substring(0, 300)}...`;
+      if (title.length > 150) {
+        title = `${title.substring(0, 150)}...`;
       }
 
       let snippet = citation.snippet || citation.content || "";
       if (snippet) {
         snippet = snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
         snippet =
-          snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+          snippet.length > 80 ? `${snippet.substring(0, 80)}...` : snippet;
       }
 
       blocks.push({
@@ -907,18 +922,15 @@ export function createAgentResponseModal(
           }*\n${snippet || "_No preview available_"}`,
         },
       });
-
-      if (i < displayCitations.length - 1) {
-        blocks.push({ type: "divider" });
-      }
     }
 
-    if (citations.length > 5) {
+    // Show "See all sources" button if there are more than 2 sources
+    if (citations.length > 2) {
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `_${citations.length - 5} more sources available_`,
+          text: `_${citations.length - 2} more sources available_`,
         },
         accessory: {
           type: "button",
@@ -934,7 +946,7 @@ export function createAgentResponseModal(
     }
   }
 
-  // Add sharing actions
+  // Add sharing actions at the bottom (keep original order)
   blocks.push({ type: "divider" });
   const actions: any[] = [
     {
@@ -973,7 +985,7 @@ export function createAgentResponseModal(
     type: "modal",
     title: {
       type: "plain_text",
-      text: `/${agentName} Response`,
+      text: "Agent Response",
       emoji: true,
     },
     close: {
@@ -1000,28 +1012,32 @@ export function createSharedAgentResponseBlocks(
   query: string,
   response: string,
   citations: any[] = []
-): Block[] {
-  // Clean up and format the main response body for Slack mrkdwngit
+): any[] {
+  // Clean up and format the main response body for Slack markdown
   const displayResponse = response
+    .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
     .replace(/\[\d+\]/g, "") // Remove citation numbers
     .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
+    .replace(/^#{1,}\s*(.+)$/gm, "*$1*") // Convert # headings to *bold* format
     .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
+    .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
+    .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
+    .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
     .trim();
 
   const blocks: Block[] = [
     {
-      type: "header",
+      type: "section",
       text: {
-        type: "plain_text",
-        text: `🤖 Response from /${agentName}`,
-        emoji: true,
+        type: "mrkdwn",
+        text: `*🤖 ${agentName} Response*`,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Your Query:*\n>${query}`,
+        text: `*Your Query:*\n> ${query}`,
       },
     },
     {
@@ -1031,7 +1047,7 @@ export function createSharedAgentResponseBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Response:*\n${
+        text: `${
           displayResponse.length > 2800
             ? displayResponse.substring(0, 2800) +
               "\n\n..._[Response truncated]_"
