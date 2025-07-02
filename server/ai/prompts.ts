@@ -849,9 +849,9 @@ export const SearchQueryToolContextPrompt = (
     **User Context:**  
     ${userContext}
     
-    **Analyses of User Query:**
-    Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
-      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+    **Analysis of User Query:**
+    Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if:
+      a) It contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
@@ -865,19 +865,19 @@ export const SearchQueryToolContextPrompt = (
     **Smart Tool Usage Strategy:**
     
     **Discovery Before Specifics:**
-    - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first
-    - Use broad search or listing capabilities before attempting to fetch specific items
-    - If you need specific identifiers but lack discovery tools, explain the limitation rather than guessing
+    - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first.
+    - Use broad search or listing capabilities before attempting to fetch specific items.
+    - If you need specific identifiers but lack discovery tools, explain the limitation rather than guessing.
     
     **Progressive Information Gathering:**
-    - Start with broader searches/queries and narrow down as needed
-    - Use previous results to inform subsequent tool calls
-    - Avoid repetitive calls with identical parameters
+    - Start with broader searches/queries and narrow down as needed.
+    - Use previous results to inform subsequent tool calls.
+    - Avoid repetitive calls with identical parameters.
     
     **Error Recovery:**
-    - If a tool call fails, analyze why and adjust your approach
-    - For "not found" errors, consider whether you assumed identifiers that might not exist
-    - Use available search/discovery tools to find what actually exists
+    - If a tool call fails, analyze why and adjust your approach.
+    - For "not found" errors, consider whether you assumed identifiers that might not exist.
+    - Use available search/discovery tools to find what actually exists.
     
     ${
       toolContext.length
@@ -889,68 +889,50 @@ export const SearchQueryToolContextPrompt = (
     
     **Internal Tool Context:**
     1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.
-    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
+    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type/app*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
       Params: 
-      - item_type: (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'),
-      - app: (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-      - entity: (opt: 
+      - from (optional): Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").
+      - to (optional): Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").
+      - app (required): MUST BE EXACTLY ONE OF ${availableApps}.
+      - entity (optional): Specify the type of item being searched. Examples:
           - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
           - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
           - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
           - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-      - filter_query: (opt keywords for user-query), 
-      - limit: (opt), offset (opt), order_direction (opt: 'asc'/'desc'). 
-      - order_direction (opt: 'asc'/'desc'), 
-      - offset (opt: 0) use this if you need to goto next page to find better result.
+      - filter_query (optional): Keywords to refine the search based on the user's query.
+      - limit (optional): Maximum number of items to retrieve.
+      - offset (optional): Number of items to skip for pagination.
+      - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
     3. ${XyneTools.Search}: Search *content* across all sources. 
       Params: 
-        - filter_query (req keywords), 
-        - limit (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
-      Params: 
-        - filter_query (req keywords), 
-        - app (req: MUST BE EXACTLY ONE OF ${availableApps},), 
-        - limit (opt)
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. 
-    Params: 
-     - from (req: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-     - to (req: YYYY-MM-DDTHH:mm:ss.SSSZ).
-     - filter_query (opt keywords), 
-     - app (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-     - entity: (opt: 
-        - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-        - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-        - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-        - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-     - order_direction (opt: 'asc'/'desc'), 
-     - offset (opt: 0) use this if you need to goto next page to find better result.
-    6. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi", "Hello", "Hey", what is the time in Japan. select this tool with empty params. No parameters needed.
+        - filter_query (required): Keywords to refine the search based on the user's query.
+        - limit (optional): Maximum number of items to retrieve.
+        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
+        - offset (optional): Number of items to skip for pagination.
+    4. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
+       - "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.
+       
        
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
        Params: 
-        - filter_query (opt: keywords), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc')
-        - offset (opt: 0) use this if you need to goto next page to find better result.
+        - filter_query (optional): Keywords to refine the search.
+        - limit (optional): Maximum number of items to retrieve.
+        - offset (optional): Number of items to skip for pagination.
+        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
     2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
        Params: 
-        - channel_name (req: channel name), 
-        - filter_query (opt: keywords), 
-        - user_email (opt: user email), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-        - to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
-        - offset (opt: 0) use this if you need to goto next page to find better result.
+        - channel_name (required): Name of the Slack channel.
+        - filter_query (optional): Keywords to refine the search.
+        - user_email (optional): Email address of the user whose messages to retrieve.
+        - limit (optional): Maximum number of items to retrieve.
+        - offset (optional): Number of items to skip for pagination.
+        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
+        - from (optional): Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).
+        - to (optional): Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).
     3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
        Params: 
-        - user_email (req: Email address of the user whose Slack profile to retrieve).
+        - user_email (required): Email address of the user whose Slack profile to retrieve.
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -988,10 +970,10 @@ export const SearchQueryToolContextPrompt = (
     - Set "tool" and "arguments" to null
     
     ### If More Information Needed:
-    - Choose the most appropriate tool for the next step
-    - Provide well-formed arguments
-    - Consider using exclusion parameters to avoid duplicate results
-    - If you lack necessary discovery capabilities, acknowledge this limitation
+    - Choose the most appropriate tool for the next step.
+    - Provide well-formed arguments.
+    - Consider using exclusion parameters to avoid duplicate results.
+    - If you lack necessary discovery capabilities, acknowledge this limitation.
     
     **CRITICAL: Your response must ONLY be valid JSON. No explanations, reasoning, or text outside the JSON structure.**
     
@@ -1847,7 +1829,6 @@ export const synthesisContextPrompt = (
   synthesisContext: string,
 ) => {
   return `You are a helpful AI assistant.
-User Query: "${query}" \n
 User Context: ${userCtx}
 Current date for comparison: ${getDateForAI()}
 
