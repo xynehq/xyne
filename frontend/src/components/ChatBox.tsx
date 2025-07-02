@@ -747,7 +747,6 @@ export const ChatBox = ({
       setTotalCount(fetchedTotalCount)
 
       const results: SearchResult[] = data.results || []
-
       setGlobalResults((prev) => {
         if (currentSearchTerm !== searchTermForFetch) {
           return append ? prev : []
@@ -915,6 +914,7 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
+      threadId: (citation as any).threadId, // Add threadId if available
     }
 
     const input = inputRef.current
@@ -1015,12 +1015,14 @@ export const ChatBox = ({
       url: resultUrl,
       docId: result.docId,
       mailId: result.mailId,
+      threadId: result.threadId, // Add threadId from result
       app: result.app,
       entity: result.entity,
       type: "global",
       photoLink: result.photoLink,
       userMap: result.userMap, // Ensure userMap is passed
     }
+    
 
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
@@ -1221,6 +1223,7 @@ export const ChatBox = ({
     pills.forEach((pill) => {
       const mailId = pill.getAttribute("data-mail-id")
       const userMap = pill.getAttribute("user-map")
+      const threadId = pill.getAttribute("data-thread-id")
       const docId =
         pill.getAttribute("data-doc-id") ||
         pill.getAttribute("data-reference-id")
@@ -1245,6 +1248,7 @@ export const ChatBox = ({
       if (mailId) {
         pill.setAttribute("data-doc-id", mailId)
         pill.setAttribute("data-reference-id", mailId)
+        pill.setAttribute("data-thread-id", threadId || "")
       } else {
         console.warn(
           `No mailId found for pill with docId: ${docId}. Skipping replacement.`,

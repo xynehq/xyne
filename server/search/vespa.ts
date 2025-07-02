@@ -2372,6 +2372,25 @@ export const SearchVespaThreads = async (
   }
 }
 
+export const SearchEmailThreads = async (
+  threadIdsInput: string[],
+  email: string,
+): Promise<VespaSearchResponse> => {
+  const validThreadIds = threadIdsInput.filter(
+    (id) => typeof id === "string" && id.length > 0,
+  ) 
+  try {
+    return vespa.getEmailsByThreadIds(validThreadIds, email)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching emails by threadIds: ${validThreadIds.join(", ")}`,
+    )
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
+  }
+}
+
 export interface GetThreadItemsParams {
   entity?: Entity | null
   timestampRange?: { from: any; to: any } | null
