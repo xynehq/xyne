@@ -164,7 +164,7 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
-import { mapGithubToolResponse } from "@/api/chat/mapper"
+import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -815,6 +815,19 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
+            // filter out conversational tool if it is not the first iteration
+            const xyneToolNames =
+              iterationCount !== 1
+                ? Object.keys(internalTools).filter(
+                    (v) => v !== XyneTools.Conversational,
+                  )
+                : Object.keys(internalTools)
+            const xyneTools = Object.fromEntries(
+              xyneToolNames.map((toolName) => [
+                toolName,
+                internalTools[toolName],
+              ]),
+            )
             const toolSelection = await generateToolSelectionOutput(
               message,
               ctx,
@@ -829,6 +842,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               },
               agentPromptForLLM,
               loopWarningPrompt,
+              { internal: xyneTools },
             )
 
             if (

@@ -1822,13 +1822,13 @@ User Context: ${userCtx}
 Current date for comparison: ${getDateForAI()}
 
 Instruction:
-- Analyze the provided "Context Fragments" to answer the "User Query".
+- Analyze the provided "Context Fragments" to answer the current user-query.
 - The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that.
 - Your response MUST be a JSON object with only one keys: "synthesisState" (string).
 - The "synthesisState" key must be one of the following values:
     - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information (80% or more) to answer the "User Query". Even if some details are missing, as long as the core question can be addressed, use this state.
-    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the "User Query".
-    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the "User Query".
+    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the current user-query.
+    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the current user-query.
 
 - Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
 
