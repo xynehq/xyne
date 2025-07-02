@@ -43,6 +43,11 @@ import {
 import type { Citation } from "@/api/chat/types"
 const { maxValidLinks } = config
 
+function slackTs(ts: string | number) {
+  if (typeof ts === "number") ts = ts.toString()
+  return ts.replace(".", "").padEnd(16, "0")
+}
+
 export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
@@ -90,12 +95,18 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       entity: (fields as VespaMailAttachment).entity,
     }
   } else if (result.fields.sddocname === chatMessageSchema) {
+    let slackUrl = ""
+    if (result.fields.threadId) {
+      // Thread message format
+      slackUrl = `https://${result.fields.domain}.slack.com/archives/${result.fields.channelId}/p${slackTs(result.fields.createdAt)}?thread_ts=${result.fields.threadId}&cid=${result.fields.channelId}`
+    } else {
+      // Normal message format
+      slackUrl = `https://${result.fields.domain}.slack.com/archives/${result.fields.channelId}/p${slackTs(result.fields.createdAt)}`
+    }
     return {
       docId: (fields as VespaChatMessage).docId,
       title: (fields as VespaChatMessage).text,
-      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${
-        (fields as VespaChatMessage).channelId
-      }/p${(fields as VespaChatMessage).updatedAt}`,
+      url: slackUrl,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }
