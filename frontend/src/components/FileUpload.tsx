@@ -89,7 +89,7 @@ export default function FileUpload({
     let size = 0
 
     // Add datasource name and flag overhead
-    size += new Blob([datasourceName]).size + 100
+    size += new TextEncoder().encode(datasourceName).length + 100
     size += 20
 
     // Add file sizes with FormData overhead
@@ -164,7 +164,9 @@ export default function FileUpload({
 
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.message || `Batch ${batchIndex + 1} upload failed`)
+      throw new Error(
+        error.message || `Batch upload failed with status: ${response.status}`,
+      )
     }
 
     return response.json()
