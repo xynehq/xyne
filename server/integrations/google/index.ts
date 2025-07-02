@@ -227,6 +227,7 @@ const initializeGmailWorker = () => {
         loggerWithChild({ email: result.email }).info(
           `Sending Progress for ingested mails`,
         )
+        // Sending gmail progress for script ingestion
         sendProgressToServer({
           userEmail: result.email,
           messageCount: result.stats.messageCount,
