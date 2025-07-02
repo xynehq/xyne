@@ -49,6 +49,7 @@ import {
   AdminDeleteUserData,
   IngestMoreChannelApi,
   StartSlackIngestionApi,
+  GetProviders,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -62,6 +63,7 @@ import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import { createUser, getUserByEmail } from "@/db/user"
+import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
@@ -69,9 +71,15 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo } from "@/api/auth"
+import { GetUserWorkspaceInfo, GenerateApiKey } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
-import { ListDataSourcesApi, ListDataSourceFilesApi } from "@/api/dataSource"
+import {
+  ListDataSourcesApi,
+  ListDataSourceFilesApi,
+  DeleteDocumentApi,
+  deleteDocumentSchema,
+  GetAgentsForDataSourceApi,
+} from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -84,7 +92,19 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat/chat"
-import { UserRole } from "@/shared/types"
+import {
+  CreateSharedChatApi,
+  GetSharedChatApi,
+  ListSharedChatsApi,
+  DeleteSharedChatApi,
+  CheckSharedChatApi,
+  createSharedChatSchema,
+  getSharedChatSchema,
+  listSharedChatsSchema,
+  deleteSharedChatSchema,
+  checkSharedChatSchema,
+} from "@/api/chat/sharedChat"
+import { UserRole, Apps } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -105,16 +125,38 @@ import {
   listAgentsSchema,
   updateAgentSchema,
 } from "@/api/agent"
+import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+
 import slackApp from "@/integrations/slack/client"
+
+// Import Vespa proxy handlers
+import {
+  validateApiKey,
+  vespaSearchProxy,
+  vespaAutocompleteProxy,
+  vespaGroupSearchProxy,
+  vespaGetItemsProxy,
+  vespaChatContainerByChannelProxy,
+  vespaChatUserByEmailProxy,
+} from "@/routes/vespa-proxy"
+import { updateMetricsFromThread } from "@/metrics/utils"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
   dataSourceName: z.string().min(1),
   fileName: z.string().min(1),
+})
+
+// Add schema for API key generation
+const generateApiKeySchema = z.object({
+  expirationDays: z.coerce
+    .number()
+    .min(1 / 1440)
+    .max(30), // Allow fractional days, minimum 1 minute (1/1440 days)
 })
 
 export type Variables = JwtVariables
@@ -205,6 +247,61 @@ const LogOut = async (c: Context) => {
   return c.json({ ok: true })
 }
 
+// Update Metrics From Script
+const handleUpdatedMetrics = async (c: Context) => {
+  Logger.info(`Started Adding Metrics`)
+
+  const authHeader = c.req.raw.headers.get("authorization") ?? ""
+  const secret = authHeader.replace(/^Bearer\s+/i, "").trim()
+
+  if (secret !== process.env.METRICS_SECRET) {
+    Logger.warn("Unauthorized metrics update attempt")
+    return c.text("Unauthorized", 401)
+  }
+
+  const body = await c.req.json()
+  const {
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount,
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles,
+    blockedPdfs,
+  } = body
+  await updateMetricsFromThread({
+    email,
+    messageCount,
+    attachmentCount,
+    failedMessages,
+    failedAttachments,
+    totalMails,
+    skippedMail,
+    eventsCount,
+    contactsCount,
+    pdfCount,
+    docCount,
+    sheetsCount,
+    slidesCount,
+    fileCount,
+    totalDriveFiles,
+    blockedPdfs,
+  })
+}
+const updateApp = new Hono()
+
+updateApp.post("/update-metrics", handleUpdatedMetrics)
+app.route("/", updateApp)
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .use("*", AuthMiddleware)
@@ -226,6 +323,32 @@ export const AppRoutes = app
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+  // Shared chat routes
+  .post(
+    "/chat/share/create",
+    zValidator("json", createSharedChatSchema),
+    CreateSharedChatApi,
+  )
+  .get(
+    "/chat/share",
+    zValidator("query", getSharedChatSchema),
+    GetSharedChatApi,
+  )
+  .get(
+    "/chat/shares",
+    zValidator("query", listSharedChatsSchema),
+    ListSharedChatsApi,
+  )
+  .get(
+    "/chat/share/check",
+    zValidator("query", checkSharedChatSchema),
+    CheckSharedChatApi,
+  )
+  .delete(
+    "/chat/share/delete",
+    zValidator("json", deleteSharedChatSchema),
+    DeleteSharedChatApi,
+  )
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
@@ -242,8 +365,14 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
+  .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .post(
+    "/search/document/delete",
+    zValidator("json", deleteDocumentSchema),
+    DeleteDocumentApi,
+  )
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
@@ -255,6 +384,7 @@ export const AppRoutes = app
   .get("/tuning/ws/:jobId", TuningWsRoute)
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
@@ -265,6 +395,11 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
+  .get(
+    "/auth/generate-api-key",
+    zValidator("query", generateApiKeySchema),
+    GenerateApiKey,
+  )
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -343,6 +478,21 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
+  .get("/oauth/global-slack-provider", GetProviders)
+
+// Vespa Proxy Routes (for production server proxying)
+app
+  .basePath("/api/vespa")
+  .post("/search", validateApiKey, vespaSearchProxy)
+  .post("/autocomplete", validateApiKey, vespaAutocompleteProxy)
+  .post("/group-search", validateApiKey, vespaGroupSearchProxy)
+  .post("/get-items", validateApiKey, vespaGetItemsProxy)
+  .post(
+    "/chat-container-by-channel",
+    validateApiKey,
+    vespaChatContainerByChannelProxy,
+  )
+  .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -507,9 +657,16 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
+app.get("/chat", AuthRedirect, async (c, next) => {
+  if (c.req.query('shareToken')) {
+    const staticHandler = serveStatic({ path: "./dist/index.html" })
+    return await staticHandler(c, next)
+  }
+  return c.redirect("/")
+})
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
@@ -532,6 +689,37 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
+  "/integrations/fileupload",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+// Catch-all for any other integration routes
+app.get(
+  "/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
   "/admin/integrations/google",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
@@ -541,9 +729,21 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
+app.get(
+  "/admin/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
+app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+
 export const init = async () => {
   await initQueue()
   if (process.env.ENABLE_SLACK_SOCKET_MODE?.toLowerCase() === "true") {

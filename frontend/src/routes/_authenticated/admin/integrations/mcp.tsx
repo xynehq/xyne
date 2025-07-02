@@ -455,7 +455,7 @@ const MCPClientsList = ({
     if (
       client.type !== ConnectorType.MCP &&
       client.app !== Apps.MCP &&
-      client.app !== Apps.GITHUB_MCP
+      client.app !== Apps.Github
     ) {
       // Ensure it's an MCP connector
       toast({
@@ -638,7 +638,7 @@ const MCPClientsList = ({
               <TableCell>
                 {(client.type === ConnectorType.MCP ||
                   client.app === Apps.MCP ||
-                  client.app === Apps.GITHUB_MCP) && (
+                  client.app === Apps.Github) && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -863,7 +863,7 @@ export const MCPClient = ({
 
   // Filter MCP client connectors (both API Key and Stdio) // TODO: add more generic way to filter
   const mcpConnectors =
-    data?.filter((v) => v.app === Apps.MCP || v.app == Apps.GITHUB_MCP) || []
+    data?.filter((v) => v.app === Apps.MCP || v.app == Apps.Github) || []
 
   const handleDeleteClient = async (connectorId: string) => {
     await deleteMCPClient(connectorId)

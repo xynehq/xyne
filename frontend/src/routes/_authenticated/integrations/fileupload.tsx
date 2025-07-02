@@ -24,8 +24,10 @@ function FileUploadIntegration() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
 
-  const [dataSources, setDataSources] = useState<string[]>([])
-  const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
+  const [dataSources, setDataSources] = useState<ApiDataSource[]>([])
+  const [activeDataSource, setActiveDataSource] = useState<ApiDataSource | null>(
+    null,
+  )
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -34,61 +36,49 @@ function FileUploadIntegration() {
     setRefreshKey((prevKey) => prevKey + 1)
   }
 
-  useEffect(() => {
-    const fetchApiDataSources = async () => {
-      try {
-        const response = await api.datasources.$get()
-        if (response.ok) {
-          const apiData = (await response.json()) as ApiDataSource[]
-          const namesArray = apiData.map((ds) => ds.name)
-          setDataSources(namesArray)
-          if (namesArray.length === 0) {
-            setShowNewDataSource(true)
-          }
-        } else {
-          const errorText = await response.text()
-          console.error("Failed to fetch data sources from API:", errorText)
-        }
-      } catch (error) {
-        console.error("Error fetching data sources:", error)
-      }
-    }
-
-    fetchApiDataSources()
-  }, [])
-
-  const handleDatasourceCreated = async (name: string) => {
-    if (!dataSources.includes(name)) {
-      setDataSources((prev) => [...prev, name])
-    }
-    setActiveDataSource(name)
-    setShowNewDataSource(false)
-
+  const fetchApiDataSources = async () => {
     try {
       const response = await api.datasources.$get()
       if (response.ok) {
         const apiData = (await response.json()) as ApiDataSource[]
-        const namesArray = apiData.map((ds) => ds.name)
-        setDataSources(namesArray)
-        if (!namesArray.includes(name)) {
-          setActiveDataSource(namesArray.length > 0 ? namesArray[0] : null)
-          setShowNewDataSource(namesArray.length === 0)
+        setDataSources(apiData)
+        if (apiData.length === 0) {
+          setShowNewDataSource(true)
         }
       } else {
         const errorText = await response.text()
-        console.error(
-          "Failed to re-fetch data sources after creation:",
-          errorText,
-        )
+        console.error("Failed to fetch data sources from API:", errorText)
       }
     } catch (error) {
-      console.error("Error re-fetching data sources after creation:", error)
+      console.error("Error fetching data sources:", error)
     }
   }
 
-  const handleSelectDataSource = (name: string) => {
-    setActiveDataSource(name)
+  useEffect(() => {
+    fetchApiDataSources()
+  }, [])
+
+  const handleDatasourceCreated = async (name: string) => {
+    await fetchApiDataSources()
+    const newDataSource = dataSources.find((ds) => ds.name === name)
+    if (newDataSource) {
+      setActiveDataSource(newDataSource)
+    }
     setShowNewDataSource(false)
+  }
+
+  const handleDataSourceDeleted = () => {
+    fetchApiDataSources()
+    setActiveDataSource(null)
+    setShowNewDataSource(true)
+  }
+
+  const handleSelectDataSource = (name: string) => {
+    const selected = dataSources.find((ds) => ds.name === name)
+    if (selected) {
+      setActiveDataSource(selected)
+      setShowNewDataSource(false)
+    }
   }
 
   const handleAddNewDataSource = () => {
@@ -106,24 +96,28 @@ function FileUploadIntegration() {
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
       <div className="flex w-full h-full overflow-hidden">
         <DataSourceSidebar
-          dataSources={dataSources}
-          activeDataSource={activeDataSource}
+          dataSources={dataSources.map((ds) => ({
+            name: ds.name,
+            docId: ds.docId,
+          }))}
+          activeDataSource={activeDataSource?.name || null}
           onSelectDataSource={handleSelectDataSource}
           onAddNewDataSource={handleAddNewDataSource}
+          onDataSourceDeleted={handleDataSourceDeleted}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="w-full max-w-4xl mx-auto p-6 pt-8">
             {showNewDataSource ? (
               <FileUpload
                 onDatasourceCreated={handleDatasourceCreated}
-                existingDataSourceNames={dataSources}
+                existingDataSourceNames={dataSources.map((ds) => ds.name)}
               />
             ) : activeDataSource ? (
               <div>
                 <div className="mb-6 text-center">
                   <div className="flex items-center justify-center space-x-2">
                     <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">
-                      {activeDataSource}
+                      {activeDataSource.name}
                     </h2>
                   </div>
                   <p className="text-gray-600 dark:text-gray-300 mt-1">
@@ -160,7 +154,7 @@ function FileUploadIntegration() {
                   {isUploadMoreOpen && (
                     <div id="upload-more-content">
                       <FileUpload
-                        initialDatasourceName={activeDataSource}
+                        initialDatasourceName={activeDataSource.name}
                         onDatasourceCreated={handleDatasourceCreated}
                         onUploadCompleted={refreshFilesForActiveDataSource}
                       />
@@ -170,10 +164,10 @@ function FileUploadIntegration() {
 
                 <div className="mt-8 mb-8">
                   <h3 className="text-lg font-medium mb-4 dark:text-gray-200">
-                    Files in {activeDataSource}
+                    Files in {activeDataSource.name}
                   </h3>
                   <FileAccordion
-                    activeDataSourceName={activeDataSource}
+                    activeDataSourceName={activeDataSource.name}
                     refreshKey={refreshKey}
                   />
                 </div>

@@ -117,12 +117,45 @@ export const addStdioMCPConnectorSchema = z.object({
 
 export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
 
-export const createOAuthProvider = z.object({
-  clientId: z.string(),
-  clientSecret: z.string(),
-  scopes: z.array(z.string()),
-  app: z.nativeEnum(Apps),
-})
+export const createOAuthProvider = z
+  .object({
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+    scopes: z.array(z.string()).optional(),
+    app: z.nativeEnum(Apps),
+    isUsingGlobalCred: z
+      .preprocess((val) => val === "true", z.boolean())
+      .default(false),
+    isGlobalProvider: z
+      .preprocess((val) => val === "true", z.boolean())
+      .default(false)
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.isUsingGlobalCred) {
+      if (!data.clientId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "clientId is required when isUsingGlobalCred is false",
+          path: ["clientId"],
+        })
+      }
+      if (!data.clientSecret) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "clientSecret is required when isUsingGlobalCred is false",
+          path: ["clientSecret"],
+        })
+      }
+      if (!data.scopes) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "scopes is required when isUsingGlobalCred is false",
+          path: ["scopes"],
+        })
+      }
+    }
+  })
 
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
@@ -176,6 +209,7 @@ export const deleteUserDataSchema = z.object({
         .optional(),
       servicesToClear: z.array(z.string()).optional(), // e.g., ["drive", "gmail", "calendar"]
       deleteOnlyIfSoleOwnerInPermissions: z.boolean().optional(),
+      deleteSyncJob: z.boolean().optional().default(false),
     })
     .optional(),
 })

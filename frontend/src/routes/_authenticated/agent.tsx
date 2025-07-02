@@ -29,16 +29,24 @@ import {
 } from "shared/types"
 import {
   ChevronDown,
+  ChevronUp,
   X as LucideX,
   Check,
   RotateCcw,
+  RefreshCw,
   PlusCircle,
+  Plus,
   Copy,
   ArrowLeft,
   Edit3,
   Trash2,
   Search,
   UserPlus,
+  Star,
+  Users,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -47,10 +55,15 @@ import { api } from "@/api"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import RetryAsset from "@/assets/retry.svg"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardTitle } from "@/components/ui/card" // Added CardTitle and CardDescription
 import { ConfirmModal } from "@/components/ui/confirmModal"
 
 type CurrentResp = {
@@ -172,7 +185,13 @@ function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
-  const [agents, setAgents] = useState<SelectPublicAgent[]>([])
+  const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
+  const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
+    SelectPublicAgent[]
+  >([])
+  const [sharedToMeAgentsList, setSharedToMeAgentsList] = useState<
+    SelectPublicAgent[]
+  >([])
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(
     null,
   )
@@ -188,6 +207,12 @@ function AgentComponent() {
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
   const [isPublic, setIsPublic] = useState(false)
+
+  // Prompt generation states
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
+  const [shouldHighlightPrompt, setShouldHighlightPrompt] = useState(false)
+  const promptGenerationEventSourceRef = useRef<EventSource | null>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
@@ -241,6 +266,46 @@ function AgentComponent() {
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
+  const [listSearchQuery, setListSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState<
+    "all" | "shared-to-me" | "made-by-me"
+  >("all")
+  const [showAllFavorites, setShowAllFavorites] = useState(false)
+  const [isLoadingAgents, setIsLoadingAgents] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const agentsPerPage = 10
+
+  const FAVORITE_AGENTS_STORAGE_KEY = "favoriteAgentsList"
+
+  const [favoriteAgents, setFavoriteAgents] = useState<string[]>(() => {
+    const storedFavorites = localStorage.getItem(FAVORITE_AGENTS_STORAGE_KEY)
+    return storedFavorites ? JSON.parse(storedFavorites) : []
+  })
+
+  useEffect(() => {
+    localStorage.setItem(
+      FAVORITE_AGENTS_STORAGE_KEY,
+      JSON.stringify(favoriteAgents),
+    )
+  }, [favoriteAgents])
+
+  const handleTabChange = (tab: "all" | "shared-to-me" | "made-by-me") => {
+    setActiveTab(tab)
+    setCurrentPage(1)
+  }
+
+  const handleListSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setListSearchQuery(e.target.value)
+    setCurrentPage(1)
+  }
+
+  const toggleFavorite = (agentExternalId: string) => {
+    setFavoriteAgents((prevFavorites) =>
+      prevFavorites.includes(agentExternalId)
+        ? prevFavorites.filter((id) => id !== agentExternalId)
+        : [...prevFavorites, agentExternalId],
+    )
+  }
 
   useEffect(() => {
     setSelectedSearchIndex(-1)
@@ -346,34 +411,60 @@ function AgentComponent() {
     fetchInitialAgentForChat()
   }, [agentId, showToast])
 
-  const fetchAgents = async () => {
+  // Cleanup EventSource on component unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      cleanupPromptGenerationEventSource()
+    }
+  }, [])
+
+  type AgentFilter = "all" | "madeByMe" | "sharedToMe"
+
+  const fetchAgents = async (filter: AgentFilter = "all") => {
+    setIsLoadingAgents(true)
     try {
-      const response = await api.agents.$get()
+      const response = await api.agents.$get({ query: { filter } })
       if (response.ok) {
-        const data = await response.json()
-        setAgents(data as SelectPublicAgent[])
+        const data = (await response.json()) as SelectPublicAgent[]
+        if (filter === "all") {
+          setAllAgentsList(data)
+        } else if (filter === "madeByMe") {
+          setMadeByMeAgentsList(data)
+        } else if (filter === "sharedToMe") {
+          setSharedToMeAgentsList(data)
+        }
       } else {
         showToast({
           title: "Error",
-          description: "Failed to fetch agents.",
+          description: `Failed to fetch agents (${filter}).`,
           variant: "destructive",
         })
       }
     } catch (error) {
       showToast({
         title: "Error",
-        description: "An error occurred while fetching agents.",
+        description: `An error occurred while fetching agents (${filter}).`,
         variant: "destructive",
       })
-      console.error("Fetch agents error:", error)
+      console.error(`Fetch agents error (${filter}):`, error)
+    } finally {
+      setIsLoadingAgents(false)
     }
+  }
+
+  const fetchAllAgentData = async () => {
+    await Promise.all([
+      fetchAgents("all"),
+      fetchAgents("madeByMe"),
+      fetchAgents("sharedToMe"),
+    ])
   }
 
   useEffect(() => {
     if (viewMode === "list") {
-      fetchAgents()
+      fetchAllAgentData()
     }
-  }, [viewMode, showToast])
+  }, [viewMode])
 
   useEffect(() => {
     const fetchDataSourcesAsync = async () => {
@@ -443,6 +534,153 @@ function AgentComponent() {
     setSelectedUsers((prev) => prev.filter((user) => user.id !== userId))
   }
 
+  // Helper function to properly cleanup EventSource
+  const cleanupPromptGenerationEventSource = () => {
+    if (promptGenerationEventSourceRef.current) {
+      promptGenerationEventSourceRef.current.close()
+      promptGenerationEventSourceRef.current = null
+    }
+  }
+
+  const generatePromptFromRequirements = async (requirements: string) => {
+    if (!requirements.trim()) {
+      showToast({
+        title: "Error",
+        description: "Please enter requirements for prompt generation.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Prevent multiple simultaneous connections
+    if (promptGenerationEventSourceRef.current) {
+      cleanupPromptGenerationEventSource()
+    }
+
+    setIsGeneratingPrompt(true)
+    let generatedPrompt = ""
+
+    try {
+      // Create the URL with query parameters for EventSource
+      const url = new URL(
+        "/api/v1/agent/generate-prompt",
+        window.location.origin,
+      )
+      url.searchParams.set("requirements", requirements)
+
+      // Create EventSource connection following the existing pattern
+      promptGenerationEventSourceRef.current = new EventSource(url.toString(), {
+        withCredentials: true,
+      })
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.ResponseUpdate,
+        (event) => {
+          generatedPrompt += event.data
+          setAgentPrompt(generatedPrompt)
+
+          // Auto-scroll the textarea to bottom as content is generated
+          setTimeout(() => {
+            if (promptTextareaRef.current) {
+              promptTextareaRef.current.scrollTop =
+                promptTextareaRef.current.scrollHeight
+            }
+          }, 0)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.End,
+        (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            setAgentPrompt(data.fullPrompt || generatedPrompt)
+            showToast({
+              title: "Success",
+              description: "Prompt generated successfully!",
+            })
+          } catch (e) {
+            console.warn("Could not parse end event data:", e)
+            showToast({
+              title: "Success",
+              description: "Prompt generated successfully!",
+            })
+          }
+          cleanupPromptGenerationEventSource()
+          setIsGeneratingPrompt(false)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.addEventListener(
+        ChatSSEvents.Error,
+        (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            showToast({
+              title: "Error",
+              description: data.error || "Failed to generate prompt",
+              variant: "destructive",
+            })
+          } catch (e) {
+            showToast({
+              title: "Error",
+              description: "Failed to generate prompt",
+              variant: "destructive",
+            })
+          }
+          cleanupPromptGenerationEventSource()
+          setIsGeneratingPrompt(false)
+        },
+      )
+
+      promptGenerationEventSourceRef.current.onerror = (error) => {
+        console.error("EventSource error:", error)
+        showToast({
+          title: "Error",
+          description: "Connection error during prompt generation",
+          variant: "destructive",
+        })
+        cleanupPromptGenerationEventSource()
+        setIsGeneratingPrompt(false)
+      }
+    } catch (error) {
+      console.error("Generate prompt error:", error)
+      showToast({
+        title: "Error",
+        description: "Failed to generate prompt",
+        variant: "destructive",
+      })
+      setIsGeneratingPrompt(false)
+    }
+  }
+
+  const handleGeneratePrompt = () => {
+    if (agentPrompt.trim()) {
+      // If there's already a prompt, use it as requirements
+      generatePromptFromRequirements(agentPrompt)
+    } else {
+      // If no prompt, highlight the prompt box and focus it
+      setShouldHighlightPrompt(true)
+
+      // Focus the textarea
+      if (promptTextareaRef.current) {
+        promptTextareaRef.current.focus()
+      }
+
+      // Remove highlight after a few seconds
+      setTimeout(() => {
+        setShouldHighlightPrompt(false)
+      }, 3000)
+
+      showToast({
+        title: "Add some requirements first",
+        description:
+          "Please enter some text describing what you want your agent to do, then click generate.",
+        variant: "default",
+      })
+    }
+  }
+
   const resetForm = () => {
     setAgentName("")
     setAgentDescription("")
@@ -454,6 +692,9 @@ function AgentComponent() {
     setSelectedUsers([])
     setSearchQuery("")
     setShowSearchResults(false)
+    setIsGeneratingPrompt(false)
+    setShouldHighlightPrompt(false)
+    cleanupPromptGenerationEventSource()
   }
 
   const handleCreateNewAgent = () => {
@@ -542,9 +783,7 @@ function AgentComponent() {
             title: "Success",
             description: "Agent deleted successfully.",
           })
-          setAgents((prevAgents) =>
-            prevAgents.filter((agent) => agent.externalId !== agentExternalId),
-          )
+          fetchAllAgentData()
         } else {
           let errorDetail = response.statusText
           try {
@@ -709,9 +948,17 @@ function AgentComponent() {
     if (initialChatAgent) {
       chatConfigAgent = initialChatAgent
     } else if (selectedChatAgentExternalId) {
-      chatConfigAgent = agents.find(
-        (agent) => agent.externalId === selectedChatAgentExternalId,
-      )
+      // Try to find in any list, though ideally it should be in `allAgentsList` if selectable
+      chatConfigAgent =
+        allAgentsList.find(
+          (agent) => agent.externalId === selectedChatAgentExternalId,
+        ) ||
+        madeByMeAgentsList.find(
+          (agent) => agent.externalId === selectedChatAgentExternalId,
+        ) ||
+        sharedToMeAgentsList.find(
+          (agent) => agent.externalId === selectedChatAgentExternalId,
+        )
     }
 
     let finalAgentPrompt = agentPrompt
@@ -996,100 +1243,260 @@ function AgentComponent() {
           className={`p-4 md:py-4 md:px-8 bg-white dark:bg-[#1E1E1E] overflow-y-auto h-full relative ${viewMode === "list" ? "w-full" : "w-full md:w-[50%] border-r border-gray-200 dark:border-gray-700"}`}
         >
           {viewMode === "list" ? (
-            <>
-              <div className="flex justify-between items-center mb-8 w-full max-w-2xl mx-auto">
-                <h1 className="text-2xl font-semibold text-gray-700 dark:text-gray-100">
-                  My Agents
-                </h1>
-                <Button
-                  onClick={handleCreateNewAgent}
-                  className="bg-slate-800 hover:bg-slate-700 text-white"
-                >
-                  <PlusCircle size={18} className="mr-2" /> Create Agent
-                </Button>
-              </div>
-              <div className="w-full max-w-3xl mx-auto">
-                {agents.length === 0 ? (
-                  <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-                    <p className="text-lg mb-2">No agents created yet.</p>
-                    <p>Click "Create Agent" to get started.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {agents.map((agent) => (
-                      <div
-                        key={agent.externalId}
-                        className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow flex flex-col justify-between"
-                      >
-                        <div
-                          className="cursor-pointer flex-grow"
-                          onClick={() =>
-                            navigate({
-                              to: "/",
-                              search: { agentId: agent.externalId },
-                            })
-                          }
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <h2
-                              className="text-xl font-semibold text-gray-800 dark:text-gray-100 truncate"
-                              title={agent.name}
-                            >
-                              {agent.name}
-                            </h2>
-                            {/* Edit and Delete buttons are outside the new clickable div to maintain their functionality */}
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                            Model:{" "}
-                            <span className="font-medium">{agent.model}</span>
-                          </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300 h-20 overflow-hidden text-ellipsis mb-4">
-                            {agent.description || (
-                              <span className="italic text-gray-400 dark:text-gray-500">
-                                No description provided.
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex justify-end items-center mt-auto pt-4 border-t border-gray-100 dark:border-slate-700">
-                          <div className="flex space-x-2 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEditAgent(agent)
-                              }}
-                              className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                            >
-                              <Edit3 size={16} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDeleteAgent(agent.externalId)
-                              }}
-                              className="h-8 w-8 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30"
-                            >
-                              <Trash2 size={16} />
-                            </Button>
-                          </div>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 text-right ml-auto">
-                            Last updated:{" "}
-                            {new Date(agent.updatedAt).toLocaleDateString()}
-                          </p>
-                        </div>
+            <div className="mt-6">
+              <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
+                <div className="flex flex-col space-y-6">
+                  <div className="flex justify-between items-center">
+                    <h1 className="text-4xl font-bold tracking-wider doto-heading text-gray-700 dark:text-gray-100">
+                      AGENTS
+                    </h1>
+                    <div className="flex items-center gap-4 ">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                        <input
+                          type="text"
+                          placeholder="Search agents.."
+                          value={listSearchQuery}
+                          onChange={handleListSearchChange}
+                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 dark:bg-slate-700 dark:text-gray-100"
+                        />
                       </div>
-                    ))}
+                      <Button
+                        onClick={handleCreateNewAgent}
+                        className="bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                      >
+                        <Plus size={18} /> CREATE
+                      </Button>
+                    </div>
                   </div>
-                )}
+
+                  {(() => {
+                    const favoriteAgentObjects = allAgentsList.filter((agent) =>
+                      favoriteAgents.includes(agent.externalId),
+                    )
+                    if (favoriteAgentObjects.length === 0) return null
+
+                    const displayedFavoriteAgents = showAllFavorites
+                      ? favoriteAgentObjects
+                      : favoriteAgentObjects.slice(0, 6)
+
+                    return (
+                      <div className="mb-6 pb-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                          {displayedFavoriteAgents.map((agent) => (
+                            <AgentCard
+                              key={agent.externalId}
+                              agent={agent}
+                              isFavorite={true}
+                              onToggleFavorite={toggleFavorite}
+                              onClick={() =>
+                                navigate({
+                                  to: "/",
+                                  search: { agentId: agent.externalId },
+                                })
+                              }
+                            />
+                          ))}
+                        </div>
+                        {favoriteAgentObjects.length > 6 && (
+                          <div className="flex justify-end mt-4">
+                            <Button
+                              variant="ghost"
+                              onClick={() =>
+                                setShowAllFavorites(!showAllFavorites)
+                              }
+                              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-3 py-1 h-auto"
+                            >
+                              {showAllFavorites ? "Show Less" : "Show More"}
+                              {showAllFavorites ? (
+                                <ChevronUp size={16} className="ml-2" />
+                              ) : (
+                                <ChevronDown size={16} className="ml-2" />
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {(allAgentsList.length > 0 ||
+                    madeByMeAgentsList.length > 0 ||
+                    sharedToMeAgentsList.length > 0) && ( // Only show tabs if there are agents in any list
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex space-x-2">
+                        <TabButton
+                          active={activeTab === "all"}
+                          onClick={() => handleTabChange("all")}
+                          icon="asterisk"
+                          label="ALL"
+                        />
+                        <TabButton
+                          active={activeTab === "shared-to-me"}
+                          onClick={() => handleTabChange("shared-to-me")}
+                          icon="users"
+                          label="SHARED-WITH-ME"
+                        />
+                        <TabButton
+                          active={activeTab === "made-by-me"}
+                          onClick={() => handleTabChange("made-by-me")}
+                          icon="user"
+                          label="MADE-BY-ME"
+                        />
+                      </div>
+                      <div>
+                        <Button
+                          onClick={fetchAllAgentData}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                          disabled={isLoadingAgents}
+                        >
+                          <RefreshCw
+                            size={14}
+                            className={`${isLoadingAgents ? "animate-spin" : ""}`}
+                          />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(() => {
+                    let currentListToDisplay: SelectPublicAgent[] = []
+                    if (activeTab === "all") {
+                      currentListToDisplay = allAgentsList
+                    } else if (activeTab === "made-by-me") {
+                      currentListToDisplay = madeByMeAgentsList
+                    } else if (activeTab === "shared-to-me") {
+                      currentListToDisplay = sharedToMeAgentsList
+                    }
+
+                    const filteredList = currentListToDisplay.filter(
+                      (agent) =>
+                        agent.name
+                          .toLowerCase()
+                          .includes(listSearchQuery.toLowerCase()) ||
+                        (agent.description || "")
+                          .toLowerCase()
+                          .includes(listSearchQuery.toLowerCase()),
+                    )
+
+                    const totalPages = Math.ceil(
+                      filteredList.length / agentsPerPage,
+                    )
+                    const paginatedList = filteredList.slice(
+                      (currentPage - 1) * agentsPerPage,
+                      currentPage * agentsPerPage,
+                    )
+
+                    if (
+                      isLoadingAgents &&
+                      filteredList.length === 0 &&
+                      !listSearchQuery
+                    ) {
+                      return (
+                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">
+                          Loading agents...
+                        </div>
+                      )
+                    }
+
+                    if (filteredList.length === 0 && listSearchQuery) {
+                      return (
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                          No agents found for your search.
+                        </div>
+                      )
+                    }
+
+                    if (currentListToDisplay.length === 0 && !listSearchQuery) {
+                      return (
+                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">
+                          <p className="text-lg mb-2">
+                            No agents in this category yet.
+                          </p>
+                          {activeTab === "all" && (
+                            <p>Click "CREATE" to get started.</p>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <>
+                        <div className="space-y-0">
+                          {paginatedList.map((agent) => (
+                            <AgentListItem
+                              key={agent.externalId}
+                              agent={agent}
+                              isFavorite={favoriteAgents.includes(
+                                agent.externalId,
+                              )}
+                              isShared={
+                                activeTab === "all" &&
+                                sharedToMeAgentsList.some(
+                                  (sharedAgent) =>
+                                    sharedAgent.externalId === agent.externalId,
+                                )
+                              }
+                              isMadeByMe={madeByMeAgentsList.some(
+                                (madeByMeAgent) =>
+                                  madeByMeAgent.externalId === agent.externalId,
+                              )}
+                              onToggleFavorite={toggleFavorite}
+                              onEdit={() => handleEditAgent(agent)}
+                              onDelete={() =>
+                                handleDeleteAgent(agent.externalId)
+                              }
+                              onClick={() =>
+                                navigate({
+                                  to: "/",
+                                  search: { agentId: agent.externalId },
+                                })
+                              }
+                            />
+                          ))}
+                        </div>
+                        {totalPages > 1 && (
+                          <div className="flex justify-between items-center mt-6">
+                            <Button
+                              onClick={() =>
+                                setCurrentPage((p) => Math.max(p - 1, 1))
+                              }
+                              disabled={currentPage === 1}
+                              variant="outline"
+                              className="flex items-center gap-2"
+                            >
+                              <ChevronLeft size={16} />
+                              Previous
+                            </Button>
+                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                              Page {currentPage} of {totalPages}
+                            </span>
+                            <Button
+                              onClick={() =>
+                                setCurrentPage((p) =>
+                                  Math.min(p + 1, totalPages),
+                                )
+                              }
+                              disabled={currentPage === totalPages}
+                              variant="outline"
+                              className="flex items-center gap-2"
+                            >
+                              Next
+                              <ChevronRight size={16} />
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
               </div>
-            </>
+            </div>
           ) : (
             <>
-              <div className="flex items-center mb-4 w-full max-w-xl mx-auto">
+              <div className="flex items-center mb-4 w-full max-w-xl">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1106,7 +1513,7 @@ function AgentComponent() {
                 </h1>
               </div>
 
-              <div className="w-full max-w-2xl mx-auto space-y-6">
+              <div className="w-full max-w-2xl space-y-6">
                 <div className="w-full">
                   <Label
                     htmlFor="agentName"
@@ -1140,23 +1547,66 @@ function AgentComponent() {
                 </div>
 
                 <div className="w-full">
-                  <Label
-                    htmlFor="agentPrompt"
-                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Prompt
-                  </Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label
+                      htmlFor="agentPrompt"
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Prompt
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleGeneratePrompt}
+                            disabled={isGeneratingPrompt}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Sparkles
+                              className={`h-4 w-4 ${
+                                isGeneratingPrompt
+                                  ? "animate-pulse text-blue-600 dark:text-blue-400"
+                                  : ""
+                              }`}
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {isGeneratingPrompt
+                              ? "Generating prompt..."
+                              : "Generate prompt with AI"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Textarea
+                    ref={promptTextareaRef}
                     id="agentPrompt"
-                    placeholder="e.g., You are a helpful assistant..."
+                    placeholder="e.g., You are a helpful assistant... or describe your requirements and use the AI button"
                     value={agentPrompt}
-                    onChange={(e) => setAgentPrompt(e.target.value)}
-                    className="mt-1 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full h-36 p-3 text-base dark:text-gray-100"
+                    onChange={(e) => {
+                      setAgentPrompt(e.target.value)
+                      // Clear highlight when user starts typing
+                      if (shouldHighlightPrompt) {
+                        setShouldHighlightPrompt(false)
+                      }
+                    }}
+                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${
+                      shouldHighlightPrompt
+                        ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
+                        : "border-gray-300 dark:border-slate-600"
+                    }`}
+                    disabled={isGeneratingPrompt}
                   />
                 </div>
 
                 <div className="w-full">
-                  <Label className="text-sm font-medium text-gray-700">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     Visibility
                   </Label>
                   <div className="mt-3 space-y-3">
@@ -1171,7 +1621,7 @@ function AgentComponent() {
                       />
                       <Label
                         htmlFor="private"
-                        className="text-sm text-gray-700 cursor-pointer"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
                       >
                         Private (only shared users can access)
                       </Label>
@@ -1187,7 +1637,7 @@ function AgentComponent() {
                       />
                       <Label
                         htmlFor="public"
-                        className="text-sm text-gray-700 cursor-pointer"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
                       >
                         Public (all workspace members can access)
                       </Label>
@@ -1204,7 +1654,7 @@ function AgentComponent() {
                   </p>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
-                      <span className="text-gray-400 dark:text-gray-500 text-sm">
+                      <span className="text-gray-400 dark:text-gray-400 text-sm">
                         Add integrations..
                       </span>
                     )}
@@ -1277,26 +1727,26 @@ function AgentComponent() {
 
                 {!isPublic && (
                   <div>
-                    <Label className="text-base font-medium text-gray-800">
+                    <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                       Agent Users{" "}
                       {selectedUsers.length > 0 && (
-                        <span className="text-sm text-gray-500 ml-1">
+                        <span className="text-sm text-gray-500 dark:text-gray-300 ml-1">
                           ({selectedUsers.length})
                         </span>
                       )}
                     </Label>
-                    <div className="mt-3">
-                      <div className="relative w-full">
+                    <div className="mt-3 dark:bg-slate-700 border-gray-300 dark:border-slate-600 dark:text-gray-100">
+                      <div className="relative w-full ">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <Input
                           placeholder="Search users by name or email..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
+                          className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
                         />
                         {showSearchResults && (
-                          <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                          <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
                             <CardContent
                               className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
                               ref={searchResultsRef}
@@ -1312,18 +1762,18 @@ function AgentComponent() {
                                 filteredUsers.map((user, index) => (
                                   <div
                                     key={user.id}
-                                    className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
+                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
                                       index === selectedSearchIndex
-                                        ? "bg-gray-50"
+                                        ? "bg-gray-100 dark:bg-slate-700"
                                         : ""
                                     }`}
                                     onClick={() => handleSelectUser(user)}
                                   >
                                     <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                      <span className="text-sm text-gray-600 truncate">
+                                      <span className="text-sm text-gray-600 dark:text-white truncate">
                                         {user.name}
                                       </span>
-                                      <span className="text-gray-500 flex-shrink-0">
+                                      <span className="text-gray-50 flex-shrink-0">
                                         -
                                       </span>
                                       <span className="text-gray-500 truncate">
@@ -1349,23 +1799,23 @@ function AgentComponent() {
                 {/* Agent Users Section */}
                 {!isPublic && (
                   <div>
-                    <Card className="mt-3">
+                    <Card className="mt-3 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700">
                       <CardContent className="p-4">
                         <div className="space-y-1.5 h-[126px] overflow-y-auto">
                           {selectedUsers.length > 0 ? (
                             selectedUsers.map((user) => (
                               <div
                                 key={user.id}
-                                className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg"
+                                className="flex items-center justify-between p-1.5 bg-gray-100 dark:bg-slate-700 rounded-lg"
                               >
                                 <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                  <span className="text-sm text-gray-600 truncate">
+                                  <span className="text-sm text-gray-700 dark:text-slate-100 truncate">
                                     {user.name}
                                   </span>
-                                  <span className="text-gray-500 flex-shrink-0">
+                                  <span className="text-gray-500 dark:text-slate-400 flex-shrink-0">
                                     -
                                   </span>
-                                  <span className="text-gray-500 truncate">
+                                  <span className="text-gray-500 dark:text-slate-400 truncate">
                                     {user.email}
                                   </span>
                                 </div>
@@ -1373,15 +1823,15 @@ function AgentComponent() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleRemoveUser(user.id)}
-                                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
+                                  className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 h-6 w-6 p-0 flex-shrink-0"
                                 >
                                   <LucideX className="h-3 w-3" />
                                 </Button>
                               </div>
                             ))
                           ) : (
-                            <div className="text-center py-4 text-gray-500">
-                              <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                              <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-400 dark:text-gray-500" />
                               <p>No users added yet</p>
                               <p className="text-sm">
                                 Search and select users to add them to this
@@ -1413,7 +1863,7 @@ function AgentComponent() {
               <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-100">
                 TEST AGENT
               </h2>
-              {agents.length > 0 && (
+              {allAgentsList.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1422,7 +1872,7 @@ function AgentComponent() {
                       className="ml-auto text-xs h-8"
                     >
                       {selectedChatAgentExternalId
-                        ? agents.find(
+                        ? allAgentsList.find(
                             (a) => a.externalId === selectedChatAgentExternalId,
                           )?.name || "Select Agent to Test"
                         : "Test Current Form Config"}
@@ -1439,7 +1889,7 @@ function AgentComponent() {
                     <DropdownMenuLabel>
                       Or select a saved agent
                     </DropdownMenuLabel>
-                    {agents.map((agent) => (
+                    {allAgentsList.map((agent) => (
                       <DropdownMenuItem
                         key={agent.externalId}
                         onSelect={() =>
@@ -1523,6 +1973,216 @@ function AgentComponent() {
         )}
       </div>
     </div>
+  )
+}
+
+function AgentCard({
+  agent,
+  isFavorite,
+  onToggleFavorite,
+  onClick,
+}: {
+  agent: SelectPublicAgent
+  isFavorite: boolean
+  onToggleFavorite: (id: string) => void
+  onClick: () => void
+}) {
+  return (
+    <Card
+      className="bg-gray-50 dark:bg-slate-800 p-6 rounded-3xl relative hover:bg-gray-100 dark:hover:bg-slate-700/60 transition-colors flex flex-col border-none shadow-none cursor-pointer" // Removed h-full
+      onClick={onClick}
+    >
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleFavorite(agent.externalId)
+        }}
+        className="absolute top-4 right-4 text-amber-400 hover:text-amber-500 z-10"
+      >
+        <Star fill={isFavorite ? "currentColor" : "none"} size={20} />
+      </button>
+      <div>
+        <AgentIconDisplay agentName={agent.name} size="default" />
+        <div className="mt-4">
+          <CardTitle
+            className="text-lg font-medium text-gray-900 dark:text-gray-100 truncate"
+            title={agent.name}
+          >
+            {agent.name}
+          </CardTitle>
+        </div>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 line-clamp-2 min-h-10">
+          {agent.description || <span className="italic">No description</span>}
+        </p>
+      </div>
+    </Card>
+  )
+}
+
+const getIconStyling = (agentName: string) => {
+  // Simple hash function to get a color based on agent name
+  let hash = 0
+  for (let i = 0; i < agentName.length; i++) {
+    hash = agentName.charCodeAt(i) + ((hash << 5) - hash)
+    hash = hash & hash // Convert to 32bit integer
+  }
+  const colors = [
+    "bg-blue-100 text-blue-500 dark:bg-blue-900/50 dark:text-blue-400",
+    "bg-green-100 text-green-500 dark:bg-green-900/50 dark:text-green-400",
+    "bg-purple-100 text-purple-500 dark:bg-purple-900/50 dark:text-purple-400",
+    "bg-orange-100 text-orange-500 dark:bg-orange-900/50 dark:text-orange-400",
+    "bg-pink-100 text-pink-500 dark:bg-pink-900/50 dark:text-pink-400",
+    "bg-cyan-100 text-cyan-500 dark:bg-cyan-900/50 dark:text-cyan-400",
+    "bg-red-100 text-red-500 dark:bg-red-900/50 dark:text-red-400",
+    "bg-yellow-100 text-yellow-500 dark:bg-yellow-900/50 dark:text-yellow-400",
+  ]
+  return (
+    colors[Math.abs(hash) % colors.length] ||
+    "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-300"
+  )
+}
+
+const AgentIconDisplay = ({
+  agentName,
+  size = "small",
+}: { agentName: string; size?: "default" | "small" }) => {
+  const styling = getIconStyling(agentName)
+  const sizeClasses = size === "small" ? "w-8 h-8" : "w-10 h-10" // Corresponds to image
+  const textSizeClasses = size === "small" ? "text-sm" : "text-lg" // Corrected: text-sm for small icons
+  return (
+    <div
+      className={`${sizeClasses} rounded-md flex items-center justify-center ${styling} flex-shrink-0`}
+    >
+      <span className={`${textSizeClasses} font-semibold`}>
+        {agentName.charAt(0).toUpperCase()}
+      </span>
+    </div>
+  )
+}
+
+interface AgentListItemProps {
+  agent: SelectPublicAgent
+  isFavorite: boolean
+  onToggleFavorite: (id: string) => void
+  onEdit: () => void
+  onDelete: () => void
+  onClick: () => void
+  isShared?: boolean
+  isMadeByMe?: boolean // New prop
+}
+
+function AgentListItem({
+  agent,
+  isFavorite,
+  isShared,
+  isMadeByMe, // Added
+  onToggleFavorite,
+  onEdit,
+  onDelete,
+  onClick,
+}: AgentListItemProps): JSX.Element {
+  return (
+    <div
+      className="flex items-center justify-between py-4 border-b-2 border-dotted border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 px-2 rounded-none transition-colors cursor-pointer"
+      onClick={onClick} // Make the whole item clickable to navigate
+    >
+      <div className="flex items-center gap-4 flex-grow min-w-0">
+        {" "}
+        {/* Added min-w-0 for truncation */}
+        <AgentIconDisplay agentName={agent.name} size="small" />
+        <div className="flex-grow min-w-0">
+          {" "}
+          {/* Added min-w-0 for truncation */}
+          <h3
+            className="font-medium text-base leading-tight text-gray-900 dark:text-gray-100 flex items-center"
+            title={agent.name}
+          >
+            <span className="truncate">{agent.name}</span>
+            {isShared && (
+              <Users
+                size={14}
+                className="ml-3 text-gray-500 dark:text-gray-400 flex-shrink-0"
+              />
+            )}
+          </h3>
+          <p
+            className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 truncate"
+            title={agent.description || ""}
+          >
+            {agent.description || (
+              <span className="italic">No description</span>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+        {isMadeByMe && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit()
+              }}
+              className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="Edit Agent"
+            >
+              <Edit3 size={16} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              className="h-8 w-8 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30"
+              title="Delete Agent"
+            >
+              <Trash2 size={16} />
+            </Button>
+          </>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation() // Prevent navigation when clicking star
+            onToggleFavorite(agent.externalId)
+          }}
+          className="text-amber-400 hover:text-amber-500 p-1"
+        >
+          <Star fill={isFavorite ? "currentColor" : "none"} size={18} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: string
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+        active
+          ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
+          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
+      }`}
+    >
+      {icon === "asterisk" && <span className="text-lg font-semibold">*</span>}
+      {icon === "users" && <Users size={16} />}
+      {icon === "user" && <UserPlus size={16} />}
+      {label}
+    </button>
   )
 }
 

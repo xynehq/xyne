@@ -52,7 +52,7 @@ export enum Apps {
   Slack = "slack",
 
   MCP = "mcp",
-  GITHUB_MCP = "github_mcp",
+  Github = "github",
   Xyne = "xyne",
   DataSource = "data-source",
 }
@@ -341,6 +341,9 @@ export const VespaDataSourceFileSchemaBase = z.object({
   fileName: z.string().optional(),
   fileSize: z.number().optional(), // long
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()).optional(), // Added for image descriptions
+  chunks_pos: z.array(z.number()).optional(), // Added for text chunk positions
+  image_chunks_pos: z.array(z.number()).optional(), // Added for image chunk positions
   uploadedBy: z.string(),
   duration: z.number().optional(), // long
   mimeType: z.string().optional(),
@@ -362,6 +365,11 @@ export const VespaDataSourceFileSearchSchema =
     .merge(defaultVespaFieldsSchema)
     .extend({
       chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+      image_chunks_summary: z
+        .array(z.union([z.string(), scoredChunk]))
+        .optional(),
+      chunks_pos_summary: z.array(z.number()).optional(),
+      image_chunks_pos_summary: z.array(z.number()).optional(),
     })
 export type VespaDataSourceFileSearch = z.infer<
   typeof VespaDataSourceFileSearchSchema
