@@ -1,23 +1,20 @@
 import {
   App,
-  LogLevel,
   type AllMiddlewareArgs,
   type SlackActionMiddlewareArgs,
 } from "@slack/bolt";
 import type { BlockAction, ButtonAction } from "@slack/bolt";
 import type { View } from "@slack/types";
-import type { WebClient, UsersInfoResponse } from "@slack/web-api";
+import type { WebClient } from "@slack/web-api";
 import * as dotenv from "dotenv";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
 import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 import { SearchApi } from "@/api/search";
-import { AgentMessageApi } from "@/api/chat/agents";
 import config from "@/config";
 import {
   createSearchResultsModal,
-  createShareConfirmationBlocks,
   createSharedResultBlocks,
   createAgentResponseModal,
   createSharedAgentResponseBlocks,
@@ -240,7 +237,7 @@ app.event("app_mention", async ({ event, client }) => {
 // --- Command Logic ---
 
 const handleAgentsCommand = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   dbUser: DbUser
@@ -276,7 +273,7 @@ const handleAgentsCommand = async (
       { type: "divider" },
     ];
 
-    agents.forEach((agent, index) => {
+    agents.forEach((agent: any, index: number) => {
       agentBlocks.push({
         type: "section",
         text: {
@@ -320,7 +317,7 @@ const handleAgentsCommand = async (
 };
 
 const handleAgentSearchCommand = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   agentCommand: string,
@@ -367,11 +364,11 @@ const handleAgentSearchCommand = async (
       0
     );
     const selectedAgent = agents.find(
-      (agent) => agent.name.toLowerCase() === agentName.toLowerCase()
+      (agent: any) => agent.name.toLowerCase() === agentName.toLowerCase()
     );
 
     if (!selectedAgent) {
-      const availableAgents = agents.map((a) => `/${a.name}`).join(", ");
+      const availableAgents = agents.map((a: any) => `/${a.name}`).join(", ");
       await client.chat.postEphemeral({
         channel,
         user,
@@ -613,7 +610,7 @@ const handleAgentSearchCommand = async (
 };
 
 const handleSearchQuery = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string,
   query: string,
@@ -708,7 +705,7 @@ const handleSearchQuery = async (
 };
 
 const handleHelpCommand = async (
-  client: WebClient,
+  client: any,
   channel: string,
   user: string
 ) => {
@@ -769,6 +766,9 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
   if (action.type !== "button") return;
 
   const interactionId = action.value;
+  if (!interactionId) {
+    throw new Error("No interaction ID provided");
+  }
   const cachedData = global._searchResultsCache[interactionId];
 
   try {
@@ -802,7 +802,7 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
         callback_id: `search_results_modal`,
         private_metadata: JSON.stringify({
           channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts,
+          thread_ts: (body as BlockAction).container?.thread_ts || undefined,
           user_id: (body as BlockAction).user.id,
         }),
       },
@@ -839,6 +839,9 @@ const handleShareAction = async (
     if (!view || !view.private_metadata)
       throw new Error("Cannot access required modal metadata.");
 
+    if (!action.value) {
+      throw new Error("No action value provided");
+    }
     const { url, title, query, snippet, metadata } = JSON.parse(action.value);
     const { channel_id, thread_ts, user_id } = JSON.parse(
       view.private_metadata
@@ -924,7 +927,7 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
 
   try {
     // Check for the special "no_interaction_id" case
-    if (interactionId === "no_interaction_id") {
+    if (interactionId === "no_interaction_id" || !interactionId) {
       throw new Error("Cannot open modal: No interaction ID available");
     }
 
@@ -968,7 +971,7 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
         callback_id: `agent_response_modal`,
         private_metadata: JSON.stringify({
           channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container.thread_ts,
+          thread_ts: (body as BlockAction).container?.thread_ts,
           user_id: (body as BlockAction).user.id,
         }),
       },
@@ -1004,7 +1007,7 @@ app.action(
       const interactionId = (action as ButtonAction).value;
 
       // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id") {
+      if (interactionId === "no_interaction_id" || !interactionId) {
         throw new Error("Cannot share: No interaction ID available");
       }
 
@@ -1085,7 +1088,7 @@ app.action(
       const interactionId = (action as ButtonAction).value;
 
       // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id") {
+      if (interactionId === "no_interaction_id" || !interactionId) {
         throw new Error("Cannot share: No interaction ID available");
       }
 
@@ -1169,7 +1172,7 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
 
   try {
     // Check for the special "no_interaction_id" case
-    if (interactionId === "no_interaction_id") {
+    if (interactionId === "no_interaction_id" || !interactionId) {
       throw new Error("Cannot open sources: No interaction ID available");
     }
 
