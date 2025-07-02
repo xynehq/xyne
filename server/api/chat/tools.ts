@@ -568,6 +568,7 @@ export const metadataRetrievalTool: AgentTool = {
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
+        timestampRange: { from: params.from, to: params.to },
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)

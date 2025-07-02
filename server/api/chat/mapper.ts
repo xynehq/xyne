@@ -507,17 +507,25 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "app",
         type: "string",
         required: true,
-        description: "MUST BE EXACTLY ONE OF the available apps.",
+        description: `
+          Valid app keywords that map to apps:
+          - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
+          - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
+          - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
+          - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+        `,
       },
       {
         name: "entity",
         type: "string",
         required: false,
         description: `Specify the type of item being searched. Examples:
-          - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-          - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-          - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-          - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'`,
+          Valid entity keywords that map to entities:
+          - For App Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+          - For App Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
+          - For App Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
+          - For App Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+          `,
       },
       {
         name: "filter_query",
