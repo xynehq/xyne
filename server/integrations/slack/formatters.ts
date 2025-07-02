@@ -813,13 +813,19 @@ export const createAgentResponseBlocks = (
  * @returns Slack modal view object
  */
 export function createAgentResponseModal(
-  query: string, 
-  agentName: string, 
-  response: string, 
+  query: string,
+  agentName: string,
+  response: string,
   citations: any[],
   interactionId: string
 ): View {
-  // Create blocks for the modal content
+  // Clean up and format the main response body for Slack mrkdwn
+  const displayResponse = response
+    .replace(/\[\d+\]/g, "") // Remove citation numbers
+    .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
+    .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
+    .trim();
+
   const blocks: Block[] = [
     {
       type: "header",
@@ -833,7 +839,7 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Your Query:* "${query}"`,
+        text: `*Your Query:*\n>${query}`,
       },
     },
     {
@@ -843,17 +849,19 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `**Response:**\n${response.length > 2500 ? response.substring(0, 2500) + "\n\n..._[Response truncated for display. Full response is shared when using 'Share in channel']_" : response}`,
+        text: `*Response:*\n${
+          displayResponse.length > 2500
+            ? displayResponse.substring(0, 2500) +
+              "\n\n..._[Response truncated for display]_"
+            : displayResponse
+        }`,
       },
     },
   ];
 
   // Add citations if available
   if (citations && citations.length > 0) {
-    blocks.push({
-      type: "divider",
-    });
-
+    blocks.push({ type: "divider" });
     blocks.push({
       type: "section",
       text: {
@@ -862,34 +870,45 @@ export function createAgentResponseModal(
       },
     });
 
-    // Display up to 5 citations in the modal
     const displayCitations = citations.slice(0, 5);
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
-      
-      const title = citation.title || citation.name || "Untitled";
-      const url = citation.url || "";
+      const rawTitle = citation.title || citation.name || "Untitled";
+      let url = citation.url || "";
+      let title = rawTitle;
+
+      // Check for and parse Slack's <url|text> format
+      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
+      if (slackLinkMatch) {
+        url = slackLinkMatch[1];
+        title = slackLinkMatch[2];
+      }
+
+      // Clean the title from any HTML tags and extra whitespace
+      title = title.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (title.length > 300) {
+        title = `${title.substring(0, 300)}...`;
+      }
+
       let snippet = citation.snippet || citation.content || "";
-      
-      // Clean and truncate snippet
       if (snippet) {
-        snippet = snippet.replace(/\s+/g, " ").trim();
-        snippet = snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+        snippet = snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+        snippet =
+          snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
       }
 
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${i + 1}. ${title}*\n${snippet ? snippet : "No preview available"}${url ? `\n<${url}|View Source>` : ""}`,
+          text: `*${i + 1}. ${
+            url ? `<${url}|${title}>` : title
+          }*\n${snippet || "_No preview available_"}`,
         },
       });
 
-      // Add divider between citations (except after the last one)
       if (i < displayCitations.length - 1) {
-        blocks.push({
-          type: "divider",
-        });
+        blocks.push({ type: "divider" });
       }
     }
 
@@ -904,7 +923,7 @@ export function createAgentResponseModal(
           type: "button",
           text: {
             type: "plain_text",
-            text: "See more sources",
+            text: "See all sources",
             emoji: true,
           },
           action_id: "view_all_sources",
@@ -915,10 +934,7 @@ export function createAgentResponseModal(
   }
 
   // Add sharing actions
-  blocks.push({
-    type: "divider",
-  });
-
+  blocks.push({ type: "divider" });
   blocks.push({
     type: "actions",
     block_id: "agent_response_actions",
@@ -932,12 +948,11 @@ export function createAgentResponseModal(
         },
         style: "primary",
         action_id: "share_agent_from_modal",
-        value: interactionId, // Use interaction ID from parameter
+        value: interactionId,
       },
     ],
   });
 
-  // Create the modal view object
   return {
     type: "modal",
     title: {
@@ -970,45 +985,51 @@ export function createSharedAgentResponseBlocks(
   response: string,
   citations: any[] = []
 ): Block[] {
-  // Truncate response if it's too long for Slack blocks (3000 char limit)
-  let displayResponse = response;
-  if (response.length > 2500) {
-    displayResponse = response.substring(0, 2500) + "\n\n..._[Response truncated due to length limits]_";
-  }
+  // Clean up and format the main response body for Slack mrkdwn
+  const displayResponse = response
+    .replace(/\[\d+\]/g, "") // Remove citation numbers
+    .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
+    .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
+    .trim();
 
-  const blocks = [
+  const blocks: Block[] = [
     {
-      type: "section",
+      type: "header",
       text: {
-        type: "mrkdwn",
-        text: `🤖 *Response from @${agentName}*`,
+        type: "plain_text",
+        text: `🤖 Response from @${agentName}`,
+        emoji: true,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Query:* "${query}"`,
+        text: `*Your Query:*\n>${query}`,
       },
+    },
+    {
+      type: "divider",
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Response:*\n${displayResponse}`,
-      },
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `Shared by <@${userId}>`,
+        text: `*Response:*\n${
+          displayResponse.length > 2800
+            ? displayResponse.substring(0, 2800) +
+              "\n\n..._[Response truncated]_"
+            : displayResponse
+        }`,
       },
     },
   ];
 
-  // Add citations if available (with limits to prevent block overflow)
+  // Format citations
   if (citations && citations.length > 0) {
+    blocks.push({
+      type: "divider",
+    });
     blocks.push({
       type: "section",
       text: {
@@ -1017,38 +1038,71 @@ export function createSharedAgentResponseBlocks(
       },
     });
 
-    // Limit citations in shared response to avoid exceeding block limits
-    const maxCitationsToShow = Math.min(citations.length, 10);
+    const maxCitationsToShow = Math.min(citations.length, 5);
     citations.slice(0, maxCitationsToShow).forEach((citation, index) => {
-      const title = citation.title || citation.name || "Untitled";
-      const url = citation.url || "";
-      
+      const rawTitle = citation.title || citation.name || "Untitled";
+      let url = citation.url || "";
+      let title = rawTitle;
+
+      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
+      if (slackLinkMatch) {
+        url = slackLinkMatch[1];
+        title = slackLinkMatch[2];
+      }
+
+      title = title.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (title.length > 300) {
+        title = `${title.substring(0, 300)}...`;
+      }
+
+      let snippet = citation.snippet || citation.content || "";
+      if (snippet) {
+        snippet = snippet.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+        snippet =
+          snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+      }
+
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${index + 1}. ${url ? `<${url}|${title}>` : title}`,
+          text: `*${index + 1}. ${
+            url ? `<${url}|${title}>` : title
+          }*\n${snippet || "_No preview available_"}`,
         },
       });
     });
-    
-    // Add note if there are more citations
+
     if (citations.length > maxCitationsToShow) {
       blocks.push({
         type: "context",
         elements: [
           {
             type: "mrkdwn",
-            text: `_...and ${citations.length - maxCitationsToShow} more sources_`,
+            text: `_...and ${
+              citations.length - maxCitationsToShow
+            } more sources_`,
           },
         ],
       });
     }
   }
 
-  blocks.push({
-    type: "divider",
-  });
+  // Add attribution and divider
+  blocks.push(
+    {
+      type: "divider",
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Shared by <@${userId}>`,
+        },
+      ],
+    }
+  );
 
   return blocks;
 }
