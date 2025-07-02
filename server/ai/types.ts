@@ -195,7 +195,7 @@ interface PillValue {
   title: string
   docId: string
   threadId?: string
-  app?: string
+  app?: Apps
 }
 
 interface PillQueryItem {

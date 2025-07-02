@@ -57,7 +57,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
-import { expandEmailThreadsInResults } from "./chat"
+import { expandEmailThreadsInResults } from "./utils"
 
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)

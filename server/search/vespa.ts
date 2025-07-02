@@ -2378,28 +2378,7 @@ export const SearchEmailThreads = async (
 ): Promise<VespaSearchResponse> => {
   const validThreadIds = threadIdsInput.filter(
     (id) => typeof id === "string" && id.length > 0,
-  )
-  
-  if (validThreadIds.length === 0) {
-    Logger.warn("SearchEmailThreads called with no valid threadIds.")
-    return {
-      root: {
-        id: "empty-thread-search",
-        relevance: 0,
-        fields: { totalCount: 0 },
-        coverage: {
-          coverage: 0,
-          documents: 0,
-          full: true,
-          nodes: 0,
-          results: 0,
-          resultsFull: 0,
-        },
-        children: [],
-      },
-    }
-  }
-  
+  ) 
   try {
     return vespa.getEmailsByThreadIds(validThreadIds, email)
   } catch (error) {

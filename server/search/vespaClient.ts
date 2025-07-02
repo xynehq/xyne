@@ -1204,12 +1204,12 @@ class VespaClient {
     // Include permissions check to ensure user has access to these emails
     const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
     const url = `${this.vespaEndpoint}/search/`
+    console.log(`getEmailsByThreadIds - YQL Query: ${yqlQuery}`)
     try {
       const payload = {
         yql: yqlQuery,
         email: email, // Pass the user's email for permissions check
         hits: 200, // Increased limit to fetch more thread emails
-        maxHits: 10000, // Set a high maxHits to ensure we get all thread emails
         "ranking.profile": "unranked", // Use unranked for simple retrieval
       }
 
