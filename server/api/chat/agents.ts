@@ -1,5 +1,6 @@
 import {
   answerContextMap,
+  answerContextMapFromFragments,
   cleanContext,
   constructToolContext,
   userContext,
@@ -224,6 +225,7 @@ async function* getToolContinuationIterator(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  const context = answerContextMapFromFragments(results, maxDefaultSummary)
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -235,7 +237,7 @@ async function* getToolContinuationIterator(
       messages,
     },
     toolsPrompt,
-    toolOutput ?? "",
+    context ?? "",
     agentPrompt, // Pass agentPrompt
   )
 
