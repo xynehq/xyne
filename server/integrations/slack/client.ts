@@ -48,8 +48,6 @@ app.error(async (error) => {
 
 // Add some debugging for the connection issues
 Logger.info("Starting Slack app with Socket Mode");
-Logger.info("Bot Token present:", !!process.env.SLACK_BOT_TOKEN);
-Logger.info("App Token present:", !!process.env.SLACK_APP_TOKEN);
 
 // Check if tokens look valid (should start with xoxb- and xapp-)
 if (
@@ -387,7 +385,7 @@ const handleAgentSearchCommand = async (
     await client.chat.postEphemeral({
       channel,
       user,
-      text: `🤖 Querying the agent "/${agentName}"...`,
+      text: `Querying the agent "/${agentName}"...`,
       ...(isThreadMessage && { thread_ts: threadTs }),
     });
 
@@ -537,7 +535,7 @@ const handleAgentSearchCommand = async (
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `🤖 Agent "/${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+          text: `Agent "/${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
@@ -558,16 +556,16 @@ const handleAgentSearchCommand = async (
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `🤖 Agent "/${agentName}" response is ready.`,
+        text: `Agent "/${agentName}" response is ready.`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `🤖 Agent */${agentName}* has responded to your query: "_${query}_"\n${
+              text: `Agent */${agentName}* has responded to your query: "_${query}_"\n${
                 citations.length > 0
-                  ? `📚 Found ${citations.length} relevant sources`
-                  : "💭 Direct response from agent"
+                  ? `Found ${citations.length} relevant sources`
+                  : "Direct response from agent"
               }\nClick the button to view the full response.`,
             },
           },
@@ -717,7 +715,7 @@ const handleHelpCommand = async (
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*🤖 Available Commands:*" },
+        text: { type: "mrkdwn", text: "*Available Commands:*" },
       },
       { type: "divider" },
       {
