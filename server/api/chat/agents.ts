@@ -228,7 +228,7 @@ async function* getToolContinuationIterator(
     message,
     userCtx,
     {
-      modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+      modelId: defaultBestModel,
       stream: true,
       json: true,
       reasoning: false,
@@ -312,6 +312,97 @@ async function* getToolContinuationIterator(
     }
   }
 }
+
+type SynthesisResponse = {
+  synthesisState:
+    | ContextSysthesisState.Complete
+    | ContextSysthesisState.Partial
+    | ContextSysthesisState.NotFound
+  answer: string | null
+}
+
+async function performSynthesis(
+  ctx: any,
+  message: string,
+  planningContext: string,
+  gatheredFragments: MinimalAgentFragment[],
+  messagesWithNoErrResponse: Message[],
+  logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
+  sub: string,
+): Promise<SynthesisResponse | null> {
+  let parseSynthesisOutput: SynthesisResponse | null = null
+
+  try {
+    await logAndStreamReasoning({
+      type: AgentReasoningStepType.Synthesis,
+      details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
+    })
+
+    const synthesisResponse = await generateSynthesisBasedOnToolOutput(
+      ctx,
+      message,
+      planningContext,
+      {
+        modelId: defaultFastModel,
+        stream: false,
+        json: true,
+        reasoning: false,
+        messages: messagesWithNoErrResponse,
+      },
+    )
+
+    if (synthesisResponse.text) {
+      try {
+        parseSynthesisOutput = jsonParseLLMOutput(synthesisResponse.text)
+        if (!parseSynthesisOutput || !parseSynthesisOutput.synthesisState) {
+          loggerWithChild({ email: sub }).error(
+            "Synthesis response was valid JSON but missing 'synthesisState' key.",
+          )
+          // Default to partial to force another iteration, which is safer
+          parseSynthesisOutput = {
+            synthesisState: ContextSysthesisState.Partial,
+            answer: null,
+          }
+        }
+      } catch (jsonError) {
+        loggerWithChild({ email: sub }).error(
+          jsonError,
+          "Failed to parse synthesis LLM output as JSON.",
+        )
+        // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
+        parseSynthesisOutput = {
+          synthesisState: ContextSysthesisState.NotFound,
+          answer: parseSynthesisOutput?.answer || "",
+        }
+      }
+    } else {
+      loggerWithChild({ email: sub }).error(
+        "Synthesis LLM call returned no text.",
+      )
+      parseSynthesisOutput = {
+        synthesisState: ContextSysthesisState.Partial,
+        answer: "",
+      }
+    }
+  } catch (synthesisError) {
+    loggerWithChild({ email: sub }).error(
+      synthesisError,
+      "Error during synthesis LLM call.",
+    )
+    await logAndStreamReasoning({
+      type: AgentReasoningStepType.LogMessage,
+      message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
+    })
+    // If the call itself fails, we must assume the context is insufficient.
+    parseSynthesisOutput = {
+      synthesisState: ContextSysthesisState.Partial,
+      answer: parseSynthesisOutput?.answer || "",
+    }
+  }
+
+  return parseSynthesisOutput
+}
+
 const addErrMessageToMessage = async (
   lastMessage: SelectMessage,
   errorMessage: string,
@@ -783,13 +874,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                     2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
                     3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
   
-                  Do NOT make this call again. Formulate a new, distinct plan.
+                  Do NOT make these call again. Formulate a new, distinct plan.
                    ---
                 `
             }
 
             agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
-
+            console.log(loopWarningPrompt, "loopWarningPrompt")
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -1216,101 +1307,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                 : ""
 
               if (planningContext.length) {
-                type SynthesisResponse = {
-                  synthesisState:
-                    | ContextSysthesisState.Complete
-                    | ContextSysthesisState.Partial
-                    | ContextSysthesisState.NotFound
-                  answer: string | null
-                }
-                let parseSynthesisOutput: SynthesisResponse | null = null
-
-                try {
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.Synthesis,
-                    details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
-                  })
-
-                  const synthesisResponse =
-                    await generateSynthesisBasedOnToolOutput(
-                      ctx,
-                      message,
-                      planningContext,
-                      {
-                        modelId: defaultFastModel,
-                        stream: false,
-                        json: true,
-                        reasoning: false,
-                        messages: messagesWithNoErrResponse,
-                      },
-                    )
-
-                  if (synthesisResponse.text) {
-                    try {
-                      parseSynthesisOutput = jsonParseLLMOutput(
-                        synthesisResponse.text,
-                      )
-                      if (
-                        !parseSynthesisOutput ||
-                        !parseSynthesisOutput.synthesisState
-                      ) {
-                        loggerWithChild({ email: sub }).error(
-                          "Synthesis response was valid JSON but missing 'synthesisState' key.",
-                        )
-                        // Default to partial to force another iteration, which is safer
-                        parseSynthesisOutput = {
-                          synthesisState: ContextSysthesisState.Partial,
-                          answer: null,
-                        }
-                      }
-                    } catch (jsonError) {
-                      loggerWithChild({ email: sub }).error(
-                        jsonError,
-                        "Failed to parse synthesis LLM output as JSON.",
-                      )
-                      // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
-                      parseSynthesisOutput = {
-                        synthesisState: ContextSysthesisState.NotFound,
-                        answer: parseSynthesisOutput?.answer || "",
-                      }
-                    }
-                  } else {
-                    loggerWithChild({ email: sub }).error(
-                      "Synthesis LLM call returned no text.",
-                    )
-                    parseSynthesisOutput = {
-                      synthesisState: ContextSysthesisState.Partial,
-                      answer: "",
-                    }
-                  }
-                } catch (synthesisError) {
-                  loggerWithChild({ email: sub }).error(
-                    synthesisError,
-                    "Error during synthesis LLM call.",
-                  )
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
-                  })
-                  // If the call itself fails, we must assume the context is insufficient.
-                  parseSynthesisOutput = {
-                    synthesisState: ContextSysthesisState.Partial,
-                    answer: parseSynthesisOutput?.answer || "",
-                  }
-                }
+                const parseSynthesisOutput = await performSynthesis(
+                  ctx,
+                  message,
+                  planningContext,
+                  gatheredFragments,
+                  messagesWithNoErrResponse,
+                  logAndStreamReasoning,
+                  sub,
+                )
 
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `Synthesis result: ${parseSynthesisOutput.synthesisState}`,
+                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
                 })
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
                   message: ` Synthesis: ${
-                    parseSynthesisOutput.answer || "No Synthesis details"
+                    parseSynthesisOutput?.answer || "No Synthesis details"
                   }`,
                 })
                 const isContextSufficient =
-                  parseSynthesisOutput.synthesisState ===
+                  parseSynthesisOutput?.synthesisState ===
                   ContextSysthesisState.Complete
 
                 if (isContextSufficient) {
@@ -1374,8 +1392,40 @@ export const MessageWithToolsApi = async (c: Context) => {
               if (iterationCount < maxIterations) {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `No tool selected. Re-planning iteration ${iterationCount + 1}.`,
+                  message: `No tool selected. Re-planning.`,
                 })
+                const parseSynthesisOutput = await performSynthesis(
+                  ctx,
+                  message,
+                  planningContext,
+                  gatheredFragments,
+                  messagesWithNoErrResponse,
+                  logAndStreamReasoning,
+                  sub,
+                )
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                })
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: ` Synthesis: ${
+                    parseSynthesisOutput?.answer || "No Synthesis details"
+                  }`,
+                })
+                const isContextSufficient =
+                  parseSynthesisOutput?.synthesisState ===
+                  ContextSysthesisState.Complete
+
+                if (isContextSufficient) {
+                  // Context is complete. We can break the loop and generate the final answer.
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message:
+                      "Context is sufficient. Proceeding to generate final answer.",
+                  })
+                  break
+                }
                 continue
               } else {
                 await logAndStreamReasoning({
@@ -1998,7 +2048,6 @@ export const AgentMessageApi = async (c: Context) => {
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
-                  // reasoningSpan.end()
                 }
                 if (!chunk.reasoning) {
                   answer += chunk.text

@@ -1805,7 +1805,7 @@ export const withToolQueryPrompt = (
    ### Response Instructions:
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
-    - Cite any context-based information using [index] format, matching the provided source indices.
+    - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
 
     Be concise, accurate, and context-aware in all replies.
