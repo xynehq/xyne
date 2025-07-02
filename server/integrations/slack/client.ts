@@ -35,6 +35,25 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 });
 
+// Add basic error handler to log connection issues
+app.error(async (error) => {
+  Logger.error(error, 'Slack app error occurred');
+  // Don't exit the process, let it try to reconnect
+});
+
+// Add some debugging for the connection issues
+Logger.info('Starting Slack app with Socket Mode');
+Logger.info('Bot Token present:', !!process.env.SLACK_BOT_TOKEN);
+Logger.info('App Token present:', !!process.env.SLACK_APP_TOKEN);
+
+// Check if tokens look valid (should start with xoxb- and xapp-)
+if (process.env.SLACK_BOT_TOKEN && !process.env.SLACK_BOT_TOKEN.startsWith('xoxb-')) {
+  Logger.error('SLACK_BOT_TOKEN does not start with xoxb-');
+}
+if (process.env.SLACK_APP_TOKEN && !process.env.SLACK_APP_TOKEN.startsWith('xapp-')) {
+  Logger.error('SLACK_APP_TOKEN does not start with xapp-');
+}
+
 /**
  * Interface for the data cached for each search interaction.
  */
@@ -149,10 +168,9 @@ app.event("app_mention", async ({ event, client }) => {
       await handleAgentsCommand(client, channel, user, dbUser[0]);
     } else if (processedText.toLowerCase().startsWith("/search ")) {
       const query = processedText.substring(8).trim();
-      await handleSearchQuery(client, channel, user, query, dbUser[0], ts, thread_ts);
-    } else if (processedText.toLowerCase().startsWith("/agent ")) {
-      const agentCommand = processedText.substring(7).trim();
-      await handleAgentSearchCommand(client, channel, user, agentCommand, dbUser[0], ts, thread_ts);
+      await handleSearchQuery(client, channel, user, query, dbUser[0], ts, thread_ts ?? "");
+    } else if (processedText.startsWith("/")) {
+      await handleAgentSearchCommand(client, channel, user, processedText, dbUser[0], ts, thread_ts ?? "");
     } else {
       await handleHelpCommand(client, channel, user);
     }
@@ -188,12 +206,12 @@ const handleAgentsCommand = async (
       return;
     }
 
-    const agentBlocks = [
+    const agentBlocks: any[] = [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `🤖 *Available Agents (${agents.length})*\nYou can use any of these agents with \`/agent @agent_name <your query>\``
+          text: `🤖 *Available Agents (${agents.length})*\nYou can use any of these agents with \`/<agent_name> <your query>\``
         }
       },
       { type: "divider" }
@@ -204,7 +222,7 @@ const handleAgentsCommand = async (
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${index + 1}. @${agent.name}*${agent.isPublic ? ' 🌐' : ''}\n${agent.description || 'No description available'}\n_Model: ${agent.model}_`
+          text: `*${index + 1}. /${agent.name}*${agent.isPublic ? ' 🌐' : ''}\n${agent.description || 'No description available'}\n_Model: ${agent.model}_`
         }
       });
     });
@@ -216,7 +234,7 @@ const handleAgentsCommand = async (
         elements: [
           {
             type: "mrkdwn",
-            text: "💡 *Usage:* `/agent @agent_name your question here` | 🌐 = Public agent"
+            text: "💡 *Usage:* `/<agent_name> your question here` | 🌐 = Public agent"
           }
         ]
       }
@@ -248,13 +266,13 @@ const handleAgentSearchCommand = async (
   messageTs: string,
   threadTs: string | undefined
 ) => {
-  // Parse the command: @agent_name query
-  const match = agentCommand.match(/^@(\w+)\s+(.+)$/);
+  // Parse the command: /agent_name query
+  const match = agentCommand.match(/^\/(\w+)\s+(.+)$/);
   if (!match) {
     await client.chat.postEphemeral({
       channel,
       user,
-      text: "Invalid format. Use: `/agent @agent_name your query here`\nExample: `/agent @support_bot how to reset password`",
+      text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/support_bot how to reset password`",
     });
     return;
   }
@@ -268,11 +286,11 @@ const handleAgentSearchCommand = async (
     const selectedAgent = agents.find(agent => agent.name.toLowerCase() === agentName.toLowerCase());
 
     if (!selectedAgent) {
-      const availableAgents = agents.map(a => `@${a.name}`).join(', ');
+      const availableAgents = agents.map(a => `/${a.name}`).join(', ');
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `Agent "@${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
+        text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
       });
       return;
     }
@@ -285,7 +303,7 @@ const handleAgentSearchCommand = async (
     await client.chat.postEphemeral({
       channel,
       user,
-      text: `🤖 Starting conversation with agent "@${agentName}"...`,
+      text: `🤖 Querying the agent "/${agentName}"...`,
       ...(isThreadMessage && { thread_ts: threadTs }),
     });
 
@@ -310,7 +328,7 @@ const handleAgentSearchCommand = async (
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `❌ You don't have permission to use agent "@${agentName}".`,
+          text: `❌ You don't have permission to use agent "/${agentName}".`,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
@@ -379,7 +397,7 @@ const handleAgentSearchCommand = async (
         // Build classification object for RAG
         const classification = {
           direction: parsed.temporalDirection,
-          type: (parsed.type as QueryType) || QueryType.GENERAL,
+          type: (parsed.type as QueryType) || QueryType.SearchWithoutFilters,
           filterQuery: parsed.filter_query || "",
           filters: {
             app: (parsed.filters?.app as Apps) || null,
@@ -402,7 +420,7 @@ const handleAgentSearchCommand = async (
           dbUser.email,
           ctx,
           searchQuery,
-          classification,
+          classification as any,
           limitedMessages,
           0.5, // threshold
           false, // reasoning enabled
@@ -434,7 +452,7 @@ const handleAgentSearchCommand = async (
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `🤖 Agent "@${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+          text: `🤖 Agent "/${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
@@ -455,13 +473,13 @@ const handleAgentSearchCommand = async (
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `🤖 Agent "@${agentName}" response is ready.`,
+        text: `🤖 Agent "/${agentName}" response is ready.`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `🤖 Agent *@${agentName}* has responded to your query: "_${query}_"\n${citations.length > 0 ? `📚 Found ${citations.length} relevant sources` : '💭 Direct response from agent'}\nClick the button to view the full response.`
+              text: `🤖 Agent */${agentName}* has responded to your query: "_${query}_"\n${citations.length > 0 ? `📚 Found ${citations.length} relevant sources` : '💭 Direct response from agent'}\nClick the button to view the full response.`
             }
           },
           {
@@ -489,7 +507,7 @@ const handleAgentSearchCommand = async (
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `❌ I encountered an error while processing your request with agent "@${agentName}". Please try again later.`,
+        text: `❌ I encountered an error while processing your request with agent "/${agentName}". Please try again later.`,
         ...(isThreadMessage && { thread_ts: threadTs }),
       });
     }
@@ -499,7 +517,7 @@ const handleAgentSearchCommand = async (
     await client.chat.postEphemeral({
       channel,
       user,
-      text: `An error occurred while searching with agent "@${agentName}". Please try again.`,
+      text: `An error occurred while searching with agent "/${agentName}". Please try again.`,
     });
   }
 };
@@ -524,7 +542,7 @@ const handleSearchQuery = async (
       json: (data: any) => data,
     };
     const searchApiResponse = await SearchApi(mockContext as any);
-    results = searchApiResponse?.results || [];
+    results = (searchApiResponse as any)?.results || [];
     Logger.info(`Found ${results.length} results from SearchApi.`);
   } catch (apiError) {
     Logger.error(apiError, "Error calling SearchApi");
@@ -560,7 +578,7 @@ const handleHelpCommand = async (client: WebClient, channel: string, user: strin
       { type: "section", text: { type: "mrkdwn", text: "*🤖 Available Commands:*" }},
       { type: "divider" },
       { type: "section", text: { type: "mrkdwn", text: "*List Agents:*\n`/agents` - Shows all available agents you can use.\n_Example: `/agents`_" }},
-      { type: "section", text: { type: "mrkdwn", text: "*Search with Agent:*\n`/agent @agent_name <query>` - Search using a specific agent.\n_Example: `/agent @support_bot password reset`_" }},
+      { type: "section", text: { type: "mrkdwn", text: "*Search with Agent:*\n`/<agent_name> <query>` - Search using a specific agent.\n_Example: `/support_bot password reset`_" }},
       { type: "section", text: { type: "mrkdwn", text: "*General Search:*\n`/search <query>` - Search the knowledge base.\n_Example: `/search quarterly reports`_" }},
       { type: "section", text: { type: "mrkdwn", text: "*Help:*\n`help` - Shows this message." }},
       { type: "context", elements: [{ type: "mrkdwn", text: `💡 Tip: Mention me (<@${botUserId}>) with a command!` }] },
@@ -570,7 +588,7 @@ const handleHelpCommand = async (client: WebClient, channel: string, user: strin
 
 // --- Action Handlers ---
 
-app.action<ButtonAction>(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
+app.action<ButtonAction>(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }: any) => {
   await ack();
   const interactionId = body.actions[0].value;
   const cachedData = global._searchResultsCache[interactionId];
@@ -582,7 +600,7 @@ app.action<ButtonAction>(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, clien
     const modal = createSearchResultsModal(query, results);
 
     if (isFromThread) {
-      modal.blocks = modal.blocks.map(block => {
+      modal.blocks = modal.blocks.map((block: any) => {
         if (block.type === 'actions' && block.block_id?.startsWith('result_actions_')) {
           (block as any).elements.push({
             type: 'button',
@@ -617,7 +635,7 @@ app.action<ButtonAction>(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, clien
 /**
  * Handles sharing a result from the modal to the main channel.
  */
-app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, async ({ ack, body, client, action }) => {
+app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, async ({ ack, body, client, action }: any) => {
   await ack();
   const view = body.view;
   try {
@@ -634,7 +652,7 @@ app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, async ({ ack,
       blocks: createSharedResultBlocks(user_id, url, title, snippet || "", metadata || "", query),
     });
 
-    const newBlocks = view.blocks.map(b => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in channel successfully!*" }] } : b);
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in channel successfully!*" }] } : b);
     
     const updatedView: View = {
         type: 'modal',
@@ -656,7 +674,7 @@ app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, async ({ ack,
 /**
  * Handles sharing a result from the modal to a thread.
  */
-app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async ({ ack, body, client, action }) => {
+app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async ({ ack, body, client, action }: any) => {
   await ack();
   const view = body.view;
   try {
@@ -675,7 +693,7 @@ app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, asy
       blocks: createSharedResultBlocks(user_id, url, title, snippet || "", metadata || "", query),
     });
 
-    const newBlocks = view.blocks.map(b => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in thread successfully!*" }] } : b);
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === action.block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Result shared in thread successfully!*" }] } : b);
 
     const updatedView: View = {
         type: 'modal',
@@ -697,7 +715,7 @@ app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, asy
 /**
  * Handles opening the agent response modal.
  */
-app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
+app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }: any) => {
   await ack();
   const interactionId = (body as any).actions[0].value;
   
@@ -711,11 +729,11 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
     if (!cachedData) throw new Error(`No cached agent response found. It may have expired.`);
 
     const { query, agentName, response, citations, isFromThread } = cachedData;
-    const modal = createAgentResponseModal(query, agentName, response, citations, interactionId);
+    const modal = createAgentResponseModal(query, agentName, response, citations, interactionId, isFromThread);
 
     if (isFromThread) {
       // Modify buttons for thread sharing if needed
-      modal.blocks = modal.blocks.map(block => {
+      modal.blocks = modal.blocks.map((block: any) => {
         if (block.type === "actions" && (block as any).elements) {
           return {
             ...block,
@@ -757,7 +775,7 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
 /**
  * Handles sharing an agent response from the modal to the main channel.
  */
-app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action }) => {
+app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action }: any) => {
   await ack();
   const view = (body as any).view;
   try {
@@ -783,7 +801,7 @@ app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action
 
     await client.chat.postMessage({
       channel: channel_id,
-      text: `Agent response from @${agentName} - Shared by <@${user_id}>`,
+      text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
       blocks: createSharedAgentResponseBlocks(user_id, agentName, query, response, citations || []),
     });
 
@@ -807,9 +825,63 @@ app.action(ACTION_IDS.SHARE_AGENT_FROM_MODAL, async ({ ack, body, client, action
 });
 
 /**
+ * Handles sharing an agent response from the modal to a thread.
+ */
+app.action("share_agent_in_thread_from_modal", async ({ ack, body, client, action }: any) => {
+  await ack();
+  const view = (body as any).view;
+  try {
+    if (!view || !view.private_metadata) throw new Error("Cannot access required modal metadata.");
+    
+    const interactionId = (action as any).value;
+    
+    // Check for the special "no_interaction_id" case
+    if (interactionId === "no_interaction_id") {
+      throw new Error("Cannot share: No interaction ID available");
+    }
+    
+    // Get agent response from cache
+    const agentResponseData = global._agentResponseCache[interactionId];
+    if (!agentResponseData) {
+      throw new Error("Agent response data not found in cache. The response may have expired.");
+    }
+    
+    const { agentName, query, response, citations } = agentResponseData;
+    const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
+
+    if (!channel_id) throw new Error("Channel ID not found in modal metadata.");
+    if (!thread_ts) throw new Error("Thread timestamp not found for a thread share action.");
+
+    await client.chat.postMessage({
+      channel: channel_id,
+      thread_ts: thread_ts,
+      text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
+      blocks: createSharedAgentResponseBlocks(user_id, agentName, query, response, citations || []),
+    });
+
+    const newBlocks = view.blocks.map((b: any) => (b.block_id === (action as any).block_id) ? { type: "context", elements: [{ type: "mrkdwn", text: "✅ *Agent response shared in thread successfully!*" }] } : b);
+    
+    const updatedView: View = {
+        type: 'modal',
+        title: view.title,
+        blocks: newBlocks,
+        private_metadata: view.private_metadata,
+        callback_id: view.callback_id,
+    };
+    if (view.close) {
+        updatedView.close = view.close;
+    }
+
+    await client.views.update({ view_id: view.id, hash: view.hash, view: updatedView });
+  } catch (error: any) {
+    Logger.error(error, "Error sharing agent response to thread from modal");
+  }
+});
+
+/**
  * Handles opening a modal to view all sources/citations.
  */
-app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
+app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }: any) => {
   await ack();
   const interactionId = (body as any).actions[0].value;
   

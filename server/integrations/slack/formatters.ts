@@ -817,7 +817,8 @@ export function createAgentResponseModal(
   agentName: string,
   response: string,
   citations: any[],
-  interactionId: string
+  interactionId: string,
+  isFromThread: boolean
 ): View {
   // Clean up and format the main response body for Slack mrkdwn
   const displayResponse = response
@@ -831,7 +832,7 @@ export function createAgentResponseModal(
       type: "header",
       text: {
         type: "plain_text",
-        text: `🤖 Response from @${agentName}`,
+        text: `🤖 Response from /${agentName}`,
         emoji: true,
       },
     },
@@ -935,29 +936,44 @@ export function createAgentResponseModal(
 
   // Add sharing actions
   blocks.push({ type: "divider" });
+  const actions: any[] = [
+    {
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Share in channel",
+        emoji: true,
+      },
+      style: "primary",
+      action_id: "share_agent_from_modal",
+      value: interactionId,
+    },
+  ];
+
+  if (isFromThread) {
+    actions.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Share in Thread",
+        emoji: true,
+      },
+      action_id: "share_agent_in_thread_from_modal",
+      value: interactionId,
+    });
+  }
+
   blocks.push({
     type: "actions",
     block_id: "agent_response_actions",
-    elements: [
-      {
-        type: "button",
-        text: {
-          type: "plain_text",
-          text: "Share in channel",
-          emoji: true,
-        },
-        style: "primary",
-        action_id: "share_agent_from_modal",
-        value: interactionId,
-      },
-    ],
+    elements: actions,
   });
 
   return {
     type: "modal",
     title: {
       type: "plain_text",
-      text: `@${agentName} Response`,
+      text: `/${agentName} Response`,
       emoji: true,
     },
     close: {
@@ -985,7 +1001,7 @@ export function createSharedAgentResponseBlocks(
   response: string,
   citations: any[] = []
 ): Block[] {
-  // Clean up and format the main response body for Slack mrkdwn
+  // Clean up and format the main response body for Slack mrkdwngit
   const displayResponse = response
     .replace(/\[\d+\]/g, "") // Remove citation numbers
     .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
@@ -997,7 +1013,7 @@ export function createSharedAgentResponseBlocks(
       type: "header",
       text: {
         type: "plain_text",
-        text: `🤖 Response from @${agentName}`,
+        text: `🤖 Response from /${agentName}`,
         emoji: true,
       },
     },
@@ -1124,7 +1140,7 @@ export function createAllSourcesModal(
       type: "header",
       text: {
         type: "plain_text",
-        text: `📚 All Sources from @${agentName}`,
+        text: `📚 All Sources from /${agentName}`,
         emoji: true,
       },
     },
