@@ -413,7 +413,7 @@ export const AppRoutes = app
     AddServiceConnection,
   )
   .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
-  .post("syncSlackByMail", HandlePerUserSlackSync)
+  .post("/syncSlackByMail", HandlePerUserSlackSync)
   .get("/list_users", ListAllUsers)
   .post(
     "/google/service_account/ingest_more",

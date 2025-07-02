@@ -7,6 +7,8 @@ import { useEffect, useState } from "react"
 import { api } from "@/api"
 import { errorComponent } from "@/components/error"
 import { Sidebar } from "@/components/Sidebar"
+import { PublicUser, PublicWorkspace } from "shared/types"
+import { toast } from "@/hooks/use-toast"
 // import { IntegrationsSidebar } from '@/components/IntegrationsSidebar'
 import { useTheme } from "@/components/ThemeContext"
 import {
@@ -126,7 +128,11 @@ const Skeleton = ({ className = "" }: { className?: string }) => (
 // Add a simple toast function at the top of the file
 const showToast = (message: string, type: "success" | "error" = "success") => {
   // Simple browser notification or console log for now
-  console.log(`Toast ${type}: ${message}`)
+  toast({
+    title: type === "success" ? "Success" : "Error",
+    description: `${message}`,
+    variant: type === "error" ? "destructive" : "default",
+  })
   // You can replace this with your existing notification system
 }
 
@@ -167,8 +173,8 @@ interface User {
 }
 
 interface UsersListPageProps {
-  user: any
-  workspace: any
+  user: PublicUser
+  workspace: PublicWorkspace
   agentWhiteList: boolean
 }
 
@@ -396,10 +402,10 @@ function UsersListPage({
     const app = sortFieldToApp[sortField]
     filteredUsers = [...filteredUsers].sort((a, b) => {
       const aDate = a.syncJobs?.[app]?.createdAt
-        ? new Date(a.syncJobs[app].createdAt as any).getTime()
+        ? new Date(a.syncJobs?.[app]?.createdAt!).getTime()
         : 0
       const bDate = b.syncJobs?.[app]?.createdAt
-        ? new Date(b.syncJobs[app].createdAt as any).getTime()
+        ? new Date(b.syncJobs?.[app]?.createdAt!).getTime()
         : 0
       return sortDirection === "asc" ? aDate - bDate : bDate - aDate
     })
@@ -826,7 +832,7 @@ function UsersListPage({
                         </TableCell>
 
                         <TableCell>
-                          {currentUser.role === ("SuperAdmin" as UserRole) &&
+                          {currentUser.role === UserRole.SuperAdmin &&
                           currentUser.email !== user.email ? (
                             <div className="relative inline-block">
                               <select

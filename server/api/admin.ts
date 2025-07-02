@@ -6,6 +6,7 @@ import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import type { Job } from "pg-boss"
 import {
   syncConnectorTools,
   deleteToolsByConnectorId,
@@ -1169,7 +1170,6 @@ export const ListAllUsers = async (c: Context) => {
 
 export const UpdateUser = async (c: Context) => {
   try {
-    console.log("UpdateUser called")
     // @ts-ignore
     const form: userRoleChange = c.req.valid("form")
     const userId = form.userId
@@ -1180,10 +1180,13 @@ export const UpdateUser = async (c: Context) => {
       message: "User role updated successfully",
     })
   } catch (error) {
-    return c.json({
-      success: false,
-      message: `Failed to update the user:${getErrorMessage(error)}`,
-    })
+    return c.json(
+      {
+        success: false,
+        message: `Failed to update the user:${getErrorMessage(error)}`,
+      },
+      500,
+    )
   }
 }
 
@@ -1212,7 +1215,7 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
     }
 
     // Call the function with boss and job parameters
-    await handleGoogleOAuthChanges(boss, mockJob as any)
+    await handleGoogleOAuthChanges(boss, mockJob as Job)
 
     return c.json({
       success: true,
@@ -1249,7 +1252,7 @@ export const HandlePerUserSlackSync = async (c: Context) => {
     }
 
     // Call the function with boss and job parameters
-    await handleSlackChanges(boss, mockJob as any)
+    await handleSlackChanges(boss, mockJob as Job)
 
     return c.json({
       success: true,
