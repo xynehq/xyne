@@ -10,6 +10,12 @@ import {
   SlackEntity,
 } from "@/search/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
+import {
+  internalTools,
+  slackTools,
+  formatToolsSection,
+  type ToolDefinition,
+} from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
 
 export const askQuestionSelfCleanupPrompt = (
@@ -822,10 +828,36 @@ export const SearchQueryToolContextPrompt = (
   agentScratchpad: string,
   agentContext?: AgentPromptData,
   pastActs?: string,
+  customTools?: {
+    internal?: Record<string, ToolDefinition>
+    slack?: Record<string, ToolDefinition>
+  },
 ): string => {
   const availableApps = agentContext?.prompt.length
     ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
+
+  const toolsToUse = {
+    internal: customTools?.internal || internalTools,
+    slack: customTools?.slack || slackTools,
+  }
+
+  const updatedInternalTools = { ...toolsToUse.internal }
+  if (updatedInternalTools[XyneTools.MetadataRetrieval]) {
+    updatedInternalTools[XyneTools.MetadataRetrieval] = {
+      ...updatedInternalTools[XyneTools.MetadataRetrieval],
+      params: updatedInternalTools[XyneTools.MetadataRetrieval].params?.map(
+        (param) =>
+          param.name === "app"
+            ? {
+                ...param,
+                description: `MUST BE EXACTLY ONE OF ${availableApps}.`,
+              }
+            : param,
+      ),
+    }
+  }
+
   return `
     The current date is: ${getDateForAI()}
     
@@ -887,52 +919,9 @@ export const SearchQueryToolContextPrompt = (
         : ""
     }
     
-    **Internal Tool Context:**
-    1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.
-    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type/app*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
-      Params: 
-      - from (optional): Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").
-      - to (optional): Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").
-      - app (required): MUST BE EXACTLY ONE OF ${availableApps}.
-      - entity (optional): Specify the type of item being searched. Examples:
-          - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-          - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-          - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-          - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-      - filter_query (optional): Keywords to refine the search based on the user's query.
-      - limit (optional): Maximum number of items to retrieve.
-      - offset (optional): Number of items to skip for pagination.
-      - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
-    3. ${XyneTools.Search}: Search *content* across all sources. 
-      Params: 
-        - filter_query (required): Keywords to refine the search based on the user's query.
-        - limit (optional): Maximum number of items to retrieve.
-        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
-        - offset (optional): Number of items to skip for pagination.
-    4. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.
-       
-       
-    **Slack Tool Context:**
-    1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
-       Params: 
-        - filter_query (optional): Keywords to refine the search.
-        - limit (optional): Maximum number of items to retrieve.
-        - offset (optional): Number of items to skip for pagination.
-        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
-    2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
-       Params: 
-        - channel_name (required): Name of the Slack channel.
-        - filter_query (optional): Keywords to refine the search.
-        - user_email (optional): Email address of the user whose messages to retrieve.
-        - limit (optional): Maximum number of items to retrieve.
-        - offset (optional): Number of items to skip for pagination.
-        - order_direction (optional): Sort direction ('asc' for oldest first, 'desc' for newest first).
-        - from (optional): Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).
-        - to (optional): Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).
-    3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
-       Params: 
-        - user_email (required): Email address of the user whose Slack profile to retrieve.
+    ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
+    
+    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.

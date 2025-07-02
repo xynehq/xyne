@@ -45,18 +45,19 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import {
-  type AgentTool,
-  type FilteredSearchParameters,
-  type MetadataRetrievalParameters,
-  type MinimalAgentFragment,
-  type SearchParameters,
-} from "./types"
 import { searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
+import { getToolParameters, internalTools } from "@/api/chat/mapper"
+import type {
+  AgentTool,
+  MetadataRetrievalParams,
+  MinimalAgentFragment,
+  SearchParams,
+} from "./types"
+import { XyneTools } from "@/shared/types"
 
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -333,30 +334,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   return { result: summaryText, contexts: fragments }
 }
 
-// Search Tool (existing)
+// Search Tool
 export const searchTool: AgentTool = {
-  name: "search",
-  description:
-    "Search for general information across all data sources (Gmail, Calendar, Drive) using keywords.",
-  parameters: {
-    query: {
-      type: "string",
-      description: "The keywords or question to search for.",
-      required: true,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of results (default: 10).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
+  name: XyneTools.Search,
+  description: internalTools[XyneTools.Search].description,
+  parameters: getToolParameters(XyneTools.Search),
   execute: async (
-    params: SearchParameters,
+    params: SearchParams,
     span?: Span,
     email?: string,
     usrCtx?: string,
@@ -487,64 +471,11 @@ const appMapping: Record<string, SchemaMapping> = {
 
 // === NEW Metadata Retrieval Tool ===
 export const metadataRetrievalTool: AgentTool = {
-  name: "metadata_retrieval",
-  description:
-    "Retrieves a list of items (e.g., emails, calendar events, drive files) based on type and time. Use for 'list my recent emails', 'show my first documents about X', 'find uber receipts'.",
-  parameters: {
-    app: {
-      type: "string",
-      description:
-        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
-      required: true,
-    },
-    entity: {
-      type: "string",
-      description:
-        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
-      required: false,
-    },
-    from: {
-      type: "string",
-      description:
-        "Start date for search (UTC format: YYYY-MM-DDTHH:mm:ss.SSSZ).",
-      required: false,
-    },
-    to: {
-      type: "string",
-      description:
-        "End date for search (UTC format: YYYY-MM-DDTHH:mm:ss.SSSZ).",
-      required: false,
-    },
-    filter_query: {
-      type: "string",
-      description:
-        "Optional keywords to filter the items (e.g., 'uber trip', 'flight confirmation').",
-      required: false,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of items to retrieve (default: 10).",
-      required: false,
-    },
-    offset: {
-      type: "number",
-      description: "Number of items to skip for pagination (default: 0).",
-      required: false,
-    },
-    order_direction: {
-      type: "string",
-      description:
-        "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
+  name: XyneTools.MetadataRetrieval,
+  description: internalTools[XyneTools.MetadataRetrieval].description,
+  parameters: getToolParameters(XyneTools.MetadataRetrieval),
   execute: async (
-    params: MetadataRetrievalParameters,
+    params: MetadataRetrievalParams,
     span?: Span,
     email?: string,
     userCtx?: string,
@@ -654,9 +585,8 @@ export const metadataRetrievalTool: AgentTool = {
 }
 
 export const userInfoTool: AgentTool = {
-  name: "get_user_info",
-  description:
-    "Retrieves basic information about the current user and their environment, such as their name, email, company, current date, and time. Use this tool when the user's query directly asks for personal details (e.g., 'What is my name?', 'My email?', 'What time is it?', 'Who am I?') that can be answered from this predefined context.",
+  name: XyneTools.GetUserInfo,
+  description: internalTools[XyneTools.GetUserInfo].description,
   parameters: {}, // No parameters needed from the LLM
   execute: async (_params: any, span?: Span, email?: string, ctx?: string) => {
     const execSpan = span?.startSpan("execute_get_user_info_tool")
@@ -1728,7 +1658,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     },
     limit: {
       type: "number",
-      description: "Maximum number of messages to retrieve. deafault (20)",
+      description: "Maximum number of messages to retrieve. deafult (20)",
       required: false,
     },
     offset: {
