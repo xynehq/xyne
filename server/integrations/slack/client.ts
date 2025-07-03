@@ -19,6 +19,17 @@ import {
   createSharedAgentResponseBlocks,
   createAllSourcesModal,
 } from "./formatters";
+import {
+  type SearchCacheEntry,
+  type AgentCacheEntry,
+  type DbUser,
+} from "./types";
+import {
+  CACHE_TTL,
+  MODAL_RESULTS_DISPLAY_LIMIT,
+  SNIPPET_TRUNCATION_LENGTH,
+  ACTION_IDS,
+} from "./config";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
 import { UnderstandMessageAndAnswer } from "@/api/chat/chat";
@@ -61,37 +72,6 @@ if (
   throw new Error("SLACK_APP_TOKEN does not start with xapp-");
 }
 
-/**
- * Interface for the data cached for each search interaction.
- */
-interface SearchCacheEntry {
-  query: string;
-  results: any[];
-  timestamp: number;
-  isFromThread: boolean;
-}
-
-/**
- * Interface for the data cached for each agent interaction.
- */
-interface AgentCacheEntry {
-  query: string;
-  agentName: string;
-  response: string;
-  citations: any[];
-  timestamp: number;
-  isFromThread: boolean;
-}
-
-interface DbUser {
-  id: number;
-  name: string;
-  email: string;
-  externalId: string;
-  workspaceId: number;
-  workspaceExternalId: string;
-  role: string;
-}
 
 // --- Global Cache with TTL Management ---
 declare global {
@@ -100,9 +80,6 @@ declare global {
 }
 global._searchResultsCache = global._searchResultsCache || {};
 global._agentResponseCache = global._agentResponseCache || {};
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-const MODAL_RESULTS_DISPLAY_LIMIT = 5;
-const SNIPPET_TRUNCATION_LENGTH = 200;
 
 /**
  * Periodically cleans up expired entries from the search results cache.
@@ -169,20 +146,6 @@ setInterval(() => {
   });
 }, 5 * 60 * 1000);
 
-/**
- * Defined separate, explicit action IDs for sharing from the modal
- * to a channel vs. to a thread to resolve ambiguity.
- */
-const ACTION_IDS = {
-  VIEW_SEARCH_MODAL: "view_search_modal",
-  VIEW_AGENT_MODAL: "view_agent_modal",
-  SHARE_RESULT_DIRECTLY: "share_result",
-  SHARE_FROM_MODAL: "share_from_modal", // For sharing to the channel
-  SHARE_IN_THREAD_FROM_MODAL: "share_in_thread_from_modal", // For sharing to a thread
-  SHARE_AGENT_FROM_MODAL: "share_agent_from_modal", // For sharing agent responses
-  SHARE_AGENT_IN_THREAD_FROM_MODAL: "share_agent_in_thread_from_modal", // For sharing agent responses to a thread
-  VIEW_ALL_SOURCES: "view_all_sources", // For viewing all sources in a modal
-};
 
 // --- Event Handlers ---
 
