@@ -384,8 +384,8 @@ const handleAppValidation = async (c: Context) => {
 }
 
 export const AppRoutes = app
-  .post("/validate", handleAppValidation)
   .basePath("/api/v1")
+  .post("/validate-token", handleAppValidation)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
