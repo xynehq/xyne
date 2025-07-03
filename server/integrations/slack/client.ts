@@ -109,35 +109,62 @@ const SNIPPET_TRUNCATION_LENGTH = 200;
 /**
  * Periodically cleans up expired entries from the search results cache.
  */
-const cleanupCache = () => {
-  try {
-    const now = Date.now();
-    let cleanedCount = 0;
+const cleanupCache = async () => {
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 second
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const now = Date.now();
+      let cleanedCount = 0;
 
-    // Clean search cache
-    for (const key in global._searchResultsCache) {
-      if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
-        delete global._searchResultsCache[key];
-        cleanedCount++;
+      // Clean search cache
+      for (const key in global._searchResultsCache) {
+        if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
+          delete global._searchResultsCache[key];
+          cleanedCount++;
+        }
       }
-    }
 
-    // Clean agent cache
-    for (const key in global._agentResponseCache) {
-      if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
-        delete global._agentResponseCache[key];
-        cleanedCount++;
+      // Clean agent cache
+      for (const key in global._agentResponseCache) {
+        if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
+          delete global._agentResponseCache[key];
+          cleanedCount++;
+        }
       }
-    }
 
-    if (cleanedCount > 0) {
-      Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
+      if (cleanedCount > 0) {
+        Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
+      }
+      
+      // Success - exit retry loop
+      return;
+      
+    } catch (error) {
+      const isLastAttempt = attempt === maxRetries - 1;
+      
+      if (isLastAttempt) {
+        Logger.error(error, `Cache cleanup failed after ${maxRetries} attempts`);
+        return;
+      }
+      
+      // Calculate exponential backoff delay
+      const delay = baseDelay * Math.pow(2, attempt);
+      Logger.warn(error, `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`);
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  } catch (error) {
-    Logger.error(error, "Error occurred during cache cleanup.");
   }
 };
-setInterval(cleanupCache, 5 * 60 * 1000);
+
+// Use setInterval with async function wrapper
+setInterval(() => {
+  cleanupCache().catch(error => {
+    Logger.error(error, "Unexpected error in cache cleanup interval");
+  });
+}, 5 * 60 * 1000);
 
 /**
  * Defined separate, explicit action IDs for sharing from the modal
