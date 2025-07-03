@@ -275,10 +275,21 @@ const handleAgentsCommand = async (
   Logger.info(`Listing agents for user ${dbUser.email}`);
 
   try {
+    // Validate workspaceId before proceeding
+    if (!dbUser.workspaceId || dbUser.workspaceId <= 0) {
+      Logger.error(`Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`);
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "There's an issue with your workspace configuration. Please contact your administrator.",
+      });
+      return;
+    }
+
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId || 1,
+      dbUser.workspaceId, // Remove the fallback "|| 1"
       20,
       0
     );
@@ -385,11 +396,22 @@ const handleAgentSearchCommand = async (
   );
 
   try {
+    // Validate workspaceId before proceeding
+    if (!dbUser.workspaceId || dbUser.workspaceId <= 0) {
+      Logger.error(`Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`);
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "There's an issue with your workspace configuration. Please contact your administrator.",
+      });
+      return;
+    }
+
     // Get accessible agents and find the requested one
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId || 1,
+      dbUser.workspaceId, // Remove the fallback "|| 1"
       100,
       0
     );
@@ -680,6 +702,70 @@ const handleAgentSearchCommand = async (
   }
 };
 
+const executeSearch = async (
+  userEmail: string,
+  workspaceExternalId: string,
+  query: string,
+  options: {
+    groupCount?: boolean;
+    page?: number;
+    app?: string | null;
+    entity?: string | null;
+    offset?: number;
+    debug?: boolean;
+  } = {}
+): Promise<any[]> => {
+  try {
+    // Get user and workspace data properly
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      userEmail
+    );
+
+    if (!userAndWorkspace) {
+      throw new Error("User or workspace not found");
+    }
+
+    // Create proper context with actual authentication data
+    const ctx = userContext(userAndWorkspace);
+    
+    // Create a proper request context for the search API
+    const searchContext = {
+      get: (key: string) => {
+        if (key === config.JwtPayloadKey) {
+          return {
+            sub: userAndWorkspace.user.email,
+            workspaceId: userAndWorkspace.workspace.externalId,
+            role: userAndWorkspace.user.role,
+            userId: userAndWorkspace.user.id,
+            workspaceIdInternal: userAndWorkspace.workspace.id,
+          };
+        }
+        return ctx.get(key);
+      },
+      req: {
+        valid: (type: "query") => ({
+          query,
+          groupCount: options.groupCount || false,
+          page: options.page || 10,
+          app: options.app || null,
+          entity: options.entity || null,
+          offset: options.offset || 0,
+          debug: options.debug || false,
+        }),
+      },
+      json: (data: any) => data,
+    };
+
+    const searchApiResponse = await SearchApi(searchContext as any);
+    return (searchApiResponse as any)?.results || [];
+  } catch (error) {
+    Logger.error(error, "Error in executeSearch function");
+    throw error;
+  }
+};
+
 const handleSearchQuery = async (
   client: any,
   channel: string,
@@ -694,30 +780,21 @@ const handleSearchQuery = async (
 
   let results: any[] = [];
   try {
-    const mockContext = {
-      get: (key: string) =>
-        key === config.JwtPayloadKey
-          ? {
-              sub: dbUser.email,
-              workspaceId: dbUser.workspaceExternalId || "default",
-              role: dbUser.role || "user",
-            }
-          : undefined,
-      req: {
-        valid: (type: "query") => ({
-          query,
-          groupCount: false,
-          page: 10,
-          app: null,
-          entity: null,
-          offset: 0,
-          debug: false,
-        }),
-      },
-      json: (data: any) => data,
-    };
-    const searchApiResponse = await SearchApi(mockContext as any);
-    results = (searchApiResponse as any)?.results || [];
+    // Use the new secure search function
+    results = await executeSearch(
+      dbUser.email,
+      dbUser.workspaceExternalId || "default",
+      query,
+      {
+        groupCount: false,
+        page: 10,
+        app: null,
+        entity: null,
+        offset: 0,
+        debug: false,
+      }
+    );
+    
     Logger.info(`Found ${results.length} results from SearchApi.`);
   } catch (apiError) {
     Logger.error(apiError, "Error calling SearchApi");
