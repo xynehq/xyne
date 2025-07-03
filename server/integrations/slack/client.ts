@@ -1275,13 +1275,27 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
 
     // Try to show an error modal instead of ephemeral message since we're in a modal context
     try {
+      const errorDetails = error.message.includes('No interaction ID') 
+        ? 'The response data has expired or is no longer available.'
+        : error.message.includes('No cached agent response')
+        ? 'The response data has expired. Please run your query again.'
+        : error.message.includes('No sources available')
+        ? 'This response was generated without source citations.'
+        : `Unexpected error: ${error.message}`;
+
+      const troubleshootingTips = error.message.includes('expired') || error.message.includes('No cached')
+        ? '\n\n**What to do:**\n• Run your agent query again\n• The system keeps responses for 10 minutes only'
+        : error.message.includes('No sources')
+        ? '\n\n**Note:** This response was generated from the agent\'s training data without citing external sources.'
+        : '\n\n**Troubleshooting:**\n• Try refreshing and running the query again\n• Contact support if the issue persists';
+
       await client.views.open({
         trigger_id: (body as BlockAction).trigger_id,
         view: {
           type: "modal",
           title: {
             type: "plain_text",
-            text: "Error",
+            text: "Unable to Open Sources",
             emoji: true,
           },
           close: {
@@ -1294,7 +1308,7 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `❌ *Error opening sources*\n\n${error.message}\n\nPlease try again or contact support if the issue persists.`,
+                text: `❌ *Could not display sources*\n\n${errorDetails}${troubleshootingTips}`,
               },
             },
           ],

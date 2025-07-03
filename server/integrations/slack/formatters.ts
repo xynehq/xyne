@@ -1193,7 +1193,8 @@ export function createAllSourcesModal(
   const maxSources = Math.min(citations.length, 20); // Limit sources to prevent modal overflow
 
   for (let i = 0; i < maxSources; i++) {
-    const citation = citations[i];
+    const citation = citations?.[i];
+    if (!citation) continue;
 
     const title = citation.title || citation.name || "Untitled";
     const url = citation.url || "";
