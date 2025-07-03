@@ -314,7 +314,6 @@ const handleAppValidation = async (c: Context) => {
   }
 
   const token = authHeader.slice("Bearer ".length).trim()
- 
 
   const userInfoRes = await fetch(
     "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -374,11 +373,14 @@ const handleAppValidation = async (c: Context) => {
       workspace_id: workspaceId,
     })
   }
-  return c.json({
-    success: false,
-    message: "No existing User found",
-  },
-  404)
+  Logger.error(`No existing user found`)
+  return c.json(
+    {
+      success: false,
+      message: "No existing User found",
+    },
+    404,
+  )
 }
 
 export const AppRoutes = app
