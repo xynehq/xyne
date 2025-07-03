@@ -9,7 +9,7 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import fs from "fs"
 import path from "path"
-import os from "os"
+import { findImageByName } from "@/ai/provider/base"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -35,8 +35,25 @@ const buildOpenAIImageParts = async (imagePaths: string[]) => {
     }
 
     const imageDir = path.join(baseDir, docId)
-    const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
-    const absolutePath = path.join(imageDir, fileName)
+    const absolutePath = findImageByName(imageDir, match[2])
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to MIME types for OpenAI
+    const mimeTypeMap: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+    }
+
+    const mimeType = mimeTypeMap[extension]
+    if (!mimeType) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
 
     // Ensure the resolved path is within baseDir
     const resolvedPath = path.resolve(imageDir)
@@ -48,14 +65,22 @@ const buildOpenAIImageParts = async (imagePaths: string[]) => {
     try {
       // Check if file exists before trying to read it
       await fs.promises.access(absolutePath, fs.constants.F_OK)
-      const base64Data = await fs.promises.readFile(absolutePath, {
-        encoding: "base64",
-      })
+      const imageBytes = await fs.promises.readFile(absolutePath)
+
+      // Check file size (4MB limit for OpenAI)
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
+
+      const base64Data = imageBytes.toString("base64")
 
       return {
         type: "image_url" as const,
         image_url: {
-          url: `data:image/png;base64,${base64Data}`,
+          url: `data:${mimeType};base64,${base64Data}`,
         },
       }
     } catch (error) {

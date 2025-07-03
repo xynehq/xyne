@@ -1,6 +1,6 @@
 export const isValidFile = (file: File) => {
   // Accept only text, image, pdf, docs, sheets, ppts, and check size limits
-  const maxSize = 15 * 1024 * 1024 // 15MB limit
+  const maxSize = 40 * 1024 * 1024 // 40MB limit
 
   // Allowed MIME types
   const allowedTypes = [
@@ -30,14 +30,10 @@ export const isValidFile = (file: File) => {
 
   const allowedImageTypes = [
     "image/jpeg",
+    "image/jpg",
     "image/png",
     "image/gif",
     "image/webp",
-    "image/bmp",
-    "image/svg+xml",
-    "image/tiff",
-    "image/heic",
-    "image/heif",
   ]
 
   // Check by MIME type or extension

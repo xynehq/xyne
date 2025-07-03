@@ -3,12 +3,14 @@ import { Subsystem } from "@/types"
 import { createCanvas, Image as CanvasImage, ImageData } from "canvas"
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
 import path from "path"
+import imageType from "image-type"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import {
   describeImageWithllm,
   withTempDirectory,
 } from "./lib/describeImageWithllm"
+import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const openjpegWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
@@ -165,9 +167,10 @@ function processTextParagraphs(
   return overlapText
 }
 
-export async function extractTextAndImagesWithChunks(
+export async function extractTextAndImagesWithChunksFromPDF(
   pdfPath: string,
   docid: string = crypto.randomUUID(),
+  extractImages: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -177,7 +180,27 @@ export async function extractTextAndImagesWithChunks(
   return withTempDirectory(async (tempDir) => {
     Logger.info(`Starting PDF processing for: ${pdfPath}`)
 
-    const data = new Uint8Array(await fsPromises.readFile(pdfPath))
+    let data: Uint8Array
+    try {
+      const buffer = await fsPromises.readFile(pdfPath)
+      data = new Uint8Array(buffer)
+    } catch (error) {
+      const { name, message } = error as Error
+      if (
+        message.includes("PasswordException") ||
+        name.includes("PasswordException")
+      ) {
+        Logger.warn("Password protected PDF, skipping")
+      } else {
+        Logger.error(error, `PDF load error: ${error}`)
+      }
+      return {
+        text_chunks: [],
+        image_chunks: [],
+        text_chunk_pos: [],
+        image_chunk_pos: [],
+      }
+    }
     const loadingTask = PDFJS.getDocument({
       data,
       wasmUrl: openjpegWasmPath,
@@ -208,7 +231,7 @@ export async function extractTextAndImagesWithChunks(
       let textOperatorCount = 0
 
       // Start with cross-image overlap if available
-      if (crossImageOverlap) {
+      if (crossImageOverlap && extractImages) {
         currentParagraph = crossImageOverlap + " "
         crossImageOverlap = "" // Clear after using
       }
@@ -259,10 +282,10 @@ export async function extractTextAndImagesWithChunks(
             break
           }
           // Handle image operators
-          case PDFJS.OPS.paintImageXObject:
-          case PDFJS.OPS.paintImageXObjectRepeat:
-          case PDFJS.OPS.paintInlineImageXObject:
-          case PDFJS.OPS.paintImageMaskXObject: {
+          case extractImages ? PDFJS.OPS.paintImageXObject : null:
+          case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
+          case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
+          case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
             // Flush any pending text paragraphs before image
             flushParagraph()
 
@@ -303,6 +326,16 @@ export async function extractTextAndImagesWithChunks(
               if (!width || !height || width <= 0 || height <= 0) {
                 Logger.debug(
                   `Invalid image dimensions for ${imageName}: ${width}x${height}`,
+                )
+                continue
+              }
+
+              if (
+                data.length >
+                DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+              ) {
+                Logger.warn(
+                  `Skipping large image (${(data.length / (1024 * 1024)).toFixed(2)} MB): ${imageName}`,
                 )
                 continue
               }
@@ -435,8 +468,19 @@ export async function extractTextAndImagesWithChunks(
               }
 
               if (imageProcessed) {
-                const buffer = canvas.toBuffer("image/png")
+                const imgBuffer = new Uint8Array(uint8Data.buffer)
+                const type = await imageType(imgBuffer)
+                if (
+                  !type ||
+                  !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
+                ) {
+                  Logger.warn(
+                    `Unsupported or unknown image MIME type: ${type?.mime}. Skipping image: ${imageName}`,
+                  )
+                  continue
+                }
 
+                const buffer = canvas.toBuffer(type.mime as any)
                 const imageHash = crypto
                   .createHash("md5")
                   .update(new Uint8Array(buffer))
@@ -471,7 +515,7 @@ export async function extractTextAndImagesWithChunks(
                   const outputDir = path.join(baseDir, docid)
                   await fsPromises.mkdir(outputDir, { recursive: true })
 
-                  const imageFilename = `${globalSeq.value}.png`
+                  const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
                   const imagePath = path.join(outputDir, imageFilename)
 
                   await fsPromises.writeFile(
@@ -489,6 +533,7 @@ export async function extractTextAndImagesWithChunks(
 
                 image_chunks.push(description)
                 image_chunk_pos.push(globalSeq.value)
+                crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
                 globalSeq.value++
                 Logger.debug(
                   `Successfully processed image ${imageName} on page ${pageNum}`,
@@ -516,8 +561,12 @@ export async function extractTextAndImagesWithChunks(
         globalSeq,
       )
 
-      // Update cross-image overlap
-      crossImageOverlap = overlapText
+      // Update cross-image overlap - APPEND instead of REPLACE to preserve image placeholders
+      if (overlapText.trim()) {
+        crossImageOverlap = crossImageOverlap
+          ? `${crossImageOverlap} ${overlapText}`
+          : overlapText
+      }
 
       Logger.debug(
         `Page ${pageNum} completed. Text operators found: ${textOperatorCount}, Current text chunks: ${text_chunks.length}, Current image chunks: ${image_chunks.length}`,

@@ -480,7 +480,7 @@ export const entityToSchemaMapper = (
   }
 
   // Handle cases where the same entity name exists in multiple schemas
-  if (entityName === "pdf") {
+  if (Object.keys(MailAttachmentEntity).includes(entityName || "")) {
     if (app === Apps.GoogleDrive) {
       return fileSchema
     } else if (app === Apps.Gmail) {

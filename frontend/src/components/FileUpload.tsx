@@ -312,7 +312,7 @@ export default function FileUpload({
       if (invalidFiles > 0) {
         showToast(
           "Invalid file(s)",
-          `${invalidFiles} file(s) ignored. Files must be under 15MB and of supported types.`,
+          `${invalidFiles} file(s) ignored. Files must be under 40MB and of supported types.`,
           true,
         )
       }
@@ -432,7 +432,7 @@ export default function FileUpload({
         if (files.length === 0 && totalItems > 0) {
           showToast(
             "No valid files found",
-            "Files must be under 15MB. All oversized files were ignored.",
+            "Files must be under 40MB. All oversized files were ignored.",
             true,
           )
         }
@@ -494,7 +494,7 @@ export default function FileUpload({
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Supported formats include text, image, CSV, PDF, Word, Excel, and
-            PowerPoint files (max 15MB per file).
+            PowerPoint files (max 40MB per file).
           </p>
         </div>
       )}
@@ -602,7 +602,7 @@ export default function FileUpload({
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Supported formats include text, CSV, PDF, Word, Excel, and
-                      PowerPoint files (max 15MB per file).
+                      PowerPoint files (max 40MB per file).
                     </p>
                   </div>
                 )}
@@ -719,7 +719,7 @@ export default function FileUpload({
           directory=""
           className="hidden"
           onChange={handleFolderChange}
-          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
+          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
         <input
           ref={fileInputRef}
@@ -727,7 +727,7 @@ export default function FileUpload({
           multiple
           className="hidden"
           onChange={handleFileChange}
-          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
+          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
       </div>
     </div>

@@ -1115,7 +1115,11 @@ export const searchQueryPrompt = (userContext: string): string => {
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
     Valid entity keywords that map to entities:
-    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
+      MailAttachmentEntity,
+    )
+      .map((v) => `'${v.toLocaleLowerCase()}  → ${v}'`)
+      .join(", ")};
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
