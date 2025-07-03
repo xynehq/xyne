@@ -158,6 +158,7 @@ import {
   searchToCitation,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
+import { RRuleSet, rrulestr } from "rrule"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -2262,11 +2263,25 @@ async function* generateMetadataQueryAnswer(
       const allReoccuringevents = await getAllReoccuringCalendarEvents({
         email,
       })
-      console.log("\n\nallReoccuringevents")
-      console.log(allReoccuringevents.root.children)
-      console.log("allReoccuringevents\n\n")
-      items = allReoccuringevents.root.children.concat(items)
+      // Expand each recurring event's recurrence into valid instances acc to "to" and "from" from user query.
+      const validVirtualRecurringEvents = getValidVirtualRecurringEvents(
+        allReoccuringevents,
+        timestampRange,
+      )
+      console.log("validVirtualRecurringEvents")
+      console.log(validVirtualRecurringEvents)
+      console.log("validVirtualRecurringEvents")
+      items = validVirtualRecurringEvents.concat(items)
     }
+    const seen = new Set()
+    items = items.filter((item) => {
+      if (seen.has(item.fields?.docId)) {
+        return false
+      } else {
+        seen.add(item.fields?.docId)
+        return true
+      }
+    })
     console.log("items")
     console.log(items)
     console.log("items")
@@ -2450,6 +2465,48 @@ async function* generateMetadataQueryAnswer(
     yield { text: METADATA_FALLBACK_TO_RAG }
     return
   }
+}
+
+// todo remove cancelledInstances if comes up somewhere
+const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
+  console.log("allRecurringEvents in getValidFn")
+  console.log(allRecurringEvents)
+  console.log("allRecurringEvents in getValidFn")
+  const fromDate = new Date(timestampRange.from)
+  const toDate = new Date(timestampRange.to)
+
+  return (
+    allRecurringEvents?.root?.children?.flatMap((event) => {
+      // Build the rule‐set for this event
+      const ruleSet = new RRuleSet()
+      event?.fields?.recurrence?.forEach((rruleString) => {
+        const rule = rrulestr(rruleString, {
+          dtstart: new Date(event?.fields?.startTime),
+        })
+        ruleSet.rrule(rule)
+      })
+
+      // All occurrence dates between from/to
+      const dates = ruleSet.between(fromDate, toDate, true)
+
+      // How long the original event lasts
+      const duration = event?.fields?.endTime - event?.fields?.startTime
+
+      // Produce one “virtual” event per occurrence
+      return dates?.map((date) => {
+        const newStart = date.getTime()
+        const newEnd = newStart + duration
+        return {
+          ...event,
+          fields: {
+            ...event.fields,
+            startTime: newStart,
+            endTime: newEnd,
+          },
+        }
+      })
+    }) ?? []
+  )
 }
 
 const fallbackText = (classification: QueryRouterLLMResponse): string => {
