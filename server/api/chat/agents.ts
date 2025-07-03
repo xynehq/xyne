@@ -423,7 +423,7 @@ export const MessageWithToolsApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let isDebugMode = true
+  let isDebugMode = config.isDebugMode
   let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
