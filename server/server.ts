@@ -335,7 +335,7 @@ const handleAppValidation = async (c: Context) => {
   }
 
   if (!user?.email_verified) {
-    throw new HTTPException(500, { message: "User email is not verified" })
+    throw new HTTPException(403, { message: "User email is not verified" })
   }
   // hosted domain
   // @ts-ignore
@@ -356,7 +356,7 @@ const handleAppValidation = async (c: Context) => {
         user: {
           email: user.email,
           name: user.name,
-          verified_email: user.verified_email,
+          verified_email: user.email_verified,
         },
       },
       "User found and authenticated",
@@ -374,6 +374,11 @@ const handleAppValidation = async (c: Context) => {
       workspace_id: workspaceId,
     })
   }
+  return c.json({
+    success: false,
+    message: "No existing User found",
+  },
+  404)
 }
 
 export const AppRoutes = app
