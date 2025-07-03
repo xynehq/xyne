@@ -8,6 +8,26 @@ import type {
   KnownBlock,
 } from "@slack/types";
 
+// Constants for character limits and truncation
+const SNIPPET_MAX_LENGTH = 200;
+const TITLE_MAX_LENGTH = 150;
+const TITLE_MAX_LENGTH_SHARED = 300;
+const SNIPPET_MAX_LENGTH_SHARED = 150;
+const SNIPPET_MAX_LENGTH_SOURCES = 80;
+const QUERY_DISPLAY_MAX_LENGTH = 100;
+const RESPONSE_MODAL_MAX_LENGTH = 2000;
+const RESPONSE_SHARED_MAX_LENGTH = 2800;
+const MESSAGE_MAX_LENGTH = 1000;
+const MODAL_MAX_CHARACTERS = 40000;
+const MODAL_HEADER_CHARACTERS = 200;
+const MODAL_DIVIDER_CHARACTERS = 10;
+const MAX_RESULTS_IN_MODAL = 5;
+const MAX_AGENTS_IN_DROPDOWN = 10;
+const MAX_RECENT_MESSAGES = 3;
+const MAX_CITATIONS_IN_MODAL = 2;
+const MAX_CITATIONS_IN_SHARED = 5;
+const MAX_SOURCES_IN_MODAL = 20;
+
 export function createAnalysisParentMessage(
   userId: string,
   text: string,
@@ -165,7 +185,7 @@ export function createSingleResultBlocks(
   if (snippet) {
     snippet = snippet.replace(/\s+/g, " ").trim();
     snippet =
-      snippet.length > 200 ? `${snippet.substring(0, 200)}...` : snippet;
+      snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
   }
 
   // Get metadata
@@ -383,7 +403,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
   });
 
   // Display up to 5 results in the modal
-  const displayResults = results.slice(0, 5);
+  const displayResults = results.slice(0, MAX_RESULTS_IN_MODAL);
   for (let i = 0; i < displayResults.length; i++) {
     const result = displayResults[i];
 
@@ -407,7 +427,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
     if (snippet) {
       snippet = snippet.replace(/\s+/g, " ").trim();
       snippet =
-        snippet.length > 200 ? `${snippet.substring(0, 200)}...` : snippet;
+        snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
     }
 
     // Get metadata
@@ -487,14 +507,14 @@ export function createSearchResultsModal(query: string, results: any[]): View {
   }
 
   // If there are more results than what's shown in the modal
-  if (results.length > 5) {
+  if (results.length > MAX_RESULTS_IN_MODAL) {
     blocks.push({
       type: "context",
       elements: [
         {
           type: "mrkdwn",
           text: `_${
-            results.length - 5
+            results.length - MAX_RESULTS_IN_MODAL
           } more results available. Refine your search for better results._`,
         },
       ],
@@ -544,7 +564,7 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
   }
 
   // Create agent selection options
-  const agentOptions = agents.slice(0, 10).map((agent) => ({
+  const agentOptions = agents.slice(0, MAX_AGENTS_IN_DROPDOWN).map((agent) => ({
     text: {
       type: "plain_text",
       text: agent.name,
@@ -610,7 +630,7 @@ export const createAgentConversationModal = (
     });
 
     // Show last 3 messages for context
-    const recentMessages = conversationHistory.slice(-3);
+    const recentMessages = conversationHistory.slice(-MAX_RECENT_MESSAGES);
     recentMessages.forEach((msg) => {
       const roleIcon = msg.role === "user" ? "👤" : "🤖";
       const roleText = msg.role === "user" ? "You" : agentName;
@@ -619,8 +639,8 @@ export const createAgentConversationModal = (
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, 200)}${
-            msg.content.length > 200 ? "..." : ""
+          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, SNIPPET_MAX_LENGTH)}${
+            msg.content.length > SNIPPET_MAX_LENGTH ? "..." : ""
           }`,
         },
       });
@@ -643,7 +663,7 @@ export const createAgentConversationModal = (
         text: "Type your message to the agent...",
       },
       multiline: true,
-      max_length: 1000,
+      max_length: MESSAGE_MAX_LENGTH,
     },
     label: {
       type: "plain_text",
@@ -726,7 +746,7 @@ export const createAgentResponseBlocks = (
       },
     });
 
-    citations.slice(0, 3).forEach((citation, index) => {
+    citations.slice(0, MAX_RECENT_MESSAGES).forEach((citation, index) => {
       const citationText = citation.url
         ? `<${citation.url}|${citation.title || "Source"}>`
         : citation.title || "Source";
@@ -740,13 +760,13 @@ export const createAgentResponseBlocks = (
       });
     });
 
-    if (citations.length > 3) {
+    if (citations.length > MAX_RECENT_MESSAGES) {
       blocks.push({
         type: "context",
         elements: [
           {
             type: "mrkdwn",
-            text: `_...and ${citations.length - 3} more sources_`,
+            text: `_...and ${citations.length - MAX_RECENT_MESSAGES} more sources_`,
           },
         ],
       } as any);
@@ -855,7 +875,7 @@ export function createAgentResponseModal(
       text: {
         type: "mrkdwn",
         text: `🤖 */${agentName}* responded to: "_${
-          query.length > 100 ? query.substring(0, 100) + "..." : query
+          query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
         }_"`,
       },
     },
@@ -867,8 +887,8 @@ export function createAgentResponseModal(
       text: {
         type: "mrkdwn",
         text: `${
-          displayResponse.length > 2000
-            ? displayResponse.substring(0, 2000) +
+          displayResponse.length > RESPONSE_MODAL_MAX_LENGTH
+            ? displayResponse.substring(0, RESPONSE_MODAL_MAX_LENGTH) +
               "\n\n..._[Response truncated for display]_"
             : displayResponse
         }`,
@@ -888,7 +908,7 @@ export function createAgentResponseModal(
     });
 
     // Limit citations in modal to prevent excessive scrolling
-    const displayCitations = citations.slice(0, 2);
+    const displayCitations = citations.slice(0, MAX_CITATIONS_IN_MODAL);
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
       const rawTitle = citation.title || citation.name || "Untitled";
@@ -907,8 +927,8 @@ export function createAgentResponseModal(
         .replace(/<[^>]+>/g, "")
         .replace(/\s+/g, " ")
         .trim();
-      if (title.length > 150) {
-        title = `${title.substring(0, 150)}...`;
+      if (title.length > TITLE_MAX_LENGTH) {
+        title = `${title.substring(0, TITLE_MAX_LENGTH)}...`;
       }
 
       let snippet = citation.snippet || citation.content || "";
@@ -918,7 +938,7 @@ export function createAgentResponseModal(
           .replace(/\s+/g, " ")
           .trim();
         snippet =
-          snippet.length > 80 ? `${snippet.substring(0, 80)}...` : snippet;
+          snippet.length > SNIPPET_MAX_LENGTH_SOURCES ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...` : snippet;
       }
 
       blocks.push({
@@ -933,12 +953,12 @@ export function createAgentResponseModal(
     }
 
     // Show "See all sources" button if there are more than 2 sources
-    if (citations.length > 2) {
+    if (citations.length > MAX_CITATIONS_IN_MODAL) {
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `_${citations.length - 2} more sources available_`,
+          text: `_${citations.length - MAX_CITATIONS_IN_MODAL} more sources available_`,
         },
         accessory: {
           type: "button",
@@ -1047,8 +1067,8 @@ export function createSharedAgentResponseBlocks(
       text: {
         type: "mrkdwn",
         text: `${
-          displayResponse.length > 2800
-            ? displayResponse.substring(0, 2800) +
+          displayResponse.length > RESPONSE_SHARED_MAX_LENGTH
+            ? displayResponse.substring(0, RESPONSE_SHARED_MAX_LENGTH) +
               "\n\n..._[Response truncated]_"
             : displayResponse
         }`,
@@ -1069,7 +1089,7 @@ export function createSharedAgentResponseBlocks(
       },
     });
 
-    const maxCitationsToShow = Math.min(citations.length, 5);
+    const maxCitationsToShow = Math.min(citations.length, MAX_CITATIONS_IN_SHARED);
     citations.slice(0, maxCitationsToShow).forEach((citation, index) => {
       const rawTitle = citation.title || citation.name || "Untitled";
       let url = citation.url || "";
@@ -1085,8 +1105,8 @@ export function createSharedAgentResponseBlocks(
         .replace(/<[^>]+>/g, "")
         .replace(/\s+/g, " ")
         .trim();
-      if (title.length > 300) {
-        title = `${title.substring(0, 300)}...`;
+      if (title.length > TITLE_MAX_LENGTH_SHARED) {
+        title = `${title.substring(0, TITLE_MAX_LENGTH_SHARED)}...`;
       }
 
       let snippet = citation.snippet || citation.content || "";
@@ -1096,7 +1116,7 @@ export function createSharedAgentResponseBlocks(
           .replace(/\s+/g, " ")
           .trim();
         snippet =
-          snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+          snippet.length > SNIPPET_MAX_LENGTH_SHARED ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SHARED)}...` : snippet;
       }
 
       blocks.push({
@@ -1170,7 +1190,7 @@ export function createAllSourcesModal(
       text: {
         type: "mrkdwn",
         text: `*Query:* "${
-          query.length > 100 ? query.substring(0, 100) + "..." : query
+          query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
         }"`,
       },
     },
@@ -1188,9 +1208,8 @@ export function createAllSourcesModal(
 
   // Display sources with smart truncation to avoid exceeding modal limits
   // Slack modal has a ~50 block limit and each block has character limits
-  let totalCharacters = 200; // Start with header characters
-  const maxCharacters = 40000; // Conservative limit for modal content
-  const maxSources = Math.min(citations.length, 20); // Limit sources to prevent modal overflow
+  let totalCharacters = MODAL_HEADER_CHARACTERS; // Start with header characters
+  const maxSources = Math.min(citations.length, MAX_SOURCES_IN_MODAL); // Limit sources to prevent modal overflow
 
   for (let i = 0; i < maxSources; i++) {
     const citation = citations?.[i];
@@ -1204,7 +1223,7 @@ export function createAllSourcesModal(
     if (snippet) {
       snippet = snippet.replace(/\s+/g, " ").trim();
       snippet =
-        snippet.length > 150 ? `${snippet.substring(0, 150)}...` : snippet;
+        snippet.length > TITLE_MAX_LENGTH ? `${snippet.substring(0, TITLE_MAX_LENGTH)}...` : snippet;
     }
 
     const sourceText = `*${i + 1}. ${title}*\n${
@@ -1212,7 +1231,7 @@ export function createAllSourcesModal(
     }${url ? `\n<${url}|View Source>` : ""}`;
 
     // Check if adding this source would exceed our character limit
-    if (totalCharacters + sourceText.length > maxCharacters) {
+    if (totalCharacters + sourceText.length > MODAL_MAX_CHARACTERS) {
       // Add a note about remaining sources
       blocks.push({
         type: "section",
@@ -1241,7 +1260,7 @@ export function createAllSourcesModal(
       blocks.push({
         type: "divider",
       });
-      totalCharacters += 10; // Approximate divider character cost
+      totalCharacters += MODAL_DIVIDER_CHARACTERS; // Approximate divider character cost
     }
   }
 
