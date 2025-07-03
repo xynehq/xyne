@@ -25,9 +25,8 @@ function FileUploadIntegration() {
   const { user, agentWhiteList } = matches[matches.length - 1].context
 
   const [dataSources, setDataSources] = useState<ApiDataSource[]>([])
-  const [activeDataSource, setActiveDataSource] = useState<ApiDataSource | null>(
-    null,
-  )
+  const [activeDataSource, setActiveDataSource] =
+    useState<ApiDataSource | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)

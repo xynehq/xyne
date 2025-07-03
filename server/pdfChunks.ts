@@ -9,6 +9,7 @@ import {
   describeImageWithllm,
   withTempDirectory,
 } from "./lib/describeImageWithllm"
+import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const openjpegWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
@@ -324,6 +325,26 @@ export async function extractTextAndImagesWithChunksFromPDF(
               if (!width || !height || width <= 0 || height <= 0) {
                 Logger.debug(
                   `Invalid image dimensions for ${imageName}: ${width}x${height}`,
+                )
+                continue
+              }
+
+              if (
+                data.length >
+                DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+              ) {
+                Logger.warn(
+                  `Skipping large image (${(data.length / (1024 * 1024)).toFixed(2)} MB): ${imageName}`,
+                )
+                continue
+              }
+
+              const imageExtension = path.extname(imageName).toLowerCase()
+              if (
+                !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(imageExtension)
+              ) {
+                Logger.warn(
+                  `Unsupported image format: ${imageExtension}. Skipping image: ${imageName}`,
                 )
                 continue
               }

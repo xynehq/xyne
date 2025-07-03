@@ -9,6 +9,7 @@ import {
   describeImageWithllm,
   withTempDirectory,
 } from "./lib/describeImageWithllm"
+import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "docxChunks",
@@ -884,6 +885,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
         // Process image
         const imagePath = relationships.get(item.relId)
         if (imagePath) {
+          // 5MB limit
           try {
             const fullImagePath = `word/${imagePath}`
             const imageFile = zip.file(fullImagePath)
@@ -894,6 +896,26 @@ export async function extractTextAndImagesWithChunksFromDocx(
               // Skip small images
               if (imageBuffer.length < 10000) {
                 Logger.debug(`Skipping small image: ${imagePath}`)
+                continue
+              }
+
+              if (
+                imageBuffer.length >
+                DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+              ) {
+                Logger.warn(
+                  `Skipping large image (${(imageBuffer.length / (1024 * 1024)).toFixed(2)} MB): ${imagePath}`,
+                )
+                continue
+              }
+
+              const imageExtension = path.extname(imagePath).toLowerCase()
+              if (
+                !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(imageExtension)
+              ) {
+                Logger.warn(
+                  `Unsupported image format: ${imageExtension}. Skipping image: ${imagePath}`,
+                )
                 continue
               }
 

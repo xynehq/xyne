@@ -3,19 +3,19 @@ import path from "path"
 export const DATASOURCE_CONFIG = {
   // File size limits
   MAX_PDF_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_PDF_FILE_SIZE_MB || "15",
+    process.env.DATASOURCE_MAX_PDF_FILE_SIZE_MB || "40",
     10,
   ),
   MAX_DOCX_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_DOCX_FILE_SIZE_MB || "15",
+    process.env.DATASOURCE_MAX_DOCX_FILE_SIZE_MB || "40",
     10,
   ),
   MAX_PPTX_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_PPTX_FILE_SIZE_MB || "15",
+    process.env.DATASOURCE_MAX_PPTX_FILE_SIZE_MB || "40",
     10,
   ),
   MAX_TEXT_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_TEXT_FILE_SIZE_MB || "10",
+    process.env.DATASOURCE_MAX_TEXT_FILE_SIZE_MB || "40",
     10,
   ),
   MAX_CHUNK_SIZE: parseInt(process.env.DATASOURCE_MAX_CHUNK_SIZE || "512", 10),
@@ -28,7 +28,7 @@ export const DATASOURCE_CONFIG = {
     10,
   ),
   MAX_IMAGE_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_IMAGE_FILE_SIZE_MB || "15",
+    process.env.DATASOURCE_MAX_IMAGE_FILE_SIZE_MB || "40",
     10,
   ),
 
@@ -62,8 +62,6 @@ export const DATASOURCE_CONFIG = {
     "image/jpg",
     "image/png",
     "image/gif",
-    "image/bmp",
-    "image/tiff",
     "image/webp",
   ]),
 

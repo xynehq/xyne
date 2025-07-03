@@ -42,6 +42,24 @@ async function buildGeminiImageParts(
 
     const imageDir = path.join(baseDir, docId)
     const absolutePath = findImageByName(imageDir, match[2])
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to MIME types for Gemini
+    const mimeTypeMap: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+    }
+
+    const mimeType = mimeTypeMap[extension]
+    if (!mimeType) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
 
     // Ensure the resolved path is within baseDir
     const resolvedPath = path.resolve(imageDir)
@@ -53,13 +71,21 @@ async function buildGeminiImageParts(
     try {
       // Check if file exists before trying to read it
       await fs.promises.access(absolutePath, fs.constants.F_OK)
-      const base64Data = await fs.promises.readFile(absolutePath, {
-        encoding: "base64",
-      })
+      const imageBytes = await fs.promises.readFile(absolutePath)
+
+      // Check file size (4MB limit for Gemini)
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
+
+      const base64Data = imageBytes.toString("base64")
 
       return {
         inlineData: {
-          mimeType: "image/png",
+          mimeType: mimeType,
           data: base64Data,
         },
       }
@@ -72,7 +98,10 @@ async function buildGeminiImageParts(
   })
 
   const results = await Promise.all(imagePromises)
-  return results.filter(Boolean) // Remove any null/undefined entries
+  return results.filter(
+    (result): result is { inlineData: { mimeType: string; data: string } } =>
+      result !== null,
+  ) // Remove any null entries
 }
 
 export class GeminiAIProvider extends BaseProvider {
