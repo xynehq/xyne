@@ -25,7 +25,10 @@ const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 import {
   getGmailAttachmentChunks,
+  getGmailSpreadsheetSheets,
+  getMailAttachmentEntity,
   parseAttachments,
+  type SheetData,
 } from "@/integrations/google/worker-utils"
 import {
   ingestionMailErrorsTotal,
@@ -166,6 +169,34 @@ export const handleGmailIngestion = async (
   return historyId
 }
 
+// Helper function to check if a file is a spreadsheet
+const isSpreadsheetFile = (mimeType: string): boolean => {
+  return (
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "text/csv"
+  )
+}
+
+const isValidMimeType = (mimeType: string | null | undefined): boolean => {
+  if (!mimeType) return false
+
+  const supportedTypes = new Set([
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+  ])
+
+  return supportedTypes.has(mimeType.toLowerCase().split(";")[0].trim())
+}
+
 const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
   // Regular expression to match anything inside angle brackets
@@ -297,50 +328,120 @@ export const parseMail = async (
     if (payload.parts) {
       for (const part of payload.parts) {
         const { body, filename, mimeType } = part
-        if (mimeType && filename && body && body.attachmentId) {
+        if (
+          isValidMimeType(mimeType) &&
+          filename &&
+          body &&
+          body.attachmentId
+        ) {
+          const validMimeType = mimeType!
           try {
             const { attachmentId, size } = body
             const sizeRef = { value: size ? size : 0 }
-            const attachmentChunks = await getGmailAttachmentChunks(
-              gmail,
-              {
-                attachmentId: attachmentId,
+
+            // Handle spreadsheet files differently to process each sheet separately
+            if (isSpreadsheetFile(validMimeType)) {
+              const sheetsData = await getGmailSpreadsheetSheets(
+                gmail,
+                {
+                  attachmentId: attachmentId,
+                  filename: filename,
+                  size: sizeRef,
+                  messageId: messageId,
+                  mimeType: validMimeType,
+                },
+                client,
+              )
+
+              if (!sheetsData || sheetsData.length === 0) continue
+
+              // Create separate attachment documents for each sheet
+              for (const [sheetIndex, sheetData] of sheetsData.entries()) {
+                const sheetDocId =
+                  sheetsData.length > 1
+                    ? `${attachmentId}_${sheetData.sheetIndex}`
+                    : attachmentId
+
+                const sheetFilename =
+                  sheetsData.length > 1
+                    ? `${filename} / ${sheetData.sheetName}`
+                    : filename
+
+                const attachmentDoc: MailAttachment = {
+                  app: Apps.Gmail,
+                  entity: getMailAttachmentEntity(validMimeType),
+                  mailId: messageId,
+                  partId: part.partId ? parseInt(part.partId) : null,
+                  docId: sheetDocId,
+                  filename: sheetFilename,
+                  fileSize: sizeRef.value,
+                  fileType: validMimeType,
+                  chunks: sheetData.chunks,
+                  threadId: threadId,
+                  timestamp,
+                  permissions,
+                }
+
+                await insert(attachmentDoc, mailAttachmentSchema)
+                tracker?.updateUserStats(
+                  userEmail,
+                  StatType.Mail_Attachments,
+                  1,
+                )
+
+                totalAttachmentIngested.inc(
+                  {
+                    mime_type: validMimeType,
+                    status: "SUCCESS",
+                    account_type: AuthType.OAuth,
+                    email: userEmail,
+                  },
+                  1,
+                )
+              }
+            } else {
+              // Handle non-spreadsheet files as before
+              const attachmentChunks = await getGmailAttachmentChunks(
+                gmail,
+                {
+                  attachmentId: attachmentId,
+                  filename: filename,
+                  size: sizeRef,
+                  messageId: messageId,
+                  mimeType: validMimeType,
+                },
+                client,
+              )
+              if (!attachmentChunks) continue
+
+              const attachmentDoc: MailAttachment = {
+                app: Apps.Gmail,
+                entity: getMailAttachmentEntity(validMimeType),
+                mailId: messageId,
+                partId: part.partId ? parseInt(part.partId) : null,
+                docId: attachmentId,
                 filename: filename,
-                size: sizeRef,
-                messageId: messageId,
-                mimeType: mimeType,
-              },
-              client,
-            )
-            if (!attachmentChunks) continue
+                fileSize: sizeRef.value,
+                fileType: validMimeType,
+                chunks: attachmentChunks,
+                threadId: threadId,
+                timestamp,
+                permissions,
+              }
 
-            const attachmentDoc: MailAttachment = {
-              app: Apps.Gmail,
-              entity: MailAttachmentEntity.PDF,
-              mailId: messageId,
-              partId: part.partId ? parseInt(part.partId) : null,
-              docId: attachmentId,
-              filename: filename,
-              fileSize: sizeRef.value,
-              fileType: mimeType,
-              chunks: attachmentChunks,
-              threadId: threadId,
-              timestamp,
-              permissions,
+              await insert(attachmentDoc, mailAttachmentSchema)
+              tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
+
+              totalAttachmentIngested.inc(
+                {
+                  mime_type: validMimeType,
+                  status: "SUCCESS",
+                  account_type: AuthType.OAuth,
+                  email: userEmail,
+                },
+                1,
+              )
             }
-
-            await insert(attachmentDoc, mailAttachmentSchema)
-            tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-
-            totalAttachmentIngested.inc(
-              {
-                mime_type: mimeType,
-                status: "SUCCESS",
-                account_type: AuthType.OAuth,
-                email: userEmail,
-              },
-              1,
-            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -351,7 +452,7 @@ export const parseMail = async (
             )
             totalAttachmentError.inc(
               {
-                mime_type: mimeType,
+                mime_type: validMimeType,
                 status: "FAILED",
                 email: userEmail,
                 error_type: "ERROR_INSERTING_ATTACHMENT",

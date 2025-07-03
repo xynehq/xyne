@@ -165,9 +165,10 @@ function processTextParagraphs(
   return overlapText
 }
 
-export async function extractTextAndImagesWithChunks(
+export async function extractTextAndImagesWithChunksFromPDF(
   pdfPath: string,
   docid: string = crypto.randomUUID(),
+  extractImages: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -177,7 +178,27 @@ export async function extractTextAndImagesWithChunks(
   return withTempDirectory(async (tempDir) => {
     Logger.info(`Starting PDF processing for: ${pdfPath}`)
 
-    const data = new Uint8Array(await fsPromises.readFile(pdfPath))
+    let data: Uint8Array
+    try {
+      const buffer = await fsPromises.readFile(pdfPath)
+      data = new Uint8Array(buffer)
+    } catch (error) {
+      const { name, message } = error as Error
+      if (
+        message.includes("PasswordException") ||
+        name.includes("PasswordException")
+      ) {
+        Logger.warn("Password protected PDF, skipping")
+      } else {
+        Logger.error(error, `PDF load error: ${error}`)
+      }
+      return {
+        text_chunks: [],
+        image_chunks: [],
+        text_chunk_pos: [],
+        image_chunk_pos: [],
+      }
+    }
     const loadingTask = PDFJS.getDocument({
       data,
       wasmUrl: openjpegWasmPath,
@@ -208,7 +229,7 @@ export async function extractTextAndImagesWithChunks(
       let textOperatorCount = 0
 
       // Start with cross-image overlap if available
-      if (crossImageOverlap) {
+      if (crossImageOverlap && extractImages) {
         currentParagraph = crossImageOverlap + " "
         crossImageOverlap = "" // Clear after using
       }
@@ -259,10 +280,10 @@ export async function extractTextAndImagesWithChunks(
             break
           }
           // Handle image operators
-          case PDFJS.OPS.paintImageXObject:
-          case PDFJS.OPS.paintImageXObjectRepeat:
-          case PDFJS.OPS.paintInlineImageXObject:
-          case PDFJS.OPS.paintImageMaskXObject: {
+          case extractImages ? PDFJS.OPS.paintImageXObject : null:
+          case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
+          case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
+          case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
             // Flush any pending text paragraphs before image
             flushParagraph()
 
@@ -489,6 +510,7 @@ export async function extractTextAndImagesWithChunks(
 
                 image_chunks.push(description)
                 image_chunk_pos.push(globalSeq.value)
+                crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
                 globalSeq.value++
                 Logger.debug(
                   `Successfully processed image ${imageName} on page ${pageNum}`,
@@ -516,8 +538,12 @@ export async function extractTextAndImagesWithChunks(
         globalSeq,
       )
 
-      // Update cross-image overlap
-      crossImageOverlap = overlapText
+      // Update cross-image overlap - APPEND instead of REPLACE to preserve image placeholders
+      if (overlapText.trim()) {
+        crossImageOverlap = crossImageOverlap
+          ? `${crossImageOverlap} ${overlapText}`
+          : overlapText
+      }
 
       Logger.debug(
         `Page ${pageNum} completed. Text operators found: ${textOperatorCount}, Current text chunks: ${text_chunks.length}, Current image chunks: ${image_chunks.length}`,

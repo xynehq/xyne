@@ -30,14 +30,12 @@ export const isValidFile = (file: File) => {
 
   const allowedImageTypes = [
     "image/jpeg",
+    "image/jpg",
     "image/png",
     "image/gif",
-    "image/webp",
     "image/bmp",
-    "image/svg+xml",
     "image/tiff",
-    "image/heic",
-    "image/heif",
+    "image/webp",
   ]
 
   // Check by MIME type or extension

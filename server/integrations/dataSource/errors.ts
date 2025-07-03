@@ -34,20 +34,6 @@ export class UnsupportedFileTypeError extends FileValidationError {
   }
 }
 
-export class FileConversionError extends DataSourceError {
-  constructor(
-    message: string,
-    originalType: string,
-    targetType: string = "PDF",
-  ) {
-    super(
-      `Failed to convert ${originalType} to ${targetType}: ${message}`,
-      "FILE_CONVERSION_ERROR",
-      `Unable to process this file type. Please try a different format.`,
-    )
-  }
-}
-
 export class FileProcessingError extends DataSourceError {
   constructor(message: string, fileName?: string) {
     const fullMessage = fileName
@@ -67,36 +53,6 @@ export class ContentExtractionError extends DataSourceError {
       `Failed to extract content from ${fileType}: ${message}`,
       "CONTENT_EXTRACTION_ERROR",
       "Unable to extract readable content from the file.",
-    )
-  }
-}
-
-export class InsufficientContentError extends DataSourceError {
-  constructor(minLength: number, actualLength: number) {
-    super(
-      `Content too short: ${actualLength} characters (minimum: ${minLength})`,
-      "INSUFFICIENT_CONTENT_ERROR",
-      `File content is too short. Minimum ${minLength} characters required.`,
-    )
-  }
-}
-
-export class ExternalToolError extends DataSourceError {
-  constructor(tool: string, message: string) {
-    super(
-      `${tool} error: ${message}`,
-      "EXTERNAL_TOOL_ERROR",
-      `Unable to process file. Required software (${tool}) is not available.`,
-    )
-  }
-}
-
-export class TimeoutError extends DataSourceError {
-  constructor(operation: string, timeoutMs: number) {
-    super(
-      `${operation} timed out after ${timeoutMs}ms`,
-      "TIMEOUT_ERROR",
-      "File processing is taking too long. Please try a smaller file.",
     )
   }
 }

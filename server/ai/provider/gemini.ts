@@ -9,6 +9,15 @@ import fs from "fs"
 import os from "os"
 const Logger = getLogger(Subsystem.AI)
 
+function findImageByName(directory: string, imageName: string) {
+  const files = fs.readdirSync(directory)
+  const match = files.find((file) => path.parse(file).name === imageName)
+  if (!match) {
+    throw new Error(`Image "${imageName}" not found`)
+  }
+  return path.join(directory, match)
+}
+
 async function buildGeminiImageParts(
   imagePaths: string[],
 ): Promise<{ inlineData: { mimeType: string; data: string } }[]> {
@@ -32,8 +41,7 @@ async function buildGeminiImageParts(
     }
 
     const imageDir = path.join(baseDir, docId)
-    const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
-    const absolutePath = path.join(imageDir, fileName)
+    const absolutePath = findImageByName(imageDir, match[2])
 
     // Ensure the resolved path is within baseDir
     const resolvedPath = path.resolve(imageDir)
