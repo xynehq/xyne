@@ -334,7 +334,7 @@ const handleAgentSearchCommand = async (
 
   // Parse the command: /agent_name query - trim any leading/trailing whitespace
   const trimmedCommand = agentCommand.trim();
-  const match = trimmedCommand.match(/^\/([a-zA-Z0-9\s_-]+)\s+(.+)$/);
+  const match = trimmedCommand.match(/^\/([a-zA-Z0-9_-]+)\s+(.+)$/);
 
   Logger.info(
     `Trimmed command: "${trimmedCommand}", Match result: ${
