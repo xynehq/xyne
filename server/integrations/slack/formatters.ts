@@ -176,7 +176,7 @@ export function createSingleResultBlocks(
   if (result.content) snippet = result.content;
   else if (result.snippet) snippet = result.snippet;
   else if (result.chunks_summary && result.chunks_summary.length > 0) {
-    snippet = result.chunks_summary[0].chunk || "";
+    snippet = result.chunks_summary[0]?.chunk || "";
     // Remove any HTML tags
     snippet = snippet.replace(/<[^>]*>/g, "");
   }
@@ -418,7 +418,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
     if (result.content) snippet = result.content;
     else if (result.snippet) snippet = result.snippet;
     else if (result.chunks_summary && result.chunks_summary.length > 0) {
-      snippet = result.chunks_summary[0].chunk || "";
+      snippet = result.chunks_summary[0]?.chunk || "";
       // Remove any HTML tags
       snippet = snippet.replace(/<[^>]*>/g, "");
     }
@@ -747,9 +747,9 @@ export const createAgentResponseBlocks = (
     });
 
     citations.slice(0, MAX_RECENT_MESSAGES).forEach((citation, index) => {
-      const citationText = citation.url
+      const citationText = citation?.url
         ? `<${citation.url}|${citation.title || "Source"}>`
-        : citation.title || "Source";
+        : citation?.title || "Source";
 
       blocks.push({
         type: "section",
@@ -911,8 +911,8 @@ export function createAgentResponseModal(
     const displayCitations = citations.slice(0, MAX_CITATIONS_IN_MODAL);
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
-      const rawTitle = citation.title || citation.name || "Untitled";
-      let url = citation.url || "";
+      const rawTitle = citation?.title || citation?.name || "Untitled";
+      let url = citation?.url || "";
       let title = rawTitle;
 
       // Check for and parse Slack's <url|text> format
@@ -931,7 +931,7 @@ export function createAgentResponseModal(
         title = `${title.substring(0, TITLE_MAX_LENGTH)}...`;
       }
 
-      let snippet = citation.snippet || citation.content || "";
+      let snippet = citation?.snippet || citation?.content || "";
       if (snippet) {
         snippet = snippet
           .replace(/<[^>]+>/g, "")
@@ -1091,8 +1091,8 @@ export function createSharedAgentResponseBlocks(
 
     const maxCitationsToShow = Math.min(citations.length, MAX_CITATIONS_IN_SHARED);
     citations.slice(0, maxCitationsToShow).forEach((citation, index) => {
-      const rawTitle = citation.title || citation.name || "Untitled";
-      let url = citation.url || "";
+      const rawTitle = citation?.title || citation?.name || "Untitled";
+      let url = citation?.url || "";
       let title = rawTitle;
 
       const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
@@ -1109,7 +1109,7 @@ export function createSharedAgentResponseBlocks(
         title = `${title.substring(0, TITLE_MAX_LENGTH_SHARED)}...`;
       }
 
-      let snippet = citation.snippet || citation.content || "";
+      let snippet = citation?.snippet || citation?.content || "";
       if (snippet) {
         snippet = snippet
           .replace(/<[^>]+>/g, "")
@@ -1215,9 +1215,9 @@ export function createAllSourcesModal(
     const citation = citations?.[i];
     if (!citation) continue;
 
-    const title = citation.title || citation.name || "Untitled";
-    const url = citation.url || "";
-    let snippet = citation.snippet || citation.content || "";
+    const title = citation?.title || citation?.name || "Untitled";
+    const url = citation?.url || "";
+    let snippet = citation?.snippet || citation?.content || "";
 
     // Clean and truncate snippet more aggressively for the sources modal
     if (snippet) {

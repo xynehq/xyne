@@ -405,10 +405,21 @@ const handleAgentSearchCommand = async (
     });
 
     try {
+      // Validate workspaceExternalId before using it
+      if (!dbUser.workspaceExternalId) {
+        Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`);
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+          ...(isThreadMessage && { thread_ts: threadTs }),
+        });
+        return;
+      }
       // Get user and workspace data using the proper function
       const userAndWorkspace = await getUserAndWorkspaceByEmail(
         db,
-        dbUser.workspaceExternalId || "default",
+        dbUser.workspaceExternalId,
         dbUser.email
       );
       const ctx = userContext(userAndWorkspace);
@@ -703,8 +714,7 @@ const executeSearch = async (
             workspaceIdInternal: userAndWorkspace.workspace.id,
           };
         }
--       return ctx.get(key);
-+       return undefined;
+       return undefined;
       },
       req: {
         valid: (type: "query") => ({
@@ -742,10 +752,20 @@ const handleSearchQuery = async (
 
   let results: any[] = [];
   try {
+    // Validate workspaceExternalId before using it
+    if (!dbUser.workspaceExternalId) {
+      Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`);
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+      });
+      return;
+    }
     // Use the new secure search function
     results = await executeSearch(
       dbUser.email,
-      dbUser.workspaceExternalId || "default",
+      dbUser.workspaceExternalId,
       query,
       {
         groupCount: false,
