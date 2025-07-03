@@ -487,7 +487,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves *purely on metadata/time/app/entity*. Ideal for when referring single app / entity, when exactly ONE valid app/entity is detected, AND filterQuery is NOT null",
+      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
     params: [
       {
         name: "from",

@@ -1670,7 +1670,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     },
     limit: {
       type: "number",
-      description: "Maximum number of messages to retrieve. deafult (20)",
+      description: "Maximum number of messages to retrieve. default (20)",
       required: false,
     },
     offset: {
