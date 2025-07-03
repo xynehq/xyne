@@ -916,16 +916,16 @@ const handleShareAction = async (
   await ack();
   const view = body.view;
   try {
-    if (!view || !view.private_metadata)
+    if (!view || !view.private_metadata) {
       throw new Error("Cannot access required modal metadata.");
+    }
 
     if (!action.value) {
       throw new Error("No action value provided");
     }
+    
     const { url, title, query, snippet, metadata } = JSON.parse(action.value);
-    const { channel_id, thread_ts, user_id } = JSON.parse(
-      view.private_metadata
-    );
+    const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
 
     if (!channel_id) throw new Error("Channel ID not found in modal metadata.");
     if (isThreadShare && !thread_ts)
@@ -984,17 +984,34 @@ const handleShareAction = async (
         isThreadShare ? "thread" : "channel"
       } from modal`
     );
+    
+    if (view?.private_metadata) {
+      try {
+        const metadata = JSON.parse(view.private_metadata);
+        const channelId = metadata?.channel_id;
+        const userId = metadata?.user_id;
+        
+        if (channelId && userId) {
+          await client.chat.postEphemeral({
+            channel: channelId,
+            user: userId,
+            text: `Sorry, I couldn't share the result. ${error.message}. Please try again.`,
+          });
+        }
+      } catch (parseError) {
+        Logger.warn("Could not parse modal metadata for error message");
+      }
+    }
   }
 };
 
-app.action<BlockAction<ButtonAction>>(ACTION_IDS.SHARE_FROM_MODAL, (context) =>
-  handleShareAction(context, false)
-);
+app.action(ACTION_IDS.SHARE_FROM_MODAL, async (args) => {
+  await handleShareAction(args, false);
+});
 
-app.action<BlockAction<ButtonAction>>(
-  ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL,
-  (context) => handleShareAction(context, true)
-);
+app.action(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async (args) => {
+  await handleShareAction(args, true);
+});
 
 /**
  * Handles opening the agent response modal.
