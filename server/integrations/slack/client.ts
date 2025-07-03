@@ -703,7 +703,8 @@ const executeSearch = async (
             workspaceIdInternal: userAndWorkspace.workspace.id,
           };
         }
-        return ctx.get(key);
+-       return ctx.get(key);
++       return undefined;
       },
       req: {
         valid: (type: "query") => ({
