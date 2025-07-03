@@ -3077,7 +3077,7 @@ export const MessageApi = async (c: Context) => {
                 if (
                   item &&
                   item.app == Apps.Gmail &&
-                  !Object.keys(MailAttachmentEntity).includes(item.entity)
+                  !Object.values(MailAttachmentEntity).includes(item.entity)
                 ) {
                   item.docId = await replaceDocIdwithUserDocId(
                     item.docId,
