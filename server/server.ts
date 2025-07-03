@@ -130,6 +130,9 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+
+import slackApp from "@/integrations/slack/client"
+
 // Import Vespa proxy handlers
 import {
   validateApiKey,
@@ -743,6 +746,10 @@ app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
+  if (process.env.ENABLE_SLACK_SOCKET_MODE?.toLowerCase() === "true") {
+    await slackApp.start()
+    Logger.info("Slack app is running.")
+  }
 }
 
 app.get("/metrics", async (c) => {
