@@ -1803,6 +1803,7 @@ export const withToolQueryPrompt = (
   toolContext: string,
   toolOutput: string,
   agentContext?: AgentPromptData,
+  fallbackReasoning?: string,
 ): string => {
   return `
   Current date: ${getDateForAI()}.
@@ -1828,14 +1829,37 @@ export const withToolQueryPrompt = (
 
     **Context:**  
     ${toolOutput}
+    
+    ${
+      fallbackReasoning
+        ? `
+    ---
+    **SEARCH ANALYSIS:**
+    ${fallbackReasoning}
+    `
+        : ""
+    }
     ---
     **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
 
    ### Response Instructions:
-    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
+    ${
+      fallbackReasoning
+        ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
+        : `- **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
+    - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
+    - **INSUFFICIENT CONTEXT**: If the context is incomplete, partially relevant, or doesn't contain the specific information requested:
+      * DO NOT provide partial answers or tangentially related information
+      * DO NOT list what you found if it doesn't directly answer the query
+      * Instead, honestly explain that you don't have sufficient information to answer the query
+      * Explain what specific information would be needed to provide a complete answer
+      * Suggest how the user could refine their query to get better results
+    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
+    }
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
     - Cite any context-based information using [index] format, matching the provided source indices.
     - **Do NOT** reject any query. Respond using the available context only.
+    - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -1871,6 +1895,52 @@ ${synthesisContext}
   "answer": "Brief, synthesized answer based only on the context"
 }
   `
+}
+
+export const fallbackReasoningGenerationPrompt = (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+) => {
+  return `You are a search assistant. Your task is to ask the user for clarification to help find what they're looking for.
+
+**User Context:**
+${userContext}
+
+**Original Query:** "${originalQuery}"
+
+**Search History:**
+${agentScratchpad}
+
+**Tool Log:**
+${toolLog}
+
+**Context Found:**
+${gatheredFragments}
+
+**Your Task:**
+Ask the user for more specific details to help find the information they need.
+
+**CRITICAL RULES:**
+- DO NOT mention what was found or not found
+- DO NOT list any search results or partial matches
+- DO NOT explain what sources were searched
+- ONLY ask for clarification to improve the search
+
+**MANDATORY RESPONSE FORMAT:**
+
+{
+  "reasoning": "I couldn't find the specific information you're looking for. Could you provide more details like [specific clarifying questions based on the query]?"
+}
+
+
+**FINAL REMINDER:** 
+- Maximum 2-3 sentences
+- First sentence: "I couldn't find the specific information you're looking for."
+- Second sentence: Ask specific clarifying questions
+- DO NOT mention any search results or what was found`
 }
 
 export const meetingPromptJson = (

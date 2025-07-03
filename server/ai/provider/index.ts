@@ -57,6 +57,7 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   emailPromptJson,
+  fallbackReasoningGenerationPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   promptGenerationSystemPrompt,
@@ -1396,6 +1397,7 @@ export function generateAnswerBasedOnToolOutput(
   toolContext: string,
   toolOutput: string,
   agentContext?: string,
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   if (!isAgentPromptEmpty(agentContext)) {
@@ -1405,6 +1407,7 @@ export function generateAnswerBasedOnToolOutput(
       toolContext,
       toolOutput,
       parsedAgentPrompt,
+      fallbackReasoning,
     )
     params.systemPrompt = defaultSystemPrompt
   } else {
@@ -1412,6 +1415,8 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      undefined,
+      fallbackReasoning,
     )
   }
 
@@ -1499,6 +1504,67 @@ export const generatePromptFromRequirements = async function* (
     Logger.info("Prompt generation completed successfully")
   } catch (error) {
     Logger.error(error, "Error in generatePromptFromRequirements")
+    throw error
+  }
+}
+
+export const generateFallback = async (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<{
+  alternativeQueries: string[]
+  reasoning: string
+  cost: number
+}> => {
+  Logger.info("Starting fallback reasoning ")
+
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = fallbackReasoningGenerationPrompt(
+      userContext,
+      originalQuery,
+      agentScratchpad,
+      toolLog,
+      gatheredFragments,
+    )
+    params.json = true
+
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [
+          {
+            text: `Generate alternative search queries for the original query: "${originalQuery}"`,
+          },
+        ],
+      },
+    ]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      messages,
+      params,
+    )
+
+    if (text) {
+      const parsedResponse = jsonParseLLMOutput(text)
+      Logger.info("Follow-up query generation completed successfully")
+      return {
+        alternativeQueries: parsedResponse.alternativeQueries || [],
+        reasoning: parsedResponse.reasoning || "No reasoning provided",
+        cost: cost!,
+      }
+    } else {
+      throw new Error("No response from LLM for follow-up query generation")
+    }
+  } catch (error) {
+    Logger.error(error, "Error in generateFallback")
     throw error
   }
 }

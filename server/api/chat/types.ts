@@ -106,6 +106,7 @@ export interface AgentTool {
     result: string // Human-readable summary of action/result
     contexts?: MinimalAgentFragment[] // Data fragments found
     error?: string // Error message if failed
+    fallbackReasoning?: string // Detailed reasoning about why search failed
   }>
 }
 
