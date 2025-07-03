@@ -926,7 +926,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultBestModel,
+                modelId: defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -1041,7 +1041,12 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.ToolParameters,
-                  parameters: toolParams,
+                  parameters: {
+                    ...toolParams,
+                    excludedIds: excludedIds.length
+                      ? `Excluded ${excludedIds.length} previous ${excludedIds.length === 1 ? "result" : "results"} to avoid duplication`
+                      : "None",
+                  },
                 })
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
