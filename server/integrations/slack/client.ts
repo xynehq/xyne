@@ -884,11 +884,20 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
       error,
       `Error opening search modal for interaction ${interactionId}`
     );
-    await client.chat.postEphemeral({
-      channel: (body as BlockAction).channel!.id,
-      user: (body as BlockAction).user.id,
-      text: `Sorry, I couldn't open the results. ${error.message}. Please try again.`,
-    });
+    
+    // Add proper null checks before accessing properties
+    const channel = (body as BlockAction).channel;
+    const user = (body as BlockAction).user;
+    
+    if (channel?.id && user?.id) {
+      await client.chat.postEphemeral({
+        channel: channel.id,
+        user: user.id,
+        text: `Sorry, I couldn't open the results. ${error.message}. Please try again.`,
+      });
+    } else {
+      Logger.warn("Could not send error message - missing channel or user information");
+    }
   }
 });
 
@@ -1003,17 +1012,24 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
     }
 
     const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData)
+    if (!cachedData) {
       throw new Error(`No cached agent response found. It may have expired.`);
+    }
 
+    // Add proper null checks before accessing cachedData properties
     const { query, agentName, response, citations, isFromThread } = cachedData;
+    
+    if (!query || !agentName || !response) {
+      throw new Error("Invalid cached data - missing required fields");
+    }
+
     const modal = createAgentResponseModal(
       query,
       agentName,
       response,
-      citations,
+      citations || [],
       interactionId,
-      isFromThread
+      isFromThread || false
     );
 
     if (isFromThread) {
@@ -1055,11 +1071,20 @@ app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
       error,
       `Error opening agent modal for interaction ${interactionId}`
     );
-    await client.chat.postEphemeral({
-      channel: (body as BlockAction).channel!.id,
-      user: (body as BlockAction).user.id,
-      text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
-    });
+    
+    // Add proper null checks before accessing properties
+    const channel = (body as BlockAction).channel;
+    const user = (body as BlockAction).user;
+    
+    if (channel?.id && user?.id) {
+      await client.chat.postEphemeral({
+        channel: channel.id,
+        user: user.id,
+        text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
+      });
+    } else {
+      Logger.warn("Could not send error message - missing channel or user information");
+    }
   }
 });
 
@@ -1248,10 +1273,16 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
     }
 
     const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData)
+    if (!cachedData) {
       throw new Error(`No cached agent response found. It may have expired.`);
+    }
 
+    // Add proper null checks before accessing cachedData properties
     const { query, agentName, citations } = cachedData;
+    
+    if (!query || !agentName) {
+      throw new Error("Invalid cached data - missing required fields");
+    }
 
     if (!citations || citations.length === 0) {
       throw new Error("No sources available for this response.");
@@ -1320,20 +1351,25 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
       const view = (body as BlockAction).view;
       let channelId;
       try {
+        // Add proper null checks before accessing view properties
         if (view?.private_metadata) {
           const metadata = JSON.parse(view.private_metadata);
-          channelId = metadata.channel_id;
+          channelId = metadata?.channel_id;
         }
       } catch (parseError) {
         Logger.warn("Could not parse modal private_metadata for error message");
       }
 
-      if (channelId) {
+      // Add proper null checks before accessing user properties
+      const user = (body as BlockAction).user;
+      if (channelId && user?.id) {
         await client.chat.postEphemeral({
           channel: channelId,
-          user: (body as BlockAction).user.id,
+          user: user.id,
           text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.`,
         });
+      } else {
+        Logger.warn("Could not send fallback error message - missing channel or user information");
       }
     }
   }
