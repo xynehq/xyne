@@ -920,79 +920,9 @@ export const SearchQueryToolContextPrompt = (
         : ""
     }
     
-    **Internal Tool Context:**
-    1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.
-    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
-      Params: 
-      - item_type: (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'),
-      - app: (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-      - entity: (opt: 
-          - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
-            MailAttachmentEntity,
-          )
-            .map((v) => `'${v.toLocaleLowerCase()}  → ${v}'`)
-            .join(", ")};
-          - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-          - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-          - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-      - filter_query: (opt keywords for user-query), 
-      - limit: (opt), offset (opt), order_direction (opt: 'asc'/'desc'). 
-      - order_direction (opt: 'asc'/'desc'), 
-      - offset (opt: 0) use this if you need to goto next page to find better result.
-    3. ${XyneTools.Search}: Search *content* across all sources. 
-      Params: 
-        - filter_query (req keywords), 
-        - limit (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
-      Params: 
-        - filter_query (req keywords), 
-        - app (req: MUST BE EXACTLY ONE OF ${availableApps},), 
-        - limit (opt)
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. 
-    Params: 
-     - from (req: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-     - to (req: YYYY-MM-DDTHH:mm:ss.SSSZ).
-     - filter_query (opt keywords), 
-     - app (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-     - entity: (opt: 
-        - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
-          MailAttachmentEntity,
-        )
-          .map((v) => `'${v.toLocaleLowerCase()}  → ${v}'`)
-          .join(", ")};
-        - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-        - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-        - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-     - order_direction (opt: 'asc'/'desc'), 
-     - offset (opt: 0) use this if you need to goto next page to find better result.
-    6. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi", "Hello", "Hey", what is the time in Japan. select this tool with empty params. No parameters needed.
-       
-    **Slack Tool Context:**
-    1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
-       Params: 
-        - filter_query (opt: keywords), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc')
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
-       Params: 
-        - channel_name (req: channel name), 
-        - filter_query (opt: keywords), 
-        - user_email (opt: user email), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-        - to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
-       Params: 
-        - user_email (req: Email address of the user whose Slack profile to retrieve).
-
+    ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
+    
+    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
