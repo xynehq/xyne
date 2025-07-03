@@ -441,7 +441,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
     });
 
     if (metadataText) {
-      (blocks as any[]).push({
+      blocks.push({
         type: "context",
         elements: [
           {
@@ -449,11 +449,11 @@ export function createSearchResultsModal(query: string, results: any[]): View {
             text: metadataText,
           },
         ],
-      } as any);
+      });
     }
 
     // Add action buttons for each result
-    (blocks as any[]).push({
+    blocks.push({
       type: "actions",
       block_id: `result_actions_${i}`,
       elements: [
@@ -476,19 +476,19 @@ export function createSearchResultsModal(query: string, results: any[]): View {
           }),
         },
       ],
-    } as any);
+    });
 
     // Add divider between results (except after the last one)
     if (i < displayResults.length - 1) {
-      (blocks as any[]).push({
+      blocks.push({
         type: "divider",
-      } as any);
+      });
     }
   }
 
   // If there are more results than what's shown in the modal
   if (results.length > 5) {
-    (blocks as any[]).push({
+    blocks.push({
       type: "context",
       elements: [
         {
@@ -498,7 +498,7 @@ export function createSearchResultsModal(query: string, results: any[]): View {
           } more results available. Refine your search for better results._`,
         },
       ],
-    } as any);
+    });
   }
 
   // Create the modal view object
@@ -812,6 +812,24 @@ export const createAgentResponseBlocks = (
 };
 
 /**
+ * Clean and format agent response text for Slack markdown display
+ * @param response The raw agent response text
+ * @returns Cleaned and formatted response text
+ */
+export function cleanAgentResponse(response: string): string {
+  return response
+    .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
+    .replace(/\[\d+\]/g, "") // Remove citation numbers
+    .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
+    .replace(/^#{1,}\s*(.+)$/gm, "*$1*") // Convert # headings to *bold* format
+    .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
+    .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
+    .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
+    .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
+    .trim();
+}
+
+/**
  * Create a modal view for agent responses
  * @param query The original query string
  * @param agentName Name of the agent that responded
@@ -829,16 +847,7 @@ export function createAgentResponseModal(
   isFromThread: boolean
 ): View {
   // Clean up and format the main response body for Slack mrkdwn
-  const displayResponse = response
-    .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
-    .replace(/\[\d+\]/g, "") // Remove citation numbers
-    .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
-    .replace(/^#{1,}\s*(.+)$/gm, "*$1*") // Convert # headings to *bold* format
-    .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
-    .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
-    .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
-    .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
-    .trim();
+  const displayResponse = cleanAgentResponse(response);
 
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -1013,16 +1022,7 @@ export function createSharedAgentResponseBlocks(
   citations: any[] = []
 ): (KnownBlock | Block)[] {
   // Clean up and format the main response body for Slack markdown
-  const displayResponse = response
-    .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
-    .replace(/\[\d+\]/g, "") // Remove citation numbers
-    .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
-    .replace(/^#{1,}\s*(.+)$/gm, "*$1*") // Convert # headings to *bold* format
-    .replace(/^- /gm, "• ") // Convert '- ' list items to '• '
-    .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
-    .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
-    .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
-    .trim();
+  const displayResponse = cleanAgentResponse(response);
 
   const blocks: (KnownBlock | Block)[] = [
     {
