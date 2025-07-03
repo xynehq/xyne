@@ -302,7 +302,16 @@ app.route("/", updateApp)
 // App validatione endpoint
 
 const handleAppValidation = async (c: Context) => {
-  const token = c.get("token")
+  const authHeader = c.req.header("Authorization")
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(401, {
+      message: "Missing or malformed Authorization header",
+    })
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim()
+ 
 
   const userInfoRes = await fetch(
     "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -323,7 +332,9 @@ const handleAppValidation = async (c: Context) => {
     })
   }
 
-  if (!user?.verified_email) {
+  console.log(`Verified email :${user?.email_verified} `)
+
+  if (!user?.email_verified) {
     throw new HTTPException(500, { message: "User email is not verified" })
   }
   // hosted domain
