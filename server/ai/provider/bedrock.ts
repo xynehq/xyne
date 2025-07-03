@@ -18,15 +18,7 @@ import os from "os"
 const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
-
-function findImageByName(directory: string, imageName: string) {
-  const files = fs.readdirSync(directory)
-  const match = files.find((file) => path.parse(file).name === imageName)
-  if (!match) {
-    throw new Error(`Image "${imageName}" not found`)
-  }
-  return path.join(directory, match)
-}
+import { findImageByName } from "@/ai/provider/base"
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (

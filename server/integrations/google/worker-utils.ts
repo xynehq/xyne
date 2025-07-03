@@ -25,11 +25,14 @@ import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 // Function to process PPTX file content using our PPTX extractor
-const processPptxFile = async (filePath: string): Promise<string[]> => {
+const processPptxFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
   try {
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
       filePath,
-      crypto.randomUUID(),
+      attachmentId,
       false, // Don't extract images for email attachments
     )
 
@@ -41,11 +44,14 @@ const processPptxFile = async (filePath: string): Promise<string[]> => {
 }
 
 // Function to process PDF file content using our PDF extractor
-const processPdfFile = async (filePath: string): Promise<string[]> => {
+const processPdfFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
   try {
     const pdfResult = await extractTextAndImagesWithChunksFromPDF(
       filePath,
-      crypto.randomUUID(),
+      attachmentId,
       false, // Don't extract images for email attachments
     )
 
@@ -56,12 +62,15 @@ const processPdfFile = async (filePath: string): Promise<string[]> => {
   }
 }
 
-// Function to process PDF file content using our PDF extractor
-const processDocxFile = async (filePath: string): Promise<string[]> => {
+// Function to process DOCX file content using our DOCX extractor
+const processDocxFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
   try {
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
       filePath,
-      crypto.randomUUID(),
+      attachmentId,
       false, // Don't extract images for email attachments
     )
 
@@ -144,7 +153,10 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-      const pdfChunks = await processPdfFile(downloadAttachmentFilePath)
+      const pdfChunks = await processPdfFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
       if (pdfChunks && pdfChunks.length > 0) {
         attachmentChunks = pdfChunks
       } else {
@@ -162,7 +174,10 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-      const docxChunks = await processDocxFile(downloadAttachmentFilePath)
+      const docxChunks = await processDocxFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
       if (docxChunks && docxChunks.length > 0) {
         attachmentChunks = docxChunks
       } else {
@@ -180,7 +195,10 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-      const pptxChunks = await processPptxFile(downloadAttachmentFilePath)
+      const pptxChunks = await processPptxFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
       if (pptxChunks && pptxChunks.length > 0) {
         attachmentChunks = pptxChunks
       } else {
@@ -448,7 +466,6 @@ const processSpreadsheetFileWithSheetInfo = (filePath: string): SheetData[] => {
     } else {
       Logger.error(error, `Spreadsheet load error: ${error}`)
     }
-    Logger.error(error, `Error processing spreadsheet file: ${filePath}`)
     return []
   }
 }
@@ -471,16 +488,16 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
 
     if (textualCells.length === 0) continue
 
+    const rowText = textualCells.join(" ")
+
     // Check if adding this rowText would exceed the maximum text length
-    if (totalTextLength + textualCells.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
+    if (totalTextLength + rowText.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
       // Logger.warn(`Text length excedded, indexing with empty content`)
       // Return an empty array if the total text length exceeds the limit
       return []
     }
 
-    totalTextLength += textualCells.length
-
-    const rowText = textualCells.join(" ")
+    totalTextLength += rowText.length
 
     if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
       if (currentChunk.trim().length > 0) {

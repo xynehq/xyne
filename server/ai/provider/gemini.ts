@@ -6,17 +6,9 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import path from "path"
 import fs from "fs"
-import os from "os"
-const Logger = getLogger(Subsystem.AI)
+import { findImageByName } from "@/ai/provider/base"
 
-function findImageByName(directory: string, imageName: string) {
-  const files = fs.readdirSync(directory)
-  const match = files.find((file) => path.parse(file).name === imageName)
-  if (!match) {
-    throw new Error(`Image "${imageName}" not found`)
-  }
-  return path.join(directory, match)
-}
+const Logger = getLogger(Subsystem.AI)
 
 async function buildGeminiImageParts(
   imagePaths: string[],

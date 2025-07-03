@@ -9,18 +9,9 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import fs from "fs"
 import path from "path"
-import os from "os"
+import { findImageByName } from "@/ai/provider/base"
 
 const Logger = getLogger(Subsystem.AI)
-
-function findImageByName(directory: string, imageName: string) {
-  const files = fs.readdirSync(directory)
-  const match = files.find((file) => path.parse(file).name === imageName)
-  if (!match) {
-    throw new Error(`Image "${imageName}" not found`)
-  }
-  return path.join(directory, match)
-}
 
 // Helper function to convert images to OpenAI format
 const buildOpenAIImageParts = async (imagePaths: string[]) => {

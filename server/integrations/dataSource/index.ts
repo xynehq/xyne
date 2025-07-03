@@ -38,6 +38,7 @@ import { promises as fsPromises } from "fs"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import imageType from "image-type"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -538,9 +539,11 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
 
     if (textualCells.length === 0) continue
 
+    const rowText = textualCells.join(" ")
+
     // Check if adding this rowText would exceed the maximum text length
     if (
-      totalTextLength + textualCells.length >
+      totalTextLength + rowText.length >
       DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_TEXT_LEN
     ) {
       // Logger.warn(`Text length excedded, indexing with empty content`)
@@ -548,9 +551,7 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
       return []
     }
 
-    totalTextLength += textualCells.length
-
-    const rowText = textualCells.join(" ")
+    totalTextLength += rowText.length
 
     if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
       if (currentChunk.trim().length > 0) {
@@ -606,6 +607,12 @@ export const handleDataSourceFileUpload = async (
     if (isImageFile(mimeType)) {
       checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
       const imageBuffer = Buffer.from(await file.arrayBuffer())
+      const type = await imageType(new Uint8Array(imageBuffer))
+      if (!type || !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
+        throw new FileProcessingError(
+          `Unsupported or unknown image MIME type: ${type?.mime}. Skipping image: ${options.fileName}`,
+        )
+      }
       const processedFile = await processImageContent(imageBuffer, options)
       processedFiles = [processedFile]
 
@@ -616,7 +623,7 @@ export const handleDataSourceFileUpload = async (
         const outputDir = path.join(baseDir, processedFile.docId)
         await fsPromises.mkdir(outputDir, { recursive: true })
 
-        const imageFilename = `${0}.png`
+        const imageFilename = `${0}.${type.ext || "png"}`
         const imagePath = path.join(outputDir, imageFilename)
 
         await fsPromises.writeFile(

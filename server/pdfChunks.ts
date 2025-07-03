@@ -3,6 +3,7 @@ import { Subsystem } from "@/types"
 import { createCanvas, Image as CanvasImage, ImageData } from "canvas"
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
 import path from "path"
+import imageType from "image-type"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import {
@@ -339,16 +340,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 continue
               }
 
-              const imageExtension = path.extname(imageName).toLowerCase()
-              if (
-                !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(imageExtension)
-              ) {
-                Logger.warn(
-                  `Unsupported image format: ${imageExtension}. Skipping image: ${imageName}`,
-                )
-                continue
-              }
-
               if (width < 250 || height < 250) continue // Skip small images
 
               let uint8Data: Uint8Array
@@ -477,8 +468,19 @@ export async function extractTextAndImagesWithChunksFromPDF(
               }
 
               if (imageProcessed) {
-                const buffer = canvas.toBuffer("image/png")
+                const imgBuffer = new Uint8Array(uint8Data.buffer)
+                const type = await imageType(imgBuffer)
+                if (
+                  !type ||
+                  !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
+                ) {
+                  Logger.warn(
+                    `Unsupported or unknown image MIME type: ${type?.mime}. Skipping image: ${imageName}`,
+                  )
+                  continue
+                }
 
+                const buffer = canvas.toBuffer(type.mime as any)
                 const imageHash = crypto
                   .createHash("md5")
                   .update(new Uint8Array(buffer))
@@ -513,7 +515,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   const outputDir = path.join(baseDir, docid)
                   await fsPromises.mkdir(outputDir, { recursive: true })
 
-                  const imageFilename = `${globalSeq.value}.png`
+                  const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
                   const imagePath = path.join(outputDir, imageFilename)
 
                   await fsPromises.writeFile(
