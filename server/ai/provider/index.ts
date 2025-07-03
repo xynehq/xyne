@@ -1516,11 +1516,10 @@ export const generateFallback = async (
   gatheredFragments: string,
   params: ModelParams,
 ): Promise<{
-  alternativeQueries: string[]
   reasoning: string
   cost: number
 }> => {
-  Logger.info("Starting fallback reasoning ")
+  Logger.info("Starting fallback reasoning generation")
 
   try {
     if (!params.modelId) {
@@ -1541,7 +1540,7 @@ export const generateFallback = async (
         role: ConversationRole.USER,
         content: [
           {
-            text: `Generate alternative search queries for the original query: "${originalQuery}"`,
+            text: `Analyze why the search failed for the original query: "${originalQuery}"`,
           },
         ],
       },
@@ -1554,14 +1553,13 @@ export const generateFallback = async (
 
     if (text) {
       const parsedResponse = jsonParseLLMOutput(text)
-      Logger.info("Follow-up query generation completed successfully")
+      Logger.info("Fallback reasoning generation completed successfully")
       return {
-        alternativeQueries: parsedResponse.alternativeQueries || [],
         reasoning: parsedResponse.reasoning || "No reasoning provided",
         cost: cost!,
       }
     } else {
-      throw new Error("No response from LLM for follow-up query generation")
+      throw new Error("No response from LLM for fallback reasoning generation")
     }
   } catch (error) {
     Logger.error(error, "Error in generateFallback")

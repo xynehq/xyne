@@ -703,10 +703,6 @@ export const MessageWithToolsApi = async (c: Context) => {
           let agentScratchpad = "" // To build the reasoning history for the prompt
           let planningContext = "" // To build the context for planning
           let toolsPrompt = "" // To build the context for available tools
-          let fallbackResponseOutput: {
-            alternativeQueries: string[]
-            reasoning: string
-          } | undefined = undefined // To store fallback response for alternative queries
           let fallbackReasoning: string | undefined = undefined // To store fallback reasoning
           const previousToolCalls: {
             tool: string
@@ -1330,27 +1326,33 @@ export const MessageWithToolsApi = async (c: Context) => {
                       try {
                         await logAndStreamReasoning({
                           type: AgentReasoningStepType.LogMessage,
-                          message: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                          message:
+                            "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
                         })
 
                         // Show what tools were used and their results
-                        const toolExecutions = structuredReasoningSteps.filter(step => 
-                          step.type === AgentReasoningStepType.ToolExecuting || 
-                          step.type === AgentReasoningStepType.ToolResult
+                        const toolExecutions = structuredReasoningSteps.filter(
+                          (step) =>
+                            step.type ===
+                              AgentReasoningStepType.ToolExecuting ||
+                            step.type === AgentReasoningStepType.ToolResult,
                         )
-                        
+
                         if (toolExecutions.length > 0) {
                           await logAndStreamReasoning({
                             type: AgentReasoningStepType.LogMessage,
-                            message: `Previous search attempts: Used ${toolExecutions.filter(s => s.type === AgentReasoningStepType.ToolExecuting).length} tools, gathered ${gatheredFragments.length} context fragments.`,
+                            message: `Previous search attempts: Used ${toolExecutions.filter((s) => s.type === AgentReasoningStepType.ToolExecuting).length} tools, gathered ${gatheredFragments.length} context fragments.`,
                           })
                         }
 
-
                         // Prepare fallback tool parameters with more detailed context
                         const toolLog = structuredReasoningSteps
-                          .filter(step => step.type === AgentReasoningStepType.ToolExecuting || 
-                                         step.type === AgentReasoningStepType.ToolResult)
+                          .filter(
+                            (step) =>
+                              step.type ===
+                                AgentReasoningStepType.ToolExecuting ||
+                              step.type === AgentReasoningStepType.ToolResult,
+                          )
                           .map(convertReasoningStepToText)
                           .join("\n")
 
@@ -1366,9 +1368,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                           toolName: "fall_back" as AgentToolName,
                         })
 
-
                         // Execute fallback tool
-                        const fallbackResponse = await agentTools["fall_back"].execute(
+                        const fallbackResponse = await agentTools[
+                          "fall_back"
+                        ].execute(
                           fallbackParams,
                           streamSpan.startSpan("fallback_search_execution"),
                           email,
@@ -1388,7 +1391,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         // Store fallback reasoning separately - don't add to gathered fragments
                         if (fallbackResponse.fallbackReasoning) {
                           fallbackReasoning = fallbackResponse.fallbackReasoning
-                          
+
                           await logAndStreamReasoning({
                             type: AgentReasoningStepType.LogMessage,
                             message: `✓ Fallback analysis completed! Generated detailed reasoning about search limitations.`,
@@ -1396,16 +1399,21 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                           await logAndStreamReasoning({
                             type: AgentReasoningStepType.LogMessage,
-                            message: "Will provide explanation about why we couldn't find sufficient information.",
+                            message:
+                              "Will provide explanation about why we couldn't find sufficient information.",
                           })
                         } else {
                           await logAndStreamReasoning({
                             type: AgentReasoningStepType.LogMessage,
-                            message: "Fallback analysis completed but no reasoning generated.",
+                            message:
+                              "Fallback analysis completed but no reasoning generated.",
                           })
                         }
                       } catch (followBackError) {
-                        Logger.error(followBackError, "Error during followBack tool execution")
+                        Logger.error(
+                          followBackError,
+                          "Error during followBack tool execution",
+                        )
                         await logAndStreamReasoning({
                           type: AgentReasoningStepType.LogMessage,
                           message: `Follow-back search failed: ${getErrorMessage(followBackError)}. Will generate best-effort answer.`,
@@ -1414,7 +1422,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     } else {
                       await logAndStreamReasoning({
                         type: AgentReasoningStepType.LogMessage,
-                        message: "Max iterations reached with no context gathered. Will generate best-effort answer.",
+                        message:
+                          "Max iterations reached with no context gathered. Will generate best-effort answer.",
                       })
                     }
                   }
@@ -1465,7 +1474,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
           }
-
 
           const continuationIterator = getToolContinuationIterator(
             message,

@@ -2101,7 +2101,7 @@ export const fallbackTool: AgentTool = {
       required: true,
     },
     agentScratchpad: {
-      type: "string", 
+      type: "string",
       description: "The agent reasoning history",
       required: true,
     },
@@ -2129,7 +2129,7 @@ export const fallbackTool: AgentTool = {
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("execute_fallback_tool")
-    
+
     try {
       if (!email) {
         const errorMsg = "Email is required for fallback tool execution."
@@ -2139,7 +2139,7 @@ export const fallbackTool: AgentTool = {
 
       // Import the generateFallback function
       const { generateFallback } = await import("@/ai/provider")
-      
+
       // Generate detailed reasoning about why the search failed
       const fallbackResponse = await generateFallback(
         userCtx || "",
@@ -2151,24 +2151,28 @@ export const fallbackTool: AgentTool = {
           modelId: defaultFastModel,
           stream: false,
           json: true,
-        }
+        },
       )
 
-      if (!fallbackResponse.reasoning || fallbackResponse.reasoning.trim() === "") {
+      if (
+        !fallbackResponse.reasoning ||
+        fallbackResponse.reasoning.trim() === ""
+      ) {
         return {
           result: "No reasoning could be generated for the search failure.",
-          error: "No reasoning generated"
+          error: "No reasoning generated",
         }
       }
 
       // Return only the reasoning, not alternative queries
-      Logger.info(`Fallback tool generated detailed reasoning about search failure`)
-      
+      Logger.info(
+        `Fallback tool generated detailed reasoning about search failure`,
+      )
+
       return {
         result: `Fallback analysis completed. Generated detailed reasoning about why the search was unsuccessful.`,
         fallbackReasoning: fallbackResponse.reasoning, // Pass only the reasoning
       }
-
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)

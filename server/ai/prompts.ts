@@ -1904,7 +1904,7 @@ export const fallbackReasoningGenerationPrompt = (
   toolLog: string,
   gatheredFragments: string,
 ) => {
-  return `You are a search assistant. Your task is to ask the user for clarification to help find what they're looking for.
+  return `You are a search assistant analyzing why a search failed and providing structured feedback to help the user.
 
 **User Context:**
 ${userContext}
@@ -1921,26 +1921,35 @@ ${toolLog}
 ${gatheredFragments}
 
 **Your Task:**
-Ask the user for more specific details to help find the information they need.
-
-**CRITICAL RULES:**
-- DO NOT mention what was found or not found
-- DO NOT list any search results or partial matches
-- DO NOT explain what sources were searched
-- ONLY ask for clarification to improve the search
+Provide a structured analysis following this exact format and order:
 
 **MANDATORY RESPONSE FORMAT:**
 
 {
-  "reasoning": "I couldn't find the specific information you're looking for. Could you provide more details like [specific clarifying questions based on the query]?"
+  "reasoning": "[Start with a clear statement about not finding the information]\n\n[Explain what specific information gaps exist that would help improve the search]\n\n[Share what was learned from the search attempt - what was actually found and how it relates to the query]"
 }
 
+**STRUCTURE REQUIREMENTS:**
+1. **Start with the main issue**: Begin with "I don't have sufficient information to answer your query about [specific topic]"
+2. **Identify information gaps**: Explain what specific details would help improve the search (suggestions for user)
+3. **Share search insights**: Explain what was actually found and how it relates (or doesn't relate) to their query
 
-**FINAL REMINDER:** 
-- Maximum 2-3 sentences
-- First sentence: "I couldn't find the specific information you're looking for."
-- Second sentence: Ask specific clarifying questions
-- DO NOT mention any search results or what was found`
+**EXAMPLE FORMAT:**
+"I don't have sufficient information to answer your query about [topic].
+
+To get the results you're looking for, you might want to:
+- [Specific suggestion 1]
+- [Specific suggestion 2]
+- [Specific suggestion 3]
+
+[Explain what was actually found in the search and why it doesn't match the query]"
+
+**CRITICAL RULES:**
+- Start with the main problem statement
+- Focus on actionable suggestions in the middle section
+- End with what was actually found and why it doesn't help
+- Keep each section concise and helpful
+- Be specific about what the user could do differently`
 }
 
 export const meetingPromptJson = (
