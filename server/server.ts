@@ -323,6 +323,12 @@ const handleAppValidation = async (c: Context) => {
       },
     },
   )
+  if (!userInfoRes.ok) {
+    throw new HTTPException(401, {
+      message: "Invalid or expired token",
+    })
+  }
+
 
   const user = await userInfoRes.json()
 
