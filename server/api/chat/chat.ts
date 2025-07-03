@@ -2477,8 +2477,13 @@ const parseCompact = (ts) => {
 }
 
 const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
+  console.log("timeStamp range")
+  console.log(timestampRange)
+  console.log("timeStamp range")
   const fromDate = new Date(timestampRange.from)
-  const toDate = new Date(timestampRange.to)
+  const toDate = timestampRange.to
+    ? new Date(timestampRange.to)
+    : new Date(fromDate.getTime() + 24 * 60 * 60 * 1000)
 
   return (
     allRecurringEvents?.root?.children?.flatMap((event) => {
