@@ -41,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { wsClient } from "@/api" // ensure wsClient is imported
+import { useQuery as useReactQuery } from "@tanstack/react-query"
 
 export const updateConnectorStatus = async (
   connectorId: string,
@@ -509,6 +510,19 @@ const SlackOAuthTab = ({
       ? "Connect Slack Global OAuth"
       : "Connect Slack OAuth"
 
+  // Fetch sync jobs for the current user
+  const { data: syncJobStatus, isLoading: _ } = useReactQuery({
+    queryKey: ["user-sync-jobs"],
+    queryFn: async () => {
+      const res = await api.admin.user.syncJob.$get()
+      if (!res.ok) return { success: false }
+      return res.json()
+    },
+  })
+
+  // Check if user has a Slack sync job
+  const hasSlackSyncJob = !!syncJobStatus?.success
+
   return (
     <TabsContent value="oauth">
       <Card>
@@ -533,9 +547,18 @@ const SlackOAuthTab = ({
           ) : (
             <CardTitle>Slack OAuth</CardTitle>
           )}
-          <CardDescription>
-            Connect with slack to start ingestion
-          </CardDescription>
+          {/* Only show if no sync job and not connecting/connected */}
+          {!(
+            hasSlackSyncJob ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting
+          ) ? (
+            <CardDescription>
+              Connect with slack to start ingestion
+            </CardDescription>
+          ) : (
+            <CardDescription />
+          )}
         </CardHeader>
         <CardContent>
           {isPending ? (
@@ -592,7 +615,7 @@ const SlackOAuthTab = ({
                     className="animate-spin h-5 w-5 text-primary"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
-                    viewBox="0 0 24 24"
+                    viewBox="0 24 24"
                   >
                     <circle
                       className="opacity-25"
@@ -657,13 +680,16 @@ const SlackOAuthTab = ({
               OAuthIntegrationStatus.OAuthConnected ||
             oauthIntegrationStatus ===
               OAuthIntegrationStatus.OAuthConnecting ? (
-            // If connected or connecting, show the Start Ingestion button
-            <Button
-              onClick={handleRegularIngestion}
-              disabled={isRegularIngestionActive}
-            >
-              {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
-            </Button>
+            <div className="flex items-center py-2">
+              {hasSlackSyncJob ? (
+                <span className="text-600">Connected</span>
+              ) : (
+                <span>
+                  Your Slack data ingestion request has been submitted. It will
+                  take few hours, depending on size of your data
+                </span>
+              )}
+            </div>
           ) : null}
         </CardContent>
       </Card>
