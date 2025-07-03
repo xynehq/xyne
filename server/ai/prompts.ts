@@ -10,6 +10,12 @@ import {
   SlackEntity,
 } from "@/search/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
+import {
+  internalTools,
+  slackTools,
+  formatToolsSection,
+  type ToolDefinition,
+} from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
 
 export const askQuestionSelfCleanupPrompt = (
@@ -822,10 +828,37 @@ export const SearchQueryToolContextPrompt = (
   agentScratchpad: string,
   agentContext?: AgentPromptData,
   pastActs?: string,
+  customTools?: {
+    internal?: Record<string, ToolDefinition>
+    slack?: Record<string, ToolDefinition>
+  },
+  isDebugMode?: boolean,
 ): string => {
   const availableApps = agentContext?.prompt.length
     ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
+
+  const toolsToUse = {
+    internal: customTools?.internal || internalTools,
+    slack: customTools?.slack || slackTools,
+  }
+
+  const updatedInternalTools = { ...toolsToUse.internal }
+  if (updatedInternalTools[XyneTools.MetadataRetrieval]) {
+    updatedInternalTools[XyneTools.MetadataRetrieval] = {
+      ...updatedInternalTools[XyneTools.MetadataRetrieval],
+      params: updatedInternalTools[XyneTools.MetadataRetrieval].params?.map(
+        (param) =>
+          param.name === "app"
+            ? {
+                ...param,
+                description: `MUST BE EXACTLY ONE OF ${availableApps}.`,
+              }
+            : param,
+      ),
+    }
+  }
+
   return `
     The current date is: ${getDateForAI()}
     
@@ -849,9 +882,9 @@ export const SearchQueryToolContextPrompt = (
     **User Context:**  
     ${userContext}
     
-    **Analyses of User Query:**
-    Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
-      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+    **Analysis of User Query:**
+    Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if:
+      a) It contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
@@ -865,19 +898,19 @@ export const SearchQueryToolContextPrompt = (
     **Smart Tool Usage Strategy:**
     
     **Discovery Before Specifics:**
-    - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first
-    - Use broad search or listing capabilities before attempting to fetch specific items
-    - If you need specific identifiers but lack discovery tools, explain the limitation rather than guessing
+    - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first.
+    - Use broad search or listing capabilities before attempting to fetch specific items.
+    - If you need specific identifiers but lack discovery tools, explain the limitation rather than guessing.
     
     **Progressive Information Gathering:**
-    - Start with broader searches/queries and narrow down as needed
-    - Use previous results to inform subsequent tool calls
-    - Avoid repetitive calls with identical parameters
+    - Start with broader searches/queries and narrow down as needed.
+    - Use previous results to inform subsequent tool calls.
+    - Avoid repetitive calls with identical parameters.
     
     **Error Recovery:**
-    - If a tool call fails, analyze why and adjust your approach
-    - For "not found" errors, consider whether you assumed identifiers that might not exist
-    - Use available search/discovery tools to find what actually exists
+    - If a tool call fails, analyze why and adjust your approach.
+    - For "not found" errors, consider whether you assumed identifiers that might not exist.
+    - Use available search/discovery tools to find what actually exists.
     
     ${
       toolContext.length
@@ -887,70 +920,9 @@ export const SearchQueryToolContextPrompt = (
         : ""
     }
     
-    **Internal Tool Context:**
-    1. ${XyneTools.GetUserInfo}: Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.
-    2. ${XyneTools.MetadataRetrieval}: Retrieves a *list* based *purely on metadata/time/type*. Ideal for 'latest'/'oldest'/count and typed items like 'receipts', 'contacts', or 'users'.
-      Params: 
-      - item_type: (req: 'meeting', 'event', 'email', 'document', 'file', 'user', 'person', 'contact', 'attachment', 'mail_attachment'),
-      - app: (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-      - entity: (opt: 
-          - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-          - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-          - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-          - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-      - filter_query: (opt keywords for user-query), 
-      - limit: (opt), offset (opt), order_direction (opt: 'asc'/'desc'). 
-      - order_direction (opt: 'asc'/'desc'), 
-      - offset (opt: 0) use this if you need to goto next page to find better result.
-    3. ${XyneTools.Search}: Search *content* across all sources. 
-      Params: 
-        - filter_query (req keywords), 
-        - limit (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    4. ${XyneTools.FilteredSearch}: Search *content* within a specific app.
-      Params: 
-        - filter_query (req keywords), 
-        - app (req: MUST BE EXACTLY ONE OF ${availableApps},), 
-        - limit (opt)
-        - order_direction (opt: 'asc'/'desc'), 
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    5. ${XyneTools.TimeSearch}: Search *content* within a specific time range. 
-    Params: 
-     - from (req: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-     - to (req: YYYY-MM-DDTHH:mm:ss.SSSZ).
-     - filter_query (opt keywords), 
-     - app (opt: If provided, MUST BE EXACTLY ONE OF ${availableApps},), 
-     - entity: (opt: 
-        - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-        - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-        - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-        - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
-     - order_direction (opt: 'asc'/'desc'), 
-     - offset (opt: 0) use this if you need to goto next page to find better result.
-    6. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi", "Hello", "Hey", what is the time in Japan. select this tool with empty params. No parameters needed.
-       
-    **Slack Tool Context:**
-    1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
-       Params: 
-        - filter_query (opt: keywords), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc')
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    2. ${XyneTools.getSlackRelatedMessages}: Search and retrieve Slack messages with flexible filtering.
-       Params: 
-        - channel_name (req: channel name), 
-        - filter_query (opt: keywords), 
-        - user_email (opt: user email), 
-        - limit (opt), offset (opt), 
-        - order_direction (opt: 'asc'/'desc'), 
-        - from (opt: YYYY-MM-DDTHH:mm:ss.SSSZ), 
-        - to (opt: YYYY-MM-DDTHH:mm:ss.SSSZ).
-        - offset (opt: 0) use this if you need to goto next page to find better result.
-    3. ${XyneTools.getUserSlackProfile}: Get a user's Slack profile details by their email address.
-       Params: 
-        - user_email (req: Email address of the user whose Slack profile to retrieve).
+    ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
+    
+    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -988,10 +960,10 @@ export const SearchQueryToolContextPrompt = (
     - Set "tool" and "arguments" to null
     
     ### If More Information Needed:
-    - Choose the most appropriate tool for the next step
-    - Provide well-formed arguments
-    - Consider using exclusion parameters to avoid duplicate results
-    - If you lack necessary discovery capabilities, acknowledge this limitation
+    - Choose the most appropriate tool for the next step.
+    - Provide well-formed arguments.
+    - Consider using exclusion parameters to avoid duplicate results.
+    - If you lack necessary discovery capabilities, acknowledge this limitation.
     
     **CRITICAL: Your response must ONLY be valid JSON. No explanations, reasoning, or text outside the JSON structure.**
     
@@ -1002,10 +974,11 @@ export const SearchQueryToolContextPrompt = (
       "arguments": {
         "param1": "value1",
         "param2": "value2"
-      } or null
+      } or null,
+      ${isDebugMode ? `"reasoning": <string>` : ""}
     }
     - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-
+    ${isDebugMode ? `- "reasoning": "Your reasoning for the tool selection and arguments."` : ""}
     **Strategic Approach:**
     Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
   `
@@ -1834,7 +1807,7 @@ export const withToolQueryPrompt = (
    ### Response Instructions:
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
-    - Cite any context-based information using [index] format, matching the provided source indices.
+    - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
 
     Be concise, accurate, and context-aware in all replies.
@@ -1847,18 +1820,17 @@ export const synthesisContextPrompt = (
   synthesisContext: string,
 ) => {
   return `You are a helpful AI assistant.
-User Query: "${query}" \n
 User Context: ${userCtx}
 Current date for comparison: ${getDateForAI()}
 
 Instruction:
-- Analyze the provided "Context Fragments" to answer the "User Query".
+- Analyze the provided "Context Fragments" to answer the current user-query.
 - The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that.
 - Your response MUST be a JSON object with only one keys: "synthesisState" (string).
 - The "synthesisState" key must be one of the following values:
     - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information (80% or more) to answer the "User Query". Even if some details are missing, as long as the core question can be addressed, use this state.
-    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the "User Query".
-    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the "User Query".
+    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the current user-query.
+    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the current user-query.
 
 - Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
 

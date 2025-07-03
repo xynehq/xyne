@@ -99,6 +99,7 @@ import {
   agentTemporalDirectionJsonPrompt,
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
+import type { ToolDefinition } from "@/api/chat/mapper"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -1304,10 +1305,16 @@ export async function generateToolSelectionOutput(
   params: ModelParams,
   agentContext?: string,
   pastActions?: string,
+  tools?: {
+    internal?: Record<string, ToolDefinition> | undefined
+    slack?: Record<string, ToolDefinition> | undefined
+  },
+  isDebugMode?: boolean,
 ): Promise<{
   queryRewrite: string
   tool: string
   arguments: Record<string, any>
+  reasoning?: string | null
 } | null> {
   params.json = true
 
@@ -1318,6 +1325,8 @@ export async function generateToolSelectionOutput(
     initialPlanning,
     parseAgentPrompt(agentContext),
     pastActions,
+    tools,
+    isDebugMode,
   )
 
   const baseMessage = {
@@ -1343,6 +1352,7 @@ export async function generateToolSelectionOutput(
       queryRewrite: jsonVal.queryRewrite || "",
       tool: jsonVal.tool,
       arguments: jsonVal.arguments || {},
+      reasoning: jsonVal.reasoning || null,
     }
   } else {
     throw new Error("Failed to rewrite query")
@@ -1450,7 +1460,7 @@ export function generateSynthesisBasedOnToolOutput(
     role: ConversationRole.USER,
     content: [
       {
-        text: `user query: "${currentMessage}"`,
+        text: `user-query: "${currentMessage}"`,
       },
     ],
   }
