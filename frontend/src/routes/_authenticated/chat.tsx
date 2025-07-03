@@ -93,7 +93,12 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat, bookmarkChat} from "@/components/HistoryModal"
+import {
+  fetchChats,
+  pageSize,
+  renameChat,
+  bookmarkChat,
+} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
@@ -772,11 +777,33 @@ export const ChatPage = ({
     mutationFn: async ({ chatId, isBookmarked }) => {
       return await bookmarkChat(chatId, isBookmarked)
     },
+    onMutate: async ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((chat) =>
+                chat.externalId === chatId
+                  ? { ...chat, isBookmarked: isBookmarked }
+                  : chat,
+              ),
+            ),
+          }
+        },
+      )
+    },
     onSuccess: ({ isBookmarked }) => {
       setBookmark(isBookmarked)
       queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+      queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables, context) => {
+      setBookmark(!variables.isBookmarked)
       console.error("Failed to bookmark chat:", error)
     },
   })
@@ -962,20 +989,6 @@ export const ChatPage = ({
                     onClick={handleChatRename}
                   />
                 )}
-                <Bookmark
-                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-                  fill={
-                    bookmark
-                      ? theme === "dark"
-                        ? "#A0AEC0"
-                        : "#4A4F59"
-                      : "none"
-                  }
-                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
-                  onClick={handleBookmark}
-                  size={18}
-                />
                 {chatId && (
                   <Share2
                     stroke="#4A4F59"
@@ -984,11 +997,6 @@ export const ChatPage = ({
                     onClick={() => handleShare()}
                   />
                 )}
-                <Ellipsis
-                  stroke="#4A4F59"
-                  className="dark:stroke-gray-400 ml-[20px]"
-                  size={18}
-                />
               </>
             )}
             <Bookmark

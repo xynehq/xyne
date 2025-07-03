@@ -83,6 +83,7 @@ import {
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
+  ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
@@ -319,6 +320,11 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get(
+    "/chat/favorites",
+    zValidator("query", chatHistorySchema),
+    ChatFavoritesApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -655,7 +661,7 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, async (c, next) => {
-  if (c.req.query('shareToken')) {
+  if (c.req.query("shareToken")) {
     const staticHandler = serveStatic({ path: "./dist/index.html" })
     return await staticHandler(c, next)
   }
