@@ -334,7 +334,7 @@ const handleAgentSearchCommand = async (
 
   // Parse the command: /agent_name query - trim any leading/trailing whitespace
   const trimmedCommand = agentCommand.trim();
-  const match = trimmedCommand.match(/^\/([\w-]+)\s+(.+)$/);
+  const match = trimmedCommand.match(/^\/([a-zA-Z0-9\s_-]+)\s+(.+)$/);
 
   Logger.info(
     `Trimmed command: "${trimmedCommand}", Match result: ${
@@ -964,14 +964,10 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
  * Handles sharing a result from the modal to the main channel.
  */
 const handleShareAction = async (
-  {
-    ack,
-    body,
-    client,
-    action,
-  }: SlackActionMiddlewareArgs<BlockAction<ButtonAction>> & AllMiddlewareArgs,
+  args: any,
   isThreadShare: boolean
 ) => {
+  const { ack, body, client, action } = args;
   await ack();
   const view = body.view;
   try {

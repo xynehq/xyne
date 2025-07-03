@@ -27,6 +27,77 @@ import {
   MAX_CITATIONS_IN_SHARED,
   MAX_SOURCES_IN_MODAL,
 } from "./config";
+import {
+  type SearchResult,
+  type Citation,
+  type Agent,
+  type ConversationMessage,
+  validateSearchResults,
+  validateCitations,
+  validateAgents,
+  validateConversationHistory,
+} from "./types";
+
+/**
+ * Helper function to parse and format result data
+ * @param result The search result object
+ * @returns Parsed result data with title, snippet, metadata, etc.
+ */
+function parseResultData(result: any) {
+  // Extract title with fallbacks
+  let title = "Untitled";
+  if (result.subject) title = result.subject;
+  else if (result.title) title = result.title;
+  else if (result.name) title = result.name;
+
+  // Extract content or snippet
+  let snippet = "";
+  if (result.content) snippet = result.content;
+  else if (result.snippet) snippet = result.snippet;
+  else if (result.chunks_summary && result.chunks_summary.length > 0) {
+    snippet = result.chunks_summary[0]?.chunk || "";
+    // Remove any HTML tags
+    snippet = snippet.replace(/<[^>]*>/g, "");
+  }
+
+  // Clean and truncate snippet
+  if (snippet) {
+    snippet = snippet.replace(/\s+/g, " ").trim();
+    snippet =
+      snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
+  }
+
+  // Get metadata
+  const url = result.url || "";
+  const docType = result.type || "";
+  let author = "Unknown";
+  let dateStr = "";
+
+  if (result.from) author = result.from;
+  if (result.timestamp) {
+    const date = new Date(result.timestamp);
+    dateStr = date.toLocaleDateString();
+  }
+
+  // Format metadata text
+  let metadataText = "";
+  if (docType) metadataText += docType + " • ";
+  if (author !== "Unknown") metadataText += "By " + author + " • ";
+  if (dateStr) metadataText += dateStr;
+
+  // Trim trailing separator if needed
+  metadataText = metadataText.replace(/\s•\s$/, "");
+
+  return {
+    title,
+    snippet,
+    metadataText,
+    url,
+    docType,
+    author,
+    dateStr,
+  };
+}
 
 export function createAnalysisParentMessage(
   userId: string,
@@ -165,49 +236,7 @@ export function createSingleResultBlocks(
   index: number,
   query: string
 ): (KnownBlock | Block)[] {
-  // Extract title with fallbacks
-  let title = "Untitled";
-  if (result.subject) title = result.subject;
-  else if (result.title) title = result.title;
-  else if (result.name) title = result.name;
-
-  // Extract content or snippet
-  let snippet = "";
-  if (result.content) snippet = result.content;
-  else if (result.snippet) snippet = result.snippet;
-  else if (result.chunks_summary && result.chunks_summary.length > 0) {
-    snippet = result.chunks_summary[0]?.chunk || "";
-    // Remove any HTML tags
-    snippet = snippet.replace(/<[^>]*>/g, "");
-  }
-
-  // Clean and truncate snippet
-  if (snippet) {
-    snippet = snippet.replace(/\s+/g, " ").trim();
-    snippet =
-      snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
-  }
-
-  // Get metadata
-  const url = result.url || "";
-  const docType = result.type || "";
-  let author = "Unknown";
-  let dateStr = "";
-
-  if (result.from) author = result.from;
-  if (result.timestamp) {
-    const date = new Date(result.timestamp);
-    dateStr = date.toLocaleDateString();
-  }
-
-  // Format metadata text
-  let metadataText = "";
-  if (docType) metadataText += docType + " • ";
-  if (author !== "Unknown") metadataText += "By " + author + " • ";
-  if (dateStr) metadataText += dateStr;
-
-  // Trim trailing separator if needed
-  metadataText = metadataText.replace(/\s•\s$/, "");
+  const { title, snippet, metadataText, url } = parseResultData(result);
 
   const blocks: any[] = [
     {
@@ -377,7 +406,9 @@ export function createShareConfirmationBlocks(): (KnownBlock | Block)[] {
  * @param results Array of search results
  * @returns Slack modal view object
  */
-export function createSearchResultsModal(query: string, results: any[]): View {
+export function createSearchResultsModal(query: string, results: unknown[]): View {
+  // Validate and filter results
+  const validResults = validateSearchResults(results);
   // Create blocks for the modal content
   const blocks: (KnownBlock | Block)[] = [];
 
@@ -403,53 +434,10 @@ export function createSearchResultsModal(query: string, results: any[]): View {
   });
 
   // Display up to 5 results in the modal
-  const displayResults = results.slice(0, MAX_RESULTS_IN_MODAL);
+  const displayResults = validResults.slice(0, MAX_RESULTS_IN_MODAL);
   for (let i = 0; i < displayResults.length; i++) {
     const result = displayResults[i];
-
-    // Extract title with fallbacks
-    let title = "Untitled";
-    if (result.subject) title = result.subject;
-    else if (result.title) title = result.title;
-    else if (result.name) title = result.name;
-
-    // Extract content or snippet
-    let snippet = "";
-    if (result.content) snippet = result.content;
-    else if (result.snippet) snippet = result.snippet;
-    else if (result.chunks_summary && result.chunks_summary.length > 0) {
-      snippet = result.chunks_summary[0]?.chunk || "";
-      // Remove any HTML tags
-      snippet = snippet.replace(/<[^>]*>/g, "");
-    }
-
-    // Clean and truncate snippet
-    if (snippet) {
-      snippet = snippet.replace(/\s+/g, " ").trim();
-      snippet =
-        snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
-    }
-
-    // Get metadata
-    const url = result.url || "";
-    const docType = result.type || "";
-    let author = "Unknown";
-    let dateStr = "";
-
-    if (result.from) author = result.from;
-    if (result.timestamp) {
-      const date = new Date(result.timestamp);
-      dateStr = date.toLocaleDateString();
-    }
-
-    // Format metadata text
-    let metadataText = "";
-    if (docType) metadataText += docType + " • ";
-    if (author !== "Unknown") metadataText += "By " + author + " • ";
-    if (dateStr) metadataText += dateStr;
-
-    // Trim trailing separator if needed
-    metadataText = metadataText.replace(/\s•\s$/, "");
+    const { title, snippet, metadataText, url } = parseResultData(result);
 
     // Add result to blocks
     blocks.push({
@@ -862,10 +850,12 @@ export function createAgentResponseModal(
   query: string,
   agentName: string,
   response: string,
-  citations: any[],
+  citations: unknown[],
   interactionId: string,
   isFromThread: boolean
 ): View {
+  // Validate and filter citations
+  const validCitations = validateCitations(citations);
   // Clean up and format the main response body for Slack mrkdwn
   const displayResponse = cleanAgentResponse(response);
 
@@ -897,22 +887,22 @@ export function createAgentResponseModal(
   ];
 
   // Add citations if available (keep original order but limit to prevent excessive scrolling)
-  if (citations && citations.length > 0) {
+  if (validCitations && validCitations.length > 0) {
     blocks.push({ type: "divider" });
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*📚 Sources (${citations.length}):*`,
+        text: `*📚 Sources (${validCitations.length}):*`,
       },
     });
 
     // Limit citations in modal to prevent excessive scrolling
-    const displayCitations = citations.slice(0, MAX_CITATIONS_IN_MODAL);
+    const displayCitations = validCitations.slice(0, MAX_CITATIONS_IN_MODAL);
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
-      const rawTitle = citation?.title || citation?.name || "Untitled";
-      let url = citation?.url || "";
+      const rawTitle = citation.title || citation.name || "Untitled";
+      let url = citation.url || "";
       let title = rawTitle;
 
       // Check for and parse Slack's <url|text> format
@@ -931,7 +921,7 @@ export function createAgentResponseModal(
         title = `${title.substring(0, TITLE_MAX_LENGTH)}...`;
       }
 
-      let snippet = citation?.snippet || citation?.content || "";
+      let snippet = citation.snippet || citation.content || "";
       if (snippet) {
         snippet = snippet
           .replace(/<[^>]+>/g, "")
@@ -953,12 +943,12 @@ export function createAgentResponseModal(
     }
 
     // Show "See all sources" button if there are more than 2 sources
-    if (citations.length > MAX_CITATIONS_IN_MODAL) {
+    if (validCitations.length > MAX_CITATIONS_IN_MODAL) {
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `_${citations.length - MAX_CITATIONS_IN_MODAL} more sources available_`,
+          text: `_${validCitations.length - MAX_CITATIONS_IN_MODAL} more sources available_`,
         },
         accessory: {
           type: "button",
@@ -1174,8 +1164,10 @@ export function createSharedAgentResponseBlocks(
 export function createAllSourcesModal(
   agentName: string,
   query: string,
-  citations: any[]
+  citations: unknown[]
 ): View {
+  // Validate and filter citations
+  const validCitations = validateCitations(citations);
   const blocks: (KnownBlock | Block)[] = [
     {
       type: "section",
@@ -1212,12 +1204,12 @@ export function createAllSourcesModal(
   const maxSources = Math.min(citations.length, MAX_SOURCES_IN_MODAL); // Limit sources to prevent modal overflow
 
   for (let i = 0; i < maxSources; i++) {
-    const citation = citations?.[i];
+    const citation = validCitations?.[i];
     if (!citation) continue;
 
-    const title = citation?.title || citation?.name || "Untitled";
-    const url = citation?.url || "";
-    let snippet = citation?.snippet || citation?.content || "";
+    const title = citation.title || citation.name || "Untitled";
+    const url = citation.url || "";
+    let snippet = citation.snippet || citation.content || "";
 
     // Clean and truncate snippet more aggressively for the sources modal
     if (snippet) {
