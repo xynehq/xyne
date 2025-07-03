@@ -112,7 +112,7 @@ const SNIPPET_TRUNCATION_LENGTH = 200;
 const cleanupCache = async () => {
   const maxRetries = 3;
   const baseDelay = 1000; // 1 second
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const now = Date.now();
@@ -137,31 +137,36 @@ const cleanupCache = async () => {
       if (cleanedCount > 0) {
         Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
       }
-      
+
       // Success - exit retry loop
       return;
-      
     } catch (error) {
       const isLastAttempt = attempt === maxRetries - 1;
-      
+
       if (isLastAttempt) {
-        Logger.error(error, `Cache cleanup failed after ${maxRetries} attempts`);
+        Logger.error(
+          error,
+          `Cache cleanup failed after ${maxRetries} attempts`
+        );
         return;
       }
-      
+
       // Calculate exponential backoff delay
       const delay = baseDelay * Math.pow(2, attempt);
-      Logger.warn(error, `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`);
-      
+      Logger.warn(
+        error,
+        `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`
+      );
+
       // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 };
 
 // Use setInterval with async function wrapper
 setInterval(() => {
-  cleanupCache().catch(error => {
+  cleanupCache().catch((error) => {
     Logger.error(error, "Unexpected error in cache cleanup interval");
   });
 }, 5 * 60 * 1000);
@@ -434,10 +439,22 @@ const handleAgentSearchCommand = async (
       );
 
       if (!agentConfig) {
+  
+        let errorMessage = `❌ You don't have permission to use agent "/${agentName}".`;
+
+        if (selectedAgent.isPublic) {
+          errorMessage += `\n\n🌐 This is a **public agent**, but you may need additional permissions or there might be a workspace configuration issue.`;
+        } else {
+          errorMessage += `\n\n🔒 This is a **private agent** that requires explicit access permissions.`;
+        }
+
+        errorMessage += `\n\n**What you can do:**\n• Use \`/agents\` to see all available agents\n• Contact your workspace administrator to request access\n• Try using a different agent from your available list`;
+        errorMessage += `\n\n**For administrators:** Check agent permissions in the workspace settings or verify the agent configuration.`;
+
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `❌ You don't have permission to use agent "/${agentName}".`,
+          text: errorMessage,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
@@ -480,12 +497,41 @@ const handleAgentSearchCommand = async (
       for await (const chunk of searchOrAnswerIterator) {
         if (chunk.text) {
           buffer += chunk.text;
-          try {
-            parsed = JSON.parse(buffer) || {};
-          } catch (err) {
-            // Continue if we can't parse yet
-            continue;
+          
+          // Only attempt to parse if buffer has content and looks like JSON
+          if (buffer.trim() && (buffer.trim().startsWith('{') || buffer.trim().startsWith('['))) {
+            try {
+              parsed = JSON.parse(buffer) || {};
+            } catch (err) {
+              // Continue if we can't parse yet (incomplete JSON)
+              continue;
+            }
           }
+        }
+      }
+
+      // Final validation: ensure we have a valid parsed object after streaming completes
+      if (buffer.trim() && !parsed) {
+        try {
+          parsed = JSON.parse(buffer) || {};
+        } catch (err) {
+          Logger.warn(err, `Failed to parse final buffer content: ${buffer.substring(0, 100)}...`);
+          // Set default values if parsing fails completely
+          parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection: null,
+            filter_query: "",
+            type: "",
+            filters: {
+              app: "",
+              entity: "",
+              startTime: "",
+              endTime: "",
+              count: 0,
+              sortDirection: "",
+            },
+          };
         }
       }
 
