@@ -114,6 +114,7 @@ import {
   GooglePeopleEntity,
   isValidApp,
   isValidEntity,
+  MailAttachmentEntity,
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
@@ -3073,7 +3074,11 @@ export const MessageApi = async (c: Context) => {
               }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
-                if (item && item.app == Apps.Gmail) {
+                if (
+                  item &&
+                  item.app == Apps.Gmail &&
+                  !Object.keys(MailAttachmentEntity).includes(item.entity)
+                ) {
                   item.docId = await replaceDocIdwithUserDocId(
                     item.docId,
                     email,
@@ -3517,7 +3522,11 @@ export const MessageApi = async (c: Context) => {
                 }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
-                  if (item && item.app == Apps.Gmail) {
+                  if (
+                    item &&
+                    item.app == Apps.Gmail &&
+                    !Object.values(MailAttachmentEntity).includes(item.entity)
+                  ) {
                     item.docId = await replaceDocIdwithUserDocId(
                       item.docId,
                       email,

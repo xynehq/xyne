@@ -158,10 +158,10 @@ export enum MailAttachmentEntity {
   PDF = "pdf",
   Sheets = "sheets",
   CSV = "csv",
-  WordDocument = "word_document",
-  PowerPointPresentation = "powerpoint_presentation",
+  WordDocument = "worddocument",
+  PowerPointPresentation = "powerpointpresentation",
   Text = "text",
-  NotValid = "not_valid",
+  NotValid = "notvalid",
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
