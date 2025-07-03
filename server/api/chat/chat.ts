@@ -2467,17 +2467,28 @@ async function* generateMetadataQueryAnswer(
   }
 }
 
-// todo remove cancelledInstances if comes up somewhere
+const parseCompact = (ts) => {
+  // turn "YYYYMMDDTHHMMSSZ" into "YYYY-MM-DDTHH:MM:SSZ"
+  const iso = ts.replace(
+    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+    "$1-$2-$3T$4:$5:$6Z",
+  )
+  return new Date(iso).getTime()
+}
+
 const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
-  console.log("allRecurringEvents in getValidFn")
-  console.log(allRecurringEvents)
-  console.log("allRecurringEvents in getValidFn")
   const fromDate = new Date(timestampRange.from)
   const toDate = new Date(timestampRange.to)
 
   return (
     allRecurringEvents?.root?.children?.flatMap((event) => {
-      // Build the rule‐set for this event
+      // --- 1) build an array of cancelled-instance times in ms
+      const cancelledArray =
+        event?.fields?.cancelledInstances?.length > 0
+          ? event.fields.cancelledInstances.map(parseCompact)
+          : []
+
+      // --- 2) build the RRuleSet as before
       const ruleSet = new RRuleSet()
       event?.fields?.recurrence?.forEach((rruleString) => {
         const rule = rrulestr(rruleString, {
@@ -2486,25 +2497,33 @@ const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
         ruleSet.rrule(rule)
       })
 
-      // All occurrence dates between from/to
       const dates = ruleSet.between(fromDate, toDate, true)
+      const duration = event.fields.endTime - event.fields.startTime
 
-      // How long the original event lasts
-      const duration = event?.fields?.endTime - event?.fields?.startTime
+      // --- 3) map each occurrence, but skip cancelled ones
+      return (
+        dates
+          .map((date) => {
+            const newStart = date.getTime()
 
-      // Produce one “virtual” event per occurrence
-      return dates?.map((date) => {
-        const newStart = date.getTime()
-        const newEnd = newStart + duration
-        return {
-          ...event,
-          fields: {
-            ...event.fields,
-            startTime: newStart,
-            endTime: newEnd,
-          },
-        }
-      })
+            // if this instance was cancelled, skip it
+            if (cancelledArray.includes(newStart)) {
+              return null
+            }
+
+            const newEnd = newStart + duration
+            return {
+              ...event,
+              fields: {
+                ...event.fields,
+                startTime: newStart,
+                endTime: newEnd,
+              },
+            }
+          })
+          // drop the nulls
+          .filter((evt) => evt !== null)
+      )
     }) ?? []
   )
 }
