@@ -40,6 +40,7 @@
     "@notionhq/client": "^2.2.15",
     "@orama/stopwords": "^3.0.6",
     "@paralleldrive/cuid2": "^2.2.2",
+    "@slack/bolt": "^3.17.1",
     "@slack/web-api": "^7.8.0",
     "@types/jszip": "^3.4.1",
     "arctic": "^3.3.0",

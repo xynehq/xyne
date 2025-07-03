@@ -19,6 +19,7 @@ import {
   dataSourceFileSchema,
   type VespaDataSourceFileSearch,
 } from "@/search/types"
+import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
@@ -575,6 +576,23 @@ export const answerContextMap = (
       `Invalid search result type: ${searchResult.fields.sddocname}`,
     )
   }
+}
+
+// New function to handle MinimalAgentFragment arrays
+export const answerContextMapFromFragments = (
+  fragments: MinimalAgentFragment[],
+  maxSummaryChunks?: number,
+): string => {
+  if (!fragments || fragments.length === 0) {
+    return ""
+  }
+
+  return fragments
+    .map((fragment, index) => {
+      const citationIndex = index + 1
+      return `[index ${citationIndex}] ${fragment.content}`
+    })
+    .join("\n\n")
 }
 
 export const cleanContext = (text: string): string => {

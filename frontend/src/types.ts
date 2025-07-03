@@ -67,4 +67,5 @@ export interface Reference {
   photoLink?: string
   mailId?: string
   userMap?: Record<string, string>
+  threadId?: string // Optional threadId for chat references
 }
