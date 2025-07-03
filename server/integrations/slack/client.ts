@@ -54,13 +54,13 @@ if (
   process.env.SLACK_BOT_TOKEN &&
   !process.env.SLACK_BOT_TOKEN.startsWith("xoxb-")
 ) {
-  Logger.error("SLACK_BOT_TOKEN does not start with xoxb-");
+  throw new Error("SLACK_BOT_TOKEN does not start with xoxb-");
 }
 if (
   process.env.SLACK_APP_TOKEN &&
   !process.env.SLACK_APP_TOKEN.startsWith("xapp-")
 ) {
-  Logger.error("SLACK_APP_TOKEN does not start with xapp-");
+  throw new Error("SLACK_APP_TOKEN does not start with xapp-");
 }
 
 /**
