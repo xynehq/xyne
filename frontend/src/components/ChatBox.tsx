@@ -85,6 +85,10 @@ interface SearchResult {
   email?: string
   photoLink?: string
   userMap?: Record<string, string>
+  channelName?: string
+  isPrivate?: boolean
+  isIm?: boolean
+  isMpim?: boolean
 }
 
 interface ChatBoxProps {
@@ -990,6 +994,12 @@ export const ChatBox = ({
       if (identifier) {
         resultUrl = `https://mail.google.com/mail/u/0/#inbox/${identifier}`
       }
+    } else if (!resultUrl && result.type === "chat_container") {
+      // For Slack channels, create a slack:// URL
+      const [teamId, channelId] = result.docId.split('_')
+      if (teamId && channelId) {
+        resultUrl = `slack://channel?team=${teamId}&id=${channelId}`
+      }
     }
 
     const displayTitle =
@@ -998,6 +1008,7 @@ export const ChatBox = ({
       result.title ||
       result.filename ||
       (result.type === "user" && result.email) ||
+      (result.type === "chat_container" && result.channelName) ||
       "Untitled"
     const refId = result.docId || (result.type === "user" && result.email) || ""
 
@@ -1021,6 +1032,8 @@ export const ChatBox = ({
       type: "global",
       photoLink: result.photoLink,
       userMap: result.userMap, // Ensure userMap is passed
+      channelName: result.type === "chat_container" ? result.channelName : undefined,
+      isPrivate: result.type === "chat_container" ? result.isPrivate : undefined,
     }
     
 

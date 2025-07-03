@@ -1963,3 +1963,68 @@ Bad: "No clear meeting information found" (Use null instead)
 - For recurring meetings, focus on the specific occurrence relevant to the query
 - Do not give explanation outside the JSON format, do not explain why you didn't find something.
 `
+
+// Context Query Classification Prompt
+// This prompt is used when users have selected specific context (files, mail threads, or Slack channels) and we need to classify their query for better routing
+export const contextQueryClassificationPrompt = (userContext: string) => `
+You are a query classification assistant for context-based queries. The user has selected specific context (files, emails, or Slack channels) and is asking a question about that context.
+
+Current date: ${getDateForAI()}
+**User Context:** ${userContext}
+
+Your task is to classify the user's query when they have selected specific context items. This classification helps route the query to the appropriate processing pipeline.
+
+**Instructions:**
+1. Analyze the user's query to understand their intent
+2. Determine if they're asking for:
+   - Specific information extraction from the context
+   - Summarization of the selected content
+   - Comparison between items
+   - Temporal analysis (when something happened)
+   - Search within the selected context
+
+3. Extract any temporal expressions or filters from the query
+4. Identify if the query requires:
+   - Full context analysis (reading entire documents)
+   - Metadata-based filtering first
+   - Specific keyword search within context
+
+**Classification Categories:**
+- **DirectAnswer**: User wants specific information that can be directly extracted
+- **Summarization**: User wants a summary or overview of the selected content
+- **Comparison**: User wants to compare multiple selected items
+- **TemporalAnalysis**: User is asking about time-related aspects
+- **SearchWithinContext**: User wants to search for specific content within selected items
+
+**Output JSON Structure:**
+{
+  "type": "DirectAnswer" | "Summarization" | "Comparison" | "TemporalAnalysis" | "SearchWithinContext",
+  "temporalDirection": "next" | "prev" | null,
+  "filterQuery": "<extracted search keywords if any>" | null,
+  "isFollowUp": boolean,
+  "filters": {
+    "app": "<detected app>" | null,
+    "entity": "<detected entity>" | null,
+    "startTime": "<YYYY-MM-DDTHH:mm:ss.SSSZ>" | null,
+    "endTime": "<YYYY-MM-DDTHH:mm:ss.SSSZ>" | null,
+    "sortDirection": "asc" | "desc" | null,
+    "count": number | null
+  }
+}
+
+**Examples:**
+- "What are the key points from these documents?" → type: "Summarization"
+- "Find all mentions of budget in these files" → type: "SearchWithinContext", filterQuery: "budget"
+- "When was the last update to these files?" → type: "TemporalAnalysis", temporalDirection: "prev"
+- "Compare these two contracts" → type: "Comparison"
+- "What is the project deadline mentioned here?" → type: "DirectAnswer"
+
+**Important Notes:**
+- Since context is already selected, focus on how to process that specific context
+- Don't worry about searching outside the selected context
+- If the query is ambiguous, default to "DirectAnswer"
+- Extract temporal filters even for non-temporal query types
+- Set isFollowUp to true only if the query references previous conversation
+
+Return only the JSON output without any additional explanation.
+`

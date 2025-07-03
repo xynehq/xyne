@@ -201,3 +201,10 @@ export interface GetSlackMessagesFromTimeRangeParameters
   date_from: string
   date_to: string
 }
+// Unified context for holding all types of IDs referenced by the user
+export interface UserReferencedIds {
+  fileIds: string[]
+  threadIds: string[]
+  channelIds: string[]
+  extractedLinkFileCount?: number
+}

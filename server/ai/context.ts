@@ -1,6 +1,7 @@
 import type { PublicUserWorkspace } from "@/db/schema"
 import {
   chatMessageSchema,
+  chatContainerSchema,
   eventSchema,
   fileSchema,
   mailAttachmentSchema,
@@ -14,6 +15,7 @@ import {
   type VespaSearchResults,
   type VespaUser,
   type VespaChatMessageSearch,
+  type VespaChatContainerSearch,
   type ScoredChunk,
   // Corrected import name for datasourceFileSchema
   dataSourceFileSchema,
@@ -189,6 +191,32 @@ const constructSlackMessageContext = (
     ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
+}
+
+const constructChatContainerContext = (
+  fields: VespaChatContainerSearch,
+  relevance: number,
+): string => {
+  let channelType = ""
+  if (fields.isIm) {
+    channelType = "Direct Message"
+  } else if (fields.isMpim) {
+    channelType = "Group Direct Message"
+  } else if (fields.isPrivate) {
+    channelType = "Private Channel"
+  } else {
+    channelType = "Public Channel"
+  }
+
+  return `App: ${fields.app}
+Type: ${channelType}
+Channel Name: ${fields.name || fields.channelName}
+${fields.topic ? `Topic: ${fields.topic}` : ""}
+${fields.description ? `Description: ${fields.description}` : ""}
+${fields.isArchived ? "Status: Archived" : "Status: Active"}
+${fields.creator ? `Creator: ${fields.creator}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nLast Updated: ${getRelativeTime(fields.updatedAt)}` : ""}
+${fields.permissions && fields.permissions.length ? `Members: ${fields.permissions.join(", ")}` : ""}
+vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (
@@ -495,6 +523,11 @@ export const answerMetadataContextMap = (
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
+  } else if (searchResult.fields.sddocname === chatContainerSchema) {
+    return constructChatContainerContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -560,6 +593,11 @@ export const answerContextMap = (
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
     return constructSlackMessageContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === chatContainerSchema) {
+    return constructChatContainerContext(
       searchResult.fields,
       searchResult.relevance,
     )

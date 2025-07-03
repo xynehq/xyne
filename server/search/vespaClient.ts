@@ -1314,6 +1314,73 @@ class VespaClient {
       )
     }
   }
+
+  async searchSlackChannelMessages(
+    channelIds: string[],
+    email: string,
+    limit: number = 400,
+  ): Promise<VespaSearchResponse> {
+    const validChannelIds = channelIds.filter(
+      (id) => typeof id === "string" && id.length > 0,
+    )
+    const url = `${this.vespaEndpoint}/search/`
+    
+    try {
+      // Build conditions for multiple channel IDs
+      const channelConditions = validChannelIds
+        .map((id) => `channelId contains "${id}"`)
+        .join(" or ")
+      
+      const yqlQuery = `select * from sources ${chatMessageSchema} where (${channelConditions}) and permissions contains @email order by createdAt desc limit ${limit}`
+      
+      const payload = {
+        yql: yqlQuery,
+        email: email,
+        "ranking.profile": "unranked",
+        hits: limit,
+        timeout: "30s",
+      }
+      
+      Logger.info(
+        `searchSlackChannelMessages - Searching for messages in channels: ${validChannelIds.join(", ")} for user: ${email}`
+      )
+      
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(
+          `searchSlackChannelMessages failed - Status: ${response.status}, StatusText: ${errorText}`
+        )
+        Logger.error(`searchSlackChannelMessages error body: ${errorBody}`)
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      
+      Logger.info(
+        `searchSlackChannelMessages - Found ${result?.root?.children?.length || 0} messages for channels: ${validChannelIds.join(", ")}`
+      )
+      
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Error fetching messages for channelIds: ${validChannelIds.join(", ")} - ${errMessage}`,
+      )
+      throw new Error(`Error fetching Slack channel messages: ${errMessage}`)
+    }
+  }
 }
 
 export default VespaClient

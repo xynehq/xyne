@@ -434,6 +434,60 @@ export const SearchResult = ({
         )}
       </div>
     )
+  } else if (result.type === "chat_container") {
+    // Slack channel
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start space-x-2">
+          <a
+            href={`slack://channel?team=${result.docId.split('_')[0]}&id=${result.docId.split('_')[1]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-blue-800 dark:text-blue-400 space-x-2"
+          >
+            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+            <span className="font-medium">
+              {result.isPrivate ? "🔒 " : "# "}
+              {result.name || result.channelName}
+            </span>
+          </a>
+        </div>
+        {(result.topic || result.description) && (
+          <div className="ml-[44px] mt-1">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {result.topic || result.description}
+            </p>
+          </div>
+        )}
+        <div className="flex items-center ml-[44px] mt-1">
+          <span className="text-sm text-gray-500 dark:text-gray-500">
+            {result.isArchived && "Archived • "}
+            {result.isIm && "Direct Message • "}
+            {result.isMpim && "Group Message • "}
+            Updated {formatDisplayDate(result.updatedAt)}
+          </span>
+        </div>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
+              {`Debug Info: ${index} : ${result.relevance}`}
+            </summary>
+            <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-slate-200 p-2 rounded overflow-auto max-h-60">
+              {JSON.stringify(
+                {
+                  matchfeatures: result.matchfeatures,
+                  rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        )}
+      </div>
+    )
   }
   return content
 }

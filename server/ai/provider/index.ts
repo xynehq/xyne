@@ -73,6 +73,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  contextQueryClassificationPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1372,6 +1373,32 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateContextQueryClassification(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  
+  // Use the context query classification prompt
+  params.systemPrompt = contextQueryClassificationPrompt(userContext)
 
   const baseMessage = {
     role: ConversationRole.USER,

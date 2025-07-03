@@ -1,6 +1,6 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import { z } from "zod"
-import { Apps, entitySchema } from "@/search/types"
+import { Apps, entitySchema, type Entity } from "@/search/types"
 
 export enum AIProviders {
   OpenAI = "openai",
@@ -196,6 +196,7 @@ interface PillValue {
   docId: string
   threadId?: string
   app?: Apps
+  entity?: Entity
 }
 
 interface PillQueryItem {

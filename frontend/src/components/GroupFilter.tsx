@@ -100,6 +100,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Message"
   } else if (app === Apps.Slack && entity === SlackEntity.User) {
     return "Slack User"
+  } else if (app === Apps.Slack && entity === SlackEntity.Channel) {
+    return "Slack Channel"
   } else if (app === Apps.Github && entity === SystemEntity.SystemInfo) {
     return "Github"
   } else {

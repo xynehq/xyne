@@ -42,9 +42,13 @@ import {
   SlackEntity,
   datasourceSchema,
   dataSourceFileSchema,
+  chatContainerSchema,
+  type VespaChatContainerSearch,
+  type VespaAutocompleteChatContainer,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
+  AutocompleteChatContainerSchema,
   AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailAttachmentSchema,
@@ -55,6 +59,7 @@ import {
   FileResponseSchema,
   UserResponseSchema,
   DataSourceFileResponseSchema,
+  ChatContainerResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -317,6 +322,18 @@ export const VespaSearchResponseToSearchResult = (
               matchfeatures: dsFields.matchfeatures,
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
+          } else if (
+            (child.fields as VespaChatContainerSearch).sddocname ===
+            chatContainerSchema
+          ) {
+            const fields = child.fields as VespaChatContainerSearch & {
+              type?: string
+              entity?: string
+            }
+            fields.type = chatContainerSchema
+            fields.relevance = child.relevance
+            fields.entity = SlackEntity.Channel
+            return ChatContainerResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
@@ -401,6 +418,29 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = chatUserSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteChatUserSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteChatContainer).sddocname ===
+          chatContainerSchema
+        ) {
+          const fields = child.fields as VespaAutocompleteChatContainer & {
+            type?: string
+          }
+          fields.type = chatContainerSchema
+          fields.relevance = child.relevance
+          // Additional fields that might not be in the basic autocomplete response
+          const containerData = {
+            type: chatContainerSchema as typeof chatContainerSchema,
+            relevance: fields.relevance,
+            name: fields.name,
+            channelName: fields.name,
+            app: fields.app,
+            entity: SlackEntity.Channel,
+            docId: fields.docId,
+            isPrivate: (fields as any).isPrivate || false,
+            isIm: (fields as any).isIm || false,
+            isMpim: (fields as any).isMpim || false,
+          }
+          return AutocompleteChatContainerSchema.parse(containerData)
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,

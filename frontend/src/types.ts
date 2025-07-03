@@ -68,4 +68,6 @@ export interface Reference {
   mailId?: string
   userMap?: Record<string, string>
   threadId?: string // Optional threadId for chat references
+  channelName?: string // Optional channel name for chat_container
+  isPrivate?: boolean // Optional private flag for channels
 }

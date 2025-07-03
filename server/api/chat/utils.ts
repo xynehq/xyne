@@ -3,6 +3,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  chatContainerSchema,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -14,10 +15,12 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
   type VespaChatMessage,
+  type VespaChatContainer,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -41,7 +44,7 @@ import {
   type AgentReasoningStep,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
-import { SearchEmailThreads } from "@/search/vespa"
+import { SearchEmailThreads, getThreadItems } from "@/search/vespa"
 import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
@@ -277,6 +280,31 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }
+  } else if (result.fields.sddocname === chatContainerSchema) {
+    // For Slack channels/containers
+    const [teamId, channelId] = (fields as VespaChatContainer).docId.split('_')
+    const channelName = (fields as VespaChatContainer).name || (fields as VespaChatContainer).channelName
+    const displayName = (fields as VespaChatContainer).isPrivate 
+      ? `🔒 ${channelName}`
+      : `# ${channelName}`
+    
+    // Generate slack URL - ensure we always have a valid URL
+    let slackUrl = ""
+    if (teamId && channelId) {
+      slackUrl = `slack://channel?team=${teamId}&id=${channelId}`
+    } else {
+      // Fallback: create a placeholder URL to prevent empty URL issues
+      // This ensures the frontend always gets a non-empty URL
+      slackUrl = `#slack-channel/${(fields as VespaChatContainer).docId}`
+    }
+    
+    return {
+      docId: (fields as VespaChatContainer).docId,
+      title: displayName,
+      url: slackUrl,
+      app: (fields as VespaChatContainer).app,
+      entity: SlackEntity.Channel,
+    }
   } else {
     throw new Error("Invalid search result type for citation")
   }
@@ -333,24 +361,28 @@ export const getFileIdFromLink = (link: string) => {
   const fileId = match ? match[1] : null
   return fileId
 }
+import type { UserReferencedIds } from "./types"
+
 export const extractFileIdsFromMessage = async (
   message: string,
-): Promise<{
-  totalValidFileIdsFromLinkCount: number
-  fileIds: string[]
-  threadIds: string[]
-}> => {
+): Promise<UserReferencedIds> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
+  const channelIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
-  let totalValidFileIdsFromLinkCount = 0
+  let extractedLinkFileCount = 0
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
-      fileIds.push(obj?.value?.docId)
-      // Check if this pill has a threadId (for email threads)
-      if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
-        threadIds.push(obj?.value?.threadId)
+      // Check if this pill is a Slack channel
+      if (obj?.value?.app === Apps.Slack && obj?.value?.entity === SlackEntity.Channel) {
+        channelIds.push(obj?.value?.docId)
+      } else {
+        fileIds.push(obj?.value?.docId)
+        // Check if this pill has a threadId (for email threads)
+        if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
+          threadIds.push(obj?.value?.threadId)
+        }
       }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
@@ -359,7 +391,7 @@ export const extractFileIdsFromMessage = async (
         // Only works for fileSchema
         const validFile = await getDocumentOrSpreadsheet(fileId)
         if (validFile) {
-          totalValidFileIdsFromLinkCount++
+          extractedLinkFileCount++
           if (validFileIdsFromLinkCount >= maxValidLinks) {
             continue
           }
@@ -382,7 +414,7 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
-  return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
+  return { extractedLinkFileCount, fileIds, threadIds, channelIds }
 }
 
 export const handleError = (error: any) => {

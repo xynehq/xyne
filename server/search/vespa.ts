@@ -11,6 +11,7 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  chatContainerSchema,
   datasourceSchema,
   dataSourceFileSchema,
   type VespaDataSource,
@@ -377,6 +378,7 @@ const AllSources = [
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  chatContainerSchema,
   // Not adding datasource or datasource_file to AllSources by default,
   // as they are for a specific app functionality.
 ].join(", ")
@@ -2388,6 +2390,22 @@ export const SearchEmailThreads = async (
     )
     const errMessage = getErrorMessage(error)
     throw new Error(errMessage)
+  }
+}
+
+export const SearchSlackChannelMessages = async (
+  channelIds: string[],
+  email: string,
+  limit: number = 400, // Respect Vespa's configured limit
+): Promise<VespaSearchResponse> => {
+  try {
+    return await vespa.searchSlackChannelMessages(channelIds, email, limit)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error in SearchSlackChannelMessages: ${getErrorMessage(error)}`,
+    )
+    throw error
   }
 }
 

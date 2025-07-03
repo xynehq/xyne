@@ -4,10 +4,12 @@ import {
   constructToolContext,
   userContext,
 } from "@/ai/context"
+import { contextQueryClassificationPrompt } from "@/ai/prompts"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
+  generateContextQueryClassification,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
@@ -102,6 +104,7 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  SearchSlackChannelMessages,
 } from "@/search/vespa"
 import {
   Apps,
@@ -166,7 +169,7 @@ import {
   expandEmailThreadsInResults,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
-
+import type { UserReferencedIds } from "./types"
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
@@ -1195,15 +1198,25 @@ async function* generateAnswerFromGivenContext(
   email: string,
   userCtx: string,
   alpha: number = 0.5,
-  fileIds: string[],
+  context: UserReferencedIds,
   userRequestsReasoning: boolean,
   agentPrompt?: string,
   passedSpan?: Span,
-  threadIds?: string[],
+  classification?: QueryRouterLLMResponse,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  const message = input
+  const { fileIds, threadIds, channelIds } = context;
+  console.log('generateAnswerFromGivenContext called with:', threadIds, channelIds);
+  
+  // Use classification's filterQuery if available
+  let message = input
+  if (classification?.filterQuery) {
+    message = classification.filterQuery
+    loggerWithChild({ email: email }).info(
+      `Using classification filterQuery for context search: ${message}`
+    )
+  }
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1241,13 +1254,19 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+  let results: any = { root: { children: [] } }
+  
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}, channelIds: ${JSON.stringify(channelIds)}, fileIds: ${JSON.stringify(fileIds)}`
+  )
+  // Only fetch documents if we have fileIds
+  if (fileIds && fileIds.length > 0) {
+    results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+  }
+  
   if (!results.root.children) {
     results.root.children = []
   }
-  loggerWithChild({ email: email }).info(
-    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
-  )
 
   // If we have threadIds, fetch all emails in those threads
   if (threadIds && threadIds.length > 0) {
@@ -1268,7 +1287,7 @@ async function* generateAnswerFromGivenContext(
       )
       
       if (threadResults.root.children && threadResults.root.children.length > 0) {
-        const existingDocIds = new Set(
+        const existingDocIds = new Set<string>(
           results.root.children.map((child: any) => child.fields.docId)
         )
         
@@ -1295,11 +1314,78 @@ async function* generateAnswerFromGivenContext(
     
     threadSpan?.end()
   }
+
+  // If we have channelIds, fetch all messages from those Slack channels
+  if (channelIds && channelIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Fetching Slack channel messages for channelIds: ${channelIds.join(", ")}`,
+    )
+    const channelSpan = generateAnswerSpan?.startSpan("fetch_channel_messages")
+    channelSpan?.setAttribute("channelIds", JSON.stringify(channelIds))
+    
+    try {
+      const channelResults = await SearchSlackChannelMessages(channelIds, email)
+      loggerWithChild({ email: email }).info(
+        `Channel search results: ${JSON.stringify({
+          channelIds,
+          resultCount: channelResults?.root?.children?.length || 0,
+          hasResults: !!(channelResults?.root?.children && channelResults.root.children.length > 0)
+        })}`,
+      )
+      
+      if (channelResults.root.children && channelResults.root.children.length > 0) {
+        const existingDocIds = new Set(
+          results.root.children.map((child: any) => child.fields.docId)
+        )
+        
+        // Process channel messages similar to how we process thread results
+        let addedCount = 0
+        let channelInfo: Record<string, number> = {}
+        
+        for (const child of channelResults.root.children) {
+          const docId = (child.fields as any).docId
+          const channelId = (child.fields as any).channelId
+          
+          // Skip if already in results
+          if (!existingDocIds.has(docId)) {
+            results.root.children.push(child)
+            existingDocIds.add(docId)
+            addedCount++
+            
+            // Track count per channel for logging
+            if (channelId) {
+              channelInfo[channelId] = (channelInfo[channelId] || 0) + 1
+            }
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `Added ${addedCount} messages from ${channelIds.length} Slack channels`,
+        )
+        channelSpan?.setAttribute("added_message_count", addedCount)
+        channelSpan?.setAttribute("total_channel_messages_found", channelResults.root.children.length)
+        channelSpan?.setAttribute("channel_info", JSON.stringify(channelInfo))
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `No messages found for channel IDs: ${channelIds.join(", ")}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        `Error fetching Slack channel messages: ${getErrorMessage(error)}`,
+      )
+      channelSpan?.setAttribute("error", getErrorMessage(error))
+      // Don't throw - continue with what we have
+    }
+    
+    channelSpan?.end()
+  }
   const startIndex = isReasoning ? previousResultsLength : 0
   const initialContext = cleanContext(
     results?.root?.children
       ?.map(
-        (v, i) =>
+        (v: any, i: number) =>
           `Index ${i + startIndex} \n ${answerContextMap(
             v as z.infer<typeof VespaSearchResultsSchema>,
             0,
@@ -1370,7 +1456,6 @@ async function* generateAnswerFromGivenContext(
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
     searchVespaSpan?.setAttribute("parsed_message", message)
-    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
     searchVespaSpan?.setAttribute("limit", fileIds?.length)
     searchVespaSpan?.setAttribute(
       "results length",
@@ -2740,36 +2825,38 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   userCtx: string,
   message: string,
   alpha: number,
-  fileIds: string[],
+  context: UserReferencedIds,
   userRequestsReasoning: boolean,
   passedSpan?: Span,
-  threadIds?: string[],
   agentPrompt?: string,
+  classification?: QueryRouterLLMResponse,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
-  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
-  passedSpan?.setAttribute("fileIds_count", fileIds?.length)
-  passedSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
-  passedSpan?.setAttribute("threadIds_count", threadIds?.length || 0)
+  passedSpan?.setAttribute("fileIds", JSON.stringify(context.fileIds))
+  passedSpan?.setAttribute("threadIds", JSON.stringify(context.threadIds))
+  passedSpan?.setAttribute("channelIds", JSON.stringify(context.channelIds))
   passedSpan?.setAttribute(
     "userRequestsReasoning",
     userRequestsReasoning || false,
   )
+  if (classification) {
+    passedSpan?.setAttribute("classification", JSON.stringify(classification))
+  }
 
   return yield* generateAnswerFromGivenContext(
     message,
     email,
     userCtx,
     alpha,
-    fileIds,
+    context,
     userRequestsReasoning,
     agentPrompt,
     passedSpan,
-    threadIds,
+    classification,
   )
 }
 
@@ -2930,14 +3017,16 @@ export const MessageApi = async (c: Context) => {
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
       : {
-          totalValidFileIdsFromLinkCount: 0,
+          extractedLinkFileCount: 0,
           fileIds: [],
           threadIds: [],
+          channelIds: [],
         }
     const fileIds = extractedInfo?.fileIds
     const threadIds = extractedInfo?.threadIds || []
-    const totalValidFileIdsFromLinkCount =
-      extractedInfo?.totalValidFileIdsFromLinkCount
+    const channelIds = extractedInfo?.channelIds || []
+    const extractedLinkFileCount =
+      extractedInfo?.extractedLinkFileCount
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3080,10 +3169,88 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          if (isMsgWithContext && ((fileIds && fileIds?.length > 0) || (channelIds && channelIds?.length > 0))) {
             loggerWithChild({ email: email }).info(
               "User has selected some context with query, answering only based on that given context",
             )
+
+            // First, get classification for the query using context-specific prompt
+            const classificationSpan = streamSpan.startSpan("classify_context_query")
+            const classificationIterator = generateContextQueryClassification(message, ctx, {
+              modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+              stream: false,
+              json: true,
+              reasoning: false, // We don't need reasoning for classification
+              messages: [],
+            })
+
+            let classification: QueryRouterLLMResponse | null = null
+            let contextClassificationType: string | null = null
+            let buffer = ""
+            for await (const chunk of classificationIterator) {
+              if (chunk.text) {
+                buffer += chunk.text
+              }
+            }
+            
+            try {
+              const parsed = jsonParseLLMOutput(buffer) || {}
+              const { app, count, endTime, entity, sortDirection, startTime } = parsed?.filters || {}
+              console.log("Parsed classification:", parsed)
+              
+              // Store the context-specific classification type
+              contextClassificationType = parsed.type
+              
+              // Map context-specific types to QueryType enum
+              let queryType: QueryType = QueryType.SearchWithoutFilters
+              if (parsed.type === "SearchWithinContext" && parsed.filterQuery) {
+                queryType = QueryType.SearchWithFilters
+              }
+              
+              classification = {
+                direction: parsed.temporalDirection || null,
+                type: queryType,
+                filterQuery: parsed.filterQuery || null,
+                isFollowUp: parsed.isFollowUp || false,
+                filters: {
+                  app: app as Apps || undefined,
+                  entity: entity as Entity || undefined,
+                  endTime: endTime || undefined,
+                  sortDirection: sortDirection || undefined,
+                  startTime: startTime || undefined,
+                  count: count || 5,
+                },
+              } as QueryRouterLLMResponse
+              
+              loggerWithChild({ email: email }).info(
+                `Context query classification: type=${contextClassificationType}, queryType=${queryType}, filterQuery=${parsed.filterQuery}`,
+              )
+              classificationSpan?.setAttribute("context_classification_type", contextClassificationType)
+              classificationSpan?.setAttribute("query_type", queryType)
+              classificationSpan?.setAttribute("classification", JSON.stringify(classification))
+            } catch (err) {
+              loggerWithChild({ email: email }).error(
+                err,
+                `Error classifying context query, using default`,
+              )
+              // Default classification for context queries
+              classification = {
+                direction: null,
+                type: QueryType.SearchWithoutFilters,
+                filterQuery: null,
+                isFollowUp: false,
+                filters: {
+                  app: undefined,
+                  entity: undefined,
+                  endTime: undefined,
+                  sortDirection: undefined,
+                  startTime: undefined,
+                  count: 5,
+                },
+              } as QueryRouterLLMResponse
+            }
+            classificationSpan?.end()
+
             let answer = ""
             let citations = []
             let citationMap: Record<number, number> = {}
@@ -3094,20 +3261,73 @@ export const MessageApi = async (c: Context) => {
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
-              "totalValidFileIdsFromLinkCount",
-              totalValidFileIdsFromLinkCount,
+              "extractedLinkFileCount",
+              extractedLinkFileCount || 0,
             )
             understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
+
+            const context: UserReferencedIds = {
+              fileIds,
+              threadIds,
+              channelIds,
+              extractedLinkFileCount: extractedLinkFileCount || 0,
+            }
+
+            // Use classification to determine how to process the query
+            let processedMessage = message
+            if (classification && classification.filterQuery) {
+              // If we have a filter query from classification, use it to search within context
+              processedMessage = classification.filterQuery
+              loggerWithChild({ email: email }).info(
+                `Using classified filter query for context search: ${processedMessage}`,
+              )
+            }
+
+            // Log the processing strategy based on context classification type
+            if (contextClassificationType) {
+              switch (contextClassificationType) {
+                case "Summarization":
+                  loggerWithChild({ email: email }).info(
+                    "Processing context query as summarization request",
+                  )
+                  break
+                case "Comparison":
+                  loggerWithChild({ email: email }).info(
+                    "Processing context query as comparison request",
+                  )
+                  break
+                case "SearchWithinContext":
+                  loggerWithChild({ email: email }).info(
+                    `Processing context query as search within context with query: ${processedMessage}`,
+                  )
+                  break
+                case "TemporalAnalysis":
+                  loggerWithChild({ email: email }).info(
+                    "Processing context query as temporal analysis",
+                  )
+                  break
+                case "DirectAnswer":
+                  loggerWithChild({ email: email }).info(
+                    "Processing context query as direct answer request",
+                  )
+                  break
+                default:
+                  loggerWithChild({ email: email }).info(
+                    `Processing context query with type: ${contextClassificationType}`,
+                  )
+              }
+            }
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
-              message,
+              processedMessage,
               0.5,
-              fileIds,
+              context,
               userRequestsReasoning,
               understandSpan,
-              threadIds,
+              agentPromptValue,
+              classification,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3131,13 +3351,14 @@ export const MessageApi = async (c: Context) => {
               }
               if (chunk.text) {
                 if (
-                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  extractedLinkFileCount && 
+                  extractedLinkFileCount > maxValidLinks &&
                   count === 0
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
                     data: `Skipping last ${
-                      totalValidFileIdsFromLinkCount - maxValidLinks
+                      extractedLinkFileCount - maxValidLinks
                     } links as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
@@ -3524,12 +3745,18 @@ export const MessageApi = async (c: Context) => {
                   loggerWithChild({ email: email }).info(
                     `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
                   )
+                  const context: UserReferencedIds = {
+                    fileIds: parsedMessage.data.fileIds as string[],
+                    threadIds: [],
+                    channelIds: [],
+                    extractedLinkFileCount: 0,
+                  }
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
                     message,
                     0.5,
-                    parsedMessage.data.fileIds as string[],
+                    context,
                     userRequestsReasoning,
                     understandSpan,
                   )
@@ -4051,6 +4278,7 @@ export const MessageRetryApi = async (c: Context) => {
       : conversation[conversation.length - 1]
     let fileIds: string[] = []
     let threadIds: string[] = []
+    let channelIds: string[] = []
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
@@ -4065,13 +4293,15 @@ export const MessageRetryApi = async (c: Context) => {
       const extractedInfo = isMsgWithContext
         ? await extractFileIdsFromMessage(prevUserMessage.message)
         : {
-            totalValidFileIdsFromLinkCount: 0,
+            extractedLinkFileCount: 0,
             fileIds: [],
             threadIds: [],
+            channelIds: [],
           }
       totalValidFileIdsFromLinkCount =
-        extractedInfo?.totalValidFileIdsFromLinkCount
+        extractedInfo?.extractedLinkFileCount ?? 0
       threadIds = extractedInfo?.threadIds || []
+      channelIds = extractedInfo?.channelIds || []
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -4120,19 +4350,25 @@ export const MessageRetryApi = async (c: Context) => {
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
               "totalValidFileIdsFromLinkCount",
-              totalValidFileIdsFromLinkCount,
+              totalValidFileIdsFromLinkCount || 0,
             )
             understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
+
+            const context: UserReferencedIds = {
+              fileIds,
+              threadIds,
+              channelIds,
+              extractedLinkFileCount: totalValidFileIdsFromLinkCount || 0,
+            }
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
               message,
               0.5,
-              fileIds,
+              context,
               userRequestsReasoning,
               understandSpan,
-              threadIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
