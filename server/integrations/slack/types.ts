@@ -93,7 +93,8 @@ export function isValidAgent(obj: unknown): obj is Agent {
   if (!obj || typeof obj !== 'object') return false;
   const agent = obj as Record<string, unknown>;
   
-  return typeof agent.externalId === 'string' && 
+  return typeof agent.id === 'string' &&
+         typeof agent.externalId === 'string' && 
          typeof agent.name === 'string';
 }
 

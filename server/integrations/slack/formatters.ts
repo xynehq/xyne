@@ -609,19 +609,21 @@ export const createAgentConversationModal = (
 
   // Add conversation history if available
   if (conversationHistory && conversationHistory.length > 0) {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "*Conversation History:*",
-      },
-    });
+    const validMessages = validateConversationHistory(conversationHistory);
+    if (validMessages.length > 0) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Conversation History:*",
+        },
+      });
 
-    // Show last 3 messages for context
-    const recentMessages = conversationHistory.slice(-MAX_RECENT_MESSAGES);
-    recentMessages.forEach((msg) => {
-      const roleIcon = msg.role === "user" ? "👤" : "🤖";
-      const roleText = msg.role === "user" ? "You" : agentName;
+      // Show last 3 messages for context
+      const recentMessages = validMessages.slice(-MAX_RECENT_MESSAGES);
+      recentMessages.forEach((msg) => {
+        const roleIcon = msg.role === "user" ? "👤" : "🤖";
+        const roleText = msg.role === "user" ? "You" : agentName;
 
       blocks.push({
         type: "section",
@@ -632,11 +634,12 @@ export const createAgentConversationModal = (
           }`,
         },
       });
-    });
+      });
 
-    blocks.push({
-      type: "divider",
-    });
+      blocks.push({
+        type: "divider",
+      });
+    }
   }
 
   // Add input field for new message
