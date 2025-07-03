@@ -345,7 +345,7 @@ async function performSynthesis(
       message,
       planningContext,
       {
-        modelId: defaultFastModel,
+        modelId: defaultBestModel,
         stream: false,
         json: true,
         reasoning: false,
@@ -423,7 +423,7 @@ export const MessageWithToolsApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-
+  let isDebugMode = true
   let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -882,7 +882,6 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
 
             agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
-            console.log(loopWarningPrompt, "loopWarningPrompt")
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -927,7 +926,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultFastModel,
+                modelId: defaultBestModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -936,6 +935,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               agentPromptForLLM,
               loopWarningPrompt,
               { internal: xyneTools },
+              isDebugMode,
             )
 
             if (
@@ -957,6 +957,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
               })
+
+              if (toolSelection.reasoning) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Reasoning: ${toolSelection.reasoning}`,
+                })
+              }
+
               const toolName = toolSelection.tool
               const toolParams = toolSelection.arguments
 

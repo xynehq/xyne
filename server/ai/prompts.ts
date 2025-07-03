@@ -832,6 +832,7 @@ export const SearchQueryToolContextPrompt = (
     internal?: Record<string, ToolDefinition>
     slack?: Record<string, ToolDefinition>
   },
+  isDebugMode?: boolean,
 ): string => {
   const availableApps = agentContext?.prompt.length
     ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
@@ -973,10 +974,11 @@ export const SearchQueryToolContextPrompt = (
       "arguments": {
         "param1": "value1",
         "param2": "value2"
-      } or null
+      } or null,
+      ${isDebugMode ? `"reasoning": <string>` : ""}
     }
     - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-
+    ${isDebugMode ? `- "reasoning": "Your reasoning for the tool selection and arguments."` : ""}
     **Strategic Approach:**
     Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
   `

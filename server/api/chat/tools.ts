@@ -1325,6 +1325,7 @@ export const getUserSlackProfile: AgentTool = {
     params: { user_email: string },
     span?: Span,
     invokingUserEmail?: string,
+    ctx?: string,
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("get_user_slack_profile_tool")
