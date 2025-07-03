@@ -323,7 +323,6 @@ const handleAppValidation = async (c: Context) => {
   )
 
   const user = await userInfoRes.json()
-  Logger.info(`User Info: ${JSON.stringify(user)}`)
 
   const email = user?.email
   if (!email) {
@@ -331,8 +330,6 @@ const handleAppValidation = async (c: Context) => {
       message: "Could not get the email of the user",
     })
   }
-
-  console.log(`Verified email :${user?.email_verified} `)
 
   if (!user?.email_verified) {
     throw new HTTPException(500, { message: "User email is not verified" })
