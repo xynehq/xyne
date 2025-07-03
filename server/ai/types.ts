@@ -130,6 +130,17 @@ export const ToolAnswerResponse = z.object({
   arguments: z.record(z.string(), z.any()).optional(),
 })
 
+// Intent Schema - only includes fields with actual values (modular for different apps)
+export const IntentSchema = z.object({
+  from: z.array(z.string()).optional(),
+  to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
+  subject: z.array(z.string()).optional(),
+})
+
+export type Intent = z.infer<typeof IntentSchema>
+
 // Zod schemas for filters
 export const FiltersSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
@@ -150,6 +161,7 @@ export const GetItems = z
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
     filterQuery: z.string().nullable(),
+    intent: IntentSchema.optional(),
   })
   .merge(TemporalClassifierSchema)
 
@@ -159,6 +171,7 @@ export const SearchWithFilters = z
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
     filterQuery: z.string().nullable(),
+    intent: IntentSchema.optional(),
   })
   .merge(TemporalClassifierSchema)
 
@@ -169,6 +182,7 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
       isFollowUp: z.boolean().optional(),
       filters: FiltersSchema,
       filterQuery: z.string().nullable(),
+      intent: IntentSchema.optional(),
     })
     .merge(TemporalClassifierSchema),
   SearchWithFilters,

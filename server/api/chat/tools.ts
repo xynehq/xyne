@@ -285,7 +285,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     searchResults.root.children = await expandEmailThreadsInResults(
       searchResults.root.children,
       email,
-      execSpan
+      execSpan,
     )
   }
 

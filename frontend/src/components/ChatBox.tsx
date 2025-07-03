@@ -1022,7 +1022,6 @@ export const ChatBox = ({
       photoLink: result.photoLink,
       userMap: result.userMap, // Ensure userMap is passed
     }
-    
 
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {

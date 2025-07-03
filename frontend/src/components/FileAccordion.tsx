@@ -9,9 +9,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
 import { api } from "@/api"
 import { ConfirmModal } from "@/components/ui/confirmModal"
-import {
-  dataSourceFileSchema,
-} from "../../../server/search/types"
+import { dataSourceFileSchema } from "../../../server/search/types"
 
 interface FileItem {
   docId?: string
@@ -71,7 +69,9 @@ export default function FileAccordion({
           )
         }
 
-        setFiles((prevFiles) => prevFiles.filter((file) => file.docId !== docId))
+        setFiles((prevFiles) =>
+          prevFiles.filter((file) => file.docId !== docId),
+        )
         toast({
           title: "Success",
           description: "File deleted successfully.",
@@ -92,7 +92,9 @@ export default function FileAccordion({
     }
 
     setConfirmModalTitle("Delete File")
-    setConfirmModalMessage(`Are you sure you want to delete the file "${fileName}"?`)
+    setConfirmModalMessage(
+      `Are you sure you want to delete the file "${fileName}"?`,
+    )
     setConfirmAction(() => action)
     setShowConfirmModal(true)
   }
@@ -274,7 +276,7 @@ export default function FileAccordion({
           ) : (
             <div className="min-h-[680px]">
               <div className="space-y-2">
-                {currentFiles.map(file => (
+                {currentFiles.map((file) => (
                   <div
                     key={`${file.fileName}-${file.createdAt}`}
                     className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
@@ -294,7 +296,7 @@ export default function FileAccordion({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={e => {
+                      onClick={(e) => {
                         e.stopPropagation()
                         handleDeleteFile(file.docId, file.fileName)
                       }}

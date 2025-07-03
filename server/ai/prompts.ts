@@ -1252,7 +1252,24 @@ export const searchQueryPrompt = (userContext: string): string => {
         - For Google Workspace queries (contacts), always set "temporalDirection" to null
         - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
 
-    11. Output JSON in the following structure:
+    11. **INTENT EXTRACTION (for specific app/entity queries):**
+        - Extract intent fields based on the detected app and entity
+        - Only include fields that have actual values (no empty arrays)
+        
+        **Intent field mapping by app/entity:**
+        
+        For ${Apps.Gmail} with ${MailEntity.Email}:
+        - "from" queries → extract to "from" array
+        - "to" queries → extract to "to" array  
+        - "cc" queries → extract to "cc" array
+        - "bcc" queries → extract to "bcc" array
+        - "subject"/"title" queries → extract to "subject" array
+        
+        For other apps/entities:
+        - Currently no specific intent fields defined
+        - Return empty intent object: {}
+
+    12. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
@@ -1260,6 +1277,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          "isFollowUp": "<boolean>",
          "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
+         "intent": {},
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
