@@ -51,6 +51,7 @@ import {
   updateMessage,
   getChatMessagesWithAuth,
 } from "@/db/message"
+import { eq } from "drizzle-orm"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -59,6 +60,7 @@ import {
   type SelectChat,
   type SelectMessage,
   selectMessageSchema,
+  sharedChats,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -100,6 +102,7 @@ import {
   searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
+  SearchEmailThreads,
 } from "@/search/vespa"
 import {
   Apps,
@@ -135,7 +138,7 @@ import {
 } from "@/search/types"
 import { APIError } from "openai"
 import {
-  getChatTraceByExternalIdWithAuth,
+  getChatTraceByExternalId,
   insertChatTrace,
   deleteChatTracesByChatExternalId,
   updateChatTrace,
@@ -146,7 +149,7 @@ import {
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
+// import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
 import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
@@ -157,6 +160,11 @@ import {
   extractFileIdsFromMessage,
   isMessageWithContext,
   searchToCitation,
+  processThreadResults,
+  extractImageFileNames,
+  extractThreadIdsFromResults,
+  mergeThreadResults,
+  expandEmailThreadsInResults,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 
@@ -193,11 +201,7 @@ export const GetChatTraceApi = async (c: Context) => {
         message: "chatId and messageId are required query parameters",
       })
     }
-    const trace = await getChatTraceByExternalIdWithAuth(
-      chatId,
-      messageId,
-      email,
-    )
+    const trace = await getChatTraceByExternalId(chatId, messageId)
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
@@ -282,7 +286,6 @@ const checkAndYieldCitations = function* (
 
 export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
-  parsableBuffer = parsableBuffer.replace(/^\s*<[^>]*>?/, "")
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
 }
@@ -450,6 +453,14 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
+      // Get the chat's internal ID first
+      const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
+      if (!chat) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+      // Delete shared chats associated with this chat
+      await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
+
       // First delete chat traces to avoid cascade violations
       await deleteChatTracesByChatExternalId(tx, chatId)
       // Second we have to delete all messages associated with that chat
@@ -743,6 +754,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     )
   }
 
+  // Expand email threads in the results
+  searchResults.root.children = await expandEmailThreadsInResults(
+    searchResults.root.children || [],
+    email,
+    initialSearchSpan
+  )
+
   const latestResults = searchResults.root.children
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
@@ -791,6 +809,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
+      
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        vespaSearchSpan
+      )
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -828,32 +853,35 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         querySpan?.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
-        const latestResults: VespaSearchResult[] =
-          (
-            await (!agentPrompt
-              ? searchVespa(query, email, null, null, {
-                  limit: pageSize,
-                  alpha: userAlpha,
-                  timestampRange,
-                  span: latestSearchSpan,
-                })
-              : (async () => {
-                  return searchVespaAgent(
-                    query,
-                    email,
-                    null,
-                    null,
-                    agentAppEnums,
-                    {
-                      limit: pageSize,
-                      alpha: userAlpha,
-                      timestampRange,
-                      span: latestSearchSpan,
-                      dataSourceIds: agentSpecificDataSourceIds,
-                    },
-                  )
-                })())
-          ).root.children || []
+        const latestSearchResponse = await (!agentPrompt
+          ? searchVespa(query, email, null, null, {
+              limit: pageSize,
+              alpha: userAlpha,
+              timestampRange,
+              span: latestSearchSpan,
+            })
+          : searchVespaAgent(
+              query,
+              email,
+              null,
+              null,
+              agentAppEnums,
+              {
+                limit: pageSize,
+                alpha: userAlpha,
+                timestampRange,
+                span: latestSearchSpan,
+                dataSourceIds: agentSpecificDataSourceIds,
+              },
+            ))
+        
+        // Expand email threads in the results
+        const expandedChildren = await expandEmailThreadsInResults(
+          latestSearchResponse.root.children || [],
+          email,
+          latestSearchSpan
+        )
+        const latestResults: VespaSearchResult[] = expandedChildren
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -902,6 +930,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           )
         }
 
+        // Expand email threads in the results
+        results.root.children = await expandEmailThreadsInResults(
+          results.root.children || [],
+          email,
+          vespaSearchSpan
+        )
+
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
@@ -919,6 +954,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
         const initialContext = buildContext(totalResults, maxSummaryCount)
+
+        const { imageFileNames } = extractImageFileNames(initialContext)
 
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
@@ -942,6 +979,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
             agentPrompt,
+            imageFileNames,
           },
         )
 
@@ -999,6 +1037,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
+      
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        searchSpan
+      )
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1044,6 +1089,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
       }
 
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        searchSpan
+      )
+
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1079,6 +1131,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
     contextSpan?.setAttribute(
@@ -1100,6 +1154,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       messages,
+      imageFileNames,
     })
 
     const answer = yield* processIterator(
@@ -1143,6 +1198,7 @@ async function* generateAnswerFromGivenContext(
   userRequestsReasoning: boolean,
   agentPrompt?: string,
   passedSpan?: Span,
+  threadIds?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1188,6 +1244,56 @@ async function* generateAnswerFromGivenContext(
   if (!results.root.children) {
     results.root.children = []
   }
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+  )
+
+  // If we have threadIds, fetch all emails in those threads
+  if (threadIds && threadIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Fetching email threads for threadIds: ${threadIds.join(", ")}`,
+    )
+    const threadSpan = generateAnswerSpan?.startSpan("fetch_email_threads")
+    threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+    
+    try {
+      const threadResults = await SearchEmailThreads(threadIds, email)
+      loggerWithChild({ email: email }).info(
+        `Thread search results: ${JSON.stringify({
+          threadIds,
+          resultCount: threadResults?.root?.children?.length || 0,
+          hasResults: !!(threadResults?.root?.children && threadResults.root.children.length > 0)
+        })}`,
+      )
+      
+      if (threadResults.root.children && threadResults.root.children.length > 0) {
+        const existingDocIds = new Set(
+          results.root.children.map((child: any) => child.fields.docId)
+        )
+        
+        // Use the helper function to process thread results
+        const { addedCount, threadInfo } = processThreadResults(
+          threadResults.root.children,
+          existingDocIds,
+          results.root.children
+        )
+        loggerWithChild({ email: email }).info(
+          `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
+        )
+        threadSpan?.setAttribute("added_email_count", addedCount)
+        threadSpan?.setAttribute("total_thread_emails_found", threadResults.root.children.length)
+        threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        `Error fetching email threads: ${getErrorMessage(error)}`,
+      )
+      threadSpan?.setAttribute("error", getErrorMessage(error))
+    }
+    
+    threadSpan?.end()
+  }
   const startIndex = isReasoning ? previousResultsLength : 0
   const initialContext = cleanContext(
     results?.root?.children
@@ -1201,6 +1307,8 @@ async function* generateAnswerFromGivenContext(
       )
       ?.join("\n"),
   )
+
+  const { imageFileNames } = extractImageFileNames(initialContext)
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
@@ -1233,6 +1341,7 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
+      imageFileNames,
     },
     true,
   )
@@ -1289,6 +1398,8 @@ async function* generateAnswerFromGivenContext(
       }`,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
     searchVespaSpan?.setAttribute("context", initialContext || "")
     searchVespaSpan?.setAttribute(
@@ -1304,6 +1415,7 @@ async function* generateAnswerFromGivenContext(
         stream: true,
         modelId: defaultBestModel,
         reasoning: config.isReasoning && userRequestsReasoning,
+        imageFileNames,
       },
       true,
     )
@@ -1787,6 +1899,8 @@ async function* generatePointQueryTimeExpansion(
       startIndex,
     )
 
+    const { imageFileNames } = extractImageFileNames(initialContext)
+
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
     contextSpan?.setAttribute(
@@ -1803,6 +1917,7 @@ async function* generatePointQueryTimeExpansion(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
+      imageFileNames,
     })
 
     const answer = yield* processIterator(
@@ -1890,6 +2005,7 @@ async function* processResultsForMetadata(
   userRequestsReasoning?: boolean,
   span?: Span,
   email?: string,
+  agentContext?: string,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1906,10 +2022,13 @@ async function* processResultsForMetadata(
     `full_context maxed to ${chunksCount}`,
   )
   const context = buildContext(items, chunksCount)
+  const { imageFileNames } = extractImageFileNames(context)
   const streamOptions = {
     stream: true,
     modelId: defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
+    imageFileNames,
+    agentPrompt: agentContext,
   }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
@@ -2130,6 +2249,13 @@ async function* generateMetadataQueryAnswer(
         )
       }
 
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        pageSpan
+      )
+
       items = searchResults.root.children || []
 
       loggerWithChild({ email: email }).info(
@@ -2171,6 +2297,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -2282,6 +2409,7 @@ async function* generateMetadataQueryAnswer(
       userRequestsReasoning,
       span,
       email,
+      agentPrompt,
     )
     return
   } else if (
@@ -2348,6 +2476,13 @@ async function* generateMetadataQueryAnswer(
         )
       }
 
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        iterationSpan
+      )
+
       items = searchResults.root.children || []
 
       loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
@@ -2394,6 +2529,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
         span,
         email,
+        agentPrompt,
       )
 
       if (answer == null) {
@@ -2606,6 +2742,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   fileIds: string[],
   userRequestsReasoning: boolean,
   passedSpan?: Span,
+  threadIds?: string[],
   agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -2615,6 +2752,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
   passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+  passedSpan?.setAttribute("threadIds_count", threadIds?.length || 0)
   passedSpan?.setAttribute(
     "userRequestsReasoning",
     userRequestsReasoning || false,
@@ -2629,6 +2768,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     userRequestsReasoning,
     agentPrompt,
     passedSpan,
+    threadIds,
   )
 }
 
@@ -2754,7 +2894,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
-      loggerWithChild({ email: email }).info(`Routing to MessageWithToolsApi`)
+      Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
 
@@ -2770,9 +2910,7 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
       if (!isAgentic && agentDetails) {
-        loggerWithChild({ email: email }).info(
-          `Routing to AgentMessageApi for agent ${agentPromptValue}.`,
-        )
+        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
     }
@@ -2793,8 +2931,10 @@ export const MessageApi = async (c: Context) => {
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
+          threadIds: [],
         }
     const fileIds = extractedInfo?.fileIds
+    const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
 
@@ -2966,6 +3106,7 @@ export const MessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              threadIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3081,7 +3222,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email),
+                thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3181,6 +3322,7 @@ export const MessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
                 stream: true,
                 json: true,
+                agentPrompt: agentPromptValue,
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -3310,7 +3452,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters ?? {}
+              parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -3426,6 +3568,7 @@ export const MessageApi = async (c: Context) => {
                   0.5,
                   userRequestsReasoning,
                   understandSpan,
+                  agentPromptValue,
                 )
               }
               stream.writeSSE({
@@ -3565,7 +3708,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap, email),
-                thinking: processMessage(thinking, citationMap, email),
+                thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3906,6 +4049,7 @@ export const MessageRetryApi = async (c: Context) => {
       ? originalMessage
       : conversation[conversation.length - 1]
     let fileIds: string[] = []
+    let threadIds: string[] = []
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
@@ -3922,9 +4066,11 @@ export const MessageRetryApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            threadIds: [],
           }
       totalValidFileIdsFromLinkCount =
         extractedInfo?.totalValidFileIdsFromLinkCount
+      threadIds = extractedInfo?.threadIds || []
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -3985,6 +4131,7 @@ export const MessageRetryApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              threadIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4368,7 +4515,7 @@ export const MessageRetryApi = async (c: Context) => {
                 )
               }
               const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters ?? {}
+                parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,

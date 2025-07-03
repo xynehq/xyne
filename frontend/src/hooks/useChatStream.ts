@@ -108,6 +108,7 @@ const parseMessageInput = (htmlString: string) => {
             app: el.dataset.app,
             entity: entity,
             imgSrc: imgSrc,
+            threadId: el.dataset.threadId,
           },
         })
       } else if (tagName === "a" && el.getAttribute("href")) {

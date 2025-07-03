@@ -25,6 +25,7 @@ import {
   Minus,
   Maximize2,
   Minimize2,
+  Share2,
 } from "lucide-react"
 import { useEffect, useRef, useState, Fragment, useCallback } from "react"
 import {
@@ -113,6 +114,7 @@ import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
+import { ShareModal } from "@/components/ShareModal"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -310,6 +312,11 @@ export const ChatPage = ({
     Boolean(chatParams.agentic),
   )
   const isWithChatId = !!(params as any).chatId
+  const isSharedChat = !!chatParams.shareToken
+  const [sharedChatData, setSharedChatData] = useState<any>(null)
+  const [sharedChatLoading, setSharedChatLoading] = useState(false)
+  const [sharedChatError, setSharedChatError] = useState<string | null>(null)
+
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
@@ -354,9 +361,11 @@ export const ChatPage = ({
     setRetryIsStreaming,
   )
 
-  // Use history data if available, otherwise fall back to loader data
+  // Use shared chat data if available, otherwise use history or loader data
   const messages =
-    historyData?.messages || (isWithChatId ? data?.messages || [] : [])
+    isSharedChat && sharedChatData
+      ? sharedChatData.messages || []
+      : historyData?.messages || (isWithChatId ? data?.messages || [] : [])
 
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
@@ -400,14 +409,44 @@ export const ChatPage = ({
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, MessageFeedback | null>
   >({})
-
+  const [shareModalOpen, setShareModalOpen] = useState(false)
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
     return storedValue ? JSON.parse(storedValue) : true
   })
 
   // Compute disableRetry flag for retry buttons
-  const disableRetry = isStreaming || retryIsStreaming
+  const disableRetry = isStreaming || retryIsStreaming || isSharedChat
+
+  // Effect to fetch shared chat data when shareToken is present
+  useEffect(() => {
+    if (chatParams.shareToken) {
+      setSharedChatLoading(true)
+      setSharedChatError(null)
+
+      api.chat.share
+        .$get({
+          query: { token: chatParams.shareToken },
+        })
+        .then(async (response: Response) => {
+          if (response.ok) {
+            const data = await response.json()
+            setSharedChatData(data)
+            setChatTitle(data.chat.title)
+          } else {
+            setSharedChatError(
+              "This shared chat link is invalid or has been deactivated.",
+            )
+          }
+        })
+        .catch(() => {
+          setSharedChatError("Failed to load shared chat. Please try again.")
+        })
+        .finally(() => {
+          setSharedChatLoading(false)
+        })
+    }
+  }, [chatParams.shareToken])
 
   useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
@@ -774,11 +813,49 @@ export const ChatPage = ({
     container.scrollTop = container.scrollHeight
   }, [messages, partial])
 
-  if (data?.error || historyLoading) {
+  if ((data?.error || historyLoading) && !isSharedChat) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar isAgentMode={agentWhiteList} />
         <div className="ml-[120px]">Error: Could not get data</div>
+      </div>
+    )
+  }
+
+  // Handle shared chat loading state
+  if (isSharedChat && sharedChatLoading) {
+    return (
+      <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
+        <Sidebar
+          photoLink={user?.photoLink ?? ""}
+          role={user?.role}
+          isAgentMode={agentWhiteList}
+        />
+        <div className="h-full w-full flex items-center justify-center">
+          <div className="text-lg">Loading shared chat...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Handle shared chat error state
+  if (isSharedChat && (sharedChatError || !sharedChatData)) {
+    return (
+      <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
+        <Sidebar
+          photoLink={user?.photoLink ?? ""}
+          role={user?.role}
+          isAgentMode={agentWhiteList}
+        />
+        <div className="h-full w-full flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold mb-2">Unable to load chat</h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              {sharedChatError ||
+                "This shared chat link is invalid or has been deactivated."}
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -825,8 +902,23 @@ export const ChatPage = ({
   }
 
   const handleShowRagTrace = (messageId: string) => {
-    if (chatId && messageId) {
-      window.open(`/trace/${chatId}/${messageId}`, "_blank")
+    const actualChatId = isSharedChat
+      ? sharedChatData?.chat?.externalId
+      : chatId
+    if (actualChatId && messageId) {
+      window.open(`/trace/${actualChatId}/${messageId}`, "_blank")
+    }
+  }
+
+  const handleShare = () => {
+    if (chatId && messages.length > 0) {
+      setShareModalOpen(true)
+    } else {
+      toast({
+        title: "Error",
+        description: "No messages to share in this chat.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -841,8 +933,8 @@ export const ChatPage = ({
         <div
           className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
-          <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
-            {isEditing ? (
+          <div className={`flex h-[48px] items-center max-w-3xl w-full px-4`}>
+            {isEditing && !isSharedChat ? (
               <input
                 ref={titleRef}
                 className="flex-grow text-[#1C1D1F] dark:text-gray-100 bg-transparent text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap outline-none"
@@ -856,13 +948,48 @@ export const ChatPage = ({
                 {chatTitle}
               </span>
             )}
-            {chatTitle && (
-              <Pencil
-                stroke="#4A4F59"
-                className="dark:stroke-gray-400 cursor-pointer"
-                size={18}
-                onClick={handleChatRename}
-              />
+            {isSharedChat ? (
+              <span className="text-[12px] text-gray-500 dark:text-gray-400 ml-2">
+                Shared • Read-only
+              </span>
+            ) : (
+              <>
+                {chatTitle && (
+                  <Pencil
+                    stroke="#4A4F59"
+                    className="dark:stroke-gray-400 cursor-pointer"
+                    size={18}
+                    onClick={handleChatRename}
+                  />
+                )}
+                <Bookmark
+                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
+                  fill={
+                    bookmark
+                      ? theme === "dark"
+                        ? "#A0AEC0"
+                        : "#4A4F59"
+                      : "none"
+                  }
+                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
+                  onClick={handleBookmark}
+                  size={18}
+                />
+                {chatId && (
+                  <Share2
+                    stroke="#4A4F59"
+                    className="dark:stroke-gray-400 ml-[20px] cursor-pointer hover:stroke-[#4A63E9]"
+                    size={18}
+                    onClick={() => handleShare()}
+                  />
+                )}
+                <Ellipsis
+                  stroke="#4A4F59"
+                  className="dark:stroke-gray-400 ml-[20px]"
+                  size={18}
+                />
+              </>
             )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
@@ -932,7 +1059,8 @@ export const ChatPage = ({
                       isDebugMode={isDebugMode}
                       onShowRagTrace={handleShowRagTrace}
                       feedbackStatus={feedbackMap[message.externalId!] || null}
-                      onFeedback={handleFeedback}
+                      onFeedback={!isSharedChat ? handleFeedback : undefined}
+                      onShare={!isSharedChat ? handleShare : undefined}
                       disableRetry={disableRetry}
                     />
                     {userMessageWithErr && (
@@ -973,7 +1101,8 @@ export const ChatPage = ({
                         feedbackStatus={
                           feedbackMap[message.externalId!] || null
                         }
-                        onFeedback={handleFeedback}
+                        onFeedback={!isSharedChat ? handleFeedback : undefined}
+                        onShare={!isSharedChat ? handleShare : undefined}
                         disableRetry={disableRetry}
                       />
                     )}
@@ -1013,7 +1142,8 @@ export const ChatPage = ({
                   onShowRagTrace={handleShowRagTrace}
                   // Feedback not applicable for streaming response, but props are needed
                   feedbackStatus={null}
-                  onFeedback={handleFeedback}
+                  onFeedback={!isSharedChat ? handleFeedback : undefined}
+                  onShare={!isSharedChat ? handleShare : undefined}
                   disableRetry={disableRetry}
                 />
               )}
@@ -1030,25 +1160,27 @@ export const ChatPage = ({
                 />
               </div>
             )}
-            <div className="sticky bottom-0 w-full flex justify-center bg-white dark:bg-[#1E1E1E] pt-2">
-              <ChatBox
-                role={user?.role}
-                query={query}
-                setQuery={setQuery}
-                handleSend={handleSend}
-                handleStop={stopStream}
-                isStreaming={isStreaming}
-                retryIsStreaming={retryIsStreaming}
-                allCitations={allCitations}
-                setIsAgenticMode={setIsAgenticMode}
-                isAgenticMode={isAgenticMode}
-                chatId={chatId}
-                agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-                isReasoningActive={isReasoningActive}
-                setIsReasoningActive={setIsReasoningActive}
-                user={user} // Pass user prop
-              />
-            </div>
+            {!isSharedChat && (
+              <div className="sticky bottom-0 w-full flex justify-center bg-white dark:bg-[#1E1E1E] pt-2">
+                <ChatBox
+                  role={user?.role}
+                  query={query}
+                  setQuery={setQuery}
+                  handleSend={handleSend}
+                  handleStop={stopStream}
+                  isStreaming={isStreaming}
+                  retryIsStreaming={retryIsStreaming}
+                  allCitations={allCitations}
+                  setIsAgenticMode={setIsAgenticMode}
+                  isAgenticMode={isAgenticMode}
+                  chatId={chatId}
+                  agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
+                  isReasoningActive={isReasoningActive}
+                  setIsReasoningActive={setIsReasoningActive}
+                  user={user} // Pass user prop
+                />
+              </div>
+            )}
           </div>
           <Sources
             showSources={showSources}
@@ -1061,6 +1193,14 @@ export const ChatPage = ({
           />
         </div>
       </div>
+
+      {/* Share Modal */}
+      <ShareModal
+        open={shareModalOpen}
+        onOpenChange={setShareModalOpen}
+        chatId={chatId}
+        messages={messages}
+      />
     </div>
   )
 }
@@ -1283,16 +1423,15 @@ const Code = ({
       /^timeline\s*\n/i,
 
       // Additional or experimental diagram types
-      /^zenuml\s*\n/i,             
-      /^quadrantChart\s*\n/i,      
-      /^requirementDiagram\s*\n/i, 
-      /^userJourney\s*\n/i,        
+      /^zenuml\s*\n/i,
+      /^quadrantChart\s*\n/i,
+      /^requirementDiagram\s*\n/i,
+      /^userJourney\s*\n/i,
 
       // Optional aliasing/loose matching for future compatibility
-      /^flowchart\s*\n/i,          
-      /^graph\s*\n/i               
+      /^flowchart\s*\n/i,
+      /^graph\s*\n/i,
     ]
-
 
     // Check if it starts with a valid mermaid diagram type
     const hasValidStart = mermaidPatterns.some((pattern) =>
@@ -1677,6 +1816,7 @@ export const ChatMessage = ({
   onShowRagTrace,
   feedbackStatus,
   onFeedback,
+  onShare,
   disableRetry = false,
 }: {
   message: string
@@ -1696,6 +1836,7 @@ export const ChatMessage = ({
   onShowRagTrace: (messageId: string) => void
   feedbackStatus?: MessageFeedback | null
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void
+  onShare?: (messageId: string) => void
   disableRetry?: boolean
 }) => {
   const { theme } = useTheme()
@@ -1877,7 +2018,7 @@ export const ChatMessage = ({
                   }
                   title="Retry"
                 />
-                {messageId && onFeedback && (
+                {messageId && (
                   <>
                     <ThumbsUp
                       size={16}
@@ -1887,8 +2028,9 @@ export const ChatMessage = ({
                           : "#B2C3D4"
                       }
                       fill="none"
-                      className="ml-[18px] cursor-pointer"
+                      className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
                       onClick={() =>
+                        onFeedback &&
                         onFeedback(messageId, MessageFeedback.Like)
                       }
                     />
@@ -1900,8 +2042,9 @@ export const ChatMessage = ({
                           : "#B2C3D4"
                       }
                       fill="none"
-                      className="ml-[10px] cursor-pointer"
+                      className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
                       onClick={() =>
+                        onFeedback &&
                         onFeedback(messageId, MessageFeedback.Dislike)
                       }
                     />
@@ -2000,6 +2143,7 @@ const chatParams = z.object({
       }
       return undefined
     }),
+  shareToken: z.string().optional(), // Added shareToken for shared chats
 })
 
 type XyneChat = z.infer<typeof chatParams>

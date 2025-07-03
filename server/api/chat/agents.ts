@@ -68,6 +68,7 @@ import {
   ChatSSEvents,
   ContextSysthesisState,
   OpenAIError,
+  XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
@@ -194,9 +195,9 @@ const checkAndYieldCitationsForAgent = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
 
-      if (!item?.source?.docId) {
+      if (!item?.source?.docId || !item.source?.url) {
         Logger.info(
-          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+          "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
         )
         continue
       }
@@ -219,6 +220,7 @@ async function* getToolContinuationIterator(
   toolOutput: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string, // New optional parameter
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -230,6 +232,7 @@ async function* getToolContinuationIterator(
       stream: true,
       json: true,
       reasoning: false,
+      messages,
     },
     toolsPrompt,
     toolOutput ?? "",
@@ -696,20 +699,22 @@ export const MessageWithToolsApi = async (c: Context) => {
           let gatheredFragments: MinimalAgentFragment[] = []
           let excludedIds: string[] = [] // To track IDs of retrieved documents
           let agentScratchpad = "" // To build the reasoning history for the prompt
-          const previousToolCalls: { tool: string; args: string }[] = []
+          let planningContext = "" // To build the context for planning
+          let toolsPrompt = "" // To build the context for available tools
+          const previousToolCalls: {
+            tool: string
+            args: Record<string, "any">
+            failureCount: number
+          }[] = []
+          const MAX_CONSECUTIVE_TOOL_FAILURES = 2
+
           while (iterationCount <= maxIterations && !answered) {
             if (stream.closed) {
               loggerWithChild({ email: sub }).info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
               )
               wasStreamClosedPrematurely = true
               break
-            }
-            let buffer = ""
-            let parsed = {
-              answer: "",
-              tool: "",
-              arguments: {} as any,
             }
             iterationCount++
 
@@ -738,7 +743,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"
 
-            if (previousToolCalls.length) {
+            // Check for consecutive failures and add warning
+            const lastToolCall = previousToolCalls[previousToolCalls.length - 1]
+            if (
+              lastToolCall &&
+              lastToolCall.failureCount >= MAX_CONSECUTIVE_TOOL_FAILURES
+            ) {
+              loopWarningPrompt = `
+                   ---
+                   **Critique Past Actions:** You have repeatedly called the tool '${
+                     lastToolCall.tool
+                   }' with arguments ${JSON.stringify(
+                     lastToolCall.args,
+                   )} and it has failed or yielded insufficient results ${
+                     lastToolCall.failureCount
+                   } times consecutively. You are stuck in a loop. You MUST choose a DIFFERENT TOOL or escalate to a "no answer found" state if no other tools are viable.
+                   ---
+                `
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Detected ${lastToolCall.failureCount} consecutive failures for tool ${lastToolCall.tool}. Attempting to change strategy.`,
+              })
+            } else if (previousToolCalls.length) {
               loopWarningPrompt = `
                    ---
                    **Critique Past Actions:** You have already called some tools ${previousToolCalls
@@ -754,17 +780,17 @@ export const MessageWithToolsApi = async (c: Context) => {
                  You **MUST** change your strategy.
                   For example: 
                     1.  Choose a **DIFFERENT TOOL**.
-                    2.  Use the **SAME TOOL** but with **DIFFERENT ARGUMENTS**.
+                    2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
+                    3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
   
                   Do NOT make this call again. Formulate a new, distinct plan.
                    ---
                 `
             }
 
-            agentScratchpad =
-              evidenceSummary + loopWarningPrompt + reasoningHeader
+            agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
 
-            let toolsPrompt = ""
+            toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
               toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
@@ -789,123 +815,72 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
-            const getToolOrAnswerIterator = generateToolSelectionOutput(
+            const toolSelection = await generateToolSelectionOutput(
               message,
               ctx,
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultBestModel,
-                stream: true,
+                modelId: defaultFastModel,
+                stream: false,
                 json: true,
-                reasoning:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                reasoning: false,
                 messages: messagesWithNoErrResponse,
               },
               agentPromptForLLM,
+              loopWarningPrompt,
             )
 
-            for await (const chunk of getToolOrAnswerIterator) {
-              if (stream.closed) {
-                loggerWithChild({ email: sub }).info(
-                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                )
-                wasStreamClosedPrematurely = true
-                break
-              }
-
-              if (chunk.text) {
-                if (reasoning) {
-                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                    thinking += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: chunk.text,
-                    })
-                  } else {
-                    // first time
-                    if (!chunk.text.includes(StartThinkingToken)) {
-                      let token = chunk.text
-                      if (chunk.text.includes(EndThinkingToken)) {
-                        token = chunk.text.split(EndThinkingToken)[0]
-                        thinking += token
-                      } else {
-                        thinking += token
-                      }
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: token,
-                      })
-                    }
-                  }
-                }
-                if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                  reasoning = false
-                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                }
-                if (!reasoning) {
-                  buffer += chunk.text
-                  try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
-                    if (parsed.answer && currentAnswer !== parsed.answer) {
-                      if (currentAnswer === "") {
-                        loggerWithChild({ email: sub }).info(
-                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.Start,
-                          data: "",
-                        })
-                        // First valid answer - send the whole thing
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: parsed.answer,
-                        })
-                      } else {
-                        // Subsequent chunks - send only the new part
-                        const newText = parsed.answer.slice(
-                          currentAnswer.length,
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: newText,
-                        })
-                      }
-                      currentAnswer = parsed.answer
-                    }
-                  } catch (err) {
-                    const errMessage = (err as Error).message
-                    loggerWithChild({ email: sub }).error(
-                      err,
-                      `Error while parsing LLM output ${errMessage}`,
-                    )
-                    continue
-                  }
-                }
-              }
-              if (chunk.cost) {
-                costArr.push(chunk.cost)
-              }
+            if (
+              toolSelection?.queryRewrite &&
+              toolSelection.queryRewrite.length
+            ) {
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.AnalyzingQuery,
+                details: `Query rewrite detected: ${toolSelection.queryRewrite}`,
+              })
+              streamSpan
+                .startSpan("query_rewrite")
+                .setAttribute("query_rewrite", toolSelection.queryRewrite)
+              message = toolSelection.queryRewrite
             }
 
-            if (parsed.tool && !parsed.answer) {
+            if (toolSelection && toolSelection.tool) {
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
               })
+              const toolName = toolSelection.tool
+              const toolParams = toolSelection.arguments
+
+              // Update previousToolCalls with failure tracking
+              const lastCallIndex = previousToolCalls.length - 1
+              if (
+                lastCallIndex >= 0 &&
+                previousToolCalls[lastCallIndex].tool === toolName &&
+                JSON.stringify(previousToolCalls[lastCallIndex].args) ===
+                  JSON.stringify(toolParams)
+              ) {
+                previousToolCalls[lastCallIndex].failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: toolName,
+                  args: toolParams,
+                  failureCount: 0, // Reset failure count for a new tool/args combination
+                })
+              }
+
+              if (toolName === XyneTools.Conversational) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Tool ${toolName} selected.`,
+                })
+                break
+              }
+
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Planning,
                 details: `Planning next step with ${gatheredFragments.length} context fragments.`,
-              })
-              const toolName = parsed.tool
-              const toolParams = parsed.arguments
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.ToolParameters,
-                parameters: toolParams,
-              })
-              previousToolCalls.push({
-                tool: toolName,
-                args: toolParams,
               })
               loggerWithChild({ email: sub }).info(
                 `Tool selection #${toolName} with params: ${JSON.stringify(
@@ -949,6 +924,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                   toolName: toolName as AgentToolName,
                 })
 
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.ToolParameters,
+                  parameters: toolParams,
+                })
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
                     toolParams,
@@ -956,6 +935,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     email,
                     ctx,
                     agentPromptForLLM,
+                    message,
                   )
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
@@ -1029,16 +1009,25 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
-
+                    const isValidJSON = (str: string) => {
+                      try {
+                        JSON.parse(str)
+                        return true
+                      } catch (e) {
+                        return false
+                      }
+                    }
                     try {
                       if (
                         mcpToolResponse.content &&
                         mcpToolResponse.content[0] &&
                         mcpToolResponse.content[0].text
                       ) {
-                        const parsedJson = JSON.parse(
+                        const parsedJson = isValidJSON(
                           mcpToolResponse.content[0].text,
                         )
+                          ? JSON.parse(mcpToolResponse.content[0].text)
+                          : mcpToolResponse.content[0].text
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
@@ -1057,11 +1046,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${flattenObject(
-                              parsedJson,
-                            )
-                              .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n")}`
+                            formattedContent = `Tool Response: ${
+                              typeof parsedJson !== "string"
+                                ? flattenObject(parsedJson)
+                                    .map(([key, value]) => `- ${key}: ${value}`)
+                                    .join("\n")
+                                : parsedJson
+                            }`
                           }
 
                           newFragments.push({
@@ -1145,6 +1136,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                   error: toolExecutionResponse.error,
                 })
 
+                // If the tool execution resulted in an error or no new contexts, increment failure count
+                const currentToolCall =
+                  previousToolCalls[previousToolCalls.length - 1]
+                if (
+                  currentToolCall &&
+                  (toolExecutionResponse.error ||
+                    !toolExecutionResponse.contexts ||
+                    toolExecutionResponse.contexts.length === 0)
+                ) {
+                  currentToolCall.failureCount++
+                } else if (currentToolCall) {
+                  // If successful, reset failure count for this tool
+                  currentToolCall.failureCount = 0
+                }
+
                 if (toolExecutionResponse.error) {
                   if (iterationCount < maxIterations) {
                     continue // Continue to the next iteration to re-plan
@@ -1184,7 +1190,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
-              const planningContext = gatheredFragments.length
+              planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(
                       (f, i) =>
@@ -1221,6 +1227,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         stream: false,
                         json: true,
                         reasoning: false,
+                        messages: messagesWithNoErrResponse,
                       },
                     )
 
@@ -1332,70 +1339,97 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
 
               answered = true
-              const continuationIterator = getToolContinuationIterator(
-                message,
-                ctx,
-                toolsPrompt,
-                planningContext ?? "",
-                gatheredFragments,
-                agentPromptForLLM,
-              )
-              for await (const chunk of continuationIterator) {
-                if (stream.closed) {
-                  loggerWithChild({ email: sub }).info(
-                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
-                }
-                if (chunk.text) {
-                  // if (reasoning && chunk.reasoning) {
-                  //   thinking += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.Reasoning,
-                  //     data: chunk.text,
-                  //   })
-                  //   // reasoningSpan.end()
-                  // }
-                  // if (!chunk.reasoning) {
-                  //   answer += chunk.text
-                  //   stream.writeSSE({
-                  //     event: ChatSSEvents.ResponseUpdate,
-                  //     data: chunk.text,
-                  //   })
-                  // }
-                  answer += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: chunk.text,
-                  })
-                }
-                if (chunk.citation) {
-                  const { index, item } = chunk.citation
-                  citations.push(item)
-                  citationMap[index] = citations.length - 1
-                  loggerWithChild({ email: sub }).info(
-                    `Found citations and sending it, current count: ${citations.length}`,
-                  )
-                  stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: citations,
-                      citationMap,
-                    }),
-                  })
-                  citationValues[index] = item
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-              }
+
               if (answer.length) {
                 break
               }
-            } else if (parsed.answer) {
-              answer = parsed.answer
+            } else {
+              // If no tool was selected, it's also a form of being stuck or unable to proceed.
+              // Increment failure count for the "no tool selected" state if it's consecutive.
+              const lastCall = previousToolCalls[previousToolCalls.length - 1]
+              if (lastCall && lastCall.tool === "NoToolSelected") {
+                lastCall.failureCount++
+              } else {
+                previousToolCalls.push({
+                  tool: "NoToolSelected",
+                  args: {},
+                  failureCount: 1,
+                })
+              }
+
+              if (iterationCount < maxIterations) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `No tool selected. Re-planning iteration ${iterationCount + 1}.`,
+                })
+                continue
+              } else {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `No tool selected for ${iterationCount}. Generating answer with available context.`,
+                })
+                answered = true // Break the loop to generate the final answer
+              }
+            }
+          }
+
+          const continuationIterator = getToolContinuationIterator(
+            message,
+            ctx,
+            toolsPrompt,
+            planningContext ?? "",
+            gatheredFragments,
+            agentPromptForLLM,
+            messagesWithNoErrResponse,
+          )
+          for await (const chunk of continuationIterator) {
+            if (stream.closed) {
+              loggerWithChild({ email: sub }).info(
+                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+              )
+              wasStreamClosedPrematurely = true
               break
+            }
+            if (chunk.text) {
+              // if (reasoning && chunk.reasoning) {
+              //   thinking += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.Reasoning,
+              //     data: chunk.text,
+              //   })
+              //   // reasoningSpan.end()
+              // }
+              // if (!chunk.reasoning) {
+              //   answer += chunk.text
+              //   stream.writeSSE({
+              //     event: ChatSSEvents.ResponseUpdate,
+              //     data: chunk.text,
+              //   })
+              // }
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+            if (chunk.citation) {
+              const { index, item } = chunk.citation
+              citations.push(item)
+              citationMap[index] = citations.length - 1
+              loggerWithChild({ email: sub }).info(
+                `Found citations and sending it, current count: ${citations.length}`,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: citations,
+                  citationMap,
+                }),
+              })
+              citationValues[index] = item
+            }
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
             }
           }
 
@@ -1910,6 +1944,7 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              [],
               agentPromptForLLM,
             )
             stream.writeSSE({
