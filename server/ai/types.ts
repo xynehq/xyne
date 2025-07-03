@@ -194,6 +194,8 @@ interface TextQueryItem {
 interface PillValue {
   title: string
   docId: string
+  threadId?: string
+  app?: Apps
 }
 
 interface PillQueryItem {

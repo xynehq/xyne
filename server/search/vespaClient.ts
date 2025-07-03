@@ -1194,6 +1194,60 @@ class VespaClient {
     }
   }
 
+  async getEmailsByThreadIds(
+    threadIds: string[],
+    email: string,
+  ): Promise<VespaSearchResponse> {
+    const yqlIds = threadIds
+      .map((id) => `threadId contains '${id}'`)
+      .join(" or ")
+    // Include permissions check to ensure user has access to these emails
+    const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
+    const url = `${this.vespaEndpoint}/search/`
+    console.log(`getEmailsByThreadIds - YQL Query: ${yqlQuery}`)
+    try {
+      const payload = {
+        yql: yqlQuery,
+        email: email, // Pass the user's email for permissions check
+        hits: 200, // Increased limit to fetch more thread emails
+        "ranking.profile": "unranked", // Use unranked for simple retrieval
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(
+          `getEmailsByThreadIds - Query failed: ${response.status} ${response.statusText} - ${errorBody}`
+        )
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      
+      Logger.info(
+        `getEmailsByThreadIds - Results: ${result?.root?.children?.length || 0} emails found for threadIds: ${JSON.stringify(threadIds)}`
+      )
+      
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        `getEmailsByThreadIds - Error: ${errMessage} for threadIds: ${JSON.stringify(threadIds)}`
+      )
+      throw new Error(`Error fetching emails by threadIds: ${errMessage}`)
+    }
+  }
+
   async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
     const yqlQuery = `select docId from sources ${chatUserSchema} where email contains '${email}'`
     const url = `${this.vespaEndpoint}/search/`

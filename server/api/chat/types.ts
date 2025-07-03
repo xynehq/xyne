@@ -68,6 +68,7 @@ export const MinimalCitationSchema = z.object({
   url: z.string().optional(),
   app: z.nativeEnum(Apps),
   entity: entitySchema,
+  threadId: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

@@ -101,6 +101,7 @@ import {
   searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
+  SearchEmailThreads,
 } from "@/search/vespa"
 import {
   Apps,
@@ -158,6 +159,11 @@ import {
   extractFileIdsFromMessage,
   isMessageWithContext,
   searchToCitation,
+  processThreadResults,
+  extractImageFileNames,
+  extractThreadIdsFromResults,
+  mergeThreadResults,
+  expandEmailThreadsInResults,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 
@@ -179,33 +185,6 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-
-const extractImageFileNames = (
-  context: string,
-): { imageFileNames: string[] } => {
-  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
-  const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score|$)/g
-  const matches = [...context.matchAll(imageContentRegex)]
-
-  let imageFileNames: string[] = []
-
-  for (const match of matches) {
-    const imageContent = match[1].trim()
-    if (imageContent) {
-      // Split by newlines and filter out empty strings
-      const fileNames = imageContent
-        .split("\n")
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0)
-        // Additional safety: split by spaces and filter out empty strings
-        // in case multiple filenames are on the same line
-        .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
-      imageFileNames.push(...fileNames)
-    }
-  }
-  return { imageFileNames }
-}
 
 export const GetChatTraceApi = async (c: Context) => {
   let email = ""
@@ -776,6 +755,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     )
   }
 
+  // Expand email threads in the results
+  searchResults.root.children = await expandEmailThreadsInResults(
+    searchResults.root.children || [],
+    email,
+    initialSearchSpan
+  )
+
   const latestResults = searchResults.root.children
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
@@ -824,6 +810,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
+      
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        vespaSearchSpan
+      )
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -861,32 +854,35 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         querySpan?.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
-        const latestResults: VespaSearchResult[] =
-          (
-            await (!agentPrompt
-              ? searchVespa(query, email, null, null, {
-                  limit: pageSize,
-                  alpha: userAlpha,
-                  timestampRange,
-                  span: latestSearchSpan,
-                })
-              : (async () => {
-                  return searchVespaAgent(
-                    query,
-                    email,
-                    null,
-                    null,
-                    agentAppEnums,
-                    {
-                      limit: pageSize,
-                      alpha: userAlpha,
-                      timestampRange,
-                      span: latestSearchSpan,
-                      dataSourceIds: agentSpecificDataSourceIds,
-                    },
-                  )
-                })())
-          ).root.children || []
+        const latestSearchResponse = await (!agentPrompt
+          ? searchVespa(query, email, null, null, {
+              limit: pageSize,
+              alpha: userAlpha,
+              timestampRange,
+              span: latestSearchSpan,
+            })
+          : searchVespaAgent(
+              query,
+              email,
+              null,
+              null,
+              agentAppEnums,
+              {
+                limit: pageSize,
+                alpha: userAlpha,
+                timestampRange,
+                span: latestSearchSpan,
+                dataSourceIds: agentSpecificDataSourceIds,
+              },
+            ))
+        
+        // Expand email threads in the results
+        const expandedChildren = await expandEmailThreadsInResults(
+          latestSearchResponse.root.children || [],
+          email,
+          latestSearchSpan
+        )
+        const latestResults: VespaSearchResult[] = expandedChildren
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -934,6 +930,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             },
           )
         }
+
+        // Expand email threads in the results
+        results.root.children = await expandEmailThreadsInResults(
+          results.root.children || [],
+          email,
+          vespaSearchSpan
+        )
 
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
@@ -1035,6 +1038,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
+      
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        searchSpan
+      )
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1079,6 +1089,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
+
+      // Expand email threads in the results
+      results.root.children = await expandEmailThreadsInResults(
+        results.root.children || [],
+        email,
+        searchSpan
+      )
 
       searchSpan?.setAttribute(
         "result_count",
@@ -1182,6 +1199,7 @@ async function* generateAnswerFromGivenContext(
   userRequestsReasoning: boolean,
   agentPrompt?: string,
   passedSpan?: Span,
+  threadIds?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1226,6 +1244,56 @@ async function* generateAnswerFromGivenContext(
   const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
   if (!results.root.children) {
     results.root.children = []
+  }
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+  )
+
+  // If we have threadIds, fetch all emails in those threads
+  if (threadIds && threadIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Fetching email threads for threadIds: ${threadIds.join(", ")}`,
+    )
+    const threadSpan = generateAnswerSpan?.startSpan("fetch_email_threads")
+    threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+    
+    try {
+      const threadResults = await SearchEmailThreads(threadIds, email)
+      loggerWithChild({ email: email }).info(
+        `Thread search results: ${JSON.stringify({
+          threadIds,
+          resultCount: threadResults?.root?.children?.length || 0,
+          hasResults: !!(threadResults?.root?.children && threadResults.root.children.length > 0)
+        })}`,
+      )
+      
+      if (threadResults.root.children && threadResults.root.children.length > 0) {
+        const existingDocIds = new Set(
+          results.root.children.map((child: any) => child.fields.docId)
+        )
+        
+        // Use the helper function to process thread results
+        const { addedCount, threadInfo } = processThreadResults(
+          threadResults.root.children,
+          existingDocIds,
+          results.root.children
+        )
+        loggerWithChild({ email: email }).info(
+          `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
+        )
+        threadSpan?.setAttribute("added_email_count", addedCount)
+        threadSpan?.setAttribute("total_thread_emails_found", threadResults.root.children.length)
+        threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        `Error fetching email threads: ${getErrorMessage(error)}`,
+      )
+      threadSpan?.setAttribute("error", getErrorMessage(error))
+    }
+    
+    threadSpan?.end()
   }
   const startIndex = isReasoning ? previousResultsLength : 0
   const initialContext = cleanContext(
@@ -2182,6 +2250,13 @@ async function* generateMetadataQueryAnswer(
         )
       }
 
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        pageSpan
+      )
+
       items = searchResults.root.children || []
 
       loggerWithChild({ email: email }).info(
@@ -2401,6 +2476,13 @@ async function* generateMetadataQueryAnswer(
           },
         )
       }
+
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        iterationSpan
+      )
 
       items = searchResults.root.children || []
 
@@ -2661,6 +2743,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   fileIds: string[],
   userRequestsReasoning: boolean,
   passedSpan?: Span,
+  threadIds?: string[],
   agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -2670,6 +2753,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
   passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+  passedSpan?.setAttribute("threadIds_count", threadIds?.length || 0)
   passedSpan?.setAttribute(
     "userRequestsReasoning",
     userRequestsReasoning || false,
@@ -2684,6 +2769,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     userRequestsReasoning,
     agentPrompt,
     passedSpan,
+    threadIds,
   )
 }
 
@@ -2846,8 +2932,10 @@ export const MessageApi = async (c: Context) => {
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
+          threadIds: [],
         }
     const fileIds = extractedInfo?.fileIds
+    const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
 
@@ -3019,6 +3107,7 @@ export const MessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              threadIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3961,6 +4050,7 @@ export const MessageRetryApi = async (c: Context) => {
       ? originalMessage
       : conversation[conversation.length - 1]
     let fileIds: string[] = []
+    let threadIds: string[] = []
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
@@ -3977,9 +4067,11 @@ export const MessageRetryApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            threadIds: [],
           }
       totalValidFileIdsFromLinkCount =
         extractedInfo?.totalValidFileIdsFromLinkCount
+      threadIds = extractedInfo?.threadIds || []
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -4040,6 +4132,7 @@ export const MessageRetryApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              threadIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,

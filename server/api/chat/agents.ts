@@ -2023,6 +2023,7 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              [],
               agentPromptForLLM,
             )
             stream.writeSSE({
