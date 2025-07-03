@@ -6,7 +6,6 @@ import {
 import type { BlockAction, ButtonAction } from "@slack/bolt";
 import type { View } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
-import * as dotenv from "dotenv";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
 import { getLogger } from "@/logger";
@@ -30,7 +29,6 @@ import { QueryType } from "@/ai/types";
 import { Apps } from "@/search/types";
 import { getTracer } from "@/tracer";
 
-dotenv.config();
 
 const Logger = getLogger(Subsystem.Slack);
 
