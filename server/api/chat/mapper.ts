@@ -1,5 +1,4 @@
 import type { MinimalAgentFragment } from "./types"
-import { Apps, SystemEntity } from "@/search/types"
 import type {
   GetPullRequestReviewsPayload,
   GetPullRequestReviewsPayloadItem,
@@ -30,6 +29,23 @@ import { getRelativeTime } from "@/utils"
 import { flattenObject } from "@/api/chat/utils"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
+import { SystemEntity, XyneTools } from "@/shared/types"
+import {
+  Apps,
+  MailEntity,
+  MailAttachmentEntity,
+  DriveEntity,
+  CalendarEntity,
+  GooglePeopleEntity,
+} from "@/search/types"
+import type {
+  ConversationalParams,
+  MetadataRetrievalParams,
+  SearchParams,
+  SlackRelatedMessagesParams,
+  SlackThreadsParams,
+  SlackUserProfileParams,
+} from "@/api/chat/types"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -441,4 +457,486 @@ export const mapGithubToolResponse = (
       })
   }
   return { formattedContent, newFragments }
+}
+
+export interface ToolDefinition {
+  name: string
+  description: string
+  params?: Array<{
+    name: string
+    type: string
+    required: boolean
+    description: string
+  }>
+}
+
+export type ToolParameter = {
+  name: string
+  type: string
+  required: boolean
+  description: string
+}
+
+export const internalTools: Record<string, ToolDefinition> = {
+  [XyneTools.GetUserInfo]: {
+    name: XyneTools.GetUserInfo,
+    description:
+      "Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.",
+    params: [],
+  },
+  [XyneTools.MetadataRetrieval]: {
+    name: XyneTools.MetadataRetrieval,
+    description:
+      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
+    params: [
+      {
+        name: "from",
+        type: "string",
+        required: false,
+        description:
+          'Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").',
+      },
+      {
+        name: "to",
+        type: "string",
+        required: false,
+        description:
+          'Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").',
+      },
+      {
+        name: "app",
+        type: "string",
+        required: true,
+        description: `
+          Valid app keywords that map to apps:
+          - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
+          - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
+          - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
+          - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+        `,
+      },
+      {
+        name: "entity",
+        type: "string",
+        required: false,
+        description: `Specify the type of item being searched. Examples:
+          Valid entity keywords that map to entities:
+          - For App Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+          - For App Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
+          - For App Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
+          - For App Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+          `,
+      },
+      {
+        name: "filter_query",
+        type: "string",
+        required: false,
+        description: "Keywords to refine the search based on the user's query.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of items to retrieve.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of items to skip for pagination.",
+      },
+      {
+        name: "order_direction",
+        type: "string",
+        required: false,
+        description:
+          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+      },
+      {
+        name: "excludedIds",
+        type: "array",
+        required: false,
+        description: "Optional list of document IDs to exclude from results.",
+      },
+    ],
+  },
+  [XyneTools.Search]: {
+    name: XyneTools.Search,
+    description: "Search *content* across all sources.",
+    params: [
+      {
+        name: "filter_query",
+        type: "string",
+        required: true,
+        description: "Keywords to refine the search based on the user's query.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of items to retrieve.",
+      },
+      {
+        name: "order_direction",
+        type: "string",
+        required: false,
+        description:
+          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of items to skip for pagination.",
+      },
+      {
+        name: "excludedIds",
+        type: "array",
+        required: false,
+        description: "Optional list of document IDs to exclude from results.",
+      },
+    ],
+  },
+  [XyneTools.Conversational]: {
+    name: XyneTools.Conversational,
+    description:
+      'Determine if the user\'s query is conversational or a basic calculation. Examples include greetings like: "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.',
+    params: [],
+  },
+}
+
+export const slackTools: Record<string, ToolDefinition> = {
+  [XyneTools.getSlackThreads]: {
+    name: XyneTools.getSlackThreads,
+    description:
+      "Search and retrieve Slack thread messages for conversational context.",
+    params: [
+      {
+        name: "filter_query",
+        type: "string",
+        required: false,
+        description: "Keywords to refine the search.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of items to retrieve.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of items to skip for pagination.",
+      },
+      {
+        name: "order_direction",
+        type: "string",
+        required: false,
+        description:
+          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+      },
+    ],
+  },
+  [XyneTools.getSlackRelatedMessages]: {
+    name: XyneTools.getSlackRelatedMessages,
+    description: "Search and retrieve Slack messages with flexible filtering.",
+    params: [
+      {
+        name: "channel_name",
+        type: "string",
+        required: true,
+        description: "Name of the Slack channel.",
+      },
+      {
+        name: "filter_query",
+        type: "string",
+        required: false,
+        description: "Keywords to refine the search.",
+      },
+      {
+        name: "user_email",
+        type: "string",
+        required: false,
+        description: "Email address of the user whose messages to retrieve.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of items to retrieve.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of items to skip for pagination.",
+      },
+      {
+        name: "order_direction",
+        type: "string",
+        required: false,
+        description:
+          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+      },
+      {
+        name: "from",
+        type: "string",
+        required: false,
+        description:
+          "Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+      },
+      {
+        name: "to",
+        type: "string",
+        required: false,
+        description:
+          "Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+      },
+    ],
+  },
+  [XyneTools.getUserSlackProfile]: {
+    name: XyneTools.getUserSlackProfile,
+    description: "Get a user's Slack profile details by their email address.",
+    params: [
+      {
+        name: "user_email",
+        type: "string",
+        required: true,
+        description:
+          "Email address of the user whose Slack profile to retrieve.",
+      },
+    ],
+  },
+}
+
+export function formatToolDescription(tool: ToolDefinition): string {
+  let description = `${tool.name}: ${tool.description}`
+
+  if (tool.params && tool.params.length > 0) {
+    description += `\n      Params:`
+    tool.params.forEach((param) => {
+      const requiredText = param.required ? "required" : "optional"
+      description += `\n        - ${param.name} (${requiredText}): ${param.description}`
+    })
+  }
+
+  return description
+}
+
+export function formatToolsSection(
+  tools: Record<string, ToolDefinition>,
+  sectionTitle: string,
+): string {
+  const toolDescriptions = Object.values(tools)
+    .map((tool, index) => `    ${index + 1}. ${formatToolDescription(tool)}`)
+    .join("\n")
+
+  return `    **${sectionTitle}:**\n${toolDescriptions}`
+}
+
+export function createCustomToolSet(options: {
+  internal?: Record<string, ToolDefinition>
+  slack?: Record<string, ToolDefinition>
+  excludeInternal?: string[]
+  excludeSlack?: string[]
+}): {
+  internal: Record<string, ToolDefinition>
+  slack: Record<string, ToolDefinition>
+} {
+  const {
+    internal: customInternal = {},
+    slack: customSlack = {},
+    excludeInternal = [],
+    excludeSlack = [],
+  } = options
+
+  // Filter out excluded tools and merge with custom tools
+  const filteredInternal = Object.fromEntries(
+    Object.entries(internalTools).filter(
+      ([key]) => !excludeInternal.includes(key),
+    ),
+  )
+  const filteredSlack = Object.fromEntries(
+    Object.entries(slackTools).filter(([key]) => !excludeSlack.includes(key)),
+  )
+
+  return {
+    internal: { ...filteredInternal, ...customInternal },
+    slack: { ...filteredSlack, ...customSlack },
+  }
+}
+
+export function modifyToolParameter(
+  tool: ToolDefinition,
+  paramName: string,
+  updates: Partial<ToolParameter>,
+): ToolDefinition {
+  if (!tool.params) return tool
+
+  return {
+    ...tool,
+    params: tool.params.map((param) =>
+      param.name === paramName ? { ...param, ...updates } : param,
+    ),
+  }
+}
+
+export function addToolParameter(
+  tool: ToolDefinition,
+  newParam: ToolParameter,
+): ToolDefinition {
+  return {
+    ...tool,
+    params: [...(tool.params || []), newParam],
+  }
+}
+
+export function removeToolParameter(
+  tool: ToolDefinition,
+  paramName: string,
+): ToolDefinition {
+  if (!tool.params) return tool
+
+  return {
+    ...tool,
+    params: tool.params.filter((param) => param.name !== paramName),
+  }
+}
+
+// Import the AgentTool type to support conversion utilities
+export interface AgentToolParameter {
+  type: string
+  description: string
+  required: boolean
+}
+
+// Utility function to convert ToolDefinition to AgentTool parameters format
+export function convertToAgentToolParameters(
+  toolDef: ToolDefinition,
+): Record<string, AgentToolParameter> {
+  if (!toolDef.params || toolDef.params.length === 0) {
+    return {}
+  }
+
+  return toolDef.params.reduce(
+    (acc, param) => {
+      acc[param.name] = {
+        type: param.type,
+        description: param.description,
+        required: param.required,
+      }
+      return acc
+    },
+    {} as Record<string, AgentToolParameter>,
+  )
+}
+
+// Utility function to create an AgentTool from a ToolDefinition (without execute function)
+export function createAgentToolFromDefinition(
+  toolDef: ToolDefinition,
+  executeFunction: (params: any, ...args: any[]) => Promise<any>,
+): any {
+  return {
+    name: toolDef.name,
+    description: toolDef.description,
+    parameters: convertToAgentToolParameters(toolDef),
+    execute: executeFunction,
+  }
+}
+
+// Helper function to get tool definition by name
+export function getToolDefinition(
+  toolName: string,
+): ToolDefinition | undefined {
+  return internalTools[toolName] || slackTools[toolName]
+}
+
+// Helper to create parameters object for a specific tool
+export function getToolParameters(
+  toolName: string,
+): Record<string, AgentToolParameter> {
+  const toolDef = getToolDefinition(toolName)
+  return toolDef ? convertToAgentToolParameters(toolDef) : {}
+}
+
+// Example usage functions for common customizations
+export function createSearchOnlyTools() {
+  return createCustomToolSet({
+    excludeInternal: [XyneTools.Conversational],
+    excludeSlack: [XyneTools.getUserSlackProfile],
+  })
+}
+
+export function createMinimalToolSet() {
+  return createCustomToolSet({
+    excludeInternal: [XyneTools.Conversational],
+    excludeSlack: Object.keys(slackTools), // Exclude all slack tools
+  })
+}
+
+// Example: How to create an AgentTool using the mapper definitions
+export function createMetadataRetrievalAgentTool(
+  executeFunction: (params: any, ...args: any[]) => Promise<any>,
+) {
+  const toolDef = internalTools[XyneTools.MetadataRetrieval]
+  return createAgentToolFromDefinition(toolDef, executeFunction)
+}
+
+// Example: Get just the parameters for an existing tool
+export function getMetadataRetrievalParameters() {
+  return getToolParameters(XyneTools.MetadataRetrieval)
+}
+
+// Example: Create a customized version of a tool with modified parameters
+export function createCustomMetadataRetrievalTool(
+  executeFunction: (params: any, ...args: any[]) => Promise<any>,
+  appOptions: string,
+) {
+  let toolDef = { ...internalTools[XyneTools.MetadataRetrieval] }
+
+  // Modify the app parameter description to include specific app options
+  toolDef = modifyToolParameter(toolDef, "app", {
+    description: `MUST BE EXACTLY ONE OF ${appOptions}.`,
+  })
+
+  return createAgentToolFromDefinition(toolDef, executeFunction)
+}
+
+// Helper function to validate parameter types match the tool definition
+export function validateToolParams<
+  T extends keyof typeof internalTools | keyof typeof slackTools,
+>(
+  toolName: T,
+  params: any,
+): params is T extends keyof typeof internalTools
+  ? MetadataRetrievalParams | SearchParams | ConversationalParams
+  : SlackThreadsParams | SlackRelatedMessagesParams | SlackUserProfileParams {
+  const toolDef = getToolDefinition(toolName as string)
+  if (!toolDef || !toolDef.params) return true
+
+  // Basic validation - check required parameters exist
+  for (const param of toolDef.params) {
+    if (param.required && !(param.name in params)) {
+      console.warn(
+        `Missing required parameter: ${param.name} for tool: ${toolName}`,
+      )
+      return false
+    }
+  }
+
+  return true
+}
+
+// Function to create a parameter object with the correct type
+export function createToolParams(
+  toolName: string,
+  params: Record<string, any>,
+): any {
+  // Runtime validation
+  if (!validateToolParams(toolName as any, params)) {
+    throw new Error(`Invalid parameters for tool: ${toolName}`)
+  }
+
+  return params
 }
