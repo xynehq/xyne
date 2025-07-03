@@ -2124,19 +2124,11 @@ export const fallbackTool: AgentTool = {
       gatheredFragments: string
     },
     span?: Span,
-    email?: string,
     userCtx?: string,
-    agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("execute_fallback_tool")
 
     try {
-      if (!email) {
-        const errorMsg = "Email is required for fallback tool execution."
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Missing email" }
-      }
-
       // Import the generateFallback function
       const { generateFallback } = await import("@/ai/provider")
 

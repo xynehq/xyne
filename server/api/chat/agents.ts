@@ -1365,7 +1365,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                         await logAndStreamReasoning({
                           type: AgentReasoningStepType.ToolExecuting,
-                          toolName: "fall_back" as AgentToolName,
+                          toolName: AgentToolName.FallBack,
                         })
 
                         // Execute fallback tool
@@ -1382,7 +1382,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                         await logAndStreamReasoning({
                           type: AgentReasoningStepType.ToolResult,
-                          toolName: "fall_back" as AgentToolName,
+                          toolName: AgentToolName.FallBack,
                           resultSummary: fallbackResponse.result,
                           itemsFound: fallbackResponse.contexts?.length || 0,
                           error: fallbackResponse.error,
