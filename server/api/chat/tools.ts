@@ -20,6 +20,7 @@ import {
   CalendarEntity,
   chatMessageSchema,
   dataSourceFileSchema,
+  datasourceSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -471,6 +472,11 @@ const appMapping: Record<string, SchemaMapping> = {
     schema: userSchema,
     defaultEntity: null,
     timestampField: "creationTime",
+  },
+  [Apps.DataSource.toLowerCase()]: {
+    schema: datasourceSchema,
+    defaultEntity: null,
+    timestampField: "updatedAt",
   },
   // [Apps.Slack.toLowerCase()]: {
   //   schema: chatMessageSchema,
@@ -1840,6 +1846,7 @@ export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
+
   // Slack-specific tools
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,

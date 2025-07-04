@@ -513,6 +513,7 @@ export const internalTools: Record<string, ToolDefinition> = {
           - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
           - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
           - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+          - 'data-source', 'knowledge-base', 'sources' → '${Apps.DataSource}'
         `,
       },
       {

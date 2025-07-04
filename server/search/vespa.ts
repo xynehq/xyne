@@ -2378,7 +2378,7 @@ export const SearchEmailThreads = async (
 ): Promise<VespaSearchResponse> => {
   const validThreadIds = threadIdsInput.filter(
     (id) => typeof id === "string" && id.length > 0,
-  ) 
+  )
   try {
     return vespa.getEmailsByThreadIds(validThreadIds, email)
   } catch (error) {
