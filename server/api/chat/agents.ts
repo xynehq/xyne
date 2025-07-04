@@ -124,6 +124,8 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  VespaSearchResultsSchema,
+  type VespaSearchResult,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -455,6 +457,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    const hasReferencedContext = fileIds && fileIds.length > 0
 
     if (!message) {
       throw new HTTPException(400, {
@@ -810,6 +813,96 @@ export const MessageWithToolsApi = async (c: Context) => {
               break
             }
             iterationCount++
+
+            // On the first iteration, check if this is a "@" reference case and synthesize the context.
+            // If the synthesized context is insufficient, continue gathering more context in subsequent iterations.
+            if (hasReferencedContext && iterationCount === 1) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
+              )
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
+                )
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  planningContext = cleanContext(
+                    results.root.children
+                      ?.map(
+                        (v, i) =>
+                          `Index ${i + 1} \n ${answerContextMap(
+                            v as z.infer<typeof VespaSearchResultsSchema>,
+                            0,
+                            true,
+                          )}`,
+                      )
+                      ?.join("\n"),
+                  )
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) => ({
+                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
+                      content: answerContextMap(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      ),
+                      source: searchToCitation(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                      ),
+                      confidence: 1.0,
+                    }),
+                  )
+                  const parseSynthesisOutput = await performSynthesis(
+                    ctx,
+                    message,
+                    planningContext,
+                    gatheredFragments,
+                    messagesWithNoErrResponse,
+                    logAndStreamReasoning,
+                    sub,
+                  )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                  })
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: ` Synthesis: ${
+                      parseSynthesisOutput?.answer || "No Synthesis details"
+                    }`,
+                  })
+                  const isContextSufficient =
+                    parseSynthesisOutput?.synthesisState ===
+                    ContextSysthesisState.Complete
+
+                  if (isContextSufficient) {
+                    // Context is complete. We can break the loop and generate the final answer.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Context is sufficient. Proceeding to generate final answer.",
+                    })
+                    break
+                  }
+                  continue
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
+                )
+              } finally {
+                contextFetchSpan?.end()
+              }
+            }
 
             let loopWarningPrompt = ""
             const reasoningHeader = `
