@@ -168,7 +168,11 @@ interface User {
   createdAt: Date
   syncJobs?: Record<
     Apps,
-    { lastSyncDate: Date | null; createdAt: Date | null } | null
+    {
+      lastSyncDate: Date | null
+      createdAt: Date | null
+      connectorStatus?: string
+    } | null
   >
 }
 
@@ -245,6 +249,37 @@ const getRoleBadgeVariant = (role: UserRole) => {
       return "secondary"
     default:
       return "secondary"
+  }
+}
+
+const getConnectorStatusColor = (status?: string): string => {
+  switch (status) {
+    case "connected":
+      return "text-green-600 dark:text-green-400"
+    case "not-connected":
+      return "text-red-600 dark:text-red-400"
+    case "error":
+      return "text-red-600 dark:text-red-400"
+    case "connecting":
+      return "text-gray-500 dark:text-gray-400"
+    default:
+      return "text-muted-foreground"
+  }
+}
+
+const formatConnectorStatus = (status?: string): string => {
+  if (!status) return ""
+  switch (status) {
+    case "connected":
+      return "Connected"
+    case "not-connected":
+      return "Not Connected"
+    case "connecting":
+      return "Connecting"
+    case "error":
+      return "Error"
+    default:
+      return status
   }
 }
 
@@ -959,6 +994,20 @@ function UsersListPage({
                                 )
                               : ""}
                           </span>
+                          {user.syncJobs?.[Apps.Slack]?.connectorStatus && (
+                            <>
+                              <br />
+                              <span
+                                className={`text-xs ${getConnectorStatusColor(
+                                  user.syncJobs?.[Apps.Slack]?.connectorStatus,
+                                )}`}
+                              >
+                                {formatConnectorStatus(
+                                  user.syncJobs?.[Apps.Slack]?.connectorStatus,
+                                )}
+                              </span>
+                            </>
+                          )}
                         </TableCell>
 
                         <TableCell>
@@ -1231,6 +1280,18 @@ function UsersListPage({
                               )
                             : ""}
                         </span>
+                        {app === Apps.Slack &&
+                          selectedUser.syncJobs?.[app]?.connectorStatus && (
+                            <span
+                              className={`text-xs block ${getConnectorStatusColor(
+                                selectedUser.syncJobs?.[app]?.connectorStatus,
+                              )}`}
+                            >
+                              {formatConnectorStatus(
+                                selectedUser.syncJobs?.[app]?.connectorStatus,
+                              )}
+                            </span>
+                          )}
                       </div>
                     ))}
                   </div>

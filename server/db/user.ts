@@ -11,6 +11,7 @@ import {
   type PublicUserWorkspace,
   type SelectUser,
   syncJobs,
+  connectors,
 } from "@/db/schema"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
@@ -42,7 +43,14 @@ interface UserWithSyncJobs {
   photoLink: string | null
   role: string
   createdAt: Date
-  syncJobs: Record<Apps, { lastSyncDate: Date | null; createdAt: Date | null }>
+  syncJobs: Record<
+    Apps,
+    {
+      lastSyncDate: Date | null
+      createdAt: Date | null
+      connectorStatus?: string | null
+    }
+  >
 }
 
 export const getPublicUserAndWorkspaceByEmail = async (
@@ -184,33 +192,38 @@ export const getUserById = async (
 export const getAllUsers = async (
   trx: TxnOrClient,
 ): Promise<UserWithSyncJobs[]> => {
-  // Select users and their latest sync job date for each app type, and sync job creation time
   const usersWithSyncJobs = await trx
     .select({
-      // Select user fields
       id: users.id,
       email: users.email,
       name: users.name,
       photoLink: users.photoLink,
       createdAt: users.createdAt,
       role: users.role,
-      // Select sync job app, its latest lastRanOn, and createdAt for this user/app combination
       syncApp: syncJobs.app,
       lastSyncDate: sql<Date>`max(${syncJobs.lastRanOn})`.as("lastSyncDate"),
       syncCreatedAt: sql<Date>`max(${syncJobs.createdAt})`.as("syncCreatedAt"),
+      connectorStatus: sql<string | null>`
+        CASE 
+          WHEN ${syncJobs.app} = 'slack' THEN max(${connectors.status}) 
+          ELSE NULL 
+        END
+      `.as("connectorStatus"),
+      slackConnectorStatus: sql<string | null>`
+        max(CASE WHEN ${connectors.app} = 'slack' THEN ${connectors.status} ELSE NULL END)
+      `.as("slackConnectorStatus"),
     })
     .from(users)
     .leftJoin(syncJobs, eq(users.email, syncJobs.email))
+    .leftJoin(connectors, eq(users.id, connectors.userId))
     .groupBy(users.id, users.email, syncJobs.app)
     .execute()
 
-  // Process the flat result to create the nested structure
   const usersMap = new Map<string, UserWithSyncJobs>()
 
   for (const row of usersWithSyncJobs) {
     const userEmail = row.email
     if (!usersMap.has(userEmail)) {
-      // Initialize user entry
       const userEntry: UserWithSyncJobs = {
         id: row.id,
         email: row.email,
@@ -220,27 +233,48 @@ export const getAllUsers = async (
         createdAt: row.createdAt,
         syncJobs: {} as Record<
           Apps,
-          { lastSyncDate: Date | null; createdAt: Date | null }
+          {
+            lastSyncDate: Date | null
+            createdAt: Date | null
+            connectorStatus?: string | null
+          }
         >,
       }
-      // Initialize syncJobs for all Apps to null values
       Object.values(Apps).forEach((app) => {
         userEntry.syncJobs[app] = { lastSyncDate: null, createdAt: null }
       })
       usersMap.set(userEmail, userEntry)
     }
 
-    // Add the latest sync date and creation time for the specific app
     const userEntry = usersMap.get(userEmail)!
     if (row.syncApp && Object.values(Apps).includes(row.syncApp as Apps)) {
-      userEntry.syncJobs[row.syncApp as Apps] = {
-        lastSyncDate: row.lastSyncDate,
-        createdAt: row.syncCreatedAt,
+      if (row.syncApp === Apps.Slack) {
+        userEntry.syncJobs[row.syncApp as Apps] = {
+          lastSyncDate: row.lastSyncDate,
+          createdAt: row.syncCreatedAt,
+          connectorStatus: row.connectorStatus,
+        }
+      } else {
+        userEntry.syncJobs[row.syncApp as Apps] = {
+          lastSyncDate: row.lastSyncDate,
+          createdAt: row.syncCreatedAt,
+        }
+      }
+    }
+
+    // If user does not have a Slack syncJob but has a Slack connector, set connectorStatus for Slack
+    if (
+      (!row.syncApp || row.syncApp !== Apps.Slack) &&
+      row.slackConnectorStatus
+    ) {
+      userEntry.syncJobs[Apps.Slack] = {
+        lastSyncDate: null,
+        createdAt: null,
+        connectorStatus: row.slackConnectorStatus,
       }
     }
   }
 
-  // Convert the map values back to an array and return directly
   const result = Array.from(usersMap.values())
   return result
 }
@@ -261,3 +295,5 @@ export const updateUser = async (
 
   return { success: true, message: "User role updated successfully" }
 }
+
+await getAllUsers(db)
