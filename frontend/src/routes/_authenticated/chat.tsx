@@ -93,7 +93,12 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import {
+  fetchChats,
+  pageSize,
+  renameChat,
+  bookmarkChat,
+} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
@@ -109,6 +114,7 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
+import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
@@ -564,6 +570,16 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
+    if (
+      currentChat &&
+      typeof currentChat.isBookmarked === "boolean" &&
+      currentChat.isBookmarked !== bookmark
+    ) {
+      setBookmark(currentChat.isBookmarked)
+    }
+  }, [currentChat, bookmark])
+
+  useEffect(() => {
     if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
@@ -753,15 +769,51 @@ export const ChatPage = ({
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
+  const bookmarkChatMutation = useMutation<
+    { chatId: string; isBookmarked: boolean },
+    Error,
+    { chatId: string; isBookmarked: boolean }
+  >({
+    mutationFn: async ({ chatId, isBookmarked }) => {
+      return await bookmarkChat(chatId, isBookmarked)
+    },
+    onMutate: async ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((chat) =>
+                chat.externalId === chatId
+                  ? { ...chat, isBookmarked: isBookmarked }
+                  : chat,
+              ),
+            ),
+          }
+        },
+      )
+    },
+    onSuccess: ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+      queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+      queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
+    },
+    onError: (error: Error, variables, context) => {
+      setBookmark(!variables.isBookmarked)
+      console.error("Failed to bookmark chat:", error)
+    },
+  })
+
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
+      bookmarkChatMutation.mutate({
+        chatId: chatId,
+        isBookmarked: !bookmark,
       })
-      setBookmark(!bookmark)
     }
   }
 
@@ -937,20 +989,6 @@ export const ChatPage = ({
                     onClick={handleChatRename}
                   />
                 )}
-                <Bookmark
-                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-                  fill={
-                    bookmark
-                      ? theme === "dark"
-                        ? "#A0AEC0"
-                        : "#4A4F59"
-                      : "none"
-                  }
-                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
-                  onClick={handleBookmark}
-                  size={18}
-                />
                 {chatId && (
                   <Share2
                     stroke="#4A4F59"
@@ -959,13 +997,23 @@ export const ChatPage = ({
                     onClick={() => handleShare()}
                   />
                 )}
-                <Ellipsis
-                  stroke="#4A4F59"
-                  className="dark:stroke-gray-400 ml-[20px]"
-                  size={18}
-                />
               </>
             )}
+            <Bookmark
+              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+              className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
+              onClick={handleBookmark}
+              size={18}
+            />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 

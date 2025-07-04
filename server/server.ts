@@ -83,6 +83,7 @@ import {
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
+  ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
@@ -410,6 +411,11 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get(
+    "/chat/favorites",
+    zValidator("query", chatHistorySchema),
+    ChatFavoritesApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
