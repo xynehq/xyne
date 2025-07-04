@@ -302,8 +302,96 @@ const updateApp = new Hono()
 updateApp.post("/update-metrics", handleUpdatedMetrics)
 app.route("/", updateApp)
 
+// App validatione endpoint
+
+const handleAppValidation = async (c: Context) => {
+  const authHeader = c.req.header("Authorization")
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(401, {
+      message: "Missing or malformed Authorization header",
+    })
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim()
+
+  const userInfoRes = await fetch(
+    "https://www.googleapis.com/oauth2/v3/userinfo",
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+  if (!userInfoRes.ok) {
+    throw new HTTPException(401, {
+      message: "Invalid or expired token",
+    })
+  }
+
+
+  const user = await userInfoRes.json()
+
+  const email = user?.email
+  if (!email) {
+    throw new HTTPException(500, {
+      message: "Could not get the email of the user",
+    })
+  }
+
+  if (!user?.email_verified) {
+    throw new HTTPException(403, { message: "User email is not verified" })
+  }
+  // hosted domain
+  // @ts-ignore
+  let domain = user.hd
+  if (!domain && email) {
+    domain = email.split("@")[1]
+  }
+  const name = user?.name || user?.given_name || user?.family_name || ""
+  const photoLink = user?.picture || ""
+
+  const existingUserRes = await getUserByEmail(db, email)
+
+  // if user exists then workspace exists too
+  if (existingUserRes && existingUserRes.length) {
+    Logger.info(
+      {
+        requestId: c.var.requestId, // Access the request ID
+        user: {
+          email: user.email,
+          name: user.name,
+          verified_email: user.email_verified,
+        },
+      },
+      "User found and authenticated",
+    )
+    const existingUser = existingUserRes[0]
+    const workspaceId = existingUser.workspaceExternalId
+    const jwtToken = await generateToken(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+
+    return c.json({
+      jwt_token: jwtToken,
+      workspace_id: workspaceId,
+    })
+  }
+  Logger.error(`No existing user found`)
+  return c.json(
+    {
+      success: false,
+      message: "No existing User found",
+    },
+    404,
+  )
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post("/validate-token", handleAppValidation)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -658,7 +746,7 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, async (c, next) => {
-  if (c.req.query('shareToken')) {
+  if (c.req.query("shareToken")) {
     const staticHandler = serveStatic({ path: "./dist/index.html" })
     return await staticHandler(c, next)
   }

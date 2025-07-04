@@ -18,6 +18,7 @@ import os from "os"
 const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
+import { findImageByName } from "@/ai/provider/base"
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (
@@ -43,8 +44,25 @@ const buildBedrockImageParts = async (
     }
 
     const imageDir = path.join(baseDir, docId)
-    const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
-    const absolutePath = path.join(imageDir, fileName)
+    const absolutePath = findImageByName(imageDir, match[2])
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to Bedrock format values
+    const formatMap: Record<string, string> = {
+      ".png": "png",
+      ".jpg": "jpeg",
+      ".jpeg": "jpeg",
+      ".gif": "gif",
+      ".webp": "webp",
+    }
+
+    const format = formatMap[extension]
+    if (!format) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
 
     // Ensure the resolved path is within baseDir
     const resolvedPath = path.resolve(imageDir)
@@ -57,10 +75,16 @@ const buildBedrockImageParts = async (
       // Check if file exists before trying to read it
       await fs.promises.access(absolutePath, fs.constants.F_OK)
       const imageBytes = await fs.promises.readFile(absolutePath)
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
 
       return {
         image: {
-          format: "png" as const,
+          format: format,
           source: {
             bytes: imageBytes,
           },
@@ -75,7 +99,7 @@ const buildBedrockImageParts = async (
   })
 
   const results = await Promise.all(imagePromises)
-  return results.filter(Boolean) // Remove any null/undefined entries
+  return results.filter((result): result is ContentBlock => result !== null) // Remove any null entries
 }
 
 export class BedrockProvider extends BaseProvider {

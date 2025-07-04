@@ -48,7 +48,10 @@ import { z } from "zod"
 import { JWT } from "google-auth-library"
 import {
   getGmailAttachmentChunks,
+  getGmailSpreadsheetSheets,
+  getMailAttachmentEntity,
   parseAttachments,
+  type SheetData,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
 
@@ -284,7 +287,7 @@ export const handleGmailIngestion = async (
               client,
             )
             // Call modified parseMail to get data and PDF count
-            const { mailData, insertedPdfCount } = await parseMail(
+            const { mailData, insertedAttachmentCount } = await parseMail(
               msgResp.data,
               gmail,
               client,
@@ -294,7 +297,7 @@ export const handleGmailIngestion = async (
             await insert(mailData, mailSchema)
             // Increment counters only on success
             insertedMessagesInBatch++
-            insertedPdfAttachmentsInBatch += insertedPdfCount
+            insertedPdfAttachmentsInBatch += insertedAttachmentCount
           } catch (error) {
             loggerWithChild({ email: email }).error(
               error,
@@ -379,6 +382,34 @@ const extractEmailAddresses = (headerValue: string): string[] => {
   return addresses
 }
 
+// Helper function to check if a file is a spreadsheet
+const isSpreadsheetFile = (mimeType: string): boolean => {
+  return (
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "text/csv"
+  )
+}
+
+const isValidMimeType = (mimeType: string | null | undefined): boolean => {
+  if (!mimeType) return false
+
+  const supportedTypes = new Set([
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+  ])
+
+  return supportedTypes.has(mimeType.toLowerCase().split(";")[0].trim())
+}
+
 // Function to parse and validate email data
 // Returns the parsed Mail object and the count of successfully inserted PDF attachments
 export const parseMail = async (
@@ -386,10 +417,10 @@ export const parseMail = async (
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
   userEmail: string,
-): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
+): Promise<{ mailData: Mail; insertedAttachmentCount: number }> => {
   const messageId = email.id
   const threadId = email.threadId
-  let insertedPdfCount = 0
+  let insertedAttachmentCount = 0
   let timestamp = parseInt(email.internalDate ?? "", 10)
   const labels = email.labelIds
 
@@ -477,40 +508,96 @@ export const parseMail = async (
     if (payload.parts) {
       for (const part of payload.parts) {
         const { body, filename, mimeType } = part
-        if (mimeType && filename && body && body.attachmentId) {
+        if (
+          isValidMimeType(mimeType) &&
+          filename &&
+          body &&
+          body.attachmentId
+        ) {
+          const validMimeType = mimeType!
           try {
             const { attachmentId, size } = body
             const sizeRef = { value: size ? size : 0 }
-            const attachmentChunks = await getGmailAttachmentChunks(
-              gmail,
-              {
-                attachmentId: attachmentId,
+
+            // Handle spreadsheet files differently to process each sheet separately
+            if (isSpreadsheetFile(validMimeType)) {
+              const sheetsData = await getGmailSpreadsheetSheets(
+                gmail,
+                {
+                  attachmentId: attachmentId,
+                  filename: filename,
+                  size: sizeRef,
+                  messageId: messageId,
+                  mimeType: validMimeType,
+                },
+                client,
+              )
+
+              if (!sheetsData || sheetsData.length === 0) continue
+
+              // Create separate attachment documents for each sheet
+              for (const [sheetIndex, sheetData] of sheetsData.entries()) {
+                const sheetDocId =
+                  sheetsData.length > 1
+                    ? `${attachmentId}_${sheetData.sheetIndex}`
+                    : attachmentId
+
+                const sheetFilename =
+                  sheetsData.length > 1
+                    ? `${filename} / ${sheetData.sheetName}`
+                    : filename
+
+                const attachmentDoc: MailAttachment = {
+                  app: Apps.Gmail,
+                  entity: getMailAttachmentEntity(validMimeType),
+                  mailId: messageId,
+                  partId: part.partId ? parseInt(part.partId) : null,
+                  docId: sheetDocId,
+                  filename: sheetFilename,
+                  fileSize: sizeRef.value,
+                  fileType: validMimeType,
+                  chunks: sheetData.chunks,
+                  threadId: threadId,
+                  timestamp,
+                  permissions,
+                }
+
+                await insert(attachmentDoc, mailAttachmentSchema)
+                insertedAttachmentCount++
+              }
+            } else {
+              // Handle non-spreadsheet files as before
+              const attachmentChunks = await getGmailAttachmentChunks(
+                gmail,
+                {
+                  attachmentId: attachmentId,
+                  filename: filename,
+                  size: sizeRef,
+                  messageId: messageId,
+                  mimeType: validMimeType,
+                },
+                client,
+              )
+              if (!attachmentChunks) continue
+
+              const attachmentDoc: MailAttachment = {
+                app: Apps.Gmail,
+                entity: getMailAttachmentEntity(validMimeType),
+                mailId: messageId,
+                partId: part.partId ? parseInt(part.partId) : null,
+                docId: attachmentId,
                 filename: filename,
-                size: sizeRef,
-                messageId: messageId,
-                mimeType: mimeType,
-              },
-              client,
-            )
-            if (!attachmentChunks) continue
+                fileSize: sizeRef.value,
+                fileType: validMimeType,
+                chunks: attachmentChunks,
+                threadId: threadId,
+                timestamp,
+                permissions,
+              }
 
-            const attachmentDoc: MailAttachment = {
-              app: Apps.Gmail,
-              entity: MailAttachmentEntity.PDF,
-              mailId: messageId,
-              partId: part.partId ? parseInt(part.partId) : null,
-              docId: attachmentId,
-              filename: filename,
-              fileSize: sizeRef.value,
-              fileType: mimeType,
-              chunks: attachmentChunks,
-              threadId,
-              timestamp,
-              permissions,
+              await insert(attachmentDoc, mailAttachmentSchema)
+              insertedAttachmentCount++
             }
-
-            await insert(attachmentDoc, mailAttachmentSchema)
-            insertedPdfCount++
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -549,7 +636,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, insertedPdfCount }
+  return { mailData: emailData, insertedAttachmentCount }
 }
 
 const getBody = (payload: any): string => {

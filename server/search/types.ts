@@ -156,6 +156,12 @@ export enum DriveEntity {
 
 export enum MailAttachmentEntity {
   PDF = "pdf",
+  Sheets = "sheets",
+  CSV = "csv",
+  WordDocument = "worddocument",
+  PowerPointPresentation = "powerpointpresentation",
+  Text = "text",
+  NotValid = "notvalid",
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
