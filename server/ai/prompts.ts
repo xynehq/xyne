@@ -834,9 +834,26 @@ export const SearchQueryToolContextPrompt = (
   },
   isDebugMode?: boolean,
 ): string => {
+  const getAppDescription = (app: string): string => {
+    switch (app) {
+      case Apps.Gmail:
+        return `${Apps.Gmail} (keywords: 'email', 'mail', 'emails', 'gmail')`
+      case Apps.GoogleCalendar:
+        return `${Apps.GoogleCalendar} (keywords: 'calendar', 'meetings', 'events', 'schedule')`
+      case Apps.GoogleDrive:
+        return `${Apps.GoogleDrive} (keywords: 'drive', 'files', 'documents', 'folders')`
+      case Apps.GoogleWorkspace:
+        return `${Apps.GoogleWorkspace} (keywords: 'contacts', 'people', 'address book')`
+      case Apps.DataSource:
+        return `${Apps.DataSource} (keywords: 'data-source', 'knowledge-base', 'sources')`
+      default:
+        return app
+    }
+  }
+
   const availableApps = agentContext?.prompt.length
-    ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
-    : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
+    ? `${agentContext.sources.map((v: string) => `- ${getAppDescription(v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)}`).join(", ")}`
+    : `- ${getAppDescription(Apps.Gmail)}, - ${getAppDescription(Apps.GoogleDrive)}, - ${getAppDescription(Apps.GoogleCalendar)}`
 
   const toolsToUse = {
     internal: customTools?.internal || internalTools,
