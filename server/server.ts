@@ -131,7 +131,7 @@ import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
-import slackApp from "@/integrations/slack/client"
+import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
 import {
@@ -834,9 +834,20 @@ app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
-  if (process.env.ENABLE_SLACK_SOCKET_MODE?.toLowerCase() === "true") {
-    await slackApp.start()
-    Logger.info("Slack app is running.")
+  if (isSlackEnabled()) {
+    Logger.info("Slack Web API client initialized and ready.")
+    try {
+      const socketStarted = await startSocketMode();
+      if (socketStarted) {
+        Logger.info("Slack Socket Mode connection initiated successfully.");
+      } else {
+        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
+      }
+    } catch (error) {
+      Logger.error(error, "Error starting Slack Socket Mode");
+    }
+  } else {
+    Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")
   }
 }
 
