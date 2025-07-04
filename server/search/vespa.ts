@@ -1927,6 +1927,10 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 //   }
 // }
 
+const escapeYqlValue = (value: string): string => {
+  return value.replace(/'/g, "''")
+}
+
 // Gmail intent processing function
 const processGmailIntent = (intent: Intent): string[] => {
   const intentConditions: string[] = []
@@ -1973,11 +1977,11 @@ const processGmailIntent = (intent: Intent): string[] => {
   // Process 'from' field
   if (intent.from && intent.from.length > 0) {
     if (intent.from.length === 1) {
-      const fromCondition = `"from" contains '${intent.from[0]}'`
+      const fromCondition = `"from" contains '${escapeYqlValue(intent.from[0])}'`
       intentConditions.push(fromCondition)
     } else {
       const fromConditions = intent.from
-        .map((email) => `"from" contains '${email}'`)
+        .map((email) => `"from" contains '${escapeYqlValue(email)}'`)
         .join(" or ")
       intentConditions.push(`(${fromConditions})`)
     }
@@ -1986,11 +1990,11 @@ const processGmailIntent = (intent: Intent): string[] => {
   // Process 'to' field
   if (intent.to && intent.to.length > 0) {
     if (intent.to.length === 1) {
-      const toCondition = `"to" contains '${intent.to[0]}'`
+      const toCondition = `"to" contains '${escapeYqlValue(intent.to[0])}'`
       intentConditions.push(toCondition)
     } else {
       const toConditions = intent.to
-        .map((email) => `"to" contains '${email}'`)
+        .map((email) => `"to" contains '${escapeYqlValue(email)}'`)
         .join(" or ")
       intentConditions.push(`(${toConditions})`)
     }
@@ -1999,11 +2003,11 @@ const processGmailIntent = (intent: Intent): string[] => {
   // Process 'cc' field
   if (intent.cc && intent.cc.length > 0) {
     if (intent.cc.length === 1) {
-      const ccCondition = `cc contains '${intent.cc[0]}'`
+      const ccCondition = `cc contains '${escapeYqlValue(intent.cc[0])}'`
       intentConditions.push(ccCondition)
     } else {
       const ccConditions = intent.cc
-        .map((email) => `cc contains '${email}'`)
+        .map((email) => `cc contains '${escapeYqlValue(email)}'`)
         .join(" or ")
       intentConditions.push(`(${ccConditions})`)
     }
@@ -2012,11 +2016,11 @@ const processGmailIntent = (intent: Intent): string[] => {
   // Process 'bcc' field
   if (intent.bcc && intent.bcc.length > 0) {
     if (intent.bcc.length === 1) {
-      const bccCondition = `bcc contains '${intent.bcc[0]}'`
+      const bccCondition = `bcc contains '${escapeYqlValue(intent.bcc[0])}'`
       intentConditions.push(bccCondition)
     } else {
       const bccConditions = intent.bcc
-        .map((email) => `bcc contains '${email}'`)
+        .map((email) => `bcc contains '${escapeYqlValue(email)}'`)
         .join(" or ")
       intentConditions.push(`(${bccConditions})`)
     }
@@ -2025,11 +2029,11 @@ const processGmailIntent = (intent: Intent): string[] => {
   // Process 'subject' field
   if (intent.subject && intent.subject.length > 0) {
     if (intent.subject.length === 1) {
-      const subjectCondition = `"subject" contains '${intent.subject[0]}'`
+      const subjectCondition = `"subject" contains '${escapeYqlValue(intent.subject[0])}'`
       intentConditions.push(subjectCondition)
     } else {
       const subjectConditions = intent.subject
-        .map((subj) => `"subject" contains '${subj}'`)
+        .map((subj) => `"subject" contains '${escapeYqlValue(subj)}'`)
         .join(" or ")
       intentConditions.push(`(${subjectConditions})`)
     }
@@ -2086,12 +2090,12 @@ export const getItems = async (
 
   // App condition
   if (app) {
-    conditions.push(`app contains '${app}'`)
+    conditions.push(`app contains '${escapeYqlValue(app)}'`)
   }
 
   // Entity condition
   if (entity) {
-    conditions.push(`entity contains '${entity}'`)
+    conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
   }
 
   // Permissions or owner condition based on schema
