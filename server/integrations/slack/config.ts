@@ -33,3 +33,7 @@ export const ACTION_IDS = {
   SHARE_AGENT_IN_THREAD_FROM_MODAL: "share_agent_in_thread_from_modal", // For sharing agent responses to a thread
   VIEW_ALL_SOURCES: "view_all_sources", // For viewing all sources in a modal
 };
+
+// Constants from client.ts
+export const EVENT_CACHE_TTL = 30000; // 30 seconds
+
