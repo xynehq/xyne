@@ -2374,6 +2374,7 @@ export const AgentMessageApi = async (c: Context) => {
               temporalDirection: null,
               filter_query: "",
               type: "",
+              intent: {},
               filters: queryFilters,
             }
 
@@ -2492,6 +2493,7 @@ export const AgentMessageApi = async (c: Context) => {
                   ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
+                  intent: parsed.intent || {},
                 },
               }
 

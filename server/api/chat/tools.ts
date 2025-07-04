@@ -151,6 +151,7 @@ interface UnifiedSearchOptions {
   span?: Span
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
+  intent?: any | null
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -257,6 +258,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         return { result: errorMsg, contexts: [] }
       }
     }
+    console.log("[TOOLS] Calling getItems with intent from filters")
+    console.log(
+      "🔧 [TOOLS] Intent being passed:",
+      JSON.stringify(options.intent, null, 2),
+    )
+    console.log("[TOOLS] App:", app, "Entity:", entity, "Schema:", schema)
+
     searchResults = await getItems({
       email,
       schema,
@@ -270,7 +278,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       offset,
       asc: orderDirection === "asc",
       excludedIds,
+      intent: options.intent || null,
     })
+
+    console.log(
+      "[TOOLS] getItems completed, results count:",
+      searchResults?.root?.children?.length || 0,
+    )
   } else {
     const errorMsg = "No query or schema provided for search."
     execSpan?.setAttribute("error", errorMsg)
