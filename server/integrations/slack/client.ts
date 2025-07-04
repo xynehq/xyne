@@ -22,6 +22,7 @@ import {
 import {
   CACHE_TTL,
   ACTION_IDS,
+  EVENT_CACHE_TTL,
 } from "./config";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
@@ -47,14 +48,30 @@ let webClient: WebClient | null = null;
 let socketModeClient: SocketModeClient | null = null;
 let isSocketModeConnected = false;
 
-// Event deduplication
-const processedEvents = new Set<string>();
-const EVENT_CACHE_TTL = 30000; // 30 seconds
+// Event deduplication with timestamp-based expiry
+const processedEvents = new Map<string, number>();
 
-// Clean up old processed events periodically
-setInterval(() => {
-  processedEvents.clear();
-}, EVENT_CACHE_TTL);
+// Clean up expired events periodically
+const cleanupExpiredEvents = () => {
+  const now = Date.now();
+  const expiredEvents: string[] = [];
+  
+  for (const [eventId, timestamp] of processedEvents.entries()) {
+    if (now - timestamp > EVENT_CACHE_TTL) {
+      expiredEvents.push(eventId);
+    }
+  }
+  
+  for (const eventId of expiredEvents) {
+    processedEvents.delete(eventId);
+  }
+  
+  if (expiredEvents.length > 0) {
+    Logger.debug(`Cleaned up ${expiredEvents.length} expired event entries`);
+  }
+};
+
+setInterval(cleanupExpiredEvents, EVENT_CACHE_TTL / 2); // Run cleanup twice as often as TTL
 
 // --- Global Cache with TTL Management ---
 declare global {
@@ -102,13 +119,16 @@ const connectSocketMode = async (): Promise<void> => {
         
         // Create unique event ID for deduplication
         const eventId = `${event.type}_${event.ts}_${event.user}_${event.channel}`;
+        const now = Date.now();
         
-        if (processedEvents.has(eventId)) {
-          Logger.info(`Skipping duplicate event: ${eventId}`);
+        // Check if event was already processed recently
+        const lastProcessedTime = processedEvents.get(eventId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate event: ${eventId} (last processed ${now - lastProcessedTime}ms ago)`);
           return;
         }
         
-        processedEvents.add(eventId);
+        processedEvents.set(eventId, now);
         Logger.info(`Received Socket Mode event: ${event.type}`);
         await processSlackEvent(event);
       } catch (error) {
@@ -135,13 +155,16 @@ const connectSocketMode = async (): Promise<void> => {
         
         // Create unique interaction ID for deduplication
         const interactionId = `interactive_${payload.trigger_id || 'unknown'}_${payload.user?.id || 'unknown'}`;
+        const now = Date.now();
         
-        if (processedEvents.has(interactionId)) {
-          Logger.info(`Skipping duplicate interaction: ${interactionId}`);
+        // Check if interaction was already processed recently
+        const lastProcessedTime = processedEvents.get(interactionId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate interaction: ${interactionId} (last processed ${now - lastProcessedTime}ms ago)`);
           return;
         }
         
-        processedEvents.add(interactionId);
+        processedEvents.set(interactionId, now);
         Logger.info("Received Socket Mode interactive component");
         await processSlackInteraction(payload);
       } catch (error) {
