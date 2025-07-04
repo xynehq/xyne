@@ -1937,8 +1937,8 @@ const processGmailIntent = (intent: Intent): string[] => {
     return emailRegex.test(email)
   }
 
-  // STRICT EMAIL-ONLY VALIDATION: Only process intent if there are actual email addresses
-  // DO NOT process intent for names without email addresses
+  // VALIDATION: Process intent if there are actual email addresses OR subject fields
+  // DO NOT process intent for names without email addresses (unless subject is present)
   const hasValidEmailAddresses =
     intent &&
     ((intent.from &&
@@ -1954,16 +1954,19 @@ const processGmailIntent = (intent: Intent): string[] => {
         intent.bcc.length > 0 &&
         intent.bcc.some(isValidEmailAddress)))
 
-  if (!hasValidEmailAddresses) {
+  const hasSubjectFields = intent && intent.subject && intent.subject.length > 0
+
+  // Process intent if we have valid email addresses OR subject fields
+  if (!hasValidEmailAddresses && !hasSubjectFields) {
     Logger.debug(
-      "Intent contains only names or no email addresses - skipping Gmail intent filtering",
+      "Intent contains only names or no actionable identifiers - skipping Gmail intent filtering",
       { intent },
     )
-    return [] // Return empty array if no valid email addresses found
+    return [] // Return empty array if no valid email addresses or subjects found
   }
 
   Logger.debug(
-    "Intent contains valid email addresses - processing Gmail intent filtering",
+    "Intent contains valid email addresses or subjects - processing Gmail intent filtering",
     { intent },
   )
 
