@@ -625,15 +625,15 @@ export const createAgentConversationModal = (
         const roleIcon = msg.role === "user" ? "👤" : "🤖";
         const roleText = msg.role === "user" ? "You" : agentName;
 
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, SNIPPET_MAX_LENGTH)}${
-            msg.content.length > SNIPPET_MAX_LENGTH ? "..." : ""
-          }`,
-        },
-      });
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `${roleIcon} *${roleText}:* ${msg.content.substring(0, SNIPPET_MAX_LENGTH)}${
+              msg.content.length > SNIPPET_MAX_LENGTH ? "..." : ""
+            }`,
+          },
+        });
       });
 
       blocks.push({
