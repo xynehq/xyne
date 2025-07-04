@@ -522,15 +522,6 @@ export async function insertChannelMessages(
           })
         }
       }
-
-      // Always update state with the latest message timestamp from this batch
-      if (ingestionState && messages.length > 0) {
-        const latestMessage = messages[0] // First message is most recent
-        await ingestionState.update({
-          currentChannelId: channelId,
-          lastMessageTs: latestMessage.ts,
-        })
-      }
     }
 
     cursor = response.response_metadata?.next_cursor
