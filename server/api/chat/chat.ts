@@ -2272,16 +2272,17 @@ async function* generateMetadataQueryAnswer(
       console.log(validVirtualRecurringEvents)
       console.log("validVirtualRecurringEvents")
       items = validVirtualRecurringEvents.concat(items)
+
+      const seen = new Set()
+      items = items.filter((item) => {
+        if (seen.has(item.fields?.docId)) {
+          return false
+        } else {
+          seen.add(item.fields?.docId)
+          return true
+        }
+      })
     }
-    const seen = new Set()
-    items = items.filter((item) => {
-      if (seen.has(item.fields?.docId)) {
-        return false
-      } else {
-        seen.add(item.fields?.docId)
-        return true
-      }
-    })
     console.log("items")
     console.log(items)
     console.log("items")
@@ -2387,15 +2388,37 @@ async function* generateMetadataQueryAnswer(
       }
 
       items = searchResults.root.children || []
-      if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+      if (
+        app === Apps.GoogleCalendar &&
+        entity === CalendarEntity.Event &&
+        iteration === 0
+      ) {
         const allReoccuringevents = await getAllReoccuringCalendarEvents({
           email,
         })
-        console.log("\n\nallReoccuringevents")
-        console.log(allReoccuringevents.root.children)
-        console.log("allReoccuringevents\n\n")
-        items = allReoccuringevents.root.children.concat(items)
+        // Expand each recurring event's recurrence into valid instances acc to "to" and "from" from user query.
+        const validVirtualRecurringEvents = getValidVirtualRecurringEvents(
+          allReoccuringevents,
+          timestampRange,
+        )
+        console.log("validVirtualRecurringEvents with searchFilters")
+        console.log(validVirtualRecurringEvents)
+        console.log("validVirtualRecurringEvents with searchFilters")
+        items = validVirtualRecurringEvents.concat(items)
+
+        const seen = new Set()
+        items = items.filter((item) => {
+          if (seen.has(item.fields?.docId)) {
+            return false
+          } else {
+            seen.add(item.fields?.docId)
+            return true
+          }
+        })
       }
+      console.log("items in searchFilters")
+      console.log(items)
+      console.log("items in searchFilters")
 
       loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
 
@@ -2495,7 +2518,7 @@ const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
 
       // --- 2) build the RRuleSet as before
       const ruleSet = new RRuleSet()
-      event?.fields?.recurrence?.forEach((rruleString) => {
+      event?.fields?.recurrence?.forEach((rruleString: string) => {
         const rule = rrulestr(rruleString, {
           dtstart: new Date(event?.fields?.startTime),
         })
