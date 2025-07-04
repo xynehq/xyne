@@ -1506,13 +1506,3 @@ export const startSocketMode = async () => {
 // Export the client and utility functions
 export const getSlackClient = () => webClient;
 export const isSlackEnabled = () => webClient !== null;
-
-// Export for backward compatibility (remove after updating server.ts)
-export default {
-  processSlackEvent,
-  processSlackInteraction,
-  isSlackEnabled,
-  getSlackClient,
-  startSocketMode,
-  isSocketModeConnected,
-};
