@@ -18,6 +18,7 @@ import {
   type VespaDataSourceSearch,
   SlackEntity,
 } from "@/search/types"
+import type { Intent } from "@/ai/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -1926,6 +1927,121 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 //   }
 // }
 
+// Gmail intent processing function
+const processGmailIntent = (intent: Intent): string[] => {
+  const intentConditions: string[] = []
+
+  // Helper function to validate email addresses
+  const isValidEmailAddress = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
+
+  // STRICT EMAIL-ONLY VALIDATION: Only process intent if there are actual email addresses
+  // DO NOT process intent for names without email addresses
+  const hasValidEmailAddresses =
+    intent &&
+    ((intent.from &&
+      intent.from.length > 0 &&
+      intent.from.some(isValidEmailAddress)) ||
+      (intent.to &&
+        intent.to.length > 0 &&
+        intent.to.some(isValidEmailAddress)) ||
+      (intent.cc &&
+        intent.cc.length > 0 &&
+        intent.cc.some(isValidEmailAddress)) ||
+      (intent.bcc &&
+        intent.bcc.length > 0 &&
+        intent.bcc.some(isValidEmailAddress)))
+
+  if (!hasValidEmailAddresses) {
+    Logger.debug(
+      "Intent contains only names or no email addresses - skipping Gmail intent filtering",
+      { intent },
+    )
+    return [] // Return empty array if no valid email addresses found
+  }
+
+  Logger.debug(
+    "Intent contains valid email addresses - processing Gmail intent filtering",
+    { intent },
+  )
+
+  // Process 'from' field
+  if (intent.from && intent.from.length > 0) {
+    if (intent.from.length === 1) {
+      const fromCondition = `"from" contains '${intent.from[0]}'`
+      intentConditions.push(fromCondition)
+    } else {
+      const fromConditions = intent.from
+        .map((email) => `"from" contains '${email}'`)
+        .join(" or ")
+      intentConditions.push(`(${fromConditions})`)
+    }
+  }
+
+  // Process 'to' field
+  if (intent.to && intent.to.length > 0) {
+    if (intent.to.length === 1) {
+      const toCondition = `"to" contains '${intent.to[0]}'`
+      intentConditions.push(toCondition)
+    } else {
+      const toConditions = intent.to
+        .map((email) => `"to" contains '${email}'`)
+        .join(" or ")
+      intentConditions.push(`(${toConditions})`)
+    }
+  }
+
+  // Process 'cc' field
+  if (intent.cc && intent.cc.length > 0) {
+    if (intent.cc.length === 1) {
+      const ccCondition = `cc contains '${intent.cc[0]}'`
+      intentConditions.push(ccCondition)
+    } else {
+      const ccConditions = intent.cc
+        .map((email) => `cc contains '${email}'`)
+        .join(" or ")
+      intentConditions.push(`(${ccConditions})`)
+    }
+  }
+
+  // Process 'bcc' field
+  if (intent.bcc && intent.bcc.length > 0) {
+    if (intent.bcc.length === 1) {
+      const bccCondition = `bcc contains '${intent.bcc[0]}'`
+      intentConditions.push(bccCondition)
+    } else {
+      const bccConditions = intent.bcc
+        .map((email) => `bcc contains '${email}'`)
+        .join(" or ")
+      intentConditions.push(`(${bccConditions})`)
+    }
+  }
+
+  // Process 'subject' field
+  if (intent.subject && intent.subject.length > 0) {
+    if (intent.subject.length === 1) {
+      const subjectCondition = `"subject" contains '${intent.subject[0]}'`
+      intentConditions.push(subjectCondition)
+    } else {
+      const subjectConditions = intent.subject
+        .map((subj) => `"subject" contains '${subj}'`)
+        .join(" or ")
+      intentConditions.push(`(${subjectConditions})`)
+    }
+  }
+
+  return intentConditions
+}
+
+// Future: Slack intent processing function
+// const processSlackIntent = (intent: Intent): string[] => {
+//   const intentConditions: string[] = []
+//   // Add Slack-specific intent processing logic here
+//   return intentConditions
+// }
+
 interface GetItemsParams {
   schema: VespaSchema
   app?: Apps | null
@@ -1936,6 +2052,7 @@ interface GetItemsParams {
   email: string
   excludedIds?: string[]
   asc: boolean
+  intent?: Intent | null
 }
 
 export const getItems = async (
@@ -1951,6 +2068,7 @@ export const getItems = async (
     email,
     excludedIds, // Added excludedIds here
     asc,
+    intent,
   } = params
 
   const emailorkey = process.env.API_KEY || email
@@ -1965,23 +2083,23 @@ export const getItems = async (
 
   // App condition
   if (app) {
-    conditions.push(`app contains @app`)
+    conditions.push(`app contains '${app}'`)
   }
 
   // Entity condition
   if (entity) {
-    conditions.push(`entity contains @entity`)
+    conditions.push(`entity contains '${entity}'`)
   }
 
   // Permissions or owner condition based on schema
   if (schema === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
-    conditions.push(`permissions contains @email`)
+    conditions.push(`permissions contains '${resolvedEmail}'`)
   } else {
     // For user schema
     if (app !== Apps.GoogleWorkspace) {
-      conditions.push(`owner contains @email`)
+      conditions.push(`owner contains '${resolvedEmail}'`)
     }
   }
 
@@ -2028,6 +2146,47 @@ export const getItems = async (
     conditions.push(`!(${exclusionCondition})`)
   }
 
+  // Intent-based conditions - modular approach for different apps
+  if (intent) {
+    Logger.debug("Processing intent-based filtering", {
+      intent,
+      app,
+      entity,
+      schema,
+    })
+
+    // Handle Gmail intent filtering
+    if (
+      app === Apps.Gmail &&
+      entity === MailEntity.Email &&
+      schema === mailSchema
+    ) {
+      const gmailIntentConditions = processGmailIntent(intent)
+      if (gmailIntentConditions.length > 0) {
+        conditions.push(...gmailIntentConditions)
+        Logger.debug(
+          `Added Gmail intent conditions: ${gmailIntentConditions.join(" and ")}`,
+        )
+      } else {
+        Logger.debug(
+          "Gmail intent provided but contains only names/non-specific identifiers - skipping intent filtering",
+          { intent },
+        )
+      }
+    }
+
+    // Future: Handle Slack intent filtering
+    // else if (app === Apps.Slack && entity === SlackEntity.Message && schema === chatMessageSchema) {
+    //   const slackIntentConditions = processSlackIntent(intent)
+    //   if (slackIntentConditions.length > 0) {
+    //     conditions.push(...slackIntentConditions)
+    //     Logger.debug(`Added Slack intent conditions: ${slackIntentConditions.join(" and ")}`)
+    //   }
+    // }
+
+    // Future: Handle other apps...
+  }
+
   // Combine conditions
   const whereClause =
     conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
@@ -2039,11 +2198,19 @@ export const getItems = async (
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
 
+  Logger.info(`[getItems] YQL Query: ${yql}`)
+  Logger.info(`[getItems] Query Details:`, {
+    schema,
+    app,
+    entity,
+    limit,
+    offset,
+    intentProvided: !!intent,
+    conditions: conditions.length > 0 ? conditions : "none",
+  })
+
   const searchPayload = {
     yql,
-    email: resolvedEmail,
-    ...(app ? { app } : {}),
-    ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
     hits: limit,
     ...(offset ? { offset } : {}),
@@ -2053,6 +2220,12 @@ export const getItems = async (
 
   try {
     let result = await client.getItems(searchPayload)
+
+    Logger.debug("getItems results", {
+      totalResults: result?.root?.children?.length || 0,
+      coverage: result?.root?.coverage?.coverage || 0,
+    })
+
     return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({

@@ -2308,11 +2308,11 @@ export const AgentMessageApi = async (c: Context) => {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
-                intent: parsed.intent || {},
                 filters: {
                   ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
+                  intent: parsed.intent || {},
                 },
               }
 

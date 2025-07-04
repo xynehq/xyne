@@ -2354,6 +2354,9 @@ async function* generateMetadataQueryAnswer(
     items = []
     if (agentPrompt) {
       if (agentAppEnums.find((x) => x == app)) {
+        loggerWithChild({ email: email }).info(
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+        )
         searchResults = await getItems({
           email,
           schema,
@@ -2362,11 +2365,19 @@ async function* generateMetadataQueryAnswer(
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
+          intent: classification.filters.intent,
         })
         items = searchResults!.root.children || []
+        loggerWithChild({ email: email }).info(
+          `[GetItems] Agent query completed - Retrieved ${items.length} items`,
+        )
       }
     } else {
-      searchResults = await getItems({
+      loggerWithChild({ email: email }).info(
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+      )
+
+      const getItemsParams = {
         email,
         schema,
         app: app ?? null,
@@ -2374,8 +2385,18 @@ async function* generateMetadataQueryAnswer(
         timestampRange,
         limit: userSpecifiedCountLimit,
         asc: sortDirection === "asc",
-      })
+        intent: classification.filters.intent,
+      }
+
+      loggerWithChild({ email: email }).info(
+        `[GetItems] Query parameters: ${JSON.stringify(getItemsParams)}`,
+      )
+
+      searchResults = await getItems(getItemsParams)
       items = searchResults!.root.children || []
+      loggerWithChild({ email: email }).info(
+        `[GetItems] Query completed - Retrieved ${items.length} items`,
+      )
     }
 
     span?.setAttribute(`retrieved documents length`, items.length)
@@ -3350,6 +3371,7 @@ export const MessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
+              intent: {},
             }
             let parsed = {
               isFollowUp: false,
@@ -3455,14 +3477,20 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
             let classification
-            const { app, count, endTime, entity, sortDirection, startTime } =
-              parsed?.filters
+            const {
+              app,
+              count,
+              endTime,
+              entity,
+              sortDirection,
+              startTime,
+              intent,
+            } = parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
               filterQuery: parsed.filterQuery,
               isFollowUp: parsed.isFollowUp,
-              intent: parsed.intent || {},
               filters: {
                 app: app as Apps,
                 entity: entity as Entity,
@@ -3470,6 +3498,7 @@ export const MessageApi = async (c: Context) => {
                 sortDirection,
                 startTime,
                 count,
+                intent: intent || {},
               },
             } as QueryRouterLLMResponse
 

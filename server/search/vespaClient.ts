@@ -1204,7 +1204,6 @@ class VespaClient {
     // Include permissions check to ensure user has access to these emails
     const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
     const url = `${this.vespaEndpoint}/search/`
-    console.log(`getEmailsByThreadIds - YQL Query: ${yqlQuery}`)
     try {
       const payload = {
         yql: yqlQuery,

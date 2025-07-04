@@ -149,6 +149,7 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  intent: IntentSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({
@@ -161,7 +162,6 @@ export const GetItems = z
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
     filterQuery: z.string().nullable(),
-    intent: IntentSchema.optional(),
   })
   .merge(TemporalClassifierSchema)
 
@@ -171,7 +171,6 @@ export const SearchWithFilters = z
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
     filterQuery: z.string().nullable(),
-    intent: IntentSchema.optional(),
   })
   .merge(TemporalClassifierSchema)
 
@@ -182,7 +181,6 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
       isFollowUp: z.boolean().optional(),
       filters: FiltersSchema,
       filterQuery: z.string().nullable(),
-      intent: IntentSchema.optional(),
     })
     .merge(TemporalClassifierSchema),
   SearchWithFilters,
