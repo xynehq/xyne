@@ -115,30 +115,6 @@ export const vespaChatUserByEmailProxy = handleProxy(
   "Vespa chat user by email proxy error",
 )
 
-// Vespa insert proxy endpoint (Hono)
-export const vespaInsertProxy = handleProxy(
-  ({ document, options }, email) =>
-    vespaClient.insert(document, withEmailOverride(options ?? {}, email)),
-  "Vespa insert proxy error",
-)
-
-// Vespa insert document proxy endpoint (Hono)
-export const vespaInsertDocumentProxy = handleProxy(
-  ({ document, options }, email) =>
-    vespaClient.insertDocument(
-      document,
-      withEmailOverride(options ?? {}, email),
-    ),
-  "Vespa insert document proxy error",
-)
-
-// Vespa insert user proxy endpoint (Hono)
-export const vespaInsertUserProxy = handleProxy(
-  ({ user, options }, email) =>
-    vespaClient.insertUser(user, withEmailOverride(options ?? {}, email)),
-  "Vespa insert user proxy error",
-)
-
 // Vespa get document proxy endpoint (Hono)
 export const vespaGetDocumentProxy = handleProxy(
   (options, email) =>
@@ -153,43 +129,6 @@ export const vespaGetDocumentsByIdsProxy = handleProxy(
       withEmailOverride(options ?? {}, email),
     ),
   "Vespa get documents by IDs proxy error",
-)
-
-// Vespa update document permissions proxy endpoint (Hono)
-export const vespaUpdateDocumentPermissionsProxy = handleProxy(
-  ({ permissions, options }, email) =>
-    vespaClient.updateDocumentPermissions(
-      permissions,
-      withEmailOverride(options ?? {}, email),
-    ),
-  "Vespa update document permissions proxy error",
-)
-
-// Vespa update cancelled events proxy endpoint (Hono)
-export const vespaUpdateCancelledEventsProxy = handleProxy(
-  ({ cancelledInstances, options }, email) =>
-    vespaClient.updateCancelledEvents(
-      cancelledInstances,
-      withEmailOverride(options ?? {}, email),
-    ),
-  "Vespa update cancelled events proxy error",
-)
-
-// Vespa update document proxy endpoint (Hono)
-export const vespaUpdateDocumentProxy = handleProxy(
-  ({ updatedFields, options }, email) =>
-    vespaClient.updateDocument(
-      updatedFields,
-      withEmailOverride(options ?? {}, email),
-    ),
-  "Vespa update document proxy error",
-)
-
-// Vespa delete document proxy endpoint (Hono)
-export const vespaDeleteDocumentProxy = handleProxy(
-  (options, email) =>
-    vespaClient.deleteDocument(withEmailOverride(options ?? {}, email)),
-  "Vespa delete document proxy error",
 )
 
 // Vespa if documents exist proxy endpoint (Hono)

@@ -102,21 +102,6 @@ export class ProductionServerClient {
     return this.makeApiCall<any>("chat-user-by-email", { email })
   }
 
-  // Proxy method for insert
-  async insert(document: any, options: any): Promise<void> {
-    return this.makeApiCall<void>("insert", { document, options })
-  }
-
-  // Proxy method for insertDocument
-  async insertDocument(document: any, options: any): Promise<void> {
-    return this.makeApiCall<void>("insert-document", { document, options })
-  }
-
-  // Proxy method for insertUser
-  async insertUser(user: any, options: any): Promise<void> {
-    return this.makeApiCall<void>("insert-user", { user, options })
-  }
-
   // Proxy method for getDocument
   async getDocument(options: any): Promise<any> {
     return this.makeApiCall<any>("get-document", options)
@@ -125,41 +110,6 @@ export class ProductionServerClient {
   // Proxy method for getDocumentsByOnlyDocIds
   async getDocumentsByOnlyDocIds(options: any): Promise<any> {
     return this.makeApiCall<any>("get-documents-by-ids", options)
-  }
-
-  // Proxy method for updateDocumentPermissions
-  async updateDocumentPermissions(
-    permissions: string[],
-    options: any,
-  ): Promise<void> {
-    return this.makeApiCall<void>("update-document-permissions", {
-      permissions,
-      options,
-    })
-  }
-
-  // Proxy method for updateCancelledEvents
-  async updateCancelledEvents(
-    cancelledInstances: string[],
-    options: any,
-  ): Promise<void> {
-    return this.makeApiCall<void>("update-cancelled-events", {
-      cancelledInstances,
-      options,
-    })
-  }
-
-  // Proxy method for updateDocument
-  async updateDocument(
-    updatedFields: Record<string, any>,
-    options: any,
-  ): Promise<void> {
-    return this.makeApiCall<void>("update-document", { updatedFields, options })
-  }
-
-  // Proxy method for deleteDocument
-  async deleteDocument(options: any): Promise<void> {
-    return this.makeApiCall<void>("delete-document", options)
   }
 
   // Proxy method for ifDocumentsExist

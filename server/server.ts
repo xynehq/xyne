@@ -142,15 +142,8 @@ import {
   vespaGetItemsProxy,
   vespaChatContainerByChannelProxy,
   vespaChatUserByEmailProxy,
-  vespaInsertProxy,
-  vespaInsertDocumentProxy,
-  vespaInsertUserProxy,
   vespaGetDocumentProxy,
   vespaGetDocumentsByIdsProxy,
-  vespaUpdateDocumentPermissionsProxy,
-  vespaUpdateCancelledEventsProxy,
-  vespaUpdateDocumentProxy,
-  vespaDeleteDocumentProxy,
   vespaIfDocumentsExistProxy,
   vespaIfMailDocumentsExistProxy,
   vespaIfDocumentsExistInChatContainerProxy,
@@ -602,23 +595,8 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
-  .post("/insert", validateApiKey, vespaInsertProxy)
-  .post("/insert-document", validateApiKey, vespaInsertDocumentProxy)
-  .post("/insert-user", validateApiKey, vespaInsertUserProxy)
   .post("/get-document", validateApiKey, vespaGetDocumentProxy)
   .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
-  .post(
-    "/update-document-permissions",
-    validateApiKey,
-    vespaUpdateDocumentPermissionsProxy,
-  )
-  .post(
-    "/update-cancelled-events",
-    validateApiKey,
-    vespaUpdateCancelledEventsProxy,
-  )
-  .post("/update-document", validateApiKey, vespaUpdateDocumentProxy)
-  .post("/delete-document", validateApiKey, vespaDeleteDocumentProxy)
   .post("/if-documents-exist", validateApiKey, vespaIfDocumentsExistProxy)
   .post(
     "/if-mail-documents-exist",

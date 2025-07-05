@@ -96,19 +96,10 @@ async function deleteAllDocuments() {
 }
 
 export const insertDocument = async (document: VespaFile) => {
-  return vespa
+  return fallbackVespa
     .insertDocument(document, {
       namespace: NAMESPACE,
       schema: fileSchema,
-    })
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(err, "Prod vespa failed in insertDocument, trying fallback")
-        return fallbackVespa.insertDocument(document, {
-          namespace: NAMESPACE,
-          schema: fileSchema,
-        })
-      }
     })
     .catch((error) => {
       Logger.error(`Inserting document failed with error:`, error)
@@ -120,72 +111,45 @@ export const insertDocument = async (document: VespaFile) => {
     })
 }
 
+// Renamed to reflect its purpose: retrying a single insert
 export const insertWithRetry = async (
   document: Inserts,
   schema: VespaSchema,
   maxRetries = 8,
-): Promise<void> => {
-  const namespace = { namespace: NAMESPACE, schema }
+) => {
   let lastError: any
-
-  const attemptInsert = async (client: typeof vespa, label: string) => {
-    try {
-      await client.insert(document, namespace)
-      Logger.debug(`Inserted document ${document.docId} via ${label}`)
-      return true
-    } catch (err) {
-      lastError = err
-      const msg = (err as Error).message || ""
-      if (msg.includes("429 Too Many Requests")) return false // retryable
-      throw new Error(`Insert failed on ${label}: ${msg}`)
-    }
-  }
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const isLastAttempt = attempt === maxRetries
-
     try {
-      // First try primary
-      const ok = await attemptInsert(vespa, "primary")
-      if (ok) return
-
-      // If not okay and it's prod, try fallback
-      if (vespa instanceof ProductionServerClient) {
-        const fallbackOk = await attemptInsert(fallbackVespa, "fallback")
-        if (fallbackOk) return
-      }
-
-      // If still failing and it's a retryable error (i.e. 429)
-      if (!isLastAttempt) {
+      await fallbackVespa.insert(document, { namespace: NAMESPACE, schema })
+      Logger.debug(`Inserted document ${document.docId}`)
+      return
+    } catch (error) {
+      lastError = error
+      if (
+        (error as Error).message.includes("429 Too Many Requests") &&
+        attempt < maxRetries
+      ) {
         const delayMs = Math.pow(2, attempt) * 2000
         Logger.warn(
-          `429 received for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
+          `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
         )
-        await new Promise((res) => setTimeout(res, delayMs))
-        continue
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      } else {
+        throw new Error(
+          `Error inserting document ${document.docId}: ${(error as Error).message}`,
+        )
       }
-    } catch (nonRetryableError) {
-      // If a non-429 error happened (e.g. malformed doc), throw immediately
-      throw nonRetryableError
     }
   }
-
-  // If all retries exhausted
   throw new Error(
-    `Failed to insert ${document.docId} after ${maxRetries} retries: ${lastError?.message}`,
+    `Failed to insert ${document.docId} after ${maxRetries} retries: ${lastError.message}`,
   )
 }
 
 // generic insert method
 export const insert = async (document: Inserts, schema: VespaSchema) => {
-  return vespa
+  return fallbackVespa
     .insert(document, { namespace: NAMESPACE, schema })
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(err, "Prod vespa failed in insert, trying fallback")
-        return fallbackVespa.insert(document, { namespace: NAMESPACE, schema })
-      }
-    })
     .catch((error) => {
       Logger.error(`Inserting document failed with error:`, error)
       throw new ErrorInsertingDocument({
@@ -197,17 +161,8 @@ export const insert = async (document: Inserts, schema: VespaSchema) => {
 }
 
 export const insertUser = async (user: VespaUser) => {
-  return vespa
+  return fallbackVespa
     .insertUser(user, { namespace: NAMESPACE, schema: userSchema })
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(err, "Prod vespa failed in insertUser, trying fallback")
-        return fallbackVespa.insertUser(user, {
-          namespace: NAMESPACE,
-          schema: userSchema,
-        })
-      }
-    })
     .catch((error) => {
       Logger.error(`Inserting user failed with error:`, error)
       throw new ErrorInsertingDocument({
@@ -1599,18 +1554,8 @@ export const UpdateDocumentPermissions = async (
   updatedPermissions: string[],
 ) => {
   const opts = { namespace: NAMESPACE, docId, schema }
-  return vespa
+  return fallbackVespa
     .updateDocumentPermissions(updatedPermissions, opts)
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in updateDocumentPermissions for search, trying fallback",
-        )
-        return fallbackVespa.updateDocumentPermissions(updatedPermissions, opts)
-      }
-      throw err
-    })
     .catch((error) => {
       Logger.error(
         error,
@@ -1626,21 +1571,8 @@ export const UpdateEventCancelledInstances = async (
   updatedCancelledInstances: string[],
 ) => {
   const opts = { namespace: NAMESPACE, docId, schema }
-  return vespa
+  return fallbackVespa
     .updateCancelledEvents(updatedCancelledInstances, opts)
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in updateCancelledEvents for search, trying fallback",
-        )
-        return fallbackVespa.updateCancelledEvents(
-          updatedCancelledInstances,
-          opts,
-        )
-      }
-      throw err
-    })
     .catch((error) => {
       Logger.error(
         error,
@@ -1657,18 +1589,8 @@ export const UpdateDocument = async (
 ) => {
   const opts = { namespace: NAMESPACE, docId, schema }
 
-  return vespa
+  return fallbackVespa
     .updateDocument(updatedFields, opts)
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in updateDocument for search, trying fallback",
-        )
-        return fallbackVespa.updateDocument(updatedFields, opts)
-      }
-      throw err
-    })
     .catch((error) => {
       Logger.error(error, `Error updating document for docId: ${docId}`)
       throw new Error(getErrorMessage(error))
@@ -1677,18 +1599,8 @@ export const UpdateDocument = async (
 
 export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   const opts = { namespace: NAMESPACE, docId, schema }
-  return vespa
+  return fallbackVespa
     .deleteDocument(opts)
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in deleteDocument for search, trying fallback",
-        )
-        return fallbackVespa.deleteDocument(opts)
-      }
-      throw err
-    })
     .catch((error) => {
       Logger.error(error, `Error deleting document for docId: ${docId}`)
       throw new Error(getErrorMessage(error))
