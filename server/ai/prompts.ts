@@ -1780,6 +1780,7 @@ export const withToolQueryPrompt = (
   toolContext: string,
   toolOutput: string,
   agentContext?: AgentPromptData,
+  fallbackReasoning?: string,
 ): string => {
   return `
   Current date: ${getDateForAI()}.
@@ -1805,14 +1806,37 @@ export const withToolQueryPrompt = (
 
     **Context:**  
     ${toolOutput}
+    
+    ${
+      fallbackReasoning
+        ? `
+    ---
+    **SEARCH ANALYSIS:**
+    ${fallbackReasoning}
+    `
+        : ""
+    }
     ---
     **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
 
    ### Response Instructions:
-    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
+    ${
+      fallbackReasoning
+        ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
+        : `- **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
+    - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
+    - **INSUFFICIENT CONTEXT**: If the context is incomplete, partially relevant, or doesn't contain the specific information requested:
+      * DO NOT provide partial answers or tangentially related information
+      * DO NOT list what you found if it doesn't directly answer the query
+      * Instead, honestly explain that you don't have sufficient information to answer the query
+      * Explain what specific information would be needed to provide a complete answer
+      * Suggest how the user could refine their query to get better results
+    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
+    }
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
     - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
+    - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -1847,6 +1871,61 @@ ${synthesisContext}
   "answer": "Brief, synthesized answer based only on the context"
 }
   `
+}
+
+export const fallbackReasoningGenerationPrompt = (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+) => {
+  return `You are a search assistant analyzing why a search failed and providing structured feedback to help the user.
+
+**User Context:**
+${userContext}
+
+**Original Query:** "${originalQuery}"
+
+**Search History:**
+${agentScratchpad}
+
+**Tool Log:**
+${toolLog}
+
+**Context Found:**
+${gatheredFragments}
+
+**Your Task:**
+Provide a structured analysis following this exact format and order:
+
+**MANDATORY RESPONSE FORMAT:**
+
+{
+  "reasoning": "[Start with a clear statement about not finding the information]\n\n[Explain what specific information gaps exist that would help improve the search]\n\n[Share what was learned from the search attempt - what was actually found and how it relates to the query]"
+}
+
+**STRUCTURE REQUIREMENTS:**
+1. **Start with the main issue**: Begin with "I don't have sufficient information to answer your query about [specific topic]"
+2. **Identify information gaps**: Explain what specific details would help improve the search (suggestions for user)
+3. **Share search insights**: Explain what was actually found and how it relates (or doesn't relate) to their query
+
+**EXAMPLE FORMAT:**
+"I don't have sufficient information to answer your query about [topic].
+
+To get the results you're looking for, you might want to:
+- [Specific suggestion 1]
+- [Specific suggestion 2]
+- [Specific suggestion 3]
+
+[Explain what was actually found in the search and why it doesn't match the query]"
+
+**CRITICAL RULES:**
+- Start with the main problem statement
+- Focus on actionable suggestions in the middle section
+- End with what was actually found and why it doesn't help
+- Keep each section concise and helpful
+- Be specific about what the user could do differently`
 }
 
 export const meetingPromptJson = (

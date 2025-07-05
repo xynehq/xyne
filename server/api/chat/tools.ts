@@ -60,7 +60,7 @@ import type {
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
 
-const { maxDefaultSummary } = config
+const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {
@@ -1836,6 +1836,96 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
   },
 }
 
+// Fallback Tool - activates when iterations are exhausted and synthesis is not complete
+export const fallbackTool: AgentTool = {
+  name: "fall_back",
+  description:
+    "Generate detailed reasoning about why the search failed when initial iterations are exhausted but synthesis is still not complete.",
+  parameters: {
+    originalQuery: {
+      type: "string",
+      description: "The original user query",
+      required: true,
+    },
+    agentScratchpad: {
+      type: "string",
+      description: "The agent reasoning history",
+      required: true,
+    },
+    toolLog: {
+      type: "string",
+      description: "The tool execution log",
+      required: true,
+    },
+    gatheredFragments: {
+      type: "string",
+      description: "The gathered context fragments",
+      required: true,
+    },
+  },
+  execute: async (
+    params: {
+      originalQuery: string
+      agentScratchpad: string
+      toolLog: string
+      gatheredFragments: string
+    },
+    span?: Span,
+    userCtx?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_fallback_tool")
+
+    try {
+      // Import the generateFallback function
+      const { generateFallback } = await import("@/ai/provider")
+
+      // Generate detailed reasoning about why the search failed
+      const fallbackResponse = await generateFallback(
+        userCtx || "",
+        params.originalQuery,
+        params.agentScratchpad,
+        params.toolLog,
+        params.gatheredFragments,
+        {
+          modelId: defaultFastModel,
+          stream: false,
+          json: true,
+        },
+      )
+
+      if (
+        !fallbackResponse.reasoning ||
+        fallbackResponse.reasoning.trim() === ""
+      ) {
+        return {
+          result: "No reasoning could be generated for the search failure.",
+          error: "No reasoning generated",
+        }
+      }
+
+      // Return only the reasoning, not alternative queries
+      Logger.info(
+        `Fallback tool generated detailed reasoning about search failure`,
+      )
+
+      return {
+        result: `Fallback analysis completed. Generated detailed reasoning about why the search was unsuccessful.`,
+        fallbackReasoning: fallbackResponse.reasoning, // Pass only the reasoning
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Fallback tool error: ${errMsg}`)
+      return {
+        result: `Fallback analysis failed: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
@@ -1844,4 +1934,5 @@ export const agentTools: Record<string, AgentTool> = {
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
+  fall_back: fallbackTool,
 }
