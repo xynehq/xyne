@@ -240,9 +240,4 @@ export class ProductionServerClient {
       cluster,
     })
   }
-
-  // Proxy method for deleteAllDocuments
-  async deleteAllDocuments(options: any): Promise<void> {
-    return this.makeApiCall<void>("delete-all-documents", options)
-  }
 }

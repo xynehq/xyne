@@ -254,12 +254,6 @@ export const vespaGetRandomDocumentProxy = handleProxy(
   "Vespa get random document proxy error",
 )
 
-// Vespa delete all documents proxy endpoint (Hono)
-export const vespaDeleteAllDocumentsProxy = handleProxy(
-  (options) => vespaClient.deleteAllDocuments(options),
-  "Vespa delete all documents proxy error",
-)
-
 // Group vespa search proxy endpoint (Hono)
 export const groupVespaSearchProxy = handleProxy(
   (options, email) =>

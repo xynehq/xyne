@@ -161,7 +161,6 @@ import {
   vespaIfMailDocExistProxy,
   vespaGetDocumentsWithFieldProxy,
   vespaGetRandomDocumentProxy,
-  vespaDeleteAllDocumentsProxy,
   searchVespaProxy,
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
@@ -658,7 +657,6 @@ app
     vespaGetDocumentsWithFieldProxy,
   )
   .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
-  .post("/delete-all-documents", validateApiKey, vespaDeleteAllDocumentsProxy)
   .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
   .post("/search-vespa", validateApiKey, searchVespaProxy)
 

@@ -80,24 +80,11 @@ const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
  * Deletes all documents from the specified schema and namespace in Vespa.
  */
 async function deleteAllDocuments() {
-  return vespa
+  return fallbackVespa
     .deleteAllDocuments({
       cluster: CLUSTER,
       namespace: NAMESPACE,
       schema: fileSchema,
-    })
-    .catch((err) => {
-      if (vespa instanceof ProductionServerClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in deleteAllDocuments, trying fallback",
-        )
-        return fallbackVespa.deleteAllDocuments({
-          cluster: CLUSTER,
-          namespace: NAMESPACE,
-          schema: fileSchema,
-        })
-      }
     })
     .catch((error) => {
       Logger.error(`Deleting documents failed with error:`, error)
