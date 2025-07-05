@@ -649,7 +649,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
-          const maxIterations = 2
+          const maxIterations = 10
           let iterationCount = 0
           let answered = false
           let isCustomMCP = false
