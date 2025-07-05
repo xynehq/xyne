@@ -142,6 +142,20 @@ import {
   vespaGetItemsProxy,
   vespaChatContainerByChannelProxy,
   vespaChatUserByEmailProxy,
+  vespaGetDocumentProxy,
+  vespaGetDocumentsByIdsProxy,
+  vespaIfDocumentsExistProxy,
+  vespaIfMailDocumentsExistProxy,
+  vespaIfDocumentsExistInChatContainerProxy,
+  vespaIfDocumentsExistInSchemaProxy,
+  vespaGetUsersByNamesAndEmailsProxy,
+  vespaGetDocumentsByThreadIdProxy,
+  vespaGetEmailsByThreadIdsProxy,
+  vespaIfMailDocExistProxy,
+  vespaGetDocumentsWithFieldProxy,
+  vespaGetRandomDocumentProxy,
+  searchVespaProxy,
+  groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
@@ -581,6 +595,48 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
+  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
+  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
+  .post("/if-documents-exist", validateApiKey, vespaIfDocumentsExistProxy)
+  .post(
+    "/if-mail-documents-exist",
+    validateApiKey,
+    vespaIfMailDocumentsExistProxy,
+  )
+  .post(
+    "/if-documents-exist-in-chat-container",
+    validateApiKey,
+    vespaIfDocumentsExistInChatContainerProxy,
+  )
+  .post(
+    "/if-documents-exist-in-schema",
+    validateApiKey,
+    vespaIfDocumentsExistInSchemaProxy,
+  )
+  .post(
+    "/get-users-by-names-and-emails",
+    validateApiKey,
+    vespaGetUsersByNamesAndEmailsProxy,
+  )
+  .post(
+    "/get-documents-by-thread-id",
+    validateApiKey,
+    vespaGetDocumentsByThreadIdProxy,
+  )
+  .post(
+    "/get-emails-by-thread-ids",
+    validateApiKey,
+    vespaGetEmailsByThreadIdsProxy,
+  )
+  .post("/if-mail-doc-exist", validateApiKey, vespaIfMailDocExistProxy)
+  .post(
+    "/get-documents-with-field",
+    validateApiKey,
+    vespaGetDocumentsWithFieldProxy,
+  )
+  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
+  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
+  .post("/search-vespa", validateApiKey, searchVespaProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
