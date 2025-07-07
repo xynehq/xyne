@@ -846,6 +846,8 @@ export const SearchQueryToolContextPrompt = (
         return `${Apps.GoogleWorkspace} (keywords: 'contacts', 'people', 'address book')`
       case Apps.DataSource:
         return `${Apps.DataSource} (keywords: 'data-source', 'knowledge-base', 'sources')`
+      case Apps.Slack:
+        return `${Apps.Slack} (keywords: 'slack', 'chat', 'messages')`
       default:
         return app
     }
