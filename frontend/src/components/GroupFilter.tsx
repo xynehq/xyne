@@ -1,6 +1,7 @@
 import {
   Apps,
   CalendarEntity,
+  DataSourceEntity,
   DriveEntity,
   Entity,
   GooglePeopleEntity,
@@ -102,6 +103,11 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack User"
   } else if (app === Apps.Github && entity === SystemEntity.SystemInfo) {
     return "Github"
+  } else if (
+    app === Apps.DataSource &&
+    entity === DataSourceEntity.DataSourceFile
+  ) {
+    return "Data-Source"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

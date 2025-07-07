@@ -35,6 +35,7 @@ import {
   AuthType,
   ConnectorStatus,
   UserRole,
+  DataSourceEntity,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -905,6 +906,15 @@ export const ChatBox = ({
   // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
   const handleAddReference = (citation: Citation) => {
+    if (
+      citation.app === Apps.DataSource &&
+      citation.entity === DataSourceEntity.DataSourceFile
+    ) {
+      window.location.href = `/dataSource/${citation.docId}`
+      setShowReferenceBox(false)
+      return
+    }
+
     const docId = citation.docId
     const newRef: Reference = {
       id: docId,
