@@ -3,6 +3,7 @@ import {
   useRouterState,
   useNavigate,
 } from "@tanstack/react-router"
+import { FileSearch } from "lucide-react"
 import { z } from "zod"
 import { Sidebar } from "@/components/Sidebar"
 import { Button } from "@/components/ui/button"
@@ -93,6 +94,27 @@ interface CustomBadgeProps {
 interface FetchedDataSource {
   docId: string
   name: string
+}
+
+interface SearchResult {
+  docId: string
+  threadId: string
+  app: string
+  entity: string
+  subject?: string
+  name?: string
+  title?: string
+  filename?: string
+  mailId?: string
+  from?: string
+  timestamp?: number
+  updatedAt?: number
+  relevance: number
+  url?: string
+  type?: string
+  email?: string
+  photoLink?: string
+  userMap?: Record<string, string>
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
@@ -266,6 +288,12 @@ function AgentComponent() {
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
+  const [fileSearchQuery, setFileSearchQuery] = useState("")
+  const [filteredFiles, setFilteredFiles] = useState<SearchResult[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<SearchResult[]>([])
+  const [showFileSearchResults, setShowFileSearchResults] = useState(false)
+  const [selectedFileSearchIndex, setSelectedFileSearchIndex] = useState(-1)
+  const fileSearchResultsRef = useRef<HTMLDivElement>(null)
   const [listSearchQuery, setListSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState<
     "all" | "shared-to-me" | "made-by-me"
@@ -331,6 +359,26 @@ function AgentComponent() {
     }
   }, [selectedSearchIndex])
 
+  useEffect(() => {
+    if (selectedFileSearchIndex >= 0 && fileSearchResultsRef.current) {
+      const container = fileSearchResultsRef.current
+      const selectedElement = container.children[
+        selectedFileSearchIndex
+      ] as HTMLElement
+
+      if (selectedElement) {
+        const containerRect = container.getBoundingClientRect()
+        const elementRect = selectedElement.getBoundingClientRect()
+
+        if (elementRect.bottom > containerRect.bottom) {
+          selectedElement.scrollIntoView({ behavior: "smooth", block: "end" })
+        } else if (elementRect.top < containerRect.top) {
+          selectedElement.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      }
+    }
+  }, [selectedFileSearchIndex])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (filteredUsers.length === 0) return
 
@@ -373,6 +421,45 @@ function AgentComponent() {
       setShowSearchResults(true)
     }
   }, [searchQuery, users, selectedUsers])
+
+  useEffect(() => {
+    const searchFiles = async () => {
+      if (fileSearchQuery.trim().length < 3) {
+        setFilteredFiles([])
+        setShowFileSearchResults(false)
+        return
+      }
+
+      try {
+        const response = await api.search.$get({
+          query: { query: fileSearchQuery, limit: "10", offset: "0" },
+        })
+        if (response.ok) {
+          const data = await response.json()
+          const files = data.results.filter(
+            (file: SearchResult) =>
+              !selectedFiles.some(
+                (selected) => selected.docId === file.docId,
+              ) && (file.name || file.title),
+          )
+          setFilteredFiles(files)
+          setShowFileSearchResults(true)
+        } else {
+          setFilteredFiles([])
+          setShowFileSearchResults(false)
+        }
+      } catch (error) {
+        console.error("Failed to search files:", error)
+        setFilteredFiles([])
+        setShowFileSearchResults(false)
+      }
+    }
+    const debounceTimer = setTimeout(() => {
+      searchFiles()
+    }, 500)
+
+    return () => clearTimeout(debounceTimer)
+  }, [fileSearchQuery, selectedFiles])
 
   useEffect(() => {
     const fetchInitialAgentForChat = async () => {
@@ -534,6 +621,44 @@ function AgentComponent() {
     setSelectedUsers((prev) => prev.filter((user) => user.id !== userId))
   }
 
+  const handleSelectFile = (file: SearchResult) => {
+    console.log("File IDS :", file.docId)
+    setSelectedFiles((prev) => [...prev, file])
+    setFileSearchQuery("")
+    setShowFileSearchResults(false)
+  }
+
+  const handleRemoveFile = (docId: string) => {
+    setSelectedFiles((prev) => prev.filter((file) => file.docId !== docId))
+  }
+
+  const handleFileKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (filteredFiles.length === 0) return
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault()
+        setSelectedFileSearchIndex((prev) =>
+          prev >= filteredFiles.length - 1 ? 0 : prev + 1,
+        )
+        break
+      case "ArrowUp":
+        e.preventDefault()
+        setSelectedFileSearchIndex((prev) =>
+          prev <= 0 ? filteredFiles.length - 1 : prev - 1,
+        )
+        break
+      case "Enter":
+        e.preventDefault()
+        if (selectedFileSearchIndex >= 0) {
+          handleSelectFile(filteredFiles[selectedFileSearchIndex])
+        } else if (filteredFiles.length > 0) {
+          handleSelectFile(filteredFiles[0])
+        }
+        break
+    }
+  }
+
   // Helper function to properly cleanup EventSource
   const cleanupPromptGenerationEventSource = () => {
     if (promptGenerationEventSourceRef.current) {
@@ -692,6 +817,9 @@ function AgentComponent() {
     setSelectedUsers([])
     setSearchQuery("")
     setShowSearchResults(false)
+    setSelectedFiles([])
+    setFileSearchQuery("")
+    setShowFileSearchResults(false)
     setIsGeneratingPrompt(false)
     setShouldHighlightPrompt(false)
     cleanupPromptGenerationEventSource()
@@ -825,7 +953,10 @@ function AgentComponent() {
       appIntegrations: enabledIntegrations,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
+      docIds: selectedFiles.map((file) => file.docId),
     }
+
+    console.log("Agent Payload:", agentPayload)
 
     try {
       let response
@@ -1645,6 +1776,75 @@ function AgentComponent() {
                   </div>
                 </div>
 
+                <div>
+                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
+                    Files
+                  </Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
+                    Add files to the agent's knowledge.
+                  </p>
+                  <div className="relative w-full">
+                    <FileSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Search files..."
+                      value={fileSearchQuery}
+                      onChange={(e) => setFileSearchQuery(e.target.value)}
+                      onKeyDown={handleFileKeyDown}
+                      className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
+                    />
+                    {showFileSearchResults && (
+                      <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
+                        <CardContent
+                          className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
+                          ref={fileSearchResultsRef}
+                          style={{
+                            scrollbarWidth: "thin",
+                            WebkitOverflowScrolling: "touch",
+                            scrollbarColor: "#D1D5DB transparent",
+                            overflowY: "auto",
+                            display: "block",
+                          }}
+                        >
+                          {filteredFiles.length > 0 ? (
+                            filteredFiles.map((file, index) => (
+                              <div
+                                key={file.docId}
+                                className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
+                                  index === selectedFileSearchIndex
+                                    ? "bg-gray-100 dark:bg-slate-700"
+                                    : ""
+                                }`}
+                                onClick={() => handleSelectFile(file)}
+                              >
+                                <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                  <span className="text-sm text-gray-600 dark:text-white truncate">
+                                    {file.name || file.title}
+                                  </span>
+                                </div>
+                                <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-3 text-center text-gray-500">
+                              No files found matching "{fileSearchQuery}"
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
+                      {selectedFiles.map((file) => (
+                        <CustomBadge
+                          key={file.docId}
+                          text={file.name || file.title || "Untitled"}
+                          onRemove={() => handleRemoveFile(file.docId)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div>
                   <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     App Integrations
