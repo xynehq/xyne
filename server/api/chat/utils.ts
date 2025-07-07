@@ -68,21 +68,26 @@ export type EmailSearchResult = VespaSearchResult & {
 export async function expandEmailThreadsInResults(
   results: VespaSearchResult[],
   email: string,
-  span?: Span
+  span?: Span,
 ): Promise<VespaSearchResult[]> {
   // Extract unique thread IDs from email results
   const threadIds = extractThreadIdsFromResults(results)
-  if(threadIds.length === 0){
-    return results;
+  if (threadIds.length === 0) {
+    return results
   }
-  const { mergedResults, addedCount } = await mergeThreadResults(results, threadIds, email, span)
-  
+  const { mergedResults, addedCount } = await mergeThreadResults(
+    results,
+    threadIds,
+    email,
+    span,
+  )
+
   if (addedCount > 0) {
     getLoggerWithChild(Subsystem.Chat)({ email }).info(
-      `Added ${addedCount} additional emails from ${threadIds.length} threads to search results`
+      `Added ${addedCount} additional emails from ${threadIds.length} threads to search results`,
     )
   }
-  
+
   return mergedResults
 }
 
@@ -90,36 +95,38 @@ export async function expandEmailThreadsInResults(
 export function processThreadResults(
   threadResults: VespaSearchResult[],
   existingDocIds: Set<string>,
-  mergedResults: VespaSearchResult[]
+  mergedResults: VespaSearchResult[],
 ): { addedCount: number; threadInfo: Record<string, number> } {
   let addedCount = 0
   let threadInfo: Record<string, number> = {}
-  
+
   for (const child of threadResults) {
     const emailChild = child as EmailSearchResult
     const docId = emailChild.fields.docId
     const threadId = emailChild.fields.threadId
-    
+
     // Skip if already in results
     if (!existingDocIds.has(docId)) {
       mergedResults.push(child)
       existingDocIds.add(docId)
       addedCount++
-      
+
       // Track count per thread for logging
       if (threadId) {
         threadInfo[threadId] = (threadInfo[threadId] || 0) + 1
       }
     }
   }
-  
+
   return { addedCount, threadInfo }
 }
 
 // Function to extract thread IDs from search results
-export function extractThreadIdsFromResults(results: VespaSearchResult[]): string[] {
+export function extractThreadIdsFromResults(
+  results: VespaSearchResult[],
+): string[] {
   const seenThreadIds = new Set<string>()
-  
+
   return results.reduce<string[]>((threadIds, result) => {
     const fields = result.fields as EmailSearchResultFields
     // Check if it's an email result
@@ -138,48 +145,58 @@ export async function mergeThreadResults(
   existingResults: VespaSearchResult[],
   threadIds: string[],
   email: string,
-  span?: Span
-): Promise<{ mergedResults: VespaSearchResult[], addedCount: number, threadInfo: Record<string, number> }> {
+  span?: Span,
+): Promise<{
+  mergedResults: VespaSearchResult[]
+  addedCount: number
+  threadInfo: Record<string, number>
+}> {
   if (threadIds.length === 0) {
     return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
   }
 
   const threadSpan = span?.startSpan("fetch_email_threads")
   threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
-  
+
   try {
     const threadResults = await SearchEmailThreads(threadIds, email)
-    
-    if (!threadResults.root.children || threadResults.root.children.length === 0) {
+
+    if (
+      !threadResults.root.children ||
+      threadResults.root.children.length === 0
+    ) {
       threadSpan?.setAttribute("no_thread_results", true)
       threadSpan?.end()
       return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
     }
-    
+
     // Create a set of existing docIds to avoid duplicates
     const existingDocIds = new Set(
-      existingResults.map((child: any) => child.fields.docId)
+      existingResults.map((child: any) => child.fields.docId),
     )
-    
+
     // Merge thread results
     const mergedResults = [...existingResults]
-    
+
     const { addedCount, threadInfo } = processThreadResults(
       threadResults.root.children,
       existingDocIds,
-      mergedResults
+      mergedResults,
     )
-    
+
     threadSpan?.setAttribute("added_email_count", addedCount)
-    threadSpan?.setAttribute("total_thread_emails_found", threadResults.root.children.length)
+    threadSpan?.setAttribute(
+      "total_thread_emails_found",
+      threadResults.root.children.length,
+    )
     threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
     threadSpan?.end()
-    
+
     return { mergedResults, addedCount, threadInfo }
   } catch (error) {
     getLoggerWithChild(Subsystem.Chat)({ email }).error(
       error,
-      `Error fetching email threads: ${getErrorMessage(error)}`
+      `Error fetching email threads: ${getErrorMessage(error)}`,
     )
     threadSpan?.setAttribute("error", getErrorMessage(error))
     threadSpan?.end()
