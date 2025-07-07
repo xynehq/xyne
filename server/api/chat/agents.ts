@@ -1412,7 +1412,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       (f, i) =>
                         `[${i + 1}] ${
                           f.source.title || `Source ${f.source.docId}`
-                        }: ${f.content}...`,
+                        }: ${f.content}`,
                     )
                     .join("\n")
                 : ""
