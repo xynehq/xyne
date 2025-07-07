@@ -77,13 +77,14 @@ import {
   totalConversationsSkipped,
   totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "slack",
 })
 
-const periodicSaveState = 4000
+const periodicSaveState = config.periodicSaveState
 
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
@@ -898,8 +899,6 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     // Determine which conversations to process based on sync type
     let conversationsToProcess: typeof conversations
 
-    // if (isFreshSync) {
-    // Fresh sync: process all conversations not yet inserted
     const existenceMap = await ifDocumentsExistInSchema(
       chatContainerSchema,
       conversations.map((c) => c.id!),

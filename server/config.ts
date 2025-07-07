@@ -109,7 +109,9 @@ if (!slackHost) {
   slackHost = host
 }
 
+let periodicSaveState = 4000
 export default {
+  periodicSaveState,
   // default page size for regular search
   page: 8,
   // default page size for default search over answers
