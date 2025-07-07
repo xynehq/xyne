@@ -2402,9 +2402,8 @@ export interface GetThreadItemsParams {
   channelName?: string
   filterQuery?: string
 }
-// Enhanced getThreadItems function
 export const getThreadItems = async (
-  params: GetThreadItemsParams & { filterQuery?: string }, // Add filterQuery to params
+  params: GetThreadItemsParams & { filterQuery?: string },
 ): Promise<VespaSearchResponse> => {
   let {
     entity = SlackEntity.Message,
@@ -2415,11 +2414,10 @@ export const getThreadItems = async (
     userEmail = null,
     asc = "asc",
     channelName = null,
-    filterQuery = null, // New parameter
+    filterQuery = null,
   } = params
 
   const emailorkey = process.env.API_KEY || email
-  // Get appropriate client and email
   const { client, email: resolvedEmail } =
     await getVespaClientAndEmail(emailorkey)
 
@@ -2467,12 +2465,11 @@ export const getThreadItems = async (
     }
   }
 
-  // If filterQuery is present, use hybrid search
   if (filterQuery) {
     const { yql, profile } = SlackHybridProfile(
       limit,
       SlackEntity.Message,
-      SearchModes.NativeRank, // or your desired ranking profile
+      SearchModes.NativeRank,
       timestampRange,
       channelId || undefined,
       userId || undefined,
@@ -2484,8 +2481,8 @@ export const getThreadItems = async (
       email: resolvedEmail,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
-      "input.query(alpha)": 0.5, // Default alpha value
-      "input.query(recency_decay_rate)": 0.1, // Default recency decay rate
+      "input.query(alpha)": 0.5,
+      "input.query(recency_decay_rate)": 0.1,
       maxHits: limit,
       hits: limit,
       timeout: "20s",
@@ -2493,7 +2490,7 @@ export const getThreadItems = async (
       ...(entity ? { entity } : {}),
       ...(channelId ? { channelId } : {}),
       ...(userId ? { userId } : {}),
-      ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
+      ...(isProductionClient ? { apiKey: emailorkey } : {}),
     }
 
     try {

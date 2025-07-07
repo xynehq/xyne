@@ -752,7 +752,6 @@ export function createCustomToolSet(options: {
     excludeSlack = [],
   } = options
 
-  // Filter out excluded tools and merge with custom tools
   const filteredInternal = Object.fromEntries(
     Object.entries(internalTools).filter(
       ([key]) => !excludeInternal.includes(key),
@@ -805,7 +804,6 @@ export function removeToolParameter(
   }
 }
 
-// Import the AgentTool type to support conversion utilities
 export interface AgentToolParameter {
   type: string
   description: string

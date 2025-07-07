@@ -760,7 +760,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   searchResults.root.children = await expandEmailThreadsInResults(
     searchResults.root.children || [],
     email,
-    initialSearchSpan
+    initialSearchSpan,
   )
 
   const latestResults = searchResults.root.children
@@ -811,12 +811,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
-      
+
       // Expand email threads in the results
       results.root.children = await expandEmailThreadsInResults(
         results.root.children || [],
         email,
-        vespaSearchSpan
+        vespaSearchSpan,
       )
       vespaSearchSpan?.setAttribute(
         "result_count",
@@ -862,26 +862,19 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
             })
-          : searchVespaAgent(
-              query,
-              email,
-              null,
-              null,
-              agentAppEnums,
-              {
-                limit: pageSize,
-                alpha: userAlpha,
-                timestampRange,
-                span: latestSearchSpan,
-                dataSourceIds: agentSpecificDataSourceIds,
-              },
-            ))
-        
+          : searchVespaAgent(query, email, null, null, agentAppEnums, {
+              limit: pageSize,
+              alpha: userAlpha,
+              timestampRange,
+              span: latestSearchSpan,
+              dataSourceIds: agentSpecificDataSourceIds,
+            }))
+
         // Expand email threads in the results
         const expandedChildren = await expandEmailThreadsInResults(
           latestSearchResponse.root.children || [],
           email,
-          latestSearchSpan
+          latestSearchSpan,
         )
         const latestResults: VespaSearchResult[] = expandedChildren
         latestSearchSpan?.setAttribute(
@@ -936,7 +929,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         results.root.children = await expandEmailThreadsInResults(
           results.root.children || [],
           email,
-          vespaSearchSpan
+          vespaSearchSpan,
         )
 
         const totalResultsSpan = querySpan?.startSpan("total_results")
@@ -1039,12 +1032,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
       }
-      
+
       // Expand email threads in the results
       results.root.children = await expandEmailThreadsInResults(
         results.root.children || [],
         email,
-        searchSpan
+        searchSpan,
       )
       searchSpan?.setAttribute(
         "result_count",
@@ -1095,7 +1088,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results.root.children = await expandEmailThreadsInResults(
         results.root.children || [],
         email,
-        searchSpan
+        searchSpan,
       )
 
       searchSpan?.setAttribute(
@@ -1257,33 +1250,42 @@ async function* generateAnswerFromGivenContext(
     )
     const threadSpan = generateAnswerSpan?.startSpan("fetch_email_threads")
     threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
-    
+
     try {
       const threadResults = await SearchEmailThreads(threadIds, email)
       loggerWithChild({ email: email }).info(
         `Thread search results: ${JSON.stringify({
           threadIds,
           resultCount: threadResults?.root?.children?.length || 0,
-          hasResults: !!(threadResults?.root?.children && threadResults.root.children.length > 0)
+          hasResults: !!(
+            threadResults?.root?.children &&
+            threadResults.root.children.length > 0
+          ),
         })}`,
       )
-      
-      if (threadResults.root.children && threadResults.root.children.length > 0) {
+
+      if (
+        threadResults.root.children &&
+        threadResults.root.children.length > 0
+      ) {
         const existingDocIds = new Set(
-          results.root.children.map((child: any) => child.fields.docId)
+          results.root.children.map((child: any) => child.fields.docId),
         )
-        
+
         // Use the helper function to process thread results
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          results.root.children
+          results.root.children,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
         )
         threadSpan?.setAttribute("added_email_count", addedCount)
-        threadSpan?.setAttribute("total_thread_emails_found", threadResults.root.children.length)
+        threadSpan?.setAttribute(
+          "total_thread_emails_found",
+          threadResults.root.children.length,
+        )
         threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
       }
     } catch (error) {
@@ -1293,7 +1295,7 @@ async function* generateAnswerFromGivenContext(
       )
       threadSpan?.setAttribute("error", getErrorMessage(error))
     }
-    
+
     threadSpan?.end()
   }
   const startIndex = isReasoning ? previousResultsLength : 0
@@ -2255,7 +2257,7 @@ async function* generateMetadataQueryAnswer(
       searchResults.root.children = await expandEmailThreadsInResults(
         searchResults.root.children || [],
         email,
-        pageSpan
+        pageSpan,
       )
 
       items = searchResults.root.children || []
@@ -2482,7 +2484,7 @@ async function* generateMetadataQueryAnswer(
       searchResults.root.children = await expandEmailThreadsInResults(
         searchResults.root.children || [],
         email,
-        iterationSpan
+        iterationSpan,
       )
 
       items = searchResults.root.children || []
