@@ -132,8 +132,22 @@ import {
   totalExtractedFiles,
   totalIngestedFiles,
 } from "@/metrics/google/google-drive-file-metrics"
-import { ingestionMailErrorsTotalScript, totalAttachmentErrorScript, totalAttachmentIngestedScript, totalGmailToBeIngestedCountScript, totalIngestedMailsScript, totalSkippedMailsScript } from "@/metrics/scripts/google/gmail/script_gmail_metrics"
-import { blockedFilesTotalScript, fileExtractionErrorsTotalScript, ingestionErrorsTotalScript, totalDriveFilesToBeIngestedScript, totalExtractedFilesScript, totalIngestedFilesScript } from "@/metrics/scripts/google/google-drive/script_google_drive_metric"
+import {
+  ingestionMailErrorsTotalScript,
+  totalAttachmentErrorScript,
+  totalAttachmentIngestedScript,
+  totalGmailToBeIngestedCountScript,
+  totalIngestedMailsScript,
+  totalSkippedMailsScript,
+} from "@/metrics/scripts/google/gmail/script_gmail_metrics"
+import {
+  blockedFilesTotalScript,
+  fileExtractionErrorsTotalScript,
+  ingestionErrorsTotalScript,
+  totalDriveFilesToBeIngestedScript,
+  totalExtractedFilesScript,
+  totalIngestedFilesScript,
+} from "@/metrics/scripts/google/google-drive/script_google_drive_metric"
 import { v4 as uuidv4 } from "uuid"
 
 let isScriptRunning = false
@@ -228,7 +242,7 @@ const initializeGmailWorker = () => {
         loggerWithChild({ email: result.email }).info(
           `Sending Progress for ingested mails`,
         )
-         totalIngestedMailsScript.inc(
+        totalIngestedMailsScript.inc(
           {
             email: result.email,
             account_type: AuthType.ServiceAccount,
@@ -850,15 +864,15 @@ const insertCalendarEvents = async (
   if (isScriptRunning) {
     loggerWithChild({ email: userEmail }).info(
       `Sending Progress for events ingested`,
-     metadataFilesScript.inc(
-    {
-      file_type: CalendarEntity.Event,
-      mime_type: "google_calendar_events",
-      status: OperationStatus.Success,
-      email: userEmail,
-    },
-    events.length,
-  )
+      metadataFilesScript.inc(
+        {
+          file_type: CalendarEntity.Event,
+          mime_type: "google_calendar_events",
+          status: OperationStatus.Success,
+          email: userEmail,
+        },
+        events.length,
+      ),
     )
   }
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
@@ -1081,7 +1095,6 @@ import {
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
 import { metadataFilesScript } from "@/metrics/scripts/google/metadata/metadata_script"
-
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -1654,17 +1667,15 @@ const googleSlidesVespa = async (
         error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
         file_type: DriveEntity.Slides,
         email: userEmail,
-
       })
-      if(isScriptRunning){
-     fileExtractionErrorsTotalScript.inc({
-        mime_type:
-          presentation.mimeType ?? "application/vnd.google-apps.presentation",
-        error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
-        file_type: DriveEntity.Slides,
-        email: userEmail,
-
-      })
+      if (isScriptRunning) {
+        fileExtractionErrorsTotalScript.inc({
+          mime_type:
+            presentation.mimeType ?? "application/vnd.google-apps.presentation",
+          error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
+          file_type: DriveEntity.Slides,
+          email: userEmail,
+        })
       }
       continue
     }
@@ -1792,11 +1803,11 @@ const insertFilesForUser = async (
               `Sending Progress for Ingetsed pdfs`,
             )
             totalIngestedFilesScript.inc({
-            mime_type: doc.mimeType ?? DriveMime.PDF,
-            status: OperationStatus.Success,
-            email: userEmail,
-            file_type: DriveEntity.PDF,
-          })
+              mime_type: doc.mimeType ?? DriveMime.PDF,
+              status: OperationStatus.Success,
+              email: userEmail,
+              file_type: DriveEntity.PDF,
+            })
           }
           loggerWithChild({ email: userEmail! }).info(
             `Inserted ${driveFilesInserted} PDFs`,
@@ -1812,17 +1823,17 @@ const insertFilesForUser = async (
             },
             1,
           )
-          if(isScriptRunning){
-        ingestionErrorsTotalScript.inc(
-            {
-              file_type: DriveEntity.PDF,
-              mime_type: doc.mimeType ?? DriveMime.PDF,
-              email: doc.ownerEmail ?? userEmail,
-              error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
-              status: OperationStatus.Failure,
-            },
-            1,
-          )
+          if (isScriptRunning) {
+            ingestionErrorsTotalScript.inc(
+              {
+                file_type: DriveEntity.PDF,
+                mime_type: doc.mimeType ?? DriveMime.PDF,
+                email: doc.ownerEmail ?? userEmail,
+                error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
+                status: OperationStatus.Failure,
+              },
+              1,
+            )
           }
         }
       }
@@ -1916,13 +1927,13 @@ const insertFilesForUser = async (
               email: userEmail,
               file_type: fileType,
             })
-            if(isScriptRunning){
-            totalIngestedFilesScript.inc({
-              mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
-              status: OperationStatus.Success,
-              email: userEmail,
-              file_type: fileType,
-            })
+            if (isScriptRunning) {
+              totalIngestedFilesScript.inc({
+                mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
+                status: OperationStatus.Success,
+                email: userEmail,
+                file_type: fileType,
+              })
             }
           }
           loggerWithChild({ email: userEmail! }).info(
@@ -1944,17 +1955,17 @@ const insertFilesForUser = async (
             },
             1,
           )
-          if(isScriptRunning) {
-          ingestionErrorsTotalScript.inc(
-            {
-              file_type: fileType,
-              mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
-              email: doc.ownerEmail ?? userEmail,
-              error_type: `ERROR_INSERTING_${fileType}_file`,
-              status: OperationStatus.Failure,
-            },
-            1,
-          )
+          if (isScriptRunning) {
+            ingestionErrorsTotalScript.inc(
+              {
+                file_type: fileType,
+                mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
+                email: doc.ownerEmail ?? userEmail,
+                error_type: `ERROR_INSERTING_${fileType}_file`,
+                status: OperationStatus.Failure,
+              },
+              1,
+            )
           }
         }
       }
@@ -1963,15 +1974,15 @@ const insertFilesForUser = async (
         loggerWithChild({ email: userEmail }).info(
           `Sending Progress for inserted sheets`,
         )
-      totalIngestedFilesScript.inc(
-        {
-          mime_type: "application/vnd.google-apps.spreadsheet",
-          status: OperationStatus.Success,
-          email: userEmail,
-          file_type: DriveEntity.Sheets,
-        },
-        sheetsObj.count,
-      )
+        totalIngestedFilesScript.inc(
+          {
+            mime_type: "application/vnd.google-apps.spreadsheet",
+            status: OperationStatus.Success,
+            email: userEmail,
+            file_type: DriveEntity.Sheets,
+          },
+          sheetsObj.count,
+        )
       }
       totalIngestedFiles.inc(
         {
@@ -2348,17 +2359,15 @@ const googleSheetsVespa = async (
           spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
         email: userEmail,
         file_type: DriveEntity.Sheets,
-        
       })
-      if(isScriptRunning) {
-      fileExtractionErrorsTotalScript.inc({
-        error_type: "SPREADSHEET_EXTRACTION_FAILED_ERROR",
-        mime_type:
-          spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
-        email: userEmail,
-        file_type: DriveEntity.Sheets,
-        
-      })
+      if (isScriptRunning) {
+        fileExtractionErrorsTotalScript.inc({
+          error_type: "SPREADSHEET_EXTRACTION_FAILED_ERROR",
+          mime_type:
+            spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
+          email: userEmail,
+          file_type: DriveEntity.Sheets,
+        })
       }
       // throw new DownloadDocumentError({
       //   message: "Error in the catch of getting sheet files",
@@ -2385,16 +2394,16 @@ const googleSheetsVespa = async (
     },
     count,
   )
-  if(isScriptRunning) {
-     totalExtractedFilesScript.inc(
-    {
-      mime_type: "application/vnd.google-apps.spreadsheet",
-      status: OperationStatus.Success,
-      email: userEmail,
-      file_type: DriveEntity.Sheets,
-    },
-    count,
-  )
+  if (isScriptRunning) {
+    totalExtractedFilesScript.inc(
+      {
+        mime_type: "application/vnd.google-apps.spreadsheet",
+        status: OperationStatus.Success,
+        email: userEmail,
+        file_type: DriveEntity.Sheets,
+      },
+      count,
+    )
   }
   return { sheets: sheetsList, count }
 }
@@ -2493,13 +2502,13 @@ export const googlePDFsVespa = async (
           loggerWithChild({ email: userEmail }).info(
             `Sending Progress for Blocked PDFs`,
           )
-       blockedFilesTotalScript.inc({
-          mime_type: pdf.mimeType ?? "google_pdf",
-          blocked_type: "MAX_PDF_SIZE_EXCEEDED",
-          email: userEmail,
-          file_type: DriveEntity.PDF,
-          status: OperationStatus.Cancelled,
-        })
+          blockedFilesTotalScript.inc({
+            mime_type: pdf.mimeType ?? "google_pdf",
+            blocked_type: "MAX_PDF_SIZE_EXCEEDED",
+            email: userEmail,
+            file_type: DriveEntity.PDF,
+            status: OperationStatus.Cancelled,
+          })
         }
         blockedFilesTotal.inc({
           mime_type: pdf.mimeType ?? "google_pdf",
@@ -2597,13 +2606,13 @@ export const googlePDFsVespa = async (
           file_type: DriveEntity.PDF,
           email: userEmail,
         })
-        if(isScriptRunning){
-       fileExtractionErrorsTotalScript.inc({
-          error_type: "PDF_EXTRACTION_FAILED_ERROR",
-          mime_type: pdf.mimeType ?? "google_pdf",
-          file_type: DriveEntity.PDF,
-          email: userEmail,
-        })
+        if (isScriptRunning) {
+          fileExtractionErrorsTotalScript.inc({
+            error_type: "PDF_EXTRACTION_FAILED_ERROR",
+            mime_type: pdf.mimeType ?? "google_pdf",
+            file_type: DriveEntity.PDF,
+            email: userEmail,
+          })
         }
         // we cannot break the whole pdf pipeline for one error
         return null
@@ -2905,13 +2914,13 @@ const insertContactsToVespa = async (
         `Sending Progress for inserted contacts`,
       )
       metadataFilesScript.inc(
-      {
-        file_type: GooglePeopleEntity.Contacts,
-        mime_type: "google_people",
-        email: owner,
-      },
-      contacts.length + otherContacts.length,
-    )
+        {
+          file_type: GooglePeopleEntity.Contacts,
+          mime_type: "google_people",
+          email: owner,
+        },
+        contacts.length + otherContacts.length,
+      )
     }
   }
 }
@@ -3078,16 +3087,16 @@ export const googleDocsVespa = async (
           },
           1,
         )
-        if(isScriptRunning) {
-       totalExtractedFilesScript.inc(
-          {
-            mime_type: doc.mimeType ?? "",
-            status: OperationStatus.Success,
-            email: userEmail,
-            file_type: DriveEntity.Docs,
-          },
-          1,
-        )
+        if (isScriptRunning) {
+          totalExtractedFilesScript.inc(
+            {
+              mime_type: doc.mimeType ?? "",
+              status: OperationStatus.Success,
+              email: userEmail,
+              file_type: DriveEntity.Docs,
+            },
+            1,
+          )
         }
         return result
       } catch (error) {
@@ -3102,13 +3111,13 @@ export const googleDocsVespa = async (
           file_type: DriveEntity.Docs,
           email: userEmail,
         })
-        if(isScriptRunning) {
-       fileExtractionErrorsTotalScript.inc({
-          error_type: "DOCUMENT_EXTRACTION_FAILED_ERROR",
-          mime_type: doc.mimeType ?? "",
-          file_type: DriveEntity.Docs,
-          email: userEmail,
-        })
+        if (isScriptRunning) {
+          fileExtractionErrorsTotalScript.inc({
+            error_type: "DOCUMENT_EXTRACTION_FAILED_ERROR",
+            mime_type: doc.mimeType ?? "",
+            file_type: DriveEntity.Docs,
+            email: userEmail,
+          })
         }
         return null
       }
@@ -3635,27 +3644,27 @@ export const ServiceAccountIngestMoreUsers = async (
 
         if (isScriptRunning) {
           Logger.info(`Updating Partial Progress for Script`)
-        totalGmailToBeIngestedCountScript.inc(
-          {
+          totalGmailToBeIngestedCountScript.inc(
+            {
+              email: userEmail,
+              account_type: AuthType.ServiceAccount,
+              status: OperationStatus.Success,
+            },
+            mailCountExcludingPromotions,
+          )
+          totalSkippedMailsScript.inc(
+            {
+              email: userEmail,
+              status: OperationStatus.Success,
+              account_type: AuthType.ServiceAccount,
+            },
+            totalMails - mailCountExcludingPromotions,
+          )
+          totalDriveFilesToBeIngestedScript.inc({
             email: userEmail,
-            account_type: AuthType.ServiceAccount,
             status: OperationStatus.Success,
-          },
-          mailCountExcludingPromotions,
-        )
-        totalSkippedMailsScript.inc(
-          {
-            email: userEmail,
-            status: OperationStatus.Success,
-            account_type: AuthType.ServiceAccount,
-          },
-          totalMails - mailCountExcludingPromotions,
-        )
-        totalDriveFilesToBeIngestedScript.inc({
-          email: userEmail,
-          status: OperationStatus.Success,
-          file_type: DriveEntity.Misc,
-        })
+            file_type: DriveEntity.Misc,
+          })
         }
 
         const servicePromises: Promise<any>[] = []
