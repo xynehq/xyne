@@ -440,7 +440,8 @@ function AgentComponent() {
             (file: SearchResult) =>
               !selectedFiles.some(
                 (selected) => selected.docId === file.docId,
-              ) && (file.name || file.title),
+              ) &&
+              (file.name || file.title),
           )
           setFilteredFiles(files)
           setShowFileSearchResults(true)
