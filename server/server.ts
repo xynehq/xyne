@@ -91,6 +91,7 @@ import {
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
+  GetDocumentApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -120,6 +121,8 @@ import {
   UpdateAgentApi,
   DeleteAgentApi,
   GetWorkspaceUsersApi,
+  GetAgentByExternalIdApi,
+  GetAgentDocumentsApi,
   GetAgentPermissionsApi,
   createAgentSchema,
   listAgentsSchema,
@@ -384,6 +387,8 @@ export const AppRoutes = app
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
+  .get("/agent/:agentExternalId", GetAgentByExternalIdApi)
+  .get("/agent/:agentExternalId/documents", GetAgentDocumentsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
     "/agent/:agentExternalId",
@@ -490,6 +495,9 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
+
+// Document access route (public access for citations)
+app.get("/docs/files/:docId", GetDocumentApi)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

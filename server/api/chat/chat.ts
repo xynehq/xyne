@@ -4982,3 +4982,74 @@ export const MessageFeedbackApi = async (c: Context) => {
     })
   }
 }
+
+export const GetDocumentApi = async (c: Context) => {
+  try {
+    const docId = c.req.param("docId")
+    
+    if (!docId) {
+      throw new HTTPException(400, { message: "Document ID is required" })
+    }
+
+    // For now, return basic document info without authentication
+    // This allows citations to work, but you may want to add auth later
+    try {
+      const document = await GetDocument(dataSourceFileSchema, docId)
+      
+      if (!document || !document.fields) {
+        throw new HTTPException(404, { message: "Document not found" })
+      }
+
+      const fields = document.fields as any
+      
+      // Return document metadata
+      return c.json({
+        docId: fields.docId,
+        title: fields.fileName || fields.title,
+        dataSourceName: fields.dataSourceName,
+        uploadedBy: fields.uploadedBy,
+        createdAt: fields.createdAt,
+        url: fields.url
+      })
+    } catch (vespaError) {
+      // If document not found in dataSourceFileSchema, try fileSchema
+      try {
+        const document = await GetDocument(fileSchema, docId)
+        
+        if (!document || !document.fields) {
+          throw new HTTPException(404, { message: "Document not found" })
+        }
+
+        const fields = document.fields as any
+        
+        return c.json({
+          docId: fields.docId,
+          title: fields.title,
+          app: fields.app,
+          entity: fields.entity,
+          url: fields.url
+        })
+      } catch (secondVespaError) {
+        loggerWithChild({ email: "anonymous" }).error(
+          secondVespaError,
+          `Error fetching document ${docId}: ${getErrorMessage(secondVespaError)}`
+        )
+        throw new HTTPException(404, { message: "Document not found" })
+      }
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    
+    loggerWithChild({ email: "anonymous" }).error(
+      error,
+      `Get Document Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not fetch document",
+    })
+  }
+}

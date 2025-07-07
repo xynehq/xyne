@@ -869,6 +869,37 @@ function AgentComponent() {
       })
       setSelectedIntegrations(currentIntegrations)
 
+      // Load existing files from docIds using the dedicated API endpoint
+      const loadAgentFiles = async () => {
+        console.log("loadAgentFiles called for agent:", editingAgent.externalId)
+        console.log("editingAgent.docIds:", editingAgent.docIds)
+        console.log("docIds length:", editingAgent.docIds?.length)
+        
+        if (editingAgent.docIds && editingAgent.docIds.length > 0) {
+          console.log("Calling documents API for agent:", editingAgent.externalId)
+          try {
+            const response = await api.agent[":agentExternalId"].documents.$get({
+              param: { agentExternalId: editingAgent.externalId },
+            })
+            console.log("Documents API response status:", response.status)
+            if (response.ok) {
+              const data = await response.json()
+              console.log("Documents API response data:", data)
+              setSelectedFiles(data.documents || [])
+            } else {
+              console.error("Failed to load agent documents:", response.statusText)
+              setSelectedFiles([])
+            }
+          } catch (error) {
+            console.error("Failed to load agent files:", error)
+            setSelectedFiles([])
+          }
+        } else {
+          console.log("No docIds found, clearing selected files")
+          setSelectedFiles([]) // Clear files if no docIds
+        }
+      }
+
       // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
@@ -888,6 +919,9 @@ function AgentComponent() {
           console.error("Failed to load agent permissions:", error)
         }
       }
+
+      // Load files
+      loadAgentFiles()
 
       if (users.length > 0 && !editingAgent.isPublic) {
         loadAgentPermissions()

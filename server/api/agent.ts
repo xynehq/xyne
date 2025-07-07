@@ -41,6 +41,7 @@ export const createAgentSchema = z.object({
   appIntegrations: z.array(z.string()).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
   uploadedFileNames: z.array(z.string()).optional().default([]),
+  docIds: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
@@ -92,6 +93,7 @@ export const CreateAgentApi = async (c: Context) => {
       appIntegrations: validatedBody.appIntegrations,
       allowWebSearch: validatedBody.allowWebSearch,
       uploadedFileNames: validatedBody.uploadedFileNames,
+      docIds: validatedBody.docIds,
     }
 
     // Create agent and sync user permissions in a transaction
@@ -400,6 +402,132 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
     )
     return c.json(
       { message: "Could not fetch workspace users", detail: errMsg },
+      500,
+    )
+  }
+}
+
+export const GetAgentByExternalIdApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+    const agentExternalId = c.req.param("agentExternalId")
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+
+    // Get agent with permission check
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+      userAndWorkspace.user.id,
+    )
+
+    if (!agent) {
+      return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    return c.json(selectPublicAgentSchema.parse(agent))
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Get Agent Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    return c.json({ message: "Could not fetch agent", detail: errMsg }, 500)
+  }
+}
+
+export const GetAgentDocumentsApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+    const agentExternalId = c.req.param("agentExternalId")
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+
+    // Check if user has access to this agent
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+      userAndWorkspace.user.id,
+    )
+
+    if (!agent) {
+      return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    // Get documents by their IDs if agent has docIds
+    if (!agent.docIds || !Array.isArray(agent.docIds) || agent.docIds.length === 0) {
+      return c.json({ documents: [] })
+    }
+
+    try {
+      // Import the GetDocumentsByDocIds function
+      const { GetDocumentsByDocIds } = await import("@/search/vespa")
+      const { getTracer } = await import("@/tracer")
+      
+      // Create a span for tracing
+      const tracer = getTracer("agent-api")
+      const span = tracer.startSpan("get-agent-documents")
+      
+      const documentsResponse = await GetDocumentsByDocIds(agent.docIds as string[], span)
+      
+      span.end()
+      
+      // Transform the response to match the expected format
+      const documents = documentsResponse?.root?.children?.map((doc: any) => ({
+        docId: doc.fields.docId,
+        name: doc.fields.name || doc.fields.title || doc.fields.filename || 'Untitled',
+        title: doc.fields.title || doc.fields.name || doc.fields.filename,
+        filename: doc.fields.filename,
+        app: doc.fields.app,
+        entity: doc.fields.entity,
+        relevance: 1.0, // Set high relevance since these are specifically selected documents
+      })) || []
+
+      return c.json({ documents })
+    } catch (searchError) {
+      loggerWithChild({ email: email }).error(
+        searchError,
+        `Error fetching documents for agent ${agentExternalId}: ${getErrorMessage(searchError)}`,
+      )
+      // Return empty array if document fetching fails
+      return c.json({ documents: [] })
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Get Agent Documents Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    return c.json(
+      { message: "Could not fetch agent documents", detail: errMsg },
       500,
     )
   }

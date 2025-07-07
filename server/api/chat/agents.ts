@@ -701,6 +701,49 @@ export const MessageWithToolsApi = async (c: Context) => {
           let agentScratchpad = "" // To build the reasoning history for the prompt
           let planningContext = "" // To build the context for planning
           let toolsPrompt = "" // To build the context for available tools
+
+          // Add agent's docIds to initial context if available
+          if (agentForDb?.docIds && agentForDb.docIds.length > 0) {
+            await logAndStreamReasoning({
+              type: AgentReasoningStepType.LogMessage,
+              message: `Loading ${agentForDb.docIds.length} documents from agent knowledge base...`,
+            })
+            
+            try {
+              const agentDocsSpan = streamSpan.startSpan("load_agent_docs")
+              const agentDocsResponse = await GetDocumentsByDocIds(
+                agentForDb.docIds,
+                agentDocsSpan,
+              )
+              
+              if (agentDocsResponse.root.children && agentDocsResponse.root.children.length > 0) {
+                const agentDocFragments = agentDocsResponse.root.children.map((child, index) => {
+                  const citation = searchToCitation(child as any)
+                  const fields = child.fields as any
+                  return {
+                    id: `agent-doc-${index}`,
+                    content: fields?.content || fields?.text || fields?.chunks || "",
+                    source: citation,
+                    confidence: 0.9, // High confidence for agent-selected documents
+                  }
+                }).filter(fragment => fragment.content.trim().length > 0)
+                
+                gatheredFragments.push(...agentDocFragments)
+                excludedIds.push(...agentForDb.docIds)
+                
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Loaded ${agentDocFragments.length} documents from agent knowledge base.`,
+                })
+              }
+              agentDocsSpan.end()
+            } catch (error) {
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Failed to load agent documents: ${getErrorMessage(error)}`,
+              })
+            }
+          }
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">

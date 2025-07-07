@@ -224,7 +224,10 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaUser).app,
       entity: (fields as VespaUser).entity,
     }
-  } else if (result.fields.sddocname === fileSchema) {
+  } else if (
+    result.fields.sddocname === fileSchema ||
+    result.fields.sddocname === dataSourceFileSchema
+  ) {
     return {
       docId: (fields as VespaFile).docId,
       title: (fields as VespaFile).title,

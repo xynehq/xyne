@@ -452,6 +452,27 @@ class VespaClient {
     options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
   ): Promise<VespaSearchResponse> {
     const { docIds, generateAnswerSpan } = options
+    
+    // Handle empty docIds array
+    if (!docIds || docIds.length === 0) {
+      return {
+        root: {
+          id: "toplevel",
+          relevance: 1.0,
+          fields: { totalCount: 0 },
+          coverage: {
+            coverage: 100,
+            documents: 0,
+            full: true,
+            nodes: 1,
+            results: 1,
+            resultsFull: 1,
+          },
+          children: [],
+        },
+      }
+    }
+    
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
     const yqlMailIds = docIds
       .map((id) => `mailId contains '${id}'`)

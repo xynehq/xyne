@@ -944,15 +944,19 @@ export const HybridDefaultProfileForAgent = (
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
-  // If sourcesString is empty (e.g., only Apps.DataSource was specified but no dataSourceIds were provided,
-  // or no valid AllowedApps were given), then the YQL query will be invalid.
-  const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
+  // If no valid queries or sources, return a query that returns no results
+  if (!combinedQuery || !sourcesString) {
+    return {
+      profile: profile,
+      yql: `select * from sources file where false`, // Query that returns no results
+    }
+  }
 
   return {
     profile: profile,
     yql: `
     select *
-    ${fromClause} 
+    from sources ${sourcesString} 
     where
     (
       (
@@ -2083,7 +2087,11 @@ export const insertDataSourceFile = async (
   document: VespaDataSourceFile,
 ): Promise<void> => {
   try {
-    await insert(document as Inserts, dataSourceFileSchema)
+    const documentWithUrl = {
+      ...document,
+      url: `/docs/files/${document.docId}`,
+    }
+    await insert(documentWithUrl as Inserts, dataSourceFileSchema)
     Logger.info(`DataSourceFile ${document.docId} inserted successfully`)
   } catch (error) {
     Logger.error(error, `Error inserting DataSourceFile ${document.docId}`)
