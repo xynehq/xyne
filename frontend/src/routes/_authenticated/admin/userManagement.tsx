@@ -86,7 +86,10 @@ const Badge = ({
 const Avatar = ({
   children,
   className = "",
-}: { children: React.ReactNode; className?: string }) => (
+}: {
+  children: React.ReactNode
+  className?: string
+}) => (
   <div
     className={`relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full ${className}`}
   >
@@ -98,7 +101,11 @@ const AvatarImage = ({
   src,
   alt,
   onError,
-}: { src?: string; alt?: string; onError?: (e: any) => void }) => (
+}: {
+  src?: string
+  alt?: string
+  onError?: (e: any) => void
+}) => (
   <img
     className="aspect-square h-full w-full object-cover"
     src={src}
@@ -110,7 +117,10 @@ const AvatarImage = ({
 const AvatarFallback = ({
   children,
   className = "",
-}: { children: React.ReactNode; className?: string }) => (
+}: {
+  children: React.ReactNode
+  className?: string
+}) => (
   <div
     className={`flex h-full w-full items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${className}`}
   >
@@ -136,7 +146,7 @@ const showToast = (message: string, type: "success" | "error" = "success") => {
   // You can replace this with your existing notification system
 }
 
-export const Route = createFileRoute("/_authenticated/admin/users")({
+export const Route = createFileRoute("/_authenticated/admin/userManagement")({
   beforeLoad: ({ context }) => {
     if (
       !(context.user.role === "Admin" || context.user.role === "SuperAdmin")

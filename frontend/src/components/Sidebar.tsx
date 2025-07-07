@@ -227,9 +227,9 @@ export const Sidebar = ({
           {/* Users List Icon - Admin only */}
           {role === UserRole.SuperAdmin || role === UserRole.Admin ? (
             <Link
-              to={"/admin/users" as any}
+              to={"/admin/userManagement" as any}
               className={`flex w-8 h-8 rounded-md items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px] ${
-                location.pathname === "/admin/users"
+                location.pathname === "/admin/userManagement"
                   ? "bg-[#D8DFE680] dark:bg-gray-700"
                   : ""
               }`}
