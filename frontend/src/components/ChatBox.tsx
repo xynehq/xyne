@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react" // Ensure React is imported
+import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -271,6 +272,7 @@ export const ChatBox = ({
   const referenceSearchInputRef = useRef<HTMLInputElement | null>(null)
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
   const scrollPositionRef = useRef<number>(0)
+  const navigate = useNavigate()
 
   const [showReferenceBox, setShowReferenceBox] = useState(false)
   const [searchMode, setSearchMode] = useState<"citations" | "global">(
@@ -910,7 +912,7 @@ export const ChatBox = ({
       citation.app === Apps.DataSource &&
       citation.entity === DataSourceEntity.DataSourceFile
     ) {
-      window.location.href = `/dataSource/${citation.docId}`
+      navigate({ to: `/dataSource/${citation.docId}` })
       setShowReferenceBox(false)
       return
     }
