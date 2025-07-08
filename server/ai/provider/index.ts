@@ -232,7 +232,12 @@ const initializeProviders = (): void => {
   }
 
   if (OllamaModel) {
-    const ollama = new Ollama()
+    const ollama = new Ollama({
+      ...(aiProviderBaseUrl ? { host: aiProviderBaseUrl } : {}),
+    })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and Ollama model, using base_url for LLM`)
+    }
     ollamaProvider = new OllamaProvider(ollama)
   }
 
@@ -263,7 +268,7 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
-  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+  if (!OpenAIKey && !TogetherApiKey && !OllamaModel && aiProviderBaseUrl) {
     Logger.warn(
       `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
     )
@@ -463,6 +468,7 @@ export const analyzeQueryMetadata = async (
 const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
+  console.log(text)
   try {
     text = text.trim()
     if (!jsonKey && text.includes("```json")) {
