@@ -17,7 +17,7 @@ import {
   type ToolDefinition,
 } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
-
+import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
   query: string,
   context: string,
@@ -1050,7 +1050,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1148,8 +1148,8 @@ export const searchQueryPrompt = (userContext: string): string => {
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>" or null,
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>" or null,
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
@@ -1169,8 +1169,8 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable otherwise null>",
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "intent": <intent object with EXACT metadata like complete email addresses>
           }
         }
@@ -1189,8 +1189,8 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>"
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
             "sortDirection": <boolean or null>,
             "filterQuery": "<search keywords for content search>"
           }
@@ -1289,8 +1289,8 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
            "intent": {}
          }

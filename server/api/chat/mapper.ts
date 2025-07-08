@@ -46,6 +46,7 @@ import type {
   SlackThreadsParams,
   SlackUserProfileParams,
 } from "@/api/chat/types"
+import config from "@/config"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -493,15 +494,13 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "from",
         type: "string",
         required: false,
-        description:
-          'Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").',
+        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description:
-          'Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").',
+        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").`,
       },
       {
         name: "app",
@@ -683,15 +682,13 @@ export const slackTools: Record<string, ToolDefinition> = {
         name: "from",
         type: "string",
         required: false,
-        description:
-          "Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30).",
+        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}).`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description:
-          "Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30).",
+        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}).`,
       },
     ],
   },
