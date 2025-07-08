@@ -1752,10 +1752,6 @@ async function* generatePointQueryTimeExpansion(
       },
     }
 
-    console.log("combinedResults")
-    console.log(combinedResults.root.children)
-    console.log("combinedResults")
-
     combineSpan?.setAttribute(
       "combined_result_count",
       combinedResults?.root?.children?.length || 0,
@@ -2050,7 +2046,6 @@ async function* generateMetadataQueryAnswer(
     timestampRange.to = to
   } else if (direction === "next") {
     // For "next/upcoming" requests without a valid range, search from now into the future
-    console.log("direction is next")
     timestampRange.from = new Date().getTime()
   }
 
@@ -2237,17 +2232,17 @@ async function* generateMetadataQueryAnswer(
         items = searchResults!.root.children || []
       }
     } else {
-      console.log("params that go into getItems")
-      console.log({
-        email,
-        schema,
-        app: app ?? null,
-        entity: entity ?? null,
-        timestampRange,
-        limit: userSpecifiedCountLimit,
-        asc: sortDirection === "asc",
-      })
-      console.log("params that go into getItems")
+      // console.log("params that go into getItems")
+      // console.log({
+      //   email,
+      //   schema,
+      //   app: app ?? null,
+      //   entity: entity ?? null,
+      //   timestampRange,
+      //   limit: userSpecifiedCountLimit,
+      //   asc: sortDirection === "asc",
+      // })
+      // console.log("params that go into getItems")
       searchResults = await getItems({
         email,
         schema,
@@ -2268,9 +2263,9 @@ async function* generateMetadataQueryAnswer(
         allReoccuringevents,
         timestampRange,
       )
-      console.log("validVirtualRecurringEvents")
-      console.log(validVirtualRecurringEvents)
-      console.log("validVirtualRecurringEvents")
+      // console.log("validVirtualRecurringEvents")
+      // console.log(validVirtualRecurringEvents)
+      // console.log("validVirtualRecurringEvents")
       items = validVirtualRecurringEvents.concat(items)
 
       const seen = new Set()
@@ -2283,9 +2278,9 @@ async function* generateMetadataQueryAnswer(
         }
       })
     }
-    console.log("items")
-    console.log(items)
-    console.log("items")
+    // console.log("items")
+    // console.log(items)
+    // console.log("items")
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -2401,9 +2396,9 @@ async function* generateMetadataQueryAnswer(
           allReoccuringevents,
           timestampRange,
         )
-        console.log("validVirtualRecurringEvents with searchFilters")
-        console.log(validVirtualRecurringEvents)
-        console.log("validVirtualRecurringEvents with searchFilters")
+        // console.log("validVirtualRecurringEvents with searchFilters")
+        // console.log(validVirtualRecurringEvents)
+        // console.log("validVirtualRecurringEvents with searchFilters")
         items = validVirtualRecurringEvents.concat(items)
 
         const seen = new Set()
@@ -2416,9 +2411,9 @@ async function* generateMetadataQueryAnswer(
           }
         })
       }
-      console.log("items in searchFilters")
-      console.log(items)
-      console.log("items in searchFilters")
+      // console.log("items in searchFilters")
+      // console.log(items)
+      // console.log("items in searchFilters")
 
       loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
 
@@ -2500,9 +2495,9 @@ const parseCompact = (ts) => {
 }
 
 const getValidVirtualRecurringEvents = (allRecurringEvents, timestampRange) => {
-  console.log("timeStamp range")
-  console.log(timestampRange)
-  console.log("timeStamp range")
+  // console.log("timeStamp range")
+  // console.log(timestampRange)
+  // console.log("timeStamp range")
   const fromDate = new Date(timestampRange.from)
   const toDate = timestampRange.to
     ? new Date(timestampRange.to)
@@ -2624,7 +2619,6 @@ export async function* UnderstandMessageAndAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  console.log("Entered UnderstandMessageAndAnswer...")
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute(
@@ -2651,7 +2645,6 @@ export async function* UnderstandMessageAndAnswer(
     )
 
     const count = classification.filters.count || chatPageSize
-    console.log("Entered generateMetadataQueryAnswer...")
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -2686,9 +2679,9 @@ export async function* UnderstandMessageAndAnswer(
     }
 
     metadataRagSpan?.end()
-    console.log("hasYieldedAnswer")
-    console.log(hasYieldedAnswer)
-    console.log("hasYieldedAnswer")
+    // console.log("hasYieldedAnswer")
+    // console.log(hasYieldedAnswer)
+    // console.log("hasYieldedAnswer")
 
     if (hasYieldedAnswer) return
   }
@@ -2697,7 +2690,6 @@ export async function* UnderstandMessageAndAnswer(
     classification.direction !== null &&
     classification.filters.app === Apps.GoogleCalendar
   ) {
-    console.log("Entered generatePointQueryTimeExpansion bloack")
     // user is talking about an event
     loggerWithChild({ email: email }).info(
       `Direction : ${classification.direction}`,
@@ -3460,9 +3452,9 @@ export const MessageApi = async (c: Context) => {
               },
             } as QueryRouterLLMResponse
 
-            console.log("classification")
-            console.log(classification)
-            console.log("classification")
+            // console.log("classification")
+            // console.log(classification)
+            // console.log("classification")
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
