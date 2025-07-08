@@ -857,6 +857,7 @@ export function createAgentResponseModal(
   interactionId: string,
   isFromThread: boolean
 ): View {
+  const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Validate and filter citations
   const validCitations = validateCitations(citations);
   // Clean up and format the main response body for Slack mrkdwn
@@ -867,7 +868,7 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 */${agentName}* responded to: "_${
+        text: `🤖 */${agentDisplayName}* responded to: "_${
           query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
         }_"`,
       },
@@ -1034,6 +1035,7 @@ export function createSharedAgentResponseBlocks(
   response: string,
   citations: any[] = []
 ): (KnownBlock | Block)[] {
+  const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Clean up and format the main response body for Slack markdown
   const displayResponse = cleanAgentResponse(response);
 
@@ -1042,7 +1044,7 @@ export function createSharedAgentResponseBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*🤖 ${agentName} Response*`,
+        text: `*🤖 ${agentDisplayName} Response*`,
       },
     },
     {
@@ -1169,6 +1171,7 @@ export function createAllSourcesModal(
   query: string,
   citations: unknown[]
 ): View {
+  const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Validate and filter citations
   const validCitations = validateCitations(citations);
   const blocks: (KnownBlock | Block)[] = [
@@ -1176,7 +1179,7 @@ export function createAllSourcesModal(
       type: "section",
       text: {
         type: "plain_text",
-        text: `📚 All Sources from /${agentName}`,
+        text: `📚 All Sources from /${agentDisplayName}`,
         emoji: true,
       },
     },

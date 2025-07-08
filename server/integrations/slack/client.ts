@@ -324,7 +324,7 @@ const handleAgentsCommand = async (
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${index + 1}. /${agent.name}*${
+          text: `*${index + 1}. /${agent.name.replace(/\s+/g, "-")}*${
             agent.isPublic ? " 🌐" : ""
           }\n${agent.description || "No description available"}\n_Model: ${
             agent.model
@@ -378,11 +378,11 @@ const handleAgentSearchCommand = async (
 
   // Parse the command: /agent_name query - trim any leading/trailing whitespace
   const trimmedCommand = agentCommand.trim();
-  const match = trimmedCommand.match(/^\/([a-zA-Z0-9_-]+)\s+(.+)$/);
+  const match = trimmedCommand.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
 
   Logger.info(
     `Trimmed command: "${trimmedCommand}", Match result: ${
-      match ? `[${match[0]}, ${match[1]}, ${match[2]}]` : "null"
+      match ? `[${match[0]}, ${match[1]}, ${match[2] || ""}]` : "null"
     }`
   );
 
@@ -397,13 +397,17 @@ const handleAgentSearchCommand = async (
 
   const [, agentName, query] = match;
   Logger.info(
-    `Agent search - Agent: ${agentName}, Query: "${query}" by user ${dbUser.email}`
+    `Agent search - Agent: ${agentName}, Query: "${query || ""}" by user ${
+      dbUser.email
+    }`
   );
 
   try {
     // Validate workspaceId before proceeding
     if (!dbUser.workspaceId || dbUser.workspaceId <= 0) {
-      Logger.error(`Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`);
+      Logger.error(
+        `Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`
+      );
       await client.chat.postEphemeral({
         channel,
         user,
@@ -412,7 +416,7 @@ const handleAgentSearchCommand = async (
       return;
     }
 
-    // Get accessible agents and find the requested one
+    // Get accessible agents
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
@@ -420,16 +424,59 @@ const handleAgentSearchCommand = async (
       100,
       0
     );
-    const selectedAgent = agents.find(
-      (agent: any) => agent.name.toLowerCase() === agentName.toLowerCase()
+
+    const lowerCaseAgentName = agentName.toLowerCase();
+    let selectedAgent: any = null;
+
+    // 1. Exact match (case-insensitive)
+    selectedAgent = agents.find(
+      (agent: any) =>
+        agent.name.replace(/\s+/g, "-").toLowerCase() === lowerCaseAgentName
     );
 
+    // 2. Partial match if no exact match is found
     if (!selectedAgent) {
-      const availableAgents = agents.map((a: any) => `/${a.name}`).join(", ");
+      const partialMatches = agents.filter((agent: any) =>
+        agent.name
+          .replace(/\s+/g, "-")
+          .toLowerCase()
+          .startsWith(lowerCaseAgentName)
+      );
+
+      if (partialMatches.length === 1) {
+        selectedAgent = partialMatches[0];
+      } else if (partialMatches.length > 1) {
+        const matchingAgentNames = partialMatches
+          .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
+          .join("\n• ");
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
+        });
+        return;
+      }
+    }
+
+    if (!selectedAgent) {
+      const availableAgents = agents
+        .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
+        .join(", ");
       await client.chat.postEphemeral({
         channel,
         user,
         text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
+      });
+      return;
+    }
+    
+    const agentDisplayName = selectedAgent.name.replace(/\s+/g, "-");
+
+    if (!query || query.trim() === "") {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``,
       });
       return;
     }
@@ -440,16 +487,14 @@ const handleAgentSearchCommand = async (
       `Starting agent chat with ${selectedAgent.name} for query: "${query}"`
     );
 
-    // Show initial message to user
     await client.chat.postEphemeral({
       channel,
       user,
-      text: `Querying the agent "/${agentName}"...`,
+      text: `Querying the agent "/${agentDisplayName}"...`,
       ...(isThreadMessage && { thread_ts: threadTs }),
     });
 
     try {
-      // Validate workspaceExternalId before using it
       if (!dbUser.workspaceExternalId) {
         Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`);
         await client.chat.postEphemeral({
@@ -460,7 +505,6 @@ const handleAgentSearchCommand = async (
         });
         return;
       }
-      // Get user and workspace data using the proper function
       const userAndWorkspace = await getUserAndWorkspaceByEmail(
         db,
         dbUser.workspaceExternalId,
@@ -468,7 +512,6 @@ const handleAgentSearchCommand = async (
       );
       const ctx = userContext(userAndWorkspace);
 
-      // Get the full agent configuration with permission check
       const agentConfig = await getAgentByExternalIdWithPermissionCheck(
         db,
         selectedAgent.externalId,
@@ -477,8 +520,7 @@ const handleAgentSearchCommand = async (
       );
 
       if (!agentConfig) {
-
-        let errorMessage = `❌ You don't have permission to use agent "/${agentName}".`;
+        let errorMessage = `❌ You don't have permission to use agent "/${agentDisplayName}".`;
 
         if (selectedAgent.isPublic) {
           errorMessage += `\n\n🌐 This is a **public agent**, but you may need additional permissions or there might be a workspace configuration issue.`;
@@ -499,11 +541,8 @@ const handleAgentSearchCommand = async (
       }
 
       const agentPrompt = JSON.stringify(agentConfig);
+      const limitedMessages: any[] = [];
 
-      // First, let's check if we need to classify the query or if the agent can answer directly
-      const limitedMessages: any[] = []; // Empty for new conversation in Slack
-
-      // Use the same classification logic as AgentMessageApi
       const searchOrAnswerIterator =
         generateSearchQueryOrAnswerFromConversation(query, ctx, {
           modelId: config.defaultBestModel,
@@ -531,30 +570,25 @@ const handleAgentSearchCommand = async (
         },
       };
 
-      // Process the classification/answer response
       for await (const chunk of searchOrAnswerIterator) {
         if (chunk.text) {
           buffer += chunk.text;
           
-          // Only attempt to parse if buffer has content and looks like JSON
           if (buffer.trim() && (buffer.trim().startsWith('{') || buffer.trim().startsWith('['))) {
             try {
               parsed = JSON.parse(buffer) || {};
             } catch (err) {
-              // Continue if we can't parse yet (incomplete JSON)
               continue;
             }
           }
         }
       }
 
-      // Final validation: ensure we have a valid parsed object after streaming completes
       if (buffer.trim() && !parsed) {
         try {
           parsed = JSON.parse(buffer) || {};
         } catch (err) {
           Logger.warn(err, `Failed to parse final buffer content: ${buffer.substring(0, 100)}...`);
-          // Set default values if parsing fails completely
           parsed = {
             answer: "",
             queryRewrite: "",
@@ -577,16 +611,12 @@ const handleAgentSearchCommand = async (
       let citations: any[] = [];
 
       if (parsed.answer && parsed.answer.trim()) {
-        // Agent provided direct answer from conversation context
         finalResponse = parsed.answer;
         Logger.info(
           `Agent provided direct answer: ${finalResponse.substring(0, 100)}...`
         );
       } else {
-        // Need to do RAG - use the rewritten query if available
         const searchQuery = parsed.queryRewrite || query;
-
-        // Build classification object for RAG
         const classification = {
           direction: parsed.temporalDirection,
           type: (parsed.type as QueryType) || QueryType.SearchWithoutFilters,
@@ -603,24 +633,21 @@ const handleAgentSearchCommand = async (
 
         Logger.info(`Running RAG for agent with query: "${searchQuery}"`);
 
-        // Create a tracer span for the RAG operation
         const tracer = getTracer("slack-agent");
         const span = tracer.startSpan("slack_agent_rag");
 
-        // Call the core RAG function directly
         const iterator = UnderstandMessageAndAnswer(
           dbUser.email,
           ctx,
           searchQuery,
           classification as any,
           limitedMessages,
-          0.5, // threshold
-          false, // reasoning enabled
+          0.5,
+          false,
           span,
           agentPrompt
         );
 
-        // Process the streaming response
         let response = "";
         const ragCitations: any[] = [];
 
@@ -646,34 +673,32 @@ const handleAgentSearchCommand = async (
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `Agent "/${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+          text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
       }
 
-      // Cache the agent response
       const interactionId = `agent_${user}_${messageTs}_${Date.now()}`;
       global._agentResponseCache[interactionId] = {
         query,
-        agentName,
+        agentName: selectedAgent.name,
         response: finalResponse,
         citations,
         isFromThread: isThreadMessage,
         timestamp: Date.now(),
       };
 
-      // Show button to view the agent response instead of full response
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `Agent "/${agentName}" response is ready.`,
+        text: `Agent "/${agentDisplayName}" response is ready.`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `Agent */${agentName}* has responded to your query: "_${query}_"\n${
+              text: `Agent */${agentDisplayName}* has responded to your query: "_${query}_"\n${
                 citations.length > 0
                   ? `Found ${citations.length} relevant sources`
                   : "Direct response from agent"
@@ -704,7 +729,7 @@ const handleAgentSearchCommand = async (
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `❌ I encountered an error while processing your request with agent "/${agentName}". Please try again later.`,
+        text: `❌ I encountered an error while processing your request with agent "/${agentDisplayName}". Please try again later.`,
         ...(isThreadMessage && { thread_ts: threadTs }),
       });
     }
