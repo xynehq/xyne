@@ -2226,7 +2226,10 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          if (
+            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
