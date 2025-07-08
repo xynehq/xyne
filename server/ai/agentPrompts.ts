@@ -971,7 +971,7 @@ export const agentSearchQueryPrompt = (
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" when specified.
 
     3. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1058,8 +1058,8 @@ export const agentSearchQueryPrompt = (
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>" or null,
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
@@ -1078,8 +1078,8 @@ export const agentSearchQueryPrompt = (
             "app": "<app>",
             "entity": "<entity>",
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable otherwise null>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable otherwise null>",
           }
         }
 
@@ -1097,8 +1097,8 @@ export const agentSearchQueryPrompt = (
             "app": "<app>",
             "entity": "<entity>",
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable>"
             "sortDirection": <boolean or null>,
             "filterQuery": "<extracted keywords>"
           }
@@ -1158,8 +1158,8 @@ export const agentSearchQueryPrompt = (
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
          }
        }
@@ -1222,7 +1222,7 @@ export const agentSearchAgentPrompt = (
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSS+05:30" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
       - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1389,8 +1389,8 @@ export const agentSearchAgentPrompt = (
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSS+05:30, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
          }
        }

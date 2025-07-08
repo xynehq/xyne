@@ -494,14 +494,14 @@ export const internalTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description:
-          'Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").',
+          'Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").',
       },
       {
         name: "to",
         type: "string",
         required: false,
         description:
-          'Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").',
+          'Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").',
       },
       {
         name: "app",
@@ -684,14 +684,14 @@ export const slackTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description:
-          "Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+          "Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30).",
       },
       {
         name: "to",
         type: "string",
         required: false,
         description:
-          "Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+          "Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSS+05:30).",
       },
     ],
   },
