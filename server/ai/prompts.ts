@@ -845,7 +845,7 @@ export const SearchQueryToolContextPrompt = (
       case Apps.GoogleWorkspace:
         return `${Apps.GoogleWorkspace} (keywords: 'contacts', 'people', 'address book')`
       case Apps.DataSource:
-        return `${Apps.DataSource} (keywords: 'data-source', 'knowledge-base', 'sources')`
+        return `${Apps.DataSource} (keywords: 'data-source', 'knowledge-base', 'sources') \n - This is a special app that contains all agent data sources and configurations. ALWAYS search this app FIRST when available, as it provides comprehensive information about all data sources and capabilities. Use this to understand what data is available before querying other apps.`
       case Apps.Slack:
         return `${Apps.Slack} (keywords: 'slack', 'chat', 'messages')`
       default:
@@ -855,7 +855,13 @@ export const SearchQueryToolContextPrompt = (
 
   const availableApps = agentContext?.prompt.length
     ? `${agentContext.sources.map((v: string) => `- ${getAppDescription(v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)}`).join(", ")}`
-    : `- ${getAppDescription(Apps.Gmail)}, - ${getAppDescription(Apps.GoogleDrive)}, - ${getAppDescription(Apps.GoogleCalendar)}`
+    : `${Object.values(Apps)
+        .filter(
+          (v) =>
+            ![Apps.DataSource, Apps.Xyne, Apps.MCP, Apps.Github].includes(v),
+        )
+        .map((v) => `- ${getAppDescription(v)}\n`)
+        .join(", ")}`
 
   const toolsToUse = {
     internal: customTools?.internal || internalTools,

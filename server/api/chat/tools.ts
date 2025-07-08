@@ -492,11 +492,11 @@ const appMapping: Record<string, SchemaMapping> = {
     defaultEntity: null,
     timestampField: "updatedAt",
   },
-  // [Apps.Slack.toLowerCase()]: {
-  //   schema: chatMessageSchema,
-  //   defaultEntity: SlackEntity.Message,
-  //   timestampField: "createdAt"
-  // },
+  [Apps.Slack.toLowerCase()]: {
+    schema: chatMessageSchema,
+    defaultEntity: SlackEntity.Message,
+    timestampField: "createdAt",
+  },
 }
 
 // === NEW Metadata Retrieval Tool ===
@@ -546,6 +546,15 @@ export const metadataRetrievalTool: AgentTool = {
         return { result: unknownItemMsg, error: `Unknown item_type` }
       }
       const mapping = appMapping[appToUse.toLowerCase()]
+      if (!mapping) {
+        const unknownItemMsg = `Error: No mapping found for app '${appToUse}'`
+        execSpan?.setAttribute("error", unknownItemMsg)
+        Logger.error("[metadata_retrieval] No mapping found:", unknownItemMsg)
+        return {
+          result: unknownItemMsg,
+          error: `No mapping found for item_type`,
+        }
+      }
       schema = mapping.schema
       entity = mapping.defaultEntity
       timestampField = mapping.timestampField
