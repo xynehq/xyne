@@ -15,14 +15,27 @@ import {
   createAllSourcesModal,
 } from "./formatters";
 import {
+  createId
+} from "@paralleldrive/cuid2";
+import {
+  insertMessage,
+  getMessageByExternalId
+} from "@/db/message";
+import {
+  getChatByExternalId,
+  insertChat
+} from "@/db/chat";
+import {
+  MessageRole
+} from "@/types";
+import {
   type SearchCacheEntry,
   type AgentCacheEntry,
   type DbUser,
 } from "./types";
 import {
-  CACHE_TTL,
   ACTION_IDS,
-  EVENT_CACHE_TTL,
+  EVENT_CACHE_TTL
 } from "./config";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
@@ -35,6 +48,27 @@ import { Apps } from "@/search/types";
 import { getTracer } from "@/tracer";
 
 const Logger = getLogger(Subsystem.Slack);
+
+const getOrCreateChat = async (
+  chatExternalId: string,
+  dbUser: DbUser,
+) => {
+  try {
+    const chat = await getChatByExternalId(db, chatExternalId);
+    return chat;
+  } catch (error) {
+    // Chat not found, create a new one
+    const newChat = await insertChat(db, {
+      workspaceId: dbUser.workspaceId,
+      userId: dbUser.id,
+      title: "Slack Chat",
+      email: dbUser.email,
+      workspaceExternalId: dbUser.workspaceExternalId,
+      attachments: [],
+    });
+    return newChat;
+  }
+};
 
 // Check if Slack environment variables are available
 const hasSlackConfig = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
@@ -73,13 +107,6 @@ const cleanupExpiredEvents = () => {
 
 setInterval(cleanupExpiredEvents, EVENT_CACHE_TTL / 2); // Run cleanup twice as often as TTL
 
-// --- Global Cache with TTL Management ---
-declare global {
-  var _searchResultsCache: Record<string, SearchCacheEntry>;
-  var _agentResponseCache: Record<string, AgentCacheEntry>;
-}
-global._searchResultsCache = global._searchResultsCache || {};
-global._agentResponseCache = global._agentResponseCache || {};
 
 // Socket Mode implementation using official Slack SDK
 const connectSocketMode = async (): Promise<void> => {
@@ -196,70 +223,6 @@ if (hasSlackConfig) {
       webClient = new WebClient(process.env.SLACK_BOT_TOKEN);
       Logger.info("Slack Web API client initialized");
 
-      /**
-       * Periodically cleans up expired entries from the search results cache.
-       */
-      const cleanupCache = async () => {
-        const maxRetries = 3;
-        const baseDelay = 1000; // 1 second
-
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          try {
-            const now = Date.now();
-            let cleanedCount = 0;
-
-            // Clean search cache
-            for (const key in global._searchResultsCache) {
-              if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
-                delete global._searchResultsCache[key];
-                cleanedCount++;
-              }
-            }
-
-            // Clean agent cache
-            for (const key in global._agentResponseCache) {
-              if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
-                delete global._agentResponseCache[key];
-                cleanedCount++;
-              }
-            }
-
-            if (cleanedCount > 0) {
-              Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
-            }
-
-            // Success - exit retry loop
-            return;
-          } catch (error) {
-            const isLastAttempt = attempt === maxRetries - 1;
-
-            if (isLastAttempt) {
-              Logger.error(
-                error,
-                `Cache cleanup failed after ${maxRetries} attempts`
-              );
-              return;
-            }
-
-            // Calculate exponential backoff delay
-            const delay = baseDelay * Math.pow(2, attempt);
-            Logger.warn(
-              error,
-              `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`
-            );
-
-            // Wait before retry
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-        }
-      };
-
-      // Use setInterval with async function wrapper
-      setInterval(() => {
-        cleanupCache().catch((error) => {
-          Logger.error(error, "Unexpected error in cache cleanup interval");
-        });
-      }, 5 * 60 * 1000);
 
       // Note: Socket Mode connection will be started via startSocketMode() from server.ts
 
@@ -679,15 +642,20 @@ const handleAgentSearchCommand = async (
         return;
       }
 
-      const interactionId = `agent_${user}_${messageTs}_${Date.now()}`;
-      global._agentResponseCache[interactionId] = {
-        query,
-        agentName: selectedAgent.name,
-        response: finalResponse,
-        citations,
-        isFromThread: isThreadMessage,
-        timestamp: Date.now(),
-      };
+      const chat = await getOrCreateChat(threadTs || channel, dbUser);
+      const newMessage = await insertMessage(db, {
+        message: finalResponse,
+        messageRole: MessageRole.Assistant,
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        chatExternalId: chat.externalId,
+        modelId: selectedAgent.model,
+        sources: citations,
+        fileIds: [],
+        thinking: query,
+        userId: dbUser.id,
+        chatId: chat.id,
+      });
 
       await client.chat.postEphemeral({
         channel,
@@ -717,7 +685,7 @@ const handleAgentSearchCommand = async (
                   emoji: true,
                 },
                 action_id: ACTION_IDS.VIEW_AGENT_MODAL,
-                value: interactionId,
+                value: newMessage.externalId,
               },
             ],
           },
@@ -866,13 +834,20 @@ const handleSearchQuery = async (
     return;
   }
 
-  const interactionId = `search_${user}_${messageTs}_${Date.now()}`;
-  global._searchResultsCache[interactionId] = {
-    query,
-    results,
-    isFromThread: isThreadMessage,
-    timestamp: Date.now(),
-  };
+  const chat = await getOrCreateChat(threadTs || channel, dbUser);
+  const newMessage = await insertMessage(db, {
+    message: JSON.stringify(results), // Store results as a JSON string
+    messageRole: MessageRole.Assistant,
+    email: dbUser.email,
+    workspaceExternalId: dbUser.workspaceExternalId,
+    chatExternalId: chat.externalId,
+    modelId: "search", // Or a more appropriate identifier
+    sources: results,
+    fileIds: [],
+    thinking: query,
+    userId: dbUser.id,
+    chatId: chat.id,
+  });
 
   await client.chat.postEphemeral({
     channel,
@@ -894,7 +869,7 @@ const handleSearchQuery = async (
             style: "primary",
             text: { type: "plain_text", text: "View Results", emoji: true },
             action_id: ACTION_IDS.VIEW_SEARCH_MODAL,
-            value: interactionId,
+            value: newMessage.externalId,
           },
         ],
       },
@@ -1119,17 +1094,19 @@ const handleViewSearchModal = async (
       throw new Error("Missing user information for modal");
     }
 
-    const interactionId = action?.value;
-    if (!interactionId) {
-      throw new Error("No interaction ID provided");
+    const messageId = action?.value;
+    if (!messageId) {
+      throw new Error("No message ID provided");
     }
 
-    const cachedData = global._searchResultsCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached search results found. They may have expired.`);
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(`No search results found for this message. They may have been deleted.`);
     }
 
-    const { query, results, isFromThread } = cachedData;
+    const results = JSON.parse(message.message);
+    const query = message.thinking;
+    const isFromThread = !!container?.thread_ts;
     const modal = createSearchResultsModal(query, results);
 
     if (isFromThread) {
@@ -1200,28 +1177,30 @@ const handleViewAgentModal = async (
       throw new Error("Missing user information for modal");
     }
 
-    const interactionId = action?.value;
-    if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot open modal: No interaction ID available");
+    const messageId = action?.value;
+    if (messageId === "no_interaction_id" || !messageId) {
+      throw new Error("Cannot open modal: No message ID available");
     }
 
-    const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached agent response found. It may have expired.`);
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(`No agent response found for this message. It may have been deleted.`);
     }
 
-    const { query, agentName, response, citations, isFromThread } = cachedData;
-    
-    if (!query || !agentName || !response) {
-      throw new Error("Invalid cached data - missing required fields");
-    }
+    const {
+      message: response,
+      sources: citations,
+      modelId: agentName,
+      thinking: query,
+    } = message;
+    const isFromThread = !!container?.thread_ts;
 
     const modal = createAgentResponseModal(
       query,
       agentName,
       response,
-      citations || [],
-      interactionId,
+      (citations as any) || [],
+      messageId,
       isFromThread || false
     );
 
@@ -1379,20 +1358,25 @@ const handleShareAgentFromModal = async (
     if (!view || !view.private_metadata)
       throw new Error("Cannot access required modal metadata.");
 
-    const interactionId = action.value;
+    const messageId = action.value;
 
-    if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot share: No interaction ID available");
+    if (messageId === "no_interaction_id" || !messageId) {
+      throw new Error("Cannot share: No message ID available");
     }
 
-    const agentResponseData = global._agentResponseCache[interactionId];
-    if (!agentResponseData) {
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
       throw new Error(
-        "Agent response data not found in cache. The response may have expired."
+        "Agent response data not found. The response may have been deleted."
       );
     }
 
-    const { agentName, query, response, citations } = agentResponseData;
+    const {
+      modelId: agentName,
+      message: response,
+      sources: citations,
+      thinking: query,
+    } = message;
     const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
 
     if (!channel_id)
@@ -1409,7 +1393,7 @@ const handleShareAgentFromModal = async (
         agentName,
         query,
         response,
-        citations || []
+        (citations as any) || []
       ),
     });
 
@@ -1458,40 +1442,44 @@ const handleViewAllSources = async (
   trigger_id: string,
   view: any
 ) => {
-  const interactionId = action.value;
+    const messageId = action.value;
 
   try {
-    if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot open sources: No interaction ID available");
+    if (messageId === "no_interaction_id" || !messageId) {
+      throw new Error("Cannot open sources: No message ID available");
     }
 
-    const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached agent response found. It may have expired.`);
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(`No agent response found. It may have been deleted.`);
     }
 
-    const { query, agentName, citations } = cachedData;
+    const {
+      modelId: agentName,
+      sources: citations,
+      thinking: query,
+    } = message;
     
     if (!query || !agentName) {
       throw new Error("Invalid cached data - missing required fields");
     }
 
-    if (!citations || citations.length === 0) {
+    if (!citations || (citations as any).length === 0) {
       throw new Error("No sources available for this response.");
     }
 
-    const modal = createAllSourcesModal(agentName, query, citations);
+    const modal = createAllSourcesModal(agentName, query, citations as any);
 
     await webClient!.views.open({
       trigger_id: trigger_id,
       view: modal,
     });
 
-    Logger.info(`Opened all sources modal for interaction ${interactionId}`);
+    Logger.info(`Opened all sources modal for interaction ${messageId}`);
   } catch (error: any) {
     Logger.error(
       error,
-      `Error opening sources modal for interaction ${interactionId}`
+      `Error opening sources modal for interaction ${messageId}`
     );
 
     try {
