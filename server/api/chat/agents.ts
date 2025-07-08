@@ -1406,6 +1406,30 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
+              // if the timestamp range was specified and no results were found
+              // then  that no results were found in this timastamp range
+              const hasTimestampFilter = toolParams?.from || toolParams?.to
+              if (hasTimestampFilter && !gatheredFragments.length) {
+                const fromDate = new Date(
+                  toolParams?.from || 0,
+                ).toLocaleDateString()
+                const toDate = new Date(
+                  toolParams?.to || Date.now(),
+                ).toLocaleDateString()
+
+                const appName = toolParams.app
+                  ? `${toolParams.app} data`
+                  : "content"
+
+                const context = {
+                  id: "",
+                  content: `No ${appName} found within the specified date range (${fromDate} to ${toDate}). No further action needed - this simply means there was no activity during this time period.`,
+                  source: {} as any,
+                  confidence: 0,
+                }
+                gatheredFragments.push(context)
+              }
+
               planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(

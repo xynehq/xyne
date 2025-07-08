@@ -310,32 +310,6 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   )
   execSpan?.setAttribute("results_count", children.length)
 
-  // if the timestamp range was specified and no results were found
-  // then simply specify that no results were found in this timastamp range
-  const hasTimestampFilter = fromTimestamp || toTimestamp
-  if (hasTimestampFilter && !children.length) {
-    const fromDate = new Date(fromTimestamp || 0).toLocaleDateString()
-    const toDate = new Date(toTimestamp || Date.now()).toLocaleDateString()
-    const appName = options.app ? `${options.app} data` : "content"
-
-    const context = {
-      id: "",
-      content: `No ${appName} found within the specified date range (${fromDate} to ${toDate}). No further action needed - this simply means there was no activity during this time period.`,
-      source: {
-        docId: "",
-        title: "",
-        url: "",
-        app: options.app as Apps,
-        entity: options.entity as Entity,
-      },
-      confidence: 0,
-    }
-    return {
-      result: "No results found within the specified timestamp range.",
-      contexts: [context],
-    }
-  }
-
   if (children.length === 0) {
     return { result: "No results found.", contexts: [] }
   }
