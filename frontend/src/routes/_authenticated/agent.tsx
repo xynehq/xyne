@@ -63,7 +63,7 @@ import {
 } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
-import { Card, CardContent, CardTitle } from "@/components/ui/card" // Added CardTitle and CardDescription
+import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 

@@ -124,6 +124,7 @@ import {
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
+  GetAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
@@ -131,7 +132,11 @@ import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
-import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
+import {
+  isSlackEnabled,
+  startSocketMode,
+  getSocketModeStatus,
+} from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
 import {
@@ -329,7 +334,6 @@ const handleAppValidation = async (c: Context) => {
     })
   }
 
-
   const user = await userInfoRes.json()
 
   const email = user?.email
@@ -474,6 +478,7 @@ export const AppRoutes = app
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
@@ -837,14 +842,16 @@ export const init = async () => {
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
-      const socketStarted = await startSocketMode();
+      const socketStarted = await startSocketMode()
       if (socketStarted) {
-        Logger.info("Slack Socket Mode connection initiated successfully.");
+        Logger.info("Slack Socket Mode connection initiated successfully.")
       } else {
-        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
+        Logger.warn(
+          "Failed to start Slack Socket Mode - missing configuration.",
+        )
       }
     } catch (error) {
-      Logger.error(error, "Error starting Slack Socket Mode");
+      Logger.error(error, "Error starting Slack Socket Mode")
     }
   } else {
     Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")

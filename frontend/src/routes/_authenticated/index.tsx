@@ -59,17 +59,12 @@ const Index = () => {
     const fetchAgentDetails = async () => {
       if (persistedAgentId) {
         try {
-          const response = await api.agents.$get() // Fetch all agents
+          const response = await api.agent[":agentExternalId"].$get({
+            param: { agentExternalId: persistedAgentId },
+          })
           if (response.ok) {
-            const allAgents = (await response.json()) as SelectPublicAgent[]
-            const currentAgent = allAgents.find(
-              (agent) => agent.externalId === persistedAgentId,
-            )
-            if (currentAgent) {
-              setAgent(currentAgent)
-            } else {
-              setAgent(null)
-            }
+            const currentAgent = (await response.json()) as SelectPublicAgent
+            setAgent(currentAgent)
           } else {
             setAgent(null)
           }
