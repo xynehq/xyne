@@ -78,13 +78,11 @@ import {
   totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
 import config from "@/config"
-
+import { periodicSaveState } from "./config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "slack",
 })
-
-const periodicSaveState = config.periodicSaveState
 
 export const getAllUsers = async (client: WebClient): Promise<Member[]> => {
   let users: Member[] = []
