@@ -19,6 +19,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  dataSourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -35,6 +36,7 @@ import {
   type Entity,
   type VespaChatMessage,
   type VespaChatUser,
+  type VespaDataSourceFile,
   type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
@@ -43,20 +45,22 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import {
-  type AgentTool,
-  type FilteredSearchParameters,
-  type MetadataRetrievalParameters,
-  type MinimalAgentFragment,
-  type SearchParameters,
-} from "./types"
 import { searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
+import { getToolParameters, internalTools } from "@/api/chat/mapper"
+import type {
+  AgentTool,
+  MetadataRetrievalParams,
+  MinimalAgentFragment,
+  SearchParams,
+} from "./types"
+import { XyneTools } from "@/shared/types"
+import { expandEmailThreadsInResults } from "./utils"
 
-const { maxDefaultSummary } = config
+const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {
@@ -146,6 +150,8 @@ interface UnifiedSearchOptions {
   agentAppEnums?: Apps[]
   span?: Span
   schema?: VespaSchema | null
+  dataSourceIds?: string[] | undefined
+  intent?: any | null
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -225,6 +231,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
             fromTimestamp && toTimestamp
               ? { from: fromTimestamp, to: toTimestamp }
               : undefined,
+          dataSourceIds: options.dataSourceIds ?? undefined,
         },
       )
     } else {
@@ -251,6 +258,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         return { result: errorMsg, contexts: [] }
       }
     }
+    console.log("[TOOLS] Calling getItems with intent from filters")
+    console.log(
+      "🔧 [TOOLS] Intent being passed:",
+      JSON.stringify(options.intent, null, 2),
+    )
+    console.log("[TOOLS] App:", app, "Entity:", entity, "Schema:", schema)
+
     searchResults = await getItems({
       email,
       schema,
@@ -264,7 +278,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       offset,
       asc: orderDirection === "asc",
       excludedIds,
+      intent: options.intent || null,
     })
+
+    console.log(
+      "[TOOLS] getItems completed, results count:",
+      searchResults?.root?.children?.length || 0,
+    )
   } else {
     const errorMsg = "No query or schema provided for search."
     execSpan?.setAttribute("error", errorMsg)
@@ -273,6 +293,15 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       error: "Invalid search parameters",
       contexts: [],
     }
+  }
+
+  // Expand email threads if results contain emails
+  if (searchResults?.root?.children && searchResults.root.children.length > 0) {
+    searchResults.root.children = await expandEmailThreadsInResults(
+      searchResults.root.children,
+      email,
+      execSpan,
+    )
   }
 
   const children = (searchResults?.root?.children || []).filter(
@@ -286,6 +315,21 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   }
 
   const fragments: MinimalAgentFragment[] = children.map((r) => {
+    if (r.fields.sddocname === dataSourceFileSchema) {
+      const fields = r.fields as VespaDataSourceFile
+      return {
+        id: `${fields.docId}`,
+        content: answerContextMap(r, maxDefaultSummary),
+        source: {
+          docId: fields.docId,
+          title: fields.fileName || "Untitled",
+          url: "",
+          app: fields.app || Apps.DataSource,
+          entity: "" as Entity,
+        },
+        confidence: r.relevance || 0.7,
+      }
+    }
     const citation = searchToCitation(r)
     return {
       id: `${citation.docId}`,
@@ -314,30 +358,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   return { result: summaryText, contexts: fragments }
 }
 
-// Search Tool (existing)
+// Search Tool
 export const searchTool: AgentTool = {
-  name: "search",
-  description:
-    "Search for general information across all data sources (Gmail, Calendar, Drive) using keywords.",
-  parameters: {
-    query: {
-      type: "string",
-      description: "The keywords or question to search for.",
-      required: true,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of results (default: 10).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
+  name: XyneTools.Search,
+  description: internalTools[XyneTools.Search].description,
+  parameters: getToolParameters(XyneTools.Search),
   execute: async (
-    params: SearchParameters,
+    params: SearchParams,
     span?: Span,
     email?: string,
     usrCtx?: string,
@@ -360,7 +387,8 @@ export const searchTool: AgentTool = {
         }
       }
 
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
@@ -369,211 +397,12 @@ export const searchTool: AgentTool = {
         excludedIds: params.excludedIds,
         agentAppEnums,
         span: execSpan,
+        dataSourceIds: agentSpecificDataSourceIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
       return { result: `Search error: ${errMsg}`, error: errMsg }
-    } finally {
-      execSpan?.end()
-    }
-  },
-}
-
-// Filtered Search Tool (existing)
-export const filteredSearchTool: AgentTool = {
-  name: "filtered_search",
-  description:
-    "Search for information using keywords within a specific application. The 'app' parameter MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'.",
-  parameters: {
-    filter_query: {
-      type: "string",
-      description: "The keywords or question to search for.",
-      required: true,
-    },
-    app: {
-      type: "string",
-      description:
-        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
-      required: false,
-    },
-    entity: {
-      type: "string",
-      description:
-        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
-      required: false,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of results (default: 10).",
-      required: false,
-    },
-    offset: {
-      type: "number",
-      description: "Number of items to skip for pagination (default: 0).",
-      required: false,
-    },
-    order_direction: {
-      type: "string",
-      description:
-        "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
-  execute: async (
-    params: FilteredSearchParameters,
-    span?: Span,
-    email?: string,
-    usrCtx?: string,
-    agentPrompt?: string,
-    userMessage?: string,
-    userAlpha?: number,
-  ) => {
-    const execSpan = span?.startSpan("execute_filtered_search_tool")
-    try {
-      if (!email) {
-        const errorMsg = "Email is required for search tool execution."
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Missing email" }
-      }
-
-      const app = params?.app || null
-      const appEnum: Apps | null = isValidApp(app ?? "") ? (app as Apps) : null
-
-      if (!appEnum) {
-        const errorMsg = `Error: Invalid app specified: '${params.app}'. Valid apps are 'gmail', 'googlecalendar', 'googledrive'.`
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Invalid app" }
-      }
-
-      const schema = appToSchemaMapper(appEnum)
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-
-      return await executeVespaSearch({
-        email,
-        query: params.filter_query,
-        app: appEnum,
-        entity: isValidEntity(params.entity || "")
-          ? (params.entity as Entity)
-          : null,
-        limit: params.limit,
-        offset: params.offset,
-        orderDirection: params.order_direction,
-        excludedIds: params.excludedIds,
-        agentAppEnums,
-        span: execSpan,
-        schema: params.filter_query ? null : schema,
-      })
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      execSpan?.setAttribute("error", errMsg)
-      return {
-        result: `Search error in ${params.app || "filtered search"}: ${errMsg}`,
-        error: errMsg,
-      }
-    } finally {
-      execSpan?.end()
-    }
-  },
-}
-
-// Time Search Tool
-export const timeSearchTool: AgentTool = {
-  name: "time_search",
-  description:
-    "Search for information using keywords within a specific time range (relative to today).",
-  parameters: {
-    filter_query: {
-      type: "string",
-      description: "The keywords or question to search for.",
-      required: true,
-    },
-    from: {
-      type: "string",
-      description: "Start date for search (ISO 8601 format: YYYY-MM-DD).",
-      required: true,
-    },
-    to: {
-      type: "string",
-      description: "End date for search (ISO 8601 format: YYYY-MM-DD).",
-      required: true,
-    },
-    app: {
-      type: "string",
-      description:
-        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
-      required: false,
-    },
-    entity: {
-      type: "string",
-      description:
-        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
-      required: false,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of results (default: 10).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
-  execute: async (
-    params: SearchParameters,
-    span?: Span,
-    email?: string,
-    userCtx?: string,
-    agentPrompt?: string,
-  ) => {
-    const execSpan = span?.startSpan("execute_time_search_tool")
-    try {
-      if (!email) {
-        const errorMsg = "Email is required for search tool execution."
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Missing email" }
-      }
-      if (!params.from || !params.to) {
-        const errorMsg =
-          "Both 'from' and 'to' dates are required for time search."
-        execSpan?.setAttribute("error", errorMsg)
-        return { result: errorMsg, error: "Missing date range" }
-      }
-
-      const appToUse = isValidApp(params.app || "")
-        ? (params.app as Apps)
-        : null
-      const entityToUse = isValidEntity(params.entity || "")
-        ? (params.entity as Entity)
-        : null
-      const schemaToUse = appToSchemaMapper(appToUse as Apps)
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
-
-      return await executeVespaSearch({
-        email,
-        query: params.filter_query,
-        app: appToUse,
-        entity: entityToUse,
-        timestampRange: { from: params.from, to: params.to },
-        limit: params.limit,
-        offset: params.offset,
-        orderDirection: params.order_direction,
-        excludedIds: params.excludedIds,
-        agentAppEnums,
-        span: execSpan,
-        schema: params.filter_query ? null : schemaToUse, // Only pass schema if no filter_query for getItems
-      })
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      execSpan?.setAttribute("error", errMsg)
-      return { result: `Time search error: ${errMsg}`, error: errMsg }
     } finally {
       execSpan?.end()
     }
@@ -630,75 +459,47 @@ const contactMapping: ItemTypeMappingDetails = {
   defaultApp: null, // Default to null app to target personal contacts via owner field in getItems
 }
 
-const itemTypeMappings: Record<string, ItemTypeMappingDetails> = {
-  meeting: meetingEventMapping,
-  event: meetingEventMapping,
-  email: emailMessageNotificationMapping,
-  message: emailMessageNotificationMapping,
-  notification: emailMessageNotificationMapping,
-  document: documentFileMapping,
-  file: documentFileMapping,
-  mail_attachment: attachmentMapping,
-  attachment: attachmentMapping,
-  user: userPersonMapping,
-  person: userPersonMapping,
-  contact: contactMapping,
+interface SchemaMapping {
+  schema: VespaSchema
+  defaultEntity: Entity | null
+  timestampField: string
+}
+
+const appMapping: Record<string, SchemaMapping> = {
+  [Apps.Gmail.toLowerCase()]: {
+    schema: mailSchema,
+    defaultEntity: MailEntity.Email,
+    timestampField: "timestamp",
+  },
+  [Apps.GoogleCalendar.toLowerCase()]: {
+    schema: eventSchema,
+    defaultEntity: CalendarEntity.Event,
+    timestampField: "startTime",
+  },
+  [Apps.GoogleDrive.toLowerCase()]: {
+    schema: fileSchema,
+    defaultEntity: null,
+    timestampField: "updatedAt",
+  },
+  [Apps.GoogleWorkspace.toLowerCase()]: {
+    schema: userSchema,
+    defaultEntity: null,
+    timestampField: "creationTime",
+  },
+  // [Apps.Slack.toLowerCase()]: {
+  //   schema: chatMessageSchema,
+  //   defaultEntity: SlackEntity.Message,
+  //   timestampField: "createdAt"
+  // },
 }
 
 // === NEW Metadata Retrieval Tool ===
 export const metadataRetrievalTool: AgentTool = {
-  name: "metadata_retrieval",
-  description:
-    "Retrieves a list of items (e.g., emails, calendar events, drive files) based on type and time. Use for 'list my recent emails', 'show my first documents about X', 'find uber receipts'.",
-  parameters: {
-    item_type: {
-      type: "string",
-      description:
-        "Type of item (e.g., 'meeting', 'event', 'email', 'notification', 'document', 'file'). For receipts or specific service-related items in email, use 'email'.",
-      required: true,
-    },
-    app: {
-      type: "string",
-      description:
-        "Optional app filter. If provided, MUST BE EXACTLY ONE OF 'gmail', 'googlecalendar', 'googledrive'. If omitted, inferred from item_type.",
-      required: false,
-    },
-    entity: {
-      type: "string",
-      description:
-        "Optional specific kind of item if item_type is 'document' or 'file' (e.g., 'spreadsheet', 'pdf', 'presentation').",
-      required: false,
-    },
-    filter_query: {
-      type: "string",
-      description:
-        "Optional keywords to filter the items (e.g., 'uber trip', 'flight confirmation').",
-      required: false,
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of items to retrieve (default: 10).",
-      required: false,
-    },
-    offset: {
-      type: "number",
-      description: "Number of items to skip for pagination (default: 0).",
-      required: false,
-    },
-    order_direction: {
-      type: "string",
-      description:
-        "Sort direction: 'asc' (oldest first) or 'desc' (newest first, default).",
-      required: false,
-    },
-    excludedIds: {
-      type: "array",
-      description: "Optional list of document IDs to exclude from results.",
-      required: false,
-    },
-  },
+  name: XyneTools.MetadataRetrieval,
+  description: internalTools[XyneTools.MetadataRetrieval].description,
+  parameters: getToolParameters(XyneTools.MetadataRetrieval),
   execute: async (
-    params: MetadataRetrievalParameters,
+    params: MetadataRetrievalParams,
     span?: Span,
     email?: string,
     userCtx?: string,
@@ -714,7 +515,6 @@ export const metadataRetrievalTool: AgentTool = {
       { params, excludedIds: params.excludedIds },
       "[metadata_retrieval] Input Parameters:",
     )
-    execSpan?.setAttribute("item_type", params.item_type)
     if (params.app) execSpan?.setAttribute("app_param_original", params.app)
     if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
     if (params.filter_query)
@@ -733,25 +533,19 @@ export const metadataRetrievalTool: AgentTool = {
         : null
       let timestampField: string
 
-      // 2. Map item_type to schema, entity, timestampField, and default appToUse if not already set by user
-      const mapping = itemTypeMappings[params.item_type.toLowerCase()]
-
-      if (!mapping) {
-        const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
+      if (!appToUse) {
+        const unknownItemMsg = `Error: Unknown item_type '${params.app}'`
         execSpan?.setAttribute("error", unknownItemMsg)
         Logger.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
         return { result: unknownItemMsg, error: `Unknown item_type` }
       }
-
+      const mapping = appMapping[appToUse.toLowerCase()]
       schema = mapping.schema
       entity = mapping.defaultEntity
       timestampField = mapping.timestampField
-      if (!appToUse) {
-        appToUse = mapping.defaultApp
-      }
 
       Logger.debug(
-        `[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
+        `[metadata_retrieval] Derived from item_type '${appToUse}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
       )
 
       let finalEntity: Entity | null = isValidEntity(entity ?? "")
@@ -773,16 +567,6 @@ export const metadataRetrievalTool: AgentTool = {
         appToUse ? appToUse.toString() : "null",
       )
 
-      if (params.app) {
-        if (!isValidApp(params.app)) {
-          const mismatchMsg = `Error: Item type '${params.item_type}' (typically in ${params.app}) is incompatible with specified app '${params.app}'.`
-          execSpan?.setAttribute("error", mismatchMsg)
-          return { result: mismatchMsg, error: `App/Item type mismatch` }
-        }
-
-        appToUse = params.app
-      }
-
       const orderByString: string | undefined = params.order_direction
         ? `${timestampField} ${params.order_direction}`
         : undefined
@@ -792,7 +576,8 @@ export const metadataRetrievalTool: AgentTool = {
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
 
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, agentSpecificDataSourceIds } =
+        parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
@@ -806,6 +591,8 @@ export const metadataRetrievalTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
+        dataSourceIds: agentSpecificDataSourceIds,
+        timestampRange: { from: params.from, to: params.to },
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -823,9 +610,8 @@ export const metadataRetrievalTool: AgentTool = {
 }
 
 export const userInfoTool: AgentTool = {
-  name: "get_user_info",
-  description:
-    "Retrieves basic information about the current user and their environment, such as their name, email, company, current date, and time. Use this tool when the user's query directly asks for personal details (e.g., 'What is my name?', 'My email?', 'What time is it?', 'Who am I?') that can be answered from this predefined context.",
+  name: XyneTools.GetUserInfo,
+  description: internalTools[XyneTools.GetUserInfo].description,
   parameters: {}, // No parameters needed from the LLM
   execute: async (_params: any, span?: Span, email?: string, ctx?: string) => {
     const execSpan = span?.startSpan("execute_get_user_info_tool")
@@ -1563,6 +1349,7 @@ export const getUserSlackProfile: AgentTool = {
     params: { user_email: string },
     span?: Span,
     invokingUserEmail?: string,
+    ctx?: string,
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("get_user_slack_profile_tool")
@@ -1897,7 +1684,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     },
     limit: {
       type: "number",
-      description: "Maximum number of messages to retrieve. deafault (20)",
+      description: "Maximum number of messages to retrieve. default (20)",
       required: false,
     },
     offset: {
@@ -2063,13 +1850,103 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
   },
 }
 
+// Fallback Tool - activates when iterations are exhausted and synthesis is not complete
+export const fallbackTool: AgentTool = {
+  name: "fall_back",
+  description:
+    "Generate detailed reasoning about why the search failed when initial iterations are exhausted but synthesis is still not complete.",
+  parameters: {
+    originalQuery: {
+      type: "string",
+      description: "The original user query",
+      required: true,
+    },
+    agentScratchpad: {
+      type: "string",
+      description: "The agent reasoning history",
+      required: true,
+    },
+    toolLog: {
+      type: "string",
+      description: "The tool execution log",
+      required: true,
+    },
+    gatheredFragments: {
+      type: "string",
+      description: "The gathered context fragments",
+      required: true,
+    },
+  },
+  execute: async (
+    params: {
+      originalQuery: string
+      agentScratchpad: string
+      toolLog: string
+      gatheredFragments: string
+    },
+    span?: Span,
+    userCtx?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_fallback_tool")
+
+    try {
+      // Import the generateFallback function
+      const { generateFallback } = await import("@/ai/provider")
+
+      // Generate detailed reasoning about why the search failed
+      const fallbackResponse = await generateFallback(
+        userCtx || "",
+        params.originalQuery,
+        params.agentScratchpad,
+        params.toolLog,
+        params.gatheredFragments,
+        {
+          modelId: defaultFastModel,
+          stream: false,
+          json: true,
+        },
+      )
+
+      if (
+        !fallbackResponse.reasoning ||
+        fallbackResponse.reasoning.trim() === ""
+      ) {
+        return {
+          result: "No reasoning could be generated for the search failure.",
+          error: "No reasoning generated",
+        }
+      }
+
+      // Return only the reasoning, not alternative queries
+      Logger.info(
+        `Fallback tool generated detailed reasoning about search failure`,
+      )
+
+      return {
+        result: `Fallback analysis completed. Generated detailed reasoning about why the search was unsuccessful.`,
+        fallbackReasoning: fallbackResponse.reasoning, // Pass only the reasoning
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Fallback tool error: ${errMsg}`)
+      return {
+        result: `Fallback analysis failed: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
-  filtered_search: filteredSearchTool,
-  time_search: timeSearchTool,
+  // Slack-specific tools
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
+  fall_back: fallbackTool,
 }

@@ -6,33 +6,23 @@ import { insertDataSourceFile, NAMESPACE } from "@/search/vespa"
 import { type VespaDataSourceFile, datasourceSchema } from "@/search/types"
 import { createId } from "@paralleldrive/cuid2"
 import fs from "fs"
-import { readFile, writeFile, rename, access, unlink } from "fs/promises"
+import { writeFile, unlink } from "fs/promises"
 import path from "path"
 import { v4 as uuidv4 } from "uuid"
-import { spawn } from "child_process"
 import * as XLSX from "xlsx"
-import os from "os"
 import {
   DATASOURCE_CONFIG,
-  MAX_DATASOURCE_FILE_SIZE,
   getBaseMimeType,
   isTextFile,
   isSheetFile,
-  isOfficeFile,
   isImageFile,
-  requiresConversion,
+  isDocxFile,
+  isPptxFile,
   getSupportedFileTypes,
 } from "./config"
 import {
-  FileValidationError,
-  FileSizeExceededError,
-  UnsupportedFileTypeError,
-  FileConversionError,
   FileProcessingError,
   ContentExtractionError,
-  InsufficientContentError,
-  ExternalToolError,
-  TimeoutError,
   StorageError,
   createFileValidationError,
   createFileSizeError,
@@ -40,8 +30,15 @@ import {
   handleDataSourceError,
   isDataSourceError,
 } from "./errors"
-import type { Document } from "@langchain/core/documents"
-import { safeLoadPDF, deleteDocument } from "@/integrations/google/index.ts"
+import {
+  describeImageWithllm,
+  withTempDirectory,
+} from "@/lib/describeImageWithllm"
+import { promises as fsPromises } from "fs"
+import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
+import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import imageType from "image-type"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -70,17 +67,6 @@ interface ProcessingOptions {
   dataSourceUserSpecificId: string
   mimeType: string
   description?: string
-}
-
-// Utility functions
-const getLibreOfficePath = (): string => {
-  const platform =
-    os.platform() as keyof typeof DATASOURCE_CONFIG.LIBREOFFICE_PATHS
-  return (
-    process.env.LIBREOFFICE_PATH ||
-    DATASOURCE_CONFIG.LIBREOFFICE_PATHS[platform] ||
-    "soffice"
-  )
 }
 
 const ensureTempDir = async (): Promise<void> => {
@@ -125,18 +111,8 @@ const validateFile = (file: File): void => {
     throw createFileValidationError(file)
   }
 
-  if (file.name.length > DATASOURCE_CONFIG.MAX_FILENAME_LENGTH) {
-    throw new FileValidationError(
-      `Filename exceeds maximum allowed length of ${DATASOURCE_CONFIG.MAX_FILENAME_LENGTH} characters.`,
-    )
-  }
-
-  if (file.size > MAX_DATASOURCE_FILE_SIZE) {
-    throw createFileSizeError(file, DATASOURCE_CONFIG.MAX_FILE_SIZE_MB)
-  }
-
   if (file.size === 0) {
-    throw new FileValidationError("Empty files are not allowed.")
+    throw createFileValidationError(file)
   }
 
   // Extract base MIME type (remove parameters like charset)
@@ -147,6 +123,13 @@ const validateFile = (file: File): void => {
 
   if (!supportedTypes.includes(baseMimeType)) {
     throw createUnsupportedTypeError(baseMimeType, supportedTypes)
+  }
+}
+
+const checkFileSize = (file: File, maxFileSizeMB: number): void => {
+  const fileSizeMB = file.size / (1024 * 1024)
+  if (fileSizeMB > maxFileSizeMB) {
+    throw createFileSizeError(file, maxFileSizeMB)
   }
 }
 
@@ -169,22 +152,28 @@ const createFileMetadata = (
 
 // Core processing functions
 const createVespaDataSourceFile = (
-  chunks: string[],
+  text_chunks: string[],
   options: ProcessingOptions,
   processingMethod: string,
+  image_chunks?: string[],
+  text_chunk_pos?: number[],
+  image_chunk_pos?: number[],
   convertedFrom?: string,
+  docId?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
-  const fileId = `dsf-${createId()}`
 
   return {
-    docId: fileId,
+    docId: docId || `dsf-${createId()}`,
     description:
       options.description || `File: ${options.fileName} for DataSource`,
     app: Apps.DataSource,
     fileName: options.fileName,
     fileSize: options.fileSize,
-    chunks,
+    chunks: text_chunks,
+    image_chunks: image_chunks || [],
+    chunks_pos: text_chunk_pos || [],
+    image_chunks_pos: image_chunk_pos || [],
     uploadedBy: options.userEmail,
     mimeType: options.mimeType,
     createdAt: now,
@@ -193,7 +182,7 @@ const createVespaDataSourceFile = (
     metadata: createFileMetadata(
       options.fileName,
       options.userEmail,
-      chunks.length,
+      text_chunks.length,
       processingMethod,
       convertedFrom,
     ),
@@ -205,16 +194,6 @@ const processTextContent = async (
   options: ProcessingOptions,
 ): Promise<VespaDataSourceFile> => {
   const trimmedContent = content.trim()
-
-  if (
-    !trimmedContent ||
-    trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
-  ) {
-    throw new InsufficientContentError(
-      DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
-      trimmedContent.length,
-    )
-  }
 
   try {
     const chunks = chunkDocument(trimmedContent).map((v) => v.chunk)
@@ -234,36 +213,51 @@ const processTextContent = async (
   }
 }
 
+const processImageContent = async (
+  imageBuffer: Buffer,
+  options: ProcessingOptions,
+  convertedFrom?: string,
+): Promise<VespaDataSourceFile> => {
+  try {
+    return withTempDirectory(
+      async (tempDir: string): Promise<VespaDataSourceFile> => {
+        const image_chunk: string = await describeImageWithllm(
+          imageBuffer,
+          tempDir,
+          "provide only a concise and detailed description of the image",
+        )
+        return createVespaDataSourceFile(
+          [],
+          options,
+          convertedFrom ? "image_conversion" : "image_processing",
+          [image_chunk],
+          [],
+          [0],
+          convertedFrom,
+        )
+      },
+    )
+  } catch (error) {
+    if (isDataSourceError(error)) {
+      throw error
+    }
+    throw new ContentExtractionError(
+      error instanceof Error ? error.message : String(error),
+      "image",
+    )
+  }
+}
+
 const processPdfContent = async (
   filePath: string,
   options: ProcessingOptions,
   convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
-    const docs: Document[] = await safeLoadPDF(filePath)
-    if (!docs || docs.length === 0) {
-      await deleteDocument(filePath)
-      throw new ContentExtractionError(
-        "No content extracted from PDF document",
-        "PDF",
-      )
-    }
-
-    const content = docs.flatMap((doc) => doc.pageContent)
-    const trimmedContent = content.join(" ").trim()
-
-    if (
-      !trimmedContent ||
-      trimmedContent.length < DATASOURCE_CONFIG.MIN_CONTENT_LENGTH
-    ) {
-      throw new InsufficientContentError(
-        DATASOURCE_CONFIG.MIN_CONTENT_LENGTH,
-        trimmedContent.length,
-      )
-    }
-
-    const chunks = chunkDocument(trimmedContent).map((v) => v.chunk)
-    if (chunks.length === 0) {
+    const docId = `dsf-${createId()}`
+    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
+      await extractTextAndImagesWithChunksFromPDF(filePath, docId)
+    if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
         "PDF",
@@ -271,10 +265,14 @@ const processPdfContent = async (
     }
 
     return createVespaDataSourceFile(
-      chunks,
+      text_chunks,
       options,
       convertedFrom ? "pdf_conversion" : "pdf_processing",
+      image_chunks,
+      text_chunk_pos,
+      image_chunk_pos,
       convertedFrom,
+      docId,
     )
   } catch (error) {
     if (isDataSourceError(error)) {
@@ -287,20 +285,120 @@ const processPdfContent = async (
   }
 }
 
+const processDocxContent = async (
+  filePath: string,
+  options: ProcessingOptions,
+  extractImages: boolean = true,
+): Promise<VespaDataSourceFile> => {
+  try {
+    Logger.info(`Processing DOCX file: ${options.fileName}`)
+
+    const docId = `dsf-${createId()}`
+    const docxResult = await extractTextAndImagesWithChunksFromDocx(
+      filePath,
+      docId,
+      extractImages,
+    )
+
+    if (
+      docxResult.text_chunks.length === 0 &&
+      docxResult.image_chunks.length === 0
+    ) {
+      throw new ContentExtractionError(
+        "No extractable content found in DOCX file",
+        "DOCX",
+      )
+    }
+
+    Logger.info(
+      `DOCX processing completed: ${docxResult.text_chunks.length} text chunks, ${docxResult.image_chunks.length} image chunks`,
+    )
+
+    return createVespaDataSourceFile(
+      docxResult.text_chunks,
+      options,
+      "docx_processing",
+      docxResult.image_chunks,
+      docxResult.text_chunk_pos,
+      docxResult.image_chunk_pos,
+      undefined,
+      docId,
+    )
+  } catch (error) {
+    if (isDataSourceError(error)) {
+      throw error
+    }
+    throw new ContentExtractionError(
+      error instanceof Error ? error.message : String(error),
+      "DOCX",
+    )
+  }
+}
+
+const processPptxContent = async (
+  filePath: string,
+  options: ProcessingOptions,
+  extractImages: boolean = true,
+): Promise<VespaDataSourceFile> => {
+  try {
+    Logger.info(`Processing PPTX file: ${options.fileName}`)
+
+    const docId = `dsf-${createId()}`
+    const pptxResult = await extractTextAndImagesWithChunksFromPptx(
+      filePath,
+      docId,
+      extractImages,
+    )
+
+    if (
+      pptxResult.text_chunks.length === 0 &&
+      pptxResult.image_chunks.length === 0
+    ) {
+      throw new ContentExtractionError(
+        "No extractable content found in PPTX file",
+        "PPTX",
+      )
+    }
+
+    Logger.info(
+      `PPTX processing completed: ${pptxResult.text_chunks.length} text chunks, ${pptxResult.image_chunks.length} image chunks`,
+    )
+
+    return createVespaDataSourceFile(
+      pptxResult.text_chunks,
+      options,
+      "pptx_processing",
+      pptxResult.image_chunks,
+      pptxResult.text_chunk_pos,
+      pptxResult.image_chunk_pos,
+      undefined,
+      docId,
+    )
+  } catch (error) {
+    if (isDataSourceError(error)) {
+      throw error
+    }
+    throw new ContentExtractionError(
+      error instanceof Error ? error.message : String(error),
+      "PPTX",
+    )
+  }
+}
+
 const processSheetContent = async (
   filePath: string,
   options: ProcessingOptions,
-): Promise<VespaDataSourceFile> => {
+): Promise<VespaDataSourceFile[]> => {
   try {
-    const chunks = await processXlsxFile(filePath)
-    if (chunks.length === 0) {
+    const sheetDocuments = await processSpreadsheetFile(filePath, options)
+    if (sheetDocuments.length === 0) {
       throw new ContentExtractionError(
         "No valid content found in spreadsheet",
         "spreadsheet",
       )
     }
 
-    return createVespaDataSourceFile(chunks, options, "sheet_processing")
+    return sheetDocuments
   } catch (error) {
     if (isDataSourceError(error)) {
       throw error
@@ -312,189 +410,20 @@ const processSheetContent = async (
   }
 }
 
-// File conversion functions
-const convertToPdf = async (
-  inputFilePath: string,
-  mimeType: string,
-): Promise<string> => {
-  const tempDir = path.dirname(inputFilePath)
-  const inputFileName = path.basename(
-    inputFilePath,
-    path.extname(inputFilePath),
-  )
-  const outputPdfPath = path.join(tempDir, `${inputFileName}_converted.pdf`)
-
-  try {
-    if (isOfficeFile(mimeType)) {
-      await convertOfficeToPdf(inputFilePath, tempDir, outputPdfPath)
-    }
-    // else if (isImageFile(mimeType)) {       if we want to support image conversion in the future
-    //   await convertImageToPdf(inputFilePath, outputPdfPath)
-    // }
-    else {
-      throw new UnsupportedFileTypeError(mimeType, [
-        "office documents",
-        "images",
-      ])
-    }
-
-    if (!fs.existsSync(outputPdfPath)) {
-      throw new FileConversionError("Output file not created", mimeType)
-    }
-
-    return outputPdfPath
-  } catch (error) {
-    if (isDataSourceError(error)) {
-      throw error
-    }
-    throw new FileConversionError(
-      error instanceof Error ? error.message : String(error),
-      mimeType,
-    )
-  }
-}
-
-const convertOfficeToPdf = async (
-  inputFilePath: string,
-  tempDir: string,
-  expectedOutputPath: string,
-): Promise<void> => {
-  const libreOfficePath = getLibreOfficePath()
-
-  if (
-    !fs.existsSync(libreOfficePath) ||
-    !fs.statSync(libreOfficePath).isFile()
-  ) {
-    throw new ExternalToolError(
-      "LibreOffice",
-      `Not found at: ${libreOfficePath}`,
-    )
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new TimeoutError(
-          "LibreOffice conversion",
-          DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS,
-        ),
-      )
-    }, DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS)
-
-    const proc = spawn(libreOfficePath, [
-      "--headless",
-      "--convert-to",
-      "pdf",
-      "--outdir",
-      tempDir,
-      inputFilePath,
-    ])
-
-    let stderr = ""
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString()
-    })
-
-    proc.on("error", (error) => {
-      clearTimeout(timeout)
-      reject(
-        new ExternalToolError("LibreOffice", `Spawn error: ${error.message}`),
-      )
-    })
-
-    proc.on("exit", (code) => {
-      clearTimeout(timeout)
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(
-          new ExternalToolError(
-            "LibreOffice",
-            `Exited with code ${code}. Error: ${stderr}`,
-          ),
-        )
-      }
-    })
-  })
-
-  // Handle LibreOffice naming convention
-  const inputFileName = path.basename(
-    inputFilePath,
-    path.extname(inputFilePath),
-  )
-  const libreOfficePdfPath = path.join(
-    path.dirname(expectedOutputPath),
-    `${inputFileName}.pdf`,
-  )
-
-  try {
-    await access(libreOfficePdfPath)
-    if (libreOfficePdfPath !== expectedOutputPath) {
-      await rename(libreOfficePdfPath, expectedOutputPath)
-    }
-  } catch (error) {
-    throw new FileConversionError(
-      `Failed to locate converted PDF: ${error instanceof Error ? error.message : String(error)}`,
-      "office document",
-    )
-  }
-}
-
-const convertImageToPdf = async (
-  inputFilePath: string,
-  outputPdfPath: string,
-): Promise<void> => {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new TimeoutError(
-          "ImageMagick conversion",
-          DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS,
-        ),
-      )
-    }, DATASOURCE_CONFIG.CONVERSION_TIMEOUT_MS)
-
-    const proc = spawn("convert", [inputFilePath, outputPdfPath])
-
-    let stderr = ""
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString()
-    })
-
-    proc.on("error", (error) => {
-      clearTimeout(timeout)
-      reject(
-        new ExternalToolError("ImageMagick", `Not available: ${error.message}`),
-      )
-    })
-
-    proc.on("exit", (code) => {
-      clearTimeout(timeout)
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(
-          new ExternalToolError(
-            "ImageMagick",
-            `Exited with code ${code}. Error: ${stderr}`,
-          ),
-        )
-      }
-    })
-  })
-}
-
-// XLSX processing functions
-const processXlsxFile = async (filePath: string): Promise<string[]> => {
+// Spreadsheet processing functions (XLSX, CSV)
+const processSpreadsheetFile = async (
+  filePath: string,
+  options: ProcessingOptions,
+): Promise<VespaDataSourceFile[]> => {
   try {
     const workbook = XLSX.readFile(filePath)
-    const allChunks: string[] = []
+    const sheetDocuments: VespaDataSourceFile[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      throw new ContentExtractionError("No worksheets found", "Excel")
+      throw new ContentExtractionError("No worksheets found", "Spreadsheet")
     }
 
-    for (const sheetName of workbook.SheetNames) {
+    for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
       const worksheet = workbook.Sheets[sheetName]
       if (!worksheet) continue
 
@@ -510,36 +439,97 @@ const processXlsxFile = async (filePath: string): Promise<string[]> => {
 
       if (validRows.length === 0) continue
 
+      if (validRows?.length > DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_ROWS) {
+        // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+        // Logger.warn(
+        //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+        // )
+        return []
+      }
+
       const sheetChunks = chunkSheetRows(validRows)
-      allChunks.push(...sheetChunks)
+
+      const filteredChunks = sheetChunks.filter(
+        (chunk) => chunk.trim().length > 0,
+      )
+
+      // Skip sheets with no valid content
+      if (filteredChunks.length === 0) continue
+
+      // Create a separate document for each worksheet (like Google Sheets)
+      const sheetDocId = `dsf-${createId()}_${sheetIndex}`
+      const sheetFileName =
+        workbook.SheetNames.length > 1
+          ? `${options.fileName} / ${sheetName}`
+          : options.fileName
+
+      const sheetMetadata = {
+        originalFileName: options.fileName,
+        sheetName,
+        sheetIndex,
+        totalSheets: workbook.SheetNames.length,
+        uploadedBy: options.userEmail,
+        chunksCount: filteredChunks.length,
+        processingMethod: "sheet_processing",
+      }
+
+      const sheetDocument = createVespaDataSourceFile(
+        filteredChunks,
+        {
+          ...options,
+          fileName: sheetFileName,
+        },
+        "sheet_processing",
+        undefined, // image_chunks
+        undefined, // text_chunk_pos
+        undefined, // image_chunk_pos
+        undefined, // convertedFrom
+        sheetDocId,
+      )
+
+      // Override metadata to include sheet-specific information
+      sheetDocument.metadata = JSON.stringify(sheetMetadata)
+
+      sheetDocuments.push(sheetDocument)
     }
 
-    const filteredChunks = allChunks.filter((chunk) => chunk.trim().length > 0)
-
-    if (filteredChunks.length === 0) {
+    if (sheetDocuments.length === 0) {
       throw new ContentExtractionError(
         "No valid content found in any worksheet",
-        "Excel",
+        "Spreadsheet",
       )
     }
 
-    return filteredChunks
+    return sheetDocuments
   } catch (error) {
     if (isDataSourceError(error)) {
       throw error
     }
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected Spreadsheet, skipping")
+    } else {
+      Logger.error(error, `Spreadsheet load error: ${error}`)
+    }
     throw new ContentExtractionError(
       error instanceof Error ? error.message : String(error),
-      "Excel",
+      "Spreadsheet",
     )
   }
 }
 
+// Function to chunk sheet rows (simplified version of chunkFinalRows)
 const chunkSheetRows = (allRows: string[][]): string[] => {
   const chunks: string[] = []
   let currentChunk = ""
+  let totalTextLength = 0
+  const MAX_CHUNK_SIZE = 512
 
   for (const row of allRows) {
+    // Filter out numerical cells and empty strings, join textual cells
     const textualCells = row
       .filter(
         (cell) =>
@@ -550,15 +540,26 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
     if (textualCells.length === 0) continue
 
     const rowText = textualCells.join(" ")
-    const potentialChunk = currentChunk ? `${currentChunk} ${rowText}` : rowText
 
-    if (potentialChunk.length > DATASOURCE_CONFIG.MAX_CHUNK_SIZE) {
+    // Check if adding this rowText would exceed the maximum text length
+    if (
+      totalTextLength + rowText.length >
+      DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_TEXT_LEN
+    ) {
+      // Logger.warn(`Text length excedded, indexing with empty content`)
+      // Return an empty array if the total text length exceeds the limit
+      return []
+    }
+
+    totalTextLength += rowText.length
+
+    if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
       if (currentChunk.trim().length > 0) {
         chunks.push(currentChunk.trim())
       }
       currentChunk = rowText
     } else {
-      currentChunk = potentialChunk
+      currentChunk += (currentChunk ? " " : "") + rowText
     }
   }
 
@@ -579,7 +580,6 @@ export const handleDataSourceFileUpload = async (
   const filesToCleanup: string[] = []
 
   try {
-    // Validate inputs
     validateFile(file)
     await ensureTempDir()
 
@@ -603,64 +603,117 @@ export const handleDataSourceFileUpload = async (
       description,
     }
 
-    // Write file to temp location
-    try {
-      const fileBuffer = new Uint8Array(await file.arrayBuffer())
-      await writeFile(tempFilePath, fileBuffer)
-    } catch (error) {
-      throw new FileProcessingError(
-        `Failed to write temporary file: ${error instanceof Error ? error.message : String(error)}`,
-        file.name,
-      )
-    }
+    let processedFiles: VespaDataSourceFile[] = []
+    if (isImageFile(mimeType)) {
+      checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
+      const imageBuffer = Buffer.from(await file.arrayBuffer())
+      const type = await imageType(new Uint8Array(imageBuffer))
+      if (!type || !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
+        throw new FileProcessingError(
+          `Unsupported or unknown image MIME type: ${type?.mime}. Skipping image: ${options.fileName}`,
+        )
+      }
+      const processedFile = await processImageContent(imageBuffer, options)
+      processedFiles = [processedFile]
 
-    let processedFile: VespaDataSourceFile
+      try {
+        const baseDir = path.resolve(
+          process.env.IMAGE_DIR || "downloads/xyne_images_db",
+        )
+        const outputDir = path.join(baseDir, processedFile.docId)
+        await fsPromises.mkdir(outputDir, { recursive: true })
 
-    // Process based on file type
-    if (mimeType === "application/pdf") {
-      processedFile = await processPdfContent(tempFilePath, options)
-    } else if (isTextFile(mimeType)) {
-      const content = await file.text()
-      processedFile = await processTextContent(content, options)
-    } else if (isSheetFile(mimeType)) {
-      processedFile = await processSheetContent(tempFilePath, options)
-    } else if (requiresConversion(mimeType)) {
-      // Convert to PDF first
-      const convertedPdfPath = await convertToPdf(tempFilePath, mimeType)
-      filesToCleanup.push(convertedPdfPath)
-      processedFile = await processPdfContent(
-        convertedPdfPath,
-        options,
-        mimeType,
-      )
+        const imageFilename = `${0}.${type.ext || "png"}`
+        const imagePath = path.join(outputDir, imageFilename)
+
+        await fsPromises.writeFile(
+          imagePath,
+          imageBuffer as NodeJS.ArrayBufferView,
+        )
+        Logger.info(`Saved image to: ${imagePath}`)
+      } catch (saveError) {
+        Logger.error(
+          `Failed to save image for ${options.fileName}: ${saveError instanceof Error ? saveError.message : saveError}`,
+        )
+        // Continue processing even if saving fails
+      }
     } else {
-      throw createUnsupportedTypeError(mimeType, getSupportedFileTypes())
+      // Write file to temp location
+      try {
+        const fileBuffer = new Uint8Array(await file.arrayBuffer())
+        await writeFile(tempFilePath, fileBuffer)
+      } catch (error) {
+        throw new FileProcessingError(
+          `Failed to write temporary file: ${error instanceof Error ? error.message : String(error)}`,
+          file.name,
+        )
+      }
+
+      // Process based on file type
+      if (mimeType === "application/pdf") {
+        checkFileSize(file, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
+        const processedFile = await processPdfContent(tempFilePath, options)
+        processedFiles = [processedFile]
+      } else if (isDocxFile(mimeType)) {
+        checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
+        const processedFile = await processDocxContent(
+          tempFilePath,
+          options,
+          true,
+        )
+        processedFiles = [processedFile]
+      } else if (isPptxFile(mimeType)) {
+        checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
+        const processedFile = await processPptxContent(
+          tempFilePath,
+          options,
+          true,
+        )
+        processedFiles = [processedFile]
+      } else if (isSheetFile(mimeType)) {
+        processedFiles = await processSheetContent(tempFilePath, options)
+      } else if (isTextFile(mimeType)) {
+        checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
+        const content = await file.text()
+        const processedFile = await processTextContent(content, options)
+        processedFiles = [processedFile]
+      } else {
+        throw createUnsupportedTypeError(mimeType, getSupportedFileTypes())
+      }
     }
 
-    // Insert into Vespa
+    // Insert all processed files into Vespa
+    const insertedDocIds: string[] = []
     try {
-      await insertDataSourceFile(processedFile)
+      for (const processedFile of processedFiles) {
+        await insertDataSourceFile(processedFile)
+        insertedDocIds.push(processedFile.docId)
+      }
     } catch (error) {
       throw new StorageError(
         `Failed to store file in database: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
 
+    const primaryDocId = processedFiles[0]?.docId || "unknown"
+    const total = processedFiles.length
+
     Logger.info(
       {
         fileName: file.name,
-        docId: processedFile.docId,
+        docIds: insertedDocIds,
+        totalDocuments: total,
         userEmail,
         mimeType,
         rawMimeType,
       },
-      "DataSource file processed successfully",
+      `DataSource file processed successfully (${total} document(s))`,
     )
 
     return {
       success: true,
-      message: "DataSource file processed and stored successfully",
-      docId: processedFile.docId,
+      message: `DataSource file processed and stored successfully (${total} document(s))`,
+      docId: primaryDocId,
       fileName: file.name,
     }
   } catch (error) {

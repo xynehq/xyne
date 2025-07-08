@@ -83,6 +83,7 @@ import {
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
+  ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
@@ -130,6 +131,9 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+
+import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
+
 // Import Vespa proxy handlers
 import {
   validateApiKey,
@@ -299,8 +303,96 @@ const updateApp = new Hono()
 updateApp.post("/update-metrics", handleUpdatedMetrics)
 app.route("/", updateApp)
 
+// App validatione endpoint
+
+const handleAppValidation = async (c: Context) => {
+  const authHeader = c.req.header("Authorization")
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(401, {
+      message: "Missing or malformed Authorization header",
+    })
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim()
+
+  const userInfoRes = await fetch(
+    "https://www.googleapis.com/oauth2/v3/userinfo",
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+  if (!userInfoRes.ok) {
+    throw new HTTPException(401, {
+      message: "Invalid or expired token",
+    })
+  }
+
+
+  const user = await userInfoRes.json()
+
+  const email = user?.email
+  if (!email) {
+    throw new HTTPException(500, {
+      message: "Could not get the email of the user",
+    })
+  }
+
+  if (!user?.email_verified) {
+    throw new HTTPException(403, { message: "User email is not verified" })
+  }
+  // hosted domain
+  // @ts-ignore
+  let domain = user.hd
+  if (!domain && email) {
+    domain = email.split("@")[1]
+  }
+  const name = user?.name || user?.given_name || user?.family_name || ""
+  const photoLink = user?.picture || ""
+
+  const existingUserRes = await getUserByEmail(db, email)
+
+  // if user exists then workspace exists too
+  if (existingUserRes && existingUserRes.length) {
+    Logger.info(
+      {
+        requestId: c.var.requestId, // Access the request ID
+        user: {
+          email: user.email,
+          name: user.name,
+          verified_email: user.email_verified,
+        },
+      },
+      "User found and authenticated",
+    )
+    const existingUser = existingUserRes[0]
+    const workspaceId = existingUser.workspaceExternalId
+    const jwtToken = await generateToken(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+
+    return c.json({
+      jwt_token: jwtToken,
+      workspace_id: workspaceId,
+    })
+  }
+  Logger.error(`No existing user found`)
+  return c.json(
+    {
+      success: false,
+      message: "No existing User found",
+    },
+    404,
+  )
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post("/validate-token", handleAppValidation)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -319,6 +411,11 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get(
+    "/chat/favorites",
+    zValidator("query", chatHistorySchema),
+    ChatFavoritesApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -654,7 +751,13 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
+app.get("/chat", AuthRedirect, async (c, next) => {
+  if (c.req.query("shareToken")) {
+    const staticHandler = serveStatic({ path: "./dist/index.html" })
+    return await staticHandler(c, next)
+  }
+  return c.redirect("/")
+})
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
@@ -737,6 +840,21 @@ app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
+  if (isSlackEnabled()) {
+    Logger.info("Slack Web API client initialized and ready.")
+    try {
+      const socketStarted = await startSocketMode();
+      if (socketStarted) {
+        Logger.info("Slack Socket Mode connection initiated successfully.");
+      } else {
+        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
+      }
+    } catch (error) {
+      Logger.error(error, "Error starting Slack Socket Mode");
+    }
+  } else {
+    Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")
+  }
 }
 
 app.get("/metrics", async (c) => {

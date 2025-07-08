@@ -57,6 +57,7 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   emailPromptJson,
+  fallbackReasoningGenerationPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   promptGenerationSystemPrompt,
@@ -99,10 +100,11 @@ import {
   agentTemporalDirectionJsonPrompt,
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
+import type { ToolDefinition } from "@/api/chat/mapper"
 
 const Logger = getLogger(Subsystem.AI)
 
-interface AgentPromptData {
+export interface AgentPromptData {
   name: string
   description: string
   prompt: string
@@ -1304,10 +1306,16 @@ export async function generateToolSelectionOutput(
   params: ModelParams,
   agentContext?: string,
   pastActions?: string,
+  tools?: {
+    internal?: Record<string, ToolDefinition> | undefined
+    slack?: Record<string, ToolDefinition> | undefined
+  },
+  isDebugMode?: boolean,
 ): Promise<{
   queryRewrite: string
   tool: string
   arguments: Record<string, any>
+  reasoning?: string | null
 } | null> {
   params.json = true
 
@@ -1316,7 +1324,10 @@ export async function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
+    parseAgentPrompt(agentContext),
     pastActions,
+    tools,
+    isDebugMode,
   )
 
   const baseMessage = {
@@ -1342,6 +1353,7 @@ export async function generateToolSelectionOutput(
       queryRewrite: jsonVal.queryRewrite || "",
       tool: jsonVal.tool,
       arguments: jsonVal.arguments || {},
+      reasoning: jsonVal.reasoning || null,
     }
   } else {
     throw new Error("Failed to rewrite query")
@@ -1395,6 +1407,7 @@ export function generateAnswerBasedOnToolOutput(
   toolContext: string,
   toolOutput: string,
   agentContext?: string,
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   if (!isAgentPromptEmpty(agentContext)) {
@@ -1403,7 +1416,8 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
-      parsedAgentPrompt.prompt,
+      parsedAgentPrompt,
+      fallbackReasoning,
     )
     params.systemPrompt = defaultSystemPrompt
   } else {
@@ -1411,6 +1425,8 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      undefined,
+      fallbackReasoning,
     )
   }
 
@@ -1449,7 +1465,7 @@ export function generateSynthesisBasedOnToolOutput(
     role: ConversationRole.USER,
     content: [
       {
-        text: `user query: "${currentMessage}"`,
+        text: `user-query: "${currentMessage}"`,
       },
     ],
   }
@@ -1498,6 +1514,65 @@ export const generatePromptFromRequirements = async function* (
     Logger.info("Prompt generation completed successfully")
   } catch (error) {
     Logger.error(error, "Error in generatePromptFromRequirements")
+    throw error
+  }
+}
+
+export const generateFallback = async (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<{
+  reasoning: string
+  cost: number
+}> => {
+  Logger.info("Starting fallback reasoning generation")
+
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = fallbackReasoningGenerationPrompt(
+      userContext,
+      originalQuery,
+      agentScratchpad,
+      toolLog,
+      gatheredFragments,
+    )
+    params.json = true
+
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [
+          {
+            text: `Analyze why the search failed for the original query: "${originalQuery}"`,
+          },
+        ],
+      },
+    ]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      messages,
+      params,
+    )
+
+    if (text) {
+      const parsedResponse = jsonParseLLMOutput(text)
+      Logger.info("Fallback reasoning generation completed successfully")
+      return {
+        reasoning: parsedResponse.reasoning || "No reasoning provided",
+        cost: cost!,
+      }
+    } else {
+      throw new Error("No response from LLM for fallback reasoning generation")
+    }
+  } catch (error) {
+    Logger.error(error, "Error in generateFallback")
     throw error
   }
 }

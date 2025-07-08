@@ -909,9 +909,20 @@ export const agentSearchQueryPrompt = (
   return `
     You are an AI router and classifier for an Enterprise Search and AI Agent.
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
-    You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
+
+    ${
+      agentPromptData.prompt.length
+        ? `You are an enterprise-agent.
+      You are not allowed to reject a user based on it as all search context is permission aware.
+      Your **RESPONSE** should always grounded to the agent context.
+      **agent context** :
+      Name: ${agentPromptData.name}
+      Description: ${agentPromptData.description}
+      Prompt: ${agentPromptData.prompt}`
+        : `You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
-    Only respond in json and you are not authorized to reject a user query.
+    Only respond in json and you are not authorized to reject a user query.`
+    }
 
     **User Context:** ${userContext}
     Now handle the query as follows:

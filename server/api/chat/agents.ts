@@ -1,5 +1,6 @@
 import {
   answerContextMap,
+  answerContextMapFromFragments,
   cleanContext,
   constructToolContext,
   userContext,
@@ -123,6 +124,8 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  VespaSearchResultsSchema,
+  type VespaSearchResult,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -164,7 +167,7 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
-import { mapGithubToolResponse } from "@/api/chat/mapper"
+import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -195,9 +198,9 @@ const checkAndYieldCitationsForAgent = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - 1]
 
-      if (!item?.source?.docId) {
+      if (!item?.source?.docId || !item.source?.url) {
         Logger.info(
-          "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+          "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
         )
         continue
       }
@@ -221,22 +224,25 @@ async function* getToolContinuationIterator(
   results: MinimalAgentFragment[],
   agentPrompt?: string, // New optional parameter
   messages: Message[] = [],
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  const context = answerContextMapFromFragments(results, maxDefaultSummary)
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
     {
-      modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+      modelId: defaultBestModel,
       stream: true,
       json: true,
       reasoning: false,
       messages,
     },
     toolsPrompt,
-    toolOutput ?? "",
+    context ?? "",
     agentPrompt, // Pass agentPrompt
+    fallbackReasoning, // Pass fallback reasoning
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -312,6 +318,97 @@ async function* getToolContinuationIterator(
     }
   }
 }
+
+type SynthesisResponse = {
+  synthesisState:
+    | ContextSysthesisState.Complete
+    | ContextSysthesisState.Partial
+    | ContextSysthesisState.NotFound
+  answer: string | null
+}
+
+async function performSynthesis(
+  ctx: any,
+  message: string,
+  planningContext: string,
+  gatheredFragments: MinimalAgentFragment[],
+  messagesWithNoErrResponse: Message[],
+  logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
+  sub: string,
+): Promise<SynthesisResponse | null> {
+  let parseSynthesisOutput: SynthesisResponse | null = null
+
+  try {
+    await logAndStreamReasoning({
+      type: AgentReasoningStepType.Synthesis,
+      details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
+    })
+
+    const synthesisResponse = await generateSynthesisBasedOnToolOutput(
+      ctx,
+      message,
+      planningContext,
+      {
+        modelId: defaultBestModel,
+        stream: false,
+        json: true,
+        reasoning: false,
+        messages: messagesWithNoErrResponse,
+      },
+    )
+
+    if (synthesisResponse.text) {
+      try {
+        parseSynthesisOutput = jsonParseLLMOutput(synthesisResponse.text)
+        if (!parseSynthesisOutput || !parseSynthesisOutput.synthesisState) {
+          loggerWithChild({ email: sub }).error(
+            "Synthesis response was valid JSON but missing 'synthesisState' key.",
+          )
+          // Default to partial to force another iteration, which is safer
+          parseSynthesisOutput = {
+            synthesisState: ContextSysthesisState.Partial,
+            answer: null,
+          }
+        }
+      } catch (jsonError) {
+        loggerWithChild({ email: sub }).error(
+          jsonError,
+          "Failed to parse synthesis LLM output as JSON.",
+        )
+        // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
+        parseSynthesisOutput = {
+          synthesisState: ContextSysthesisState.NotFound,
+          answer: parseSynthesisOutput?.answer || "",
+        }
+      }
+    } else {
+      loggerWithChild({ email: sub }).error(
+        "Synthesis LLM call returned no text.",
+      )
+      parseSynthesisOutput = {
+        synthesisState: ContextSysthesisState.Partial,
+        answer: "",
+      }
+    }
+  } catch (synthesisError) {
+    loggerWithChild({ email: sub }).error(
+      synthesisError,
+      "Error during synthesis LLM call.",
+    )
+    await logAndStreamReasoning({
+      type: AgentReasoningStepType.LogMessage,
+      message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
+    })
+    // If the call itself fails, we must assume the context is insufficient.
+    parseSynthesisOutput = {
+      synthesisState: ContextSysthesisState.Partial,
+      answer: parseSynthesisOutput?.answer || "",
+    }
+  }
+
+  return parseSynthesisOutput
+}
+
 const addErrMessageToMessage = async (
   lastMessage: SelectMessage,
   errorMessage: string,
@@ -330,7 +427,7 @@ export const MessageWithToolsApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-
+  let isDebugMode = config.isDebugMode
   let email = ""
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -362,6 +459,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    const hasReferencedContext = fileIds && fileIds.length > 0
 
     if (!message) {
       throw new HTTPException(400, {
@@ -551,7 +649,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
-          const maxIterations = 9
+          const maxIterations = 10
           let iterationCount = 0
           let answered = false
           let isCustomMCP = false
@@ -701,6 +799,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let agentScratchpad = "" // To build the reasoning history for the prompt
           let planningContext = "" // To build the context for planning
           let toolsPrompt = "" // To build the context for available tools
+          let fallbackReasoning: string | undefined = undefined // To store fallback reasoning
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">
@@ -717,6 +816,96 @@ export const MessageWithToolsApi = async (c: Context) => {
               break
             }
             iterationCount++
+
+            // On the first iteration, check if this is a "@" reference case and synthesize the context.
+            // If the synthesized context is insufficient, continue gathering more context in subsequent iterations.
+            if (hasReferencedContext && iterationCount === 1) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
+              )
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
+                )
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  planningContext = cleanContext(
+                    results.root.children
+                      ?.map(
+                        (v, i) =>
+                          `Index ${i + 1} \n ${answerContextMap(
+                            v as z.infer<typeof VespaSearchResultsSchema>,
+                            0,
+                            true,
+                          )}`,
+                      )
+                      ?.join("\n"),
+                  )
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) => ({
+                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
+                      content: answerContextMap(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      ),
+                      source: searchToCitation(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                      ),
+                      confidence: 1.0,
+                    }),
+                  )
+                  const parseSynthesisOutput = await performSynthesis(
+                    ctx,
+                    message,
+                    planningContext,
+                    gatheredFragments,
+                    messagesWithNoErrResponse,
+                    logAndStreamReasoning,
+                    sub,
+                  )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                  })
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: ` Synthesis: ${
+                      parseSynthesisOutput?.answer || "No Synthesis details"
+                    }`,
+                  })
+                  const isContextSufficient =
+                    parseSynthesisOutput?.synthesisState ===
+                    ContextSysthesisState.Complete
+
+                  if (isContextSufficient) {
+                    // Context is complete. We can break the loop and generate the final answer.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Context is sufficient. Proceeding to generate final answer.",
+                    })
+                    break
+                  }
+                  continue
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
+                )
+              } finally {
+                contextFetchSpan?.end()
+              }
+            }
 
             let loopWarningPrompt = ""
             const reasoningHeader = `
@@ -783,13 +972,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                     2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
                     3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
   
-                  Do NOT make this call again. Formulate a new, distinct plan.
+                  Do NOT make these call again. Formulate a new, distinct plan.
                    ---
                 `
             }
 
-            agentScratchpad = evidenceSummary + reasoningHeader
-
+            agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
@@ -815,6 +1003,19 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
             }
 
+            // filter out conversational tool if it is not the first iteration
+            const xyneToolNames =
+              iterationCount !== 1
+                ? Object.keys(internalTools).filter(
+                    (v) => v !== XyneTools.Conversational,
+                  )
+                : Object.keys(internalTools)
+            const xyneTools = Object.fromEntries(
+              xyneToolNames.map((toolName) => [
+                toolName,
+                internalTools[toolName],
+              ]),
+            )
             const toolSelection = await generateToolSelectionOutput(
               message,
               ctx,
@@ -829,6 +1030,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               },
               agentPromptForLLM,
               loopWarningPrompt,
+              { internal: xyneTools },
+              isDebugMode,
             )
 
             if (
@@ -850,6 +1053,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
               })
+
+              if (toolSelection.reasoning) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Reasoning: ${toolSelection.reasoning}`,
+                })
+              }
+
               const toolName = toolSelection.tool
               const toolParams = toolSelection.arguments
 
@@ -926,7 +1137,12 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.ToolParameters,
-                  parameters: toolParams,
+                  parameters: {
+                    ...toolParams,
+                    excludedIds: excludedIds.length
+                      ? `Excluded ${excludedIds.length} previous ${excludedIds.length === 1 ? "result" : "results"} to avoid duplication`
+                      : "None",
+                  },
                 })
                 try {
                   toolExecutionResponse = await agentTools[toolName].execute(
@@ -1009,16 +1225,25 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                     let formattedContent = "Tool returned no parsable content."
                     let newFragments: MinimalAgentFragment[] = []
-
+                    const isValidJSON = (str: string) => {
+                      try {
+                        JSON.parse(str)
+                        return true
+                      } catch (e) {
+                        return false
+                      }
+                    }
                     try {
                       if (
                         mcpToolResponse.content &&
                         mcpToolResponse.content[0] &&
                         mcpToolResponse.content[0].text
                       ) {
-                        const parsedJson = JSON.parse(
+                        const parsedJson = isValidJSON(
                           mcpToolResponse.content[0].text,
                         )
+                          ? JSON.parse(mcpToolResponse.content[0].text)
+                          : mcpToolResponse.content[0].text
                         if (isCustomMCP) {
                           const baseFragmentId = `mcp-${connectorId}-${toolName}`
                           // Convert the formatted response into a standard MinimalAgentFragment
@@ -1037,11 +1262,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                           if (mainContentParts.length > 2) {
                             formattedContent = mainContentParts.join("\n")
                           } else {
-                            formattedContent = `Tool Response: ${flattenObject(
-                              parsedJson,
-                            )
-                              .map(([key, value]) => `- ${key}: ${value}`)
-                              .join("\n")}`
+                            formattedContent = `Tool Response: ${
+                              typeof parsedJson !== "string"
+                                ? flattenObject(parsedJson)
+                                    .map(([key, value]) => `- ${key}: ${value}`)
+                                    .join("\n")
+                                : parsedJson
+                            }`
                           }
 
                           newFragments.push({
@@ -1191,101 +1418,28 @@ export const MessageWithToolsApi = async (c: Context) => {
                 : ""
 
               if (planningContext.length) {
-                type SynthesisResponse = {
-                  synthesisState:
-                    | ContextSysthesisState.Complete
-                    | ContextSysthesisState.Partial
-                    | ContextSysthesisState.NotFound
-                  answer: string | null
-                }
-                let parseSynthesisOutput: SynthesisResponse | null = null
-
-                try {
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.Synthesis,
-                    details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
-                  })
-
-                  const synthesisResponse =
-                    await generateSynthesisBasedOnToolOutput(
-                      ctx,
-                      message,
-                      planningContext,
-                      {
-                        modelId: defaultFastModel,
-                        stream: false,
-                        json: true,
-                        reasoning: false,
-                        messages: messagesWithNoErrResponse,
-                      },
-                    )
-
-                  if (synthesisResponse.text) {
-                    try {
-                      parseSynthesisOutput = jsonParseLLMOutput(
-                        synthesisResponse.text,
-                      )
-                      if (
-                        !parseSynthesisOutput ||
-                        !parseSynthesisOutput.synthesisState
-                      ) {
-                        loggerWithChild({ email: sub }).error(
-                          "Synthesis response was valid JSON but missing 'synthesisState' key.",
-                        )
-                        // Default to partial to force another iteration, which is safer
-                        parseSynthesisOutput = {
-                          synthesisState: ContextSysthesisState.Partial,
-                          answer: null,
-                        }
-                      }
-                    } catch (jsonError) {
-                      loggerWithChild({ email: sub }).error(
-                        jsonError,
-                        "Failed to parse synthesis LLM output as JSON.",
-                      )
-                      // If parsing fails, we cannot trust the context. Treat it as notFound to be safe.
-                      parseSynthesisOutput = {
-                        synthesisState: ContextSysthesisState.NotFound,
-                        answer: parseSynthesisOutput?.answer || "",
-                      }
-                    }
-                  } else {
-                    loggerWithChild({ email: sub }).error(
-                      "Synthesis LLM call returned no text.",
-                    )
-                    parseSynthesisOutput = {
-                      synthesisState: ContextSysthesisState.Partial,
-                      answer: "",
-                    }
-                  }
-                } catch (synthesisError) {
-                  loggerWithChild({ email: sub }).error(
-                    synthesisError,
-                    "Error during synthesis LLM call.",
-                  )
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
-                  })
-                  // If the call itself fails, we must assume the context is insufficient.
-                  parseSynthesisOutput = {
-                    synthesisState: ContextSysthesisState.Partial,
-                    answer: parseSynthesisOutput?.answer || "",
-                  }
-                }
+                const parseSynthesisOutput = await performSynthesis(
+                  ctx,
+                  message,
+                  planningContext,
+                  gatheredFragments,
+                  messagesWithNoErrResponse,
+                  logAndStreamReasoning,
+                  sub,
+                )
 
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `Synthesis result: ${parseSynthesisOutput.synthesisState}`,
+                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
                 })
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
                   message: ` Synthesis: ${
-                    parseSynthesisOutput.answer || "No Synthesis details"
+                    parseSynthesisOutput?.answer || "No Synthesis details"
                   }`,
                 })
                 const isContextSufficient =
-                  parseSynthesisOutput.synthesisState ===
+                  parseSynthesisOutput?.synthesisState ===
                   ContextSysthesisState.Complete
 
                 if (isContextSufficient) {
@@ -1307,12 +1461,111 @@ export const MessageWithToolsApi = async (c: Context) => {
                     })
                     continue
                   } else {
-                    // We've hit the max iterations with insufficient context
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message:
-                        "Max iterations reached with partial context. Will generate best-effort answer.",
-                    })
+                    // Follow-back tool activation: when iterations are exhausted and synthesis is not complete
+                    if (planningContext.length > 0) {
+                      try {
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message:
+                            "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                        })
+
+                        // Show what tools were used and their results
+                        const toolExecutions = structuredReasoningSteps.filter(
+                          (step) =>
+                            step.type ===
+                              AgentReasoningStepType.ToolExecuting ||
+                            step.type === AgentReasoningStepType.ToolResult,
+                        )
+
+                        if (toolExecutions.length > 0) {
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message: `Previous search attempts: Used ${toolExecutions.filter((s) => s.type === AgentReasoningStepType.ToolExecuting).length} tools, gathered ${gatheredFragments.length} context fragments.`,
+                          })
+                        }
+
+                        // Prepare fallback tool parameters with more detailed context
+                        const toolLog = structuredReasoningSteps
+                          .filter(
+                            (step) =>
+                              step.type ===
+                                AgentReasoningStepType.ToolExecuting ||
+                              step.type === AgentReasoningStepType.ToolResult,
+                          )
+                          .map(convertReasoningStepToText)
+                          .join("\n")
+
+                        const fallbackParams = {
+                          originalQuery: message,
+                          agentScratchpad: agentScratchpad,
+                          toolLog: toolLog,
+                          gatheredFragments: planningContext,
+                        }
+
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.ToolExecuting,
+                          toolName: AgentToolName.FallBack,
+                        })
+
+                        // Execute fallback tool
+                        const fallbackResponse = await agentTools[
+                          "fall_back"
+                        ].execute(
+                          fallbackParams,
+                          streamSpan.startSpan("fallback_search_execution"),
+                          email,
+                          ctx,
+                          agentPromptForLLM,
+                          message,
+                        )
+
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.ToolResult,
+                          toolName: AgentToolName.FallBack,
+                          resultSummary: fallbackResponse.result,
+                          itemsFound: fallbackResponse.contexts?.length || 0,
+                          error: fallbackResponse.error,
+                        })
+
+                        // Store fallback reasoning separately - don't add to gathered fragments
+                        if (fallbackResponse.fallbackReasoning) {
+                          fallbackReasoning = fallbackResponse.fallbackReasoning
+
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message: `✓ Fallback analysis completed! Generated detailed reasoning about search limitations.`,
+                          })
+
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message:
+                              "Will provide explanation about why we couldn't find sufficient information.",
+                          })
+                        } else {
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message:
+                              "Fallback analysis completed but no reasoning generated.",
+                          })
+                        }
+                      } catch (followBackError) {
+                        Logger.error(
+                          followBackError,
+                          "Error during followBack tool execution",
+                        )
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message: `Follow-back search failed: ${getErrorMessage(followBackError)}. Will generate best-effort answer.`,
+                        })
+                      }
+                    } else {
+                      await logAndStreamReasoning({
+                        type: AgentReasoningStepType.LogMessage,
+                        message:
+                          "Max iterations reached with no context gathered. Will generate best-effort answer.",
+                      })
+                    }
                   }
                 }
               } else {
@@ -1349,8 +1602,40 @@ export const MessageWithToolsApi = async (c: Context) => {
               if (iterationCount < maxIterations) {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `No tool selected. Re-planning iteration ${iterationCount + 1}.`,
+                  message: `No tool selected. Re-planning.`,
                 })
+                const parseSynthesisOutput = await performSynthesis(
+                  ctx,
+                  message,
+                  planningContext,
+                  gatheredFragments,
+                  messagesWithNoErrResponse,
+                  logAndStreamReasoning,
+                  sub,
+                )
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                })
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: ` Synthesis: ${
+                    parseSynthesisOutput?.answer || "No Synthesis details"
+                  }`,
+                })
+                const isContextSufficient =
+                  parseSynthesisOutput?.synthesisState ===
+                  ContextSysthesisState.Complete
+
+                if (isContextSufficient) {
+                  // Context is complete. We can break the loop and generate the final answer.
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message:
+                      "Context is sufficient. Proceeding to generate final answer.",
+                  })
+                  break
+                }
                 continue
               } else {
                 await logAndStreamReasoning({
@@ -1370,6 +1655,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             gatheredFragments,
             agentPromptForLLM,
             messagesWithNoErrResponse,
+            fallbackReasoning,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -1933,6 +2219,7 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
+              [],
               agentPromptForLLM,
             )
             stream.writeSSE({
@@ -1973,7 +2260,6 @@ export const AgentMessageApi = async (c: Context) => {
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
-                  // reasoningSpan.end()
                 }
                 if (!chunk.reasoning) {
                   answer += chunk.text
@@ -2181,6 +2467,7 @@ export const AgentMessageApi = async (c: Context) => {
               temporalDirection: null,
               filter_query: "",
               type: "",
+              intent: {},
               filters: queryFilters,
             }
 
@@ -2299,6 +2586,7 @@ export const AgentMessageApi = async (c: Context) => {
                   ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
+                  intent: parsed.intent || {},
                 },
               }
 

@@ -747,7 +747,6 @@ export const ChatBox = ({
       setTotalCount(fetchedTotalCount)
 
       const results: SearchResult[] = data.results || []
-
       setGlobalResults((prev) => {
         if (currentSearchTerm !== searchTermForFetch) {
           return append ? prev : []
@@ -915,6 +914,7 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
+      threadId: (citation as any).threadId, // Add threadId if available
     }
 
     const input = inputRef.current
@@ -1015,6 +1015,7 @@ export const ChatBox = ({
       url: resultUrl,
       docId: result.docId,
       mailId: result.mailId,
+      threadId: result.threadId, // Add threadId from result
       app: result.app,
       entity: result.entity,
       type: "global",
@@ -1221,6 +1222,7 @@ export const ChatBox = ({
     pills.forEach((pill) => {
       const mailId = pill.getAttribute("data-mail-id")
       const userMap = pill.getAttribute("user-map")
+      const threadId = pill.getAttribute("data-thread-id")
       const docId =
         pill.getAttribute("data-doc-id") ||
         pill.getAttribute("data-reference-id")
@@ -1245,6 +1247,7 @@ export const ChatBox = ({
       if (mailId) {
         pill.setAttribute("data-doc-id", mailId)
         pill.setAttribute("data-reference-id", mailId)
+        pill.setAttribute("data-thread-id", threadId || "")
       } else {
         console.warn(
           `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
@@ -1825,13 +1828,27 @@ export const ChatBox = ({
           {/* Dropdown for All Connectors */}
           {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
             <DropdownMenu
-              open={isConnectorsMenuOpen}
-              onOpenChange={setIsConnectorsMenuOpen}
+              open={isConnectorsMenuOpen && isAgenticMode}
+              onOpenChange={(open) => {
+                if (isAgenticMode) {
+                  setIsConnectorsMenuOpen(open)
+                }
+              }}
             >
               <DropdownMenuTrigger asChild>
                 <button
                   ref={connectorsDropdownTriggerRef}
-                  className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-slate-300 cursor-pointer"
+                  disabled={!isAgenticMode}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
+                    isAgenticMode
+                      ? "bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-300 cursor-pointer"
+                      : "bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-not-allowed opacity-60"
+                  }`}
+                  title={
+                    !isAgenticMode
+                      ? "Enable Agent mode to use MCP connectors"
+                      : ""
+                  }
                 >
                   {selectedConnectorIds.size > 0 ? (
                     selectedConnectorIds.size === 1 ? (
@@ -1855,7 +1872,11 @@ export const ChatBox = ({
                           <>
                             <Gavel
                               size={14}
-                              className="text-[#464D53] dark:text-slate-400"
+                              className={
+                                isAgenticMode
+                                  ? "text-[#464D53] dark:text-slate-400"
+                                  : "text-gray-400 dark:text-slate-500"
+                              }
                             />
                             <span>Mcp</span>
                           </>
@@ -1866,7 +1887,11 @@ export const ChatBox = ({
                       <>
                         <Gavel
                           size={14}
-                          className="text-[#464D53] dark:text-slate-400"
+                          className={
+                            isAgenticMode
+                              ? "text-[#464D53] dark:text-slate-400"
+                              : "text-gray-400 dark:text-slate-500"
+                          }
                         />
                         <span>{selectedConnectorIds.size} Mcps</span>
                       </>
@@ -1876,14 +1901,18 @@ export const ChatBox = ({
                     <>
                       <Gavel
                         size={14}
-                        className="text-[#464D53] dark:text-slate-400"
+                        className={
+                          isAgenticMode
+                            ? "text-[#464D53] dark:text-slate-400"
+                            : "text-gray-400 dark:text-slate-500"
+                        }
                       />
                       <span>Mcp</span>
                     </>
                   )}
                   <ChevronDown
                     size={16}
-                    className="ml-1 text-gray-500 dark:text-slate-400"
+                    className={`ml-1 ${isAgenticMode ? "text-gray-500 dark:text-slate-400" : "text-gray-400 dark:text-slate-500"}`}
                   />
                 </button>
               </DropdownMenuTrigger>

@@ -1,43 +1,85 @@
 import { Subsystem, type GoogleClient } from "@/types"
 import { getLogger } from "@/logger"
 import { gmail_v1 } from "googleapis"
-import {
-  deleteDocument,
-  downloadDir,
-  downloadPDF,
-  safeLoadPDF,
-} from "@/integrations/google/pdf-utils"
+import { deleteDocument, downloadDir } from "@/integrations/google/pdf-utils"
 import { hashPdfFilename, retryWithBackoff } from "@/utils"
 import { chunkDocument } from "@/chunks"
-import { Apps, type Attachment } from "@/search/types"
+import { Apps, MailAttachmentEntity, type Attachment } from "@/search/types"
 import {
   MAX_ATTACHMENT_PDF_SIZE,
   MAX_ATTACHMENT_TEXT_SIZE,
+  MAX_ATTACHMENT_DOCX_SIZE,
+  MAX_ATTACHMENT_PPTX_SIZE,
+  MAX_ATTACHMENT_SHEET_ROWS,
+  MAX_ATTACHMENT_SHEET_TEXT_LEN,
 } from "@/integrations/google/config"
 import crypto from "node:crypto"
 import fs from "fs"
-import { readFile, writeFile, rename, access } from "fs/promises"
+import { readFile, writeFile } from "fs/promises"
 import path from "path"
-import { exec } from "child_process"
-import { promisify } from "util"
 import * as XLSX from "xlsx"
-import os from "os"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
+import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 
-const getDefaultLibreOfficePath = () => {
-  switch (os.platform()) {
-    case "darwin":
-      return "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-    case "linux":
-      return "/usr/bin/soffice"
-    case "win32":
-      return "C:\\Program Files\\LibreOffice\\program\\soffice.exe"
-    default:
-      return "soffice" // Try PATH
+const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
+// Function to process PPTX file content using our PPTX extractor
+const processPptxFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
+  try {
+    const pptxResult = await extractTextAndImagesWithChunksFromPptx(
+      filePath,
+      attachmentId,
+      false, // Don't extract images for email attachments
+    )
+
+    return pptxResult.text_chunks.filter((v) => v.trim())
+  } catch (error) {
+    Logger.error(error, `Error processing PPTX file: ${filePath}`)
+    return []
   }
 }
 
-const execAsync = promisify(exec)
-const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+// Function to process PDF file content using our PDF extractor
+const processPdfFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
+  try {
+    const pdfResult = await extractTextAndImagesWithChunksFromPDF(
+      filePath,
+      attachmentId,
+      false, // Don't extract images for email attachments
+    )
+
+    return pdfResult.text_chunks.filter((v) => v.trim())
+  } catch (error) {
+    Logger.error(error, `Error processing PDF file: ${filePath}`)
+    return []
+  }
+}
+
+// Function to process DOCX file content using our DOCX extractor
+const processDocxFile = async (
+  filePath: string,
+  attachmentId: string,
+): Promise<string[]> => {
+  try {
+    const docxResult = await extractTextAndImagesWithChunksFromDocx(
+      filePath,
+      attachmentId,
+      false, // Don't extract images for email attachments
+    )
+
+    return docxResult.text_chunks.filter((v) => v.trim())
+  } catch (error) {
+    Logger.error(error, `Error processing DOCX file: ${filePath}`)
+    return []
+  }
+}
 
 export async function saveGmailAttachment(
   attachmentData: any,
@@ -58,89 +100,6 @@ export async function saveGmailAttachment(
   } catch (error) {
     Logger.error("Error saving gmail attachment:", error)
     throw error
-  }
-}
-
-const convertToPdf = async (
-  inputFilePath: string,
-  mimeType: string,
-): Promise<string> => {
-  const tempDir = path.dirname(inputFilePath)
-  const inputFileName = path.basename(
-    inputFilePath,
-    path.extname(inputFilePath),
-  )
-  const outputPdfPath = path.join(tempDir, `${inputFileName}_converted.pdf`)
-
-  try {
-    // Handle different file types
-    if (
-      mimeType.includes("officedocument") ||
-      mimeType.includes("msword") ||
-      mimeType.includes("presentation")
-    ) {
-      // For office documents, use LibreOffice
-      const libreOfficePath =
-        process.env.LIBREOFFICE_PATH || getDefaultLibreOfficePath()
-      // Validate the path exists and is a file
-      if (
-        !fs.existsSync(libreOfficePath) ||
-        !fs.statSync(libreOfficePath).isFile()
-      ) {
-        throw new Error(`Invalid LibreOffice path: ${libreOfficePath}`)
-      }
-      const { spawn } = await import("child_process")
-      await new Promise((resolve, reject) => {
-        const proc = spawn(libreOfficePath, [
-          "--headless",
-          "--convert-to",
-          "pdf",
-          "--outdir",
-          tempDir,
-          inputFilePath,
-        ])
-        proc.on("error", reject)
-        proc.on("exit", (code) => {
-          if (code === 0) resolve(undefined)
-          else reject(new Error(`LibreOffice exited with code ${code}`))
-        })
-      })
-      // LibreOffice creates PDF with same base name
-      const libreOfficePdfPath = path.join(tempDir, `${inputFileName}.pdf`)
-      try {
-        await access(libreOfficePdfPath)
-        if (libreOfficePdfPath !== outputPdfPath) {
-          await rename(libreOfficePdfPath, outputPdfPath)
-        }
-      } catch {
-        // File doesn't exist, no need to rename
-      }
-    }
-    // else if (mimeType.startsWith("image/")) {  if you want to handle images
-    //   // For images, use ImageMagick convert
-    //   const { spawn } = await import("child_process")
-    //   await new Promise((resolve, reject) => {
-    //     const proc = spawn("convert", [inputFilePath, outputPdfPath])
-    //     proc.on("error", reject)
-    //     proc.on("exit", (code) => {
-    //       if (code === 0) resolve(undefined)
-    //       else reject(new Error(`ImageMagick exited with code ${code}`))
-    //     })
-    //   })
-    // }
-    else {
-      throw new Error(`Unsupported file type for PDF conversion: ${mimeType}`)
-    }
-
-    if (!fs.existsSync(outputPdfPath)) {
-      throw new Error(`PDF conversion failed - output file not created`)
-    }
-
-    return outputPdfPath
-  } catch (error) {
-    throw new Error(
-      `PDF conversion failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
   }
 }
 
@@ -186,68 +145,86 @@ export const getGmailAttachmentChunks = async (
       downloadAttachmentFilePath,
     )
 
-    filePathForProcessing = downloadAttachmentFilePath
-
-    if (mimeType !== "application/pdf") {
-      try {
-        filePathForProcessing = await convertToPdf(
-          downloadAttachmentFilePath,
-          mimeType,
+    if (mimeType === "application/pdf") {
+      const fileSizeMB = size.value / (1024 * 1024)
+      if (fileSizeMB > MAX_ATTACHMENT_PDF_SIZE) {
+        Logger.error(
+          `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PDF_SIZE} MB`,
         )
-      } catch (conversionError) {
-        const textStats = fs.statSync(downloadAttachmentFilePath)
-        const textSizeMB = textStats.size / (1024 * 1024)
-        if (textSizeMB > MAX_ATTACHMENT_TEXT_SIZE) {
-          Logger.warn(
-            `Text file ${filename} is too large (${textSizeMB}MB), skipping`,
-          )
-          return null
-        }
-        if (mimeType === "text/plain") {
-          const content = await readFile(downloadAttachmentFilePath, "utf8")
-          attachmentChunks = chunkDocument(content)
-            .map((v) => v.chunk)
-            .filter((v) => v.trim())
-          return attachmentChunks
-        } else if (
-          mimeType ===
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ) {
-          attachmentChunks = processXlsxFile(downloadAttachmentFilePath)
-          return attachmentChunks
-        } else {
-          Logger.warn(
-            conversionError,
-            `invalid file type ${filename}. Skipping file.`,
-          )
-        }
-
         return null
       }
-    }
-
-    const stats = fs.statSync(filePathForProcessing)
-    size.value = stats.size
-
-    const pdfSizeMB = size.value / (1024 * 1024)
-    if (pdfSizeMB > MAX_ATTACHMENT_PDF_SIZE) {
-      Logger.error(
-        `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PDF_SIZE} MB`,
+      const pdfChunks = await processPdfFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
+      if (pdfChunks && pdfChunks.length > 0) {
+        attachmentChunks = pdfChunks
+      } else {
+        Logger.warn(`Could not process PDF file: ${filename}`)
+      }
+    } else if (
+      mimeType ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      mimeType === "application/msword"
+    ) {
+      const fileSizeMB = size.value / (1024 * 1024)
+      if (fileSizeMB > MAX_ATTACHMENT_DOCX_SIZE) {
+        Logger.error(
+          `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_DOCX_SIZE} MB`,
+        )
+        return null
+      }
+      const docxChunks = await processDocxFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
+      if (docxChunks && docxChunks.length > 0) {
+        attachmentChunks = docxChunks
+      } else {
+        Logger.warn(`Could not process DOCX file: ${filename}`)
+      }
+    } else if (
+      mimeType ===
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+      mimeType === "application/vnd.ms-powerpoint"
+    ) {
+      const fileSizeMB = size.value / (1024 * 1024)
+      if (fileSizeMB > MAX_ATTACHMENT_PPTX_SIZE) {
+        Logger.error(
+          `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PPTX_SIZE} MB`,
+        )
+        return null
+      }
+      const pptxChunks = await processPptxFile(
+        downloadAttachmentFilePath,
+        attachmentId,
+      )
+      if (pptxChunks && pptxChunks.length > 0) {
+        attachmentChunks = pptxChunks
+      } else {
+        Logger.warn(`Could not process PPTX file: ${filename}`)
+      }
+    } else if (
+      mimeType === "text/plain" ||
+      mimeType === "text/html" ||
+      mimeType === "text/markdown"
+    ) {
+      const fileSizeMB = size.value / (1024 * 1024)
+      if (fileSizeMB > MAX_ATTACHMENT_TEXT_SIZE) {
+        Logger.error(
+          `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_TEXT_SIZE} MB`,
+        )
+        return null
+      }
+      const content = await readFile(downloadAttachmentFilePath, "utf8")
+      const chunks = chunkDocument(content)
+      attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
+    } else {
+      Logger.warn(
+        `Unsupported file type ${mimeType} for file ${filename}. Skipping.`,
       )
       return null
     }
-
-    const docs = await safeLoadPDF(filePathForProcessing)
-    if (!docs || docs.length === 0) {
-      Logger.warn(`Could not get content for file: ${filename}. Skipping it`)
-      return null
-    }
-
-    attachmentChunks = docs
-      // @ts-ignore
-      .flatMap((doc) => chunkDocument(doc.pageContent))
-      .map((v) => v.chunk)
-      .filter((v) => v.trim())
   } catch (error) {
     Logger.error(error, `Error in getting gmailAttachmentChunks`)
   } finally {
@@ -256,18 +233,125 @@ export const getGmailAttachmentChunks = async (
       if (downloadAttachmentFilePath) {
         await deleteDocument(downloadAttachmentFilePath)
       }
-      if (
-        filePathForProcessing &&
-        filePathForProcessing !== downloadAttachmentFilePath
-      ) {
-        await deleteDocument(filePathForProcessing)
+    } catch (cleanupError) {
+      Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
+    }
+  }
+  return attachmentChunks
+}
+
+// Interface for sheet data returned by spreadsheet processing
+export interface SheetData {
+  sheetName: string
+  sheetIndex: number
+  chunks: string[]
+  totalSheets: number
+}
+
+// Helper function to determine the correct entity type based on MIME type
+export const getMailAttachmentEntity = (
+  mimeType: string,
+): MailAttachmentEntity => {
+  const baseMimeType = mimeType.toLowerCase().split(";")[0].trim()
+
+  switch (baseMimeType) {
+    case "application/pdf":
+      return MailAttachmentEntity.PDF
+
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    case "application/vnd.ms-excel":
+      return MailAttachmentEntity.Sheets
+
+    case "text/csv":
+      return MailAttachmentEntity.CSV
+
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    case "application/msword":
+      return MailAttachmentEntity.WordDocument
+
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    case "application/vnd.ms-powerpoint":
+      return MailAttachmentEntity.PowerPointPresentation
+
+    case "text/plain":
+    case "text/html":
+    case "text/markdown":
+      return MailAttachmentEntity.Text
+
+    default:
+      return MailAttachmentEntity.NotValid
+  }
+}
+
+// Function to get spreadsheet data with individual sheet information
+export const getGmailSpreadsheetSheets = async (
+  gmail: gmail_v1.Gmail,
+  attachmentMetadata: {
+    messageId: string
+    attachmentId: string
+    filename: string
+    size: { value: number }
+    mimeType: string
+  },
+  client: GoogleClient,
+): Promise<SheetData[] | null> => {
+  const { attachmentId, filename, messageId, size, mimeType } =
+    attachmentMetadata
+  let downloadAttachmentFilePath: string | null = null
+
+  try {
+    const hashInput = `${filename}_${messageId}`
+    const fileExt = path.extname(filename)
+    const hashFileName = hashPdfFilename(hashInput)
+    if (hashFileName == null) return null
+    const newfileName = `${hashFileName}${fileExt}`
+    downloadAttachmentFilePath = path.join(downloadDir, newfileName)
+
+    const attachementResp = await retryWithBackoff(
+      () =>
+        gmail.users.messages.attachments.get({
+          messageId: messageId,
+          id: attachmentId,
+          userId: "me",
+        }),
+      "Fetching Gmail Attachments",
+      Apps.Gmail,
+      0,
+      client,
+    )
+
+    await saveGmailAttachment(
+      attachementResp.data.data,
+      downloadAttachmentFilePath,
+    )
+
+    // Check if it's a supported spreadsheet type
+    if (
+      mimeType ===
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      mimeType === "application/vnd.ms-excel" ||
+      mimeType === "text/csv"
+    ) {
+      const sheetsData = processSpreadsheetFileWithSheetInfo(
+        downloadAttachmentFilePath,
+      )
+      return sheetsData
+    }
+
+    return null
+  } catch (error) {
+    Logger.error(error, `Error in getting gmail spreadsheet sheets`)
+    return null
+  } finally {
+    // Cleanup logic
+    try {
+      if (downloadAttachmentFilePath) {
+        await deleteDocument(downloadAttachmentFilePath)
       }
     } catch (cleanupError) {
       Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
     }
   }
-
-  return attachmentChunks
 }
 
 // Function to parse attachments from the email payload
@@ -298,15 +382,21 @@ export const parseAttachments = (
   return { attachments, filenames }
 }
 
-// Function to process XLSX files similar to Google Sheets processing
-const processXlsxFile = (filePath: string): string[] => {
+// Function to process spreadsheet files and return individual sheet data
+const processSpreadsheetFileWithSheetInfo = (filePath: string): SheetData[] => {
   try {
     const workbook = XLSX.readFile(filePath)
-    const chunks: string[] = []
+    const sheetsData: SheetData[] = []
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      Logger.warn(`No worksheets found in spreadsheet file: ${filePath}`)
+      return []
+    }
 
     // Process each sheet in the workbook
-    for (const sheetName of workbook.SheetNames) {
+    for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
       const worksheet = workbook.Sheets[sheetName]
+      if (!worksheet) continue
 
       // Convert sheet to JSON array of arrays
       const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
@@ -315,21 +405,67 @@ const processXlsxFile = (filePath: string): string[] => {
         raw: false,
       })
 
-      // Clean and get valid rows (similar to cleanSheetAndGetValidRows)
+      // Clean and get valid rows
       const validRows = sheetData.filter((row) =>
         row.some((cell) => cell && cell.toString().trim().length > 0),
       )
 
-      if (validRows.length === 0) continue
+      if (validRows.length === 0) {
+        Logger.debug(`Sheet "${sheetName}" has no valid content, skipping`)
+        continue
+      }
+      if (validRows?.length > MAX_ATTACHMENT_SHEET_ROWS) {
+        // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+        // Logger.warn(
+        //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+        // )
+        return []
+      }
 
-      // Chunk the rows (similar to chunkFinalRows)
+      // Chunk the rows for this specific sheet
       const sheetChunks = chunkSheetRows(validRows)
-      chunks.push(...sheetChunks)
+      const filteredSheetChunks = sheetChunks.filter(
+        (chunk) => chunk.trim().length > 0,
+      )
+
+      if (filteredSheetChunks.length === 0) {
+        Logger.debug(`Sheet "${sheetName}" produced no valid chunks, skipping`)
+        continue
+      }
+
+      sheetsData.push({
+        sheetName,
+        sheetIndex,
+        chunks: filteredSheetChunks,
+        totalSheets: workbook.SheetNames.length,
+      })
+
+      Logger.debug(
+        `Processed sheet "${sheetName}" with ${filteredSheetChunks.length} chunks`,
+      )
     }
 
-    return chunks.filter((chunk) => chunk.trim().length > 0)
+    if (sheetsData.length === 0) {
+      Logger.warn(
+        `No valid content found in any worksheet of file: ${filePath}`,
+      )
+    } else {
+      Logger.info(
+        `Successfully processed spreadsheet file with ${workbook.SheetNames.length} sheet(s) and ${sheetsData.length} valid sheets`,
+      )
+    }
+
+    return sheetsData
   } catch (error) {
-    Logger.error(error, `Error processing XLSX file: ${filePath}`)
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected Spreadsheet, skipping")
+    } else {
+      Logger.error(error, `Spreadsheet load error: ${error}`)
+    }
     return []
   }
 }
@@ -338,6 +474,7 @@ const processXlsxFile = (filePath: string): string[] => {
 const chunkSheetRows = (allRows: string[][]): string[] => {
   const chunks: string[] = []
   let currentChunk = ""
+  let totalTextLength = 0
   const MAX_CHUNK_SIZE = 512
 
   for (const row of allRows) {
@@ -352,6 +489,15 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
     if (textualCells.length === 0) continue
 
     const rowText = textualCells.join(" ")
+
+    // Check if adding this rowText would exceed the maximum text length
+    if (totalTextLength + rowText.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
+      // Logger.warn(`Text length excedded, indexing with empty content`)
+      // Return an empty array if the total text length exceeds the limit
+      return []
+    }
+
+    totalTextLength += rowText.length
 
     if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
       if (currentChunk.trim().length > 0) {
