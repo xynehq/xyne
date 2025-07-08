@@ -513,6 +513,7 @@ ${retrievedContext}
    - Cite using the Index numbers provided in the context
    - Place citations immediately after the relevant information
    - For queries requesting a list of emails, ONLY list the emails (subject, sender, etc.) as found.
+   - Ensure DATE and TIME format matches the user's timezone.
    - Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.
    - Example response:
      1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
