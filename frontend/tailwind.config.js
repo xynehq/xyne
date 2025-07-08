@@ -17,6 +17,11 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+        display: ["LED Dot-Matrix", "sans-serif"],
+      },
       lineClamp: {
         2.5: "2.5",
       },

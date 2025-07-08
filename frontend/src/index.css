@@ -6,11 +6,14 @@
   font-family: "JetBrains Mono";
   src: local("JetBrains Mono"), url("./assets/fonts/JetBrainsMono[wght].ttf");
 }
+@font-face {
+  font-family: "LED Dot-Matrix";
+  src: local("LED Dot-Matrix"), url("./assets/fonts/LED Dot-Matrix.ttf");
+}
 html,
 body {
   width: 100%;
   height: 100%;
-  font-family: Inter;
 }
 
 #root {
@@ -123,12 +126,4 @@ html {
 .markdown-content a {
   @apply prevent-overflow;
   word-break: break-all;
-}
-
-.doto-heading {
-  font-family: "Doto", sans-serif;
-  font-optical-sizing: auto;
-  font-weight: 700;
-  font-style: normal;
-  font-variation-settings: "ROND" 0;
 }

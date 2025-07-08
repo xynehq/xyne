@@ -1200,10 +1200,7 @@ const MessageCitationList = ({
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
-                      <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
+                      <span className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] font-mono">
                         {index + 1}
                       </span>
                     </div>
@@ -1250,8 +1247,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
-                style={{ fontFamily: "JetBrains Mono" }}
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px] font-mono"
               >
                 {index + 1}
               </a>
@@ -1286,10 +1282,7 @@ const Sources = ({
   return showSources ? (
     <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
       <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
-        <span
-          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
-          style={{ fontFamily: "JetBrains Mono" }}
-        >
+        <span className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em] font-mono">
           SOURCES
         </span>
         <X
@@ -1721,9 +1714,8 @@ const Code = ({
   if (!isActuallyInline) {
     return (
       <pre
-        className="text-sm block w-full my-2"
+        className="text-sm block w-full my-2 font-mono"
         style={{
-          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
           whiteSpace: "pre-wrap",
           overflowWrap: "break-word",
           wordBreak: "break-word",
@@ -2013,10 +2005,7 @@ export const ChatMessage = ({
                 {!!citationUrls.length && (
                   <div className="ml-auto flex">
                     <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
+                      <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
                         SOURCES
                       </span>
                       <ChevronDown
