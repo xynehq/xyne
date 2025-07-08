@@ -169,6 +169,7 @@ export const startStream = async (
   onTitleUpdate?: (title: string) => void,
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
+  fileIds?: string[],
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -216,6 +217,11 @@ export const startStream = async (
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
     url.searchParams.append("toolsList", JSON.stringify(toolsList))
+  }
+
+  // Add fileIds parameter if provided
+  if (fileIds && fileIds.length > 0) {
+    url.searchParams.append("attachmentFileIds", fileIds.join(","))
   }
 
   const agentIdToUse = agentIdFromChatParams
@@ -491,6 +497,7 @@ export const useChatStream = (
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
+      fileIds?: string[],
     ) => {
       const streamKey = currentStreamKey
 
@@ -505,6 +512,7 @@ export const useChatStream = (
         onTitleUpdate,
         agentIdFromChatParams,
         toolsList,
+        fileIds,
       )
 
       setStreamInfo(getStreamState(streamKey))

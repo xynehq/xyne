@@ -689,9 +689,27 @@ export const generateTitleUsingQuery = async (
       text = text?.split(EndThinkingToken)[1]
     }
     if (text) {
-      const jsonVal = jsonParseLLMOutput(text)
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(err, `Failed to parse LLM output for title: ${text}`)
+        jsonVal = undefined
+      }
+      let title = "Untitled"
+      if (
+        jsonVal &&
+        typeof jsonVal.title === "string" &&
+        jsonVal.title.trim()
+      ) {
+        title = jsonVal.title.trim()
+      } else {
+        Logger.error(
+          `LLM output did not contain a valid title. Raw output: ${text}`,
+        )
+      }
       return {
-        title: jsonVal.title,
+        title,
         cost: cost!,
       }
     } else {

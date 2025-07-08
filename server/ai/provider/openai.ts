@@ -105,19 +105,55 @@ export class OpenAIProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildOpenAIImageParts(params.imageFileNames)
+        : []
+
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages: any[] = messages.map((message, index) => {
+      const role = message.role === "assistant" ? "assistant" : "user"
+
+      if (
+        index === lastUserMessageIndex &&
+        imageParts.length > 0 &&
+        role === "user"
+      ) {
+        // Add images to the last user message
+        return {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: message.content![0].text! },
+            ...imageParts,
+          ],
+        }
+      }
+      return {
+        role,
+        content: message.content![0].text!,
+      }
+    })
     const chatCompletion = await (
       this.client as OpenAI
     ).chat.completions.create({
       messages: [
         {
           role: "system",
-          content: modelParams.systemPrompt!,
+          content:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "You can also use the images in the context to answer questions.",
         },
-        ...messages.map((v) => ({
-          // @ts-ignore
-          content: v.content[0].text!,
-          role: v.role!,
-        })),
+        ...transformedMessages,
       ],
       model: modelParams.modelId,
       stream: false,
@@ -189,7 +225,10 @@ export class OpenAIProvider extends BaseProvider {
       messages: [
         {
           role: "system",
-          content: modelParams.systemPrompt!,
+          content:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "You can also use the images in the context to answer questions.",
         },
         ...transformedMessages,
       ],

@@ -657,6 +657,7 @@ export const ChatPage = ({
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
+        chatParams.fileIds,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -668,6 +669,7 @@ export const ChatPage = ({
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
+          fileIds: undefined, // Clear fileIds from URL after processing
         }),
         replace: true,
       })
@@ -678,6 +680,7 @@ export const ChatPage = ({
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
+    chatParams.fileIds,
     router,
   ])
 
@@ -686,6 +689,7 @@ export const ChatPage = ({
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
+    fileIds?: string[],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -717,6 +721,7 @@ export const ChatPage = ({
       isAgenticMode,
       agentIdToUse,
       toolsList,
+      fileIds,
     )
   }
 
@@ -2152,6 +2157,7 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
+  fileIds: z.array(z.string()).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>

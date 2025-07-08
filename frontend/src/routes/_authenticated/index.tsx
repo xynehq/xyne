@@ -135,6 +135,7 @@ const Index = () => {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
+    fileIds?: string[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -144,6 +145,7 @@ const Index = () => {
         agentId?: string
         toolsList?: ToolsListItem[]
         agentic?: boolean
+        fileIds?: string[]
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -161,6 +163,10 @@ const Index = () => {
       }
       if (isAgenticMode) {
         searchParams.agentic = true
+      }
+
+      if (fileIds && fileIds.length > 0) {
+        searchParams.fileIds = fileIds
       }
 
       // Use toolsList as array instead of JSON string

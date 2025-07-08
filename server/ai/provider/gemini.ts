@@ -112,28 +112,44 @@ export class GeminiAIProvider extends BaseProvider {
       ).getGenerativeModel({
         model: modelParams.modelId,
       })
-      const response = await geminiModel
-        .startChat({
-          history: messages.map((v) => {
-            const role = v.role! as "user" | "model" | "function" | "system" // Ensure role is typed correctly
-            const part = v.content ? v.content[0].text! : "" // Ensure safe access with a default fallback
+      // Build image parts if they exist
+      const imageParts =
+        params.imageFileNames && params.imageFileNames.length > 0
+          ? await buildGeminiImageParts(params.imageFileNames)
+          : []
+      const chatComponent = await geminiModel.startChat({
+        history: messages.map((v) => {
+          const role = v.role! as "user" | "model" | "function" | "system" // Ensure role is typed correctly
+          const part = v.content ? v.content[0].text! : "" // Ensure safe access with a default fallback
 
-            return {
-              role,
-              parts: [{ text: part }], // Wrap text in an array of objects, assuming Part has a text field
-            }
-          }),
-          systemInstruction: {
-            role: "system",
-            parts: [{ text: modelParams.systemPrompt }],
-          },
-          generationConfig: {
-            maxOutputTokens: modelParams.maxTokens,
-            temperature: modelParams.temperature,
-            responseMimeType: "application/json",
-          },
-        })
-        .sendMessage(messages[0].content ? messages[0].content[0].text! : "")
+          return {
+            role,
+            parts: [{ text: part }], // Wrap text in an array of objects, assuming Part has a text field
+          }
+        }),
+        systemInstruction: {
+          role: "system",
+          parts: [
+            {
+              text:
+                modelParams.systemPrompt +
+                "\n\n" +
+                "You can also use the images in the context to answer questions.",
+            },
+          ],
+        },
+        generationConfig: {
+          maxOutputTokens: modelParams.maxTokens,
+          temperature: modelParams.temperature,
+          responseMimeType: "application/json",
+        },
+      })
+      const latestMessage =
+        messages[messages.length - 1]?.content?.[0]?.text || ""
+      const response = await chatComponent.sendMessage([
+        { text: latestMessage },
+        ...imageParts,
+      ])
       const cost = 0
       return {
         text: response.response.text() || "",
@@ -169,7 +185,14 @@ export class GeminiAIProvider extends BaseProvider {
         })),
         systemInstruction: {
           role: "system",
-          parts: [{ text: modelParams.systemPrompt }], // Wrap text in an array
+          parts: [
+            {
+              text:
+                modelParams.systemPrompt +
+                "\n\n" +
+                "You can also use the images in the context to answer questions.",
+            },
+          ], // Wrap text in an array
         },
         generationConfig: {
           maxOutputTokens: modelParams.maxTokens,

@@ -112,14 +112,40 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Add images to the last user message
+        return {
+          ...message,
+          content: [...message.content!, ...imageParts],
+        }
+      }
+      return message
+    })
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
         {
-          text: modelParams.systemPrompt!,
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "You can also use the images in the context to answer questions.",
         },
       ],
-      messages,
+      messages: transformedMessages,
       inferenceConfig: {
         maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
@@ -212,7 +238,14 @@ export class BedrockProvider extends BaseProvider {
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [{ text: modelParams.systemPrompt! }],
+      system: [
+        {
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.",
+        },
+      ],
       messages: transformedMessages,
       inferenceConfig,
     })
