@@ -141,6 +141,14 @@ export function createAnalysisParentMessage(
   ];
 }
 
+/**
+ * Creates Slack blocks to display an error message with details and a reference error ID.
+ *
+ * @param error - The error message or details to display
+ * @param errorId - A unique identifier for the error instance
+ * @param title - Optional title for the error message; defaults to "An error occurred"
+ * @returns An array of Slack blocks representing the error message, details, and context
+ */
 export function createErrorBlocks(
   error: string,
   errorId: string,
@@ -842,13 +850,18 @@ export function cleanAgentResponse(response: string): string {
 }
 
 /**
- * Create a modal view for agent responses
- * @param query The original query string
- * @param agentName Name of the agent that responded
- * @param response The agent's response text
- * @param citations Array of citations if available
- * @param interactionId The cache key for this interaction (required)
- * @returns Slack modal view object
+ * Creates a Slack modal view displaying an agent's response to a user query, including the response text, paginated citations, and sharing actions.
+ *
+ * The modal shows the agent's name, the original query (truncated if necessary), the cleaned and truncated response, and a paginated list of sources if citations are provided. Users can navigate between citation pages and share the response in the channel or thread.
+ *
+ * @param query - The original user query
+ * @param agentName - Name of the responding agent
+ * @param response - The agent's response text
+ * @param citations - Array of citation objects to display as sources
+ * @param messageId - Unique identifier for this message interaction
+ * @param isFromThread - Whether the modal was opened from a thread context
+ * @param page - The current page of citations to display (defaults to 1)
+ * @returns A Slack modal view object containing the agent response and related actions
  */
 export function createAgentResponseModal(
   query: string,
@@ -1040,13 +1053,16 @@ export function createAgentResponseModal(
 }
 
 /**
- * Create blocks for sharing an agent response in the main channel
- * @param userId The Slack user ID of the person sharing
- * @param agentName Name of the agent that provided the response
- * @param query The original query
- * @param response The agent's response text (may be truncated)
- * @param citations Array of citations if available
- * @returns Slack blocks for the shared agent response in channel
+ * Generates Slack blocks for sharing an agent's response in a channel, including the user's query, the agent's response, and a list of sources if provided.
+ *
+ * The response text is cleaned and truncated if necessary. Citations are displayed with titles, snippets, and links when available, with a limit on the number shown. Attribution is included at the end.
+ *
+ * @param userId - Slack user ID of the person sharing the response
+ * @param agentName - Name of the agent providing the response
+ * @param query - The original user query
+ * @param response - The agent's response text
+ * @param citations - Optional array of source citations to display
+ * @returns An array of Slack blocks representing the shared agent response
  */
 export function createSharedAgentResponseBlocks(
   userId: string,
