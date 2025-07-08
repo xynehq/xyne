@@ -143,21 +143,22 @@ export function createAnalysisParentMessage(
 
 export function createErrorBlocks(
   error: string,
-  sessionId: string
+  errorId: string,
+  title: string = "An error occurred"
 ): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*An error occurred:*`,
+        text: `*${title}:*`,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "```" + error + "```",
+        text: "```" + (error || "No details available.") + "```",
       },
     },
     {
@@ -165,7 +166,7 @@ export function createErrorBlocks(
       elements: [
         {
           type: "mrkdwn",
-          text: `Session ID: \`${sessionId}\``,
+          text: `Error ID: \`${errorId}\`. If the issue persists, please report this ID to your administrator.`,
         },
       ],
     },

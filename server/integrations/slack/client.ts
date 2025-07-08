@@ -12,6 +12,7 @@ import {
   createSharedResultBlocks,
   createAgentResponseModal,
   createSharedAgentResponseBlocks,
+  createErrorBlocks,
 } from "./formatters";
 import {
   createId
@@ -47,6 +48,80 @@ import { Apps } from "@/search/types";
 import { getTracer } from "@/tracer";
 
 const Logger = getLogger(Subsystem.Slack);
+
+const truncateObjectForLog = (obj: any, maxLength: number = 100): string => {
+  if (obj === undefined || obj === null) {
+    return "";
+  }
+  // For strings, just truncate
+  if (typeof obj === 'string') {
+    return obj.length > maxLength ? obj.substring(0, maxLength) + '...' : obj;
+  }
+  // For other objects, stringify and truncate
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxLength) {
+      return str.substring(0, maxLength) + "...(truncated)";
+    }
+    return str;
+  } catch {
+    return "Unserializable object";
+  }
+};
+
+const handleError = async (
+  error: any,
+  context: {
+    client: WebClient;
+    channel?: string;
+    user?: string;
+    threadTs?: string;
+    action?: string;
+    payload?: any;
+  }
+) => {
+  const errorId = createId();
+  const { client, channel, user, threadTs, action, payload } = context;
+
+  Logger.error(
+    {
+      errorId,
+      action,
+      channel,
+      user,
+      threadTs,
+      error: truncateObjectForLog(error.message, 200),
+      stack: truncateObjectForLog(error.stack, 300),
+      payload: truncateObjectForLog(payload, 500),
+    },
+    `Slack Action Failed: ${action}`
+  );
+
+  if (client && channel && user) {
+    try {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        thread_ts: threadTs,
+        text: "An unexpected error occurred.",
+        blocks: createErrorBlocks(
+          error.message || "An internal error occurred. Please try again later.",
+          errorId,
+          `Error during: ${action}`
+        ),
+      });
+    } catch (postError: any) {
+      Logger.error(
+        {
+          errorId,
+          originalError: truncateObjectForLog(error.message),
+          postError: truncateObjectForLog(postError.message),
+        },
+        "Failed to post error message to Slack"
+      );
+    }
+  }
+};
 
 const getOrCreateChat = async (
   chatExternalId: string,
@@ -140,6 +215,7 @@ const connectSocketMode = async (): Promise<void> => {
 
     // Handle app_mention events
     socketModeClient.on('app_mention', async ({ event, ack }) => {
+      const { user, channel, thread_ts } = event;
       try {
         await ack();
         
@@ -155,27 +231,35 @@ const connectSocketMode = async (): Promise<void> => {
         }
         
         processedEvents.set(eventId, now);
-        Logger.info(`Received Socket Mode event: ${event.type}`);
+        Logger.info({ event: truncateObjectForLog(event) }, `Received Socket Mode event: ${event.type}`);
         await processSlackEvent(event);
-      } catch (error) {
-        Logger.error(error, "Error handling app_mention event");
+      } catch (error: any) {
+        await handleError(error, {
+          client: webClient!,
+          channel,
+          user,
+          threadTs: thread_ts,
+          action: "app_mention",
+          payload: event,
+        });
       }
     });
 
     // Handle interactive components (buttons, modals, etc.)
     socketModeClient.on('interactive', async (args) => {
+      const payload = args.payload || args.body || args;
+      const user = payload?.user?.id;
+      const channel = payload?.channel?.id || payload?.container?.channel_id;
+      const threadTs = payload?.container?.thread_ts;
+
       try {
         // Log the full args structure to understand what we're receiving
-        Logger.info(`Received interactive event with args:`, JSON.stringify(args, null, 2));
+        Logger.info({ payload: truncateObjectForLog(args) }, `Received interactive event`);
         
         await args.ack();
         
-        // Try different ways to access the payload
-        const payload = args.payload || args.body || args;
-        
         if (!payload) {
-          Logger.warn("Received interactive event with undefined payload after checking args.payload, args.body, and args");
-          Logger.warn("Full args structure:", JSON.stringify(args, null, 2));
+          Logger.warn({ args: truncateObjectForLog(args) }, "Received interactive event with undefined payload");
           return;
         }
         
@@ -191,11 +275,17 @@ const connectSocketMode = async (): Promise<void> => {
         }
         
         processedEvents.set(interactionId, now);
-        Logger.info("Received Socket Mode interactive component");
+        Logger.info({ payload: truncateObjectForLog(payload) }, "Processing Socket Mode interactive component");
         await processSlackInteraction(payload);
-      } catch (error) {
-        Logger.error(error, "Error handling interactive component");
-        Logger.error("Args structure when error occurred:", JSON.stringify(args, null, 2));
+      } catch (error: any) {
+        await handleError(error, {
+          client: webClient!,
+          channel,
+          user,
+          threadTs,
+          action: "interactive_event",
+          payload: args,
+        });
       }
     });
 
@@ -315,11 +405,12 @@ const handleAgentsCommand = async (
       blocks: agentBlocks,
     });
   } catch (error: any) {
-    Logger.error(error, "Error fetching agents");
-    await client.chat.postEphemeral({
+    await handleError(error, {
+      client,
       channel,
       user,
-      text: "I couldn't fetch the list of agents. Please try again later.",
+      action: "handleAgentsCommand",
+      payload: { dbUser },
     });
   }
 };
@@ -693,19 +784,23 @@ const handleAgentSearchCommand = async (
       });
     } catch (agentError: any) {
       Logger.error(agentError, "Error in direct agent processing");
-      await client.chat.postEphemeral({
+      await handleError(agentError, {
+        client,
         channel,
         user,
-        text: `❌ I encountered an error while processing your request with agent "/${agentDisplayName}". Please try again later.`,
-        ...(isThreadMessage && { thread_ts: threadTs }),
+        threadTs,
+        action: "agent_processing",
+        payload: { agentName: agentDisplayName, query },
       });
     }
   } catch (error: any) {
-    Logger.error(error, "Error in agent search command");
-    await client.chat.postEphemeral({
+    await handleError(error, {
+      client,
       channel,
       user,
-      text: `An error occurred while searching with agent "/${agentName}". Please try again.`,
+      threadTs,
+      action: "handleAgentSearchCommand",
+      payload: { agentName, query },
     });
   }
 };
@@ -768,8 +863,18 @@ const executeSearch = async (
 
     const searchApiResponse = await SearchApi(searchContext as any);
     return (searchApiResponse as any)?.results || [];
-  } catch (error) {
-    Logger.error(error, "Error in executeSearch function");
+  } catch (error: any) {
+    Logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        userEmail,
+        workspaceExternalId,
+        query,
+        options,
+      },
+      "Error in executeSearch function"
+    );
     throw error;
   }
 };
@@ -814,12 +919,14 @@ const handleSearchQuery = async (
     );
     
     Logger.info(`Found ${results.length} results from SearchApi.`);
-  } catch (apiError) {
-    Logger.error(apiError, "Error calling SearchApi");
-    await client.chat.postEphemeral({
+  } catch (apiError: any) {
+    await handleError(apiError, {
+      client,
       channel,
       user,
-      text: `I couldn't complete your search for "${query}". The search service might be down.`,
+      threadTs,
+      action: "handleSearchQuery",
+      payload: { query },
     });
     return;
   }
@@ -939,7 +1046,7 @@ export const processSlackEvent = async (event: any) => {
   }
 
   if (event.type === "app_mention") {
-    Logger.info(`Received app_mention event: ${JSON.stringify(event.text)}`);
+    Logger.info(`Received app_mention event: ${truncateObjectForLog(event.text)}`);
 
     const { user, text, channel, ts, thread_ts } = event;
 
@@ -1005,10 +1112,13 @@ export const processSlackEvent = async (event: any) => {
     } catch (error: any) {
       Logger.error(error, "Error processing app_mention event");
       if (user) {
-        await webClient.chat.postEphemeral({
+        await handleError(error, {
+          client: webClient,
           channel,
           user,
-          text: `An unexpected error occurred: ${error.message}. Please try again.`,
+          threadTs: thread_ts,
+          action: "processSlackEvent",
+          payload: event,
         });
       }
     }
@@ -1038,12 +1148,12 @@ export const processSlackInteraction = async (payload: any) => {
 
   if (type === "block_actions" && actions?.[0]) {
     const action = actions[0];
+    const actionId = action.action_id;
     
     try {
-      // Log the payload structure for debugging
-      Logger.info(`Processing action: ${action.action_id}, trigger_id: ${trigger_id}`);
+      Logger.info({ action: truncateObjectForLog(action), trigger_id }, `Processing action: ${actionId}`);
       
-      switch (action.action_id) {
+      switch (actionId) {
         case ACTION_IDS.VIEW_SEARCH_MODAL:
           await handleViewSearchModal(action, trigger_id, channel, user, container);
           break;
@@ -1067,11 +1177,17 @@ export const processSlackInteraction = async (payload: any) => {
           await handleSourcePagination(action, view);
           break;
         default:
-          Logger.warn(`Unknown action_id: ${action.action_id}`);
+          Logger.warn({ actionId }, `Unknown action_id`);
       }
     } catch (error: any) {
-      Logger.error(error, `Error handling action ${action.action_id}`);
-      Logger.error(`Payload structure:`, JSON.stringify(payload, null, 2));
+      await handleError(error, {
+        client: webClient!,
+        channel: channel?.id,
+        user: user?.id,
+        threadTs: container?.thread_ts,
+        action: `block_action: ${actionId}`,
+        payload,
+      });
     }
   }
 };
@@ -1143,20 +1259,14 @@ const handleViewSearchModal = async (
     
     Logger.info(`Successfully opened search results modal for user ${user.id}`);
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening search modal. trigger_id: ${trigger_id}, user: ${user?.id}, channel: ${channel?.id}`
-    );
-    
-    if (channel?.id && user?.id) {
-      await webClient!.chat.postEphemeral({
-        channel: channel.id,
-        user: user.id,
-        text: `Sorry, I couldn't open the results. ${error.message}. Please try again.`,
-      });
-    } else {
-      Logger.warn("Could not send error message - missing channel or user information");
-    }
+    await handleError(error, {
+      client: webClient!,
+      channel: channel?.id,
+      user: user?.id,
+      threadTs: container?.thread_ts,
+      action: "handleViewSearchModal",
+      payload: { action, trigger_id },
+    });
   }
 };
 
@@ -1240,20 +1350,14 @@ const handleViewAgentModal = async (
     
     Logger.info(`Successfully opened agent response modal for user ${user.id}`);
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening agent modal. trigger_id: ${trigger_id}, user: ${user?.id}, channel: ${channel?.id}`
-    );
-    
-    if (channel?.id && user?.id) {
-      await webClient!.chat.postEphemeral({
-        channel: channel.id,
-        user: user.id,
-        text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
-      });
-    } else {
-      Logger.warn("Could not send error message - missing channel or user information");
-    }
+    await handleError(error, {
+      client: webClient!,
+      channel: channel?.id,
+      user: user?.id,
+      threadTs: container?.thread_ts,
+      action: "handleViewAgentModal",
+      payload: { action, trigger_id },
+    });
   }
 };
 
@@ -1301,7 +1405,15 @@ const handleSourcePagination = async (action: any, view: any) => {
       view: newModal,
     });
   } catch (error: any) {
-    Logger.error(error, "Error handling source pagination");
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleSourcePagination",
+      payload: { action, view },
+    });
   }
 };
 
@@ -1373,28 +1485,15 @@ const handleShareFromModal = async (
       view: updatedView,
     });
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error sharing result to ${isThreadShare ? "thread" : "channel"} from modal`
-    );
-    
-    if (view?.private_metadata) {
-      try {
-        const metadata = JSON.parse(view.private_metadata);
-        const channelId = metadata?.channel_id;
-        const userId = metadata?.user_id;
-        
-        if (channelId && userId) {
-          await webClient!.chat.postEphemeral({
-            channel: channelId,
-            user: userId,
-            text: `Sorry, I couldn't share the result. ${error.message}. Please try again.`,
-          });
-        }
-      } catch (parseError) {
-        Logger.warn("Could not parse modal metadata for error message");
-      }
-    }
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleShareFromModal",
+      payload: { action, view, isThreadShare },
+    });
   }
 };
 
@@ -1479,10 +1578,15 @@ const handleShareAgentFromModal = async (
       view: updatedView,
     });
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error sharing agent response to ${isThreadShare ? "thread" : "channel"} from modal`
-    );
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleShareAgentFromModal",
+      payload: { action, view, isThreadShare },
+    });
   }
 };
 
