@@ -23,17 +23,24 @@ jobs:
       - name: Install Dependencies (Server)
         working-directory: ./server
         run: bun install
+        
+      - name: Clear test cache
+        working-directory: ./server
+        run: rm -rf node_modules/.cache
+        
       - name: Run tests
-        working-directory: ./server # Added for server tests
-        run: bun test tests
+        working-directory: ./server
+        run: bun test --force
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}
+          
       - name: Install Dependencies (Frontend)
         working-directory: ./frontend
         run: bun install
+        
       - name: Run tests
-        working-directory: ./frontend # Added for frontend tests
+        working-directory: ./frontend
         run: bun run test 
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}

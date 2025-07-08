@@ -449,7 +449,8 @@ export const convertReasoningStepToText = (
       return `Executing tool: ${step.toolName}...\n`
     case AgentReasoningStepType.ToolResult:
       let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
-      if (step.itemsFound !== undefined) {
+      // Don't show item counts for fallback tool to keep it clean
+      if (step.itemsFound !== undefined && step.toolName !== "fall_back") {
         resultText += ` (Found ${step.itemsFound} item(s))`
       }
       if (step.error) {

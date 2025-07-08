@@ -1095,14 +1095,17 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     8. Extract the main intent or search keywords from the query to create a "filterQuery" field:
       
-      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
+      **FILTERQUERY EXTRACTION RULES:**
+      
+      The filterQuery should capture the semantic meaning and search intent of the query, not just extract individual keywords.
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
-      - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
       - Person names (e.g., "John", "Sarah", "marketing team")
+      - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
       - Specific topics or subjects (e.g., "contract", "invoice", "receipt", "proposal")
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
+      - Quoted text or specific phrases (e.g., "meeting notes", "project update")
       
       Step 2: EXCLUDE these from filterQuery consideration:
       - Generic action words: "find", "show", "get", "search", "give", "recent", "latest", "last"
@@ -1112,10 +1115,18 @@ export const searchQueryPrompt = (userContext: string): string => {
       - Generic item types: "emails", "files", "documents", "meetings", "orders" (when used generically)
       - Structural words: "summary", "details", "info", "information"
       
-      Step 3: Apply the rule:
-      - IF specific content keywords remain after exclusion → set filterQuery to those keywords
-      - IF no specific content keywords remain after exclusion → set filterQuery to null
+      Step 3: For queries with specific content, create semantic filterQuery:
+      - For email queries: include semantic context like person names, project names, topics, and document types. DON'T include the email addresses in filterQuery, these are handled by intent systems.
+      - For file queries with specific topics: include the topic keywords, project names, document types, file characteristics, and person names.
+      - For meeting queries: include meeting topics, project names, agenda items, meeting types, and person names.
+      - For slack queries: include discussion topics, project names, conversation themes, message types, and user names.
+      - For queries with specific business/project names: include the project name or business context
+      - Capture semantic meaning and context while excluding specific identifiers.
       
+      Step 4: Apply the rule:
+      - IF specific content keywords remain after exclusion → create semantic filterQuery
+      - IF no specific content keywords remain after exclusion → set filterQuery to null
+
 
     9. Now our task is to classify the user's query into one of the following categories:  
       a. ${QueryType.SearchWithoutFilters}
@@ -1151,10 +1162,6 @@ export const searchQueryPrompt = (userContext: string): string => {
       - The user wants to search or look up contextual information.
       - These are open-ended queries where only time filters might apply.
       - user is asking for a sort of summary or discussion, it could be to summarize emails or files
-      - Example Queries:
-        - "What is the company's leave policy?"
-        - "Explain the project plan from last quarter."
-        - "What was my disucssion with Jesse"
         - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithoutFilters}",
@@ -1167,12 +1174,13 @@ export const searchQueryPrompt = (userContext: string): string => {
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
-      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
-      - This can be only classified when <app> and <entity> present
-      - Example Queries:
-        - "Show me all emails from last week."
-        - "List all Google Docs modified in October."
+      - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
+      - ONLY use this when you have EXACT identifiers like:
+        - Complete email addresses (e.g., "emails from john@company.com")
+        - Exact user IDs or precise metadata that can be matched exactly
+      - DO NOT use this for person names without email addresses or without exact identifiers. 
+      - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
+      - This is for PRECISE metadata filtering, not content search
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
@@ -1182,16 +1190,17 @@ export const searchQueryPrompt = (userContext: string): string => {
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
             "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "intent": <intent object with EXACT metadata like complete email addresses>
           }
         }
 
     3. **${QueryType.SearchWithFilters}**:
-      - The is referring single <app> or <entity> and also have specify some keywords
-      - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
-      - Examples Queries: 
-        - "emails about marketing project" (has 'emails' = gmail + filterQuery)
-        - "budget spreadsheets in drive" (has 'drive' + filterQuery)
-
+      - The user is referring to a single <app> or <entity> and wants to search content
+      - Used for content-based searches including:
+        - Person names without email addresses (e.g., "emails from John", "emails from prateek")
+        - Topic/subject keywords
+        - Any content that needs to be searched rather than precisely matched
+      - Exactly ONE valid app/entity is detected, AND filterQuery contains search keywords
        - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithFilters}",
@@ -1202,7 +1211,7 @@ export const searchQueryPrompt = (userContext: string): string => {
             "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
             "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
             "sortDirection": <boolean or null>,
-            "filterQuery": "<extracted keywords>"
+            "filterQuery": "<search keywords for content search>"
           }
         }
 
@@ -1248,7 +1257,46 @@ export const searchQueryPrompt = (userContext: string): string => {
         - For Google Workspace queries (contacts), always set "temporalDirection" to null
         - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
 
-    11. Output JSON in the following structure:
+    11. **INTENT EXTRACTION (for specific app/entity queries):**
+        - Extract intent fields ONLY when the user specifies SPECIFIC CRITERIA in their query
+        - ONLY extract intent when there are EXPLICIT FILTERING CRITERIA mentioned
+        
+        **Intent field mapping by app/entity:**
+        
+        For ${Apps.Gmail} with ${MailEntity.Email}:
+        - **Email Address Extraction**: ONLY extract when specific EMAIL ADDRESSES are mentioned:
+          - "from" queries with SPECIFIC email addresses (e.g., "emails from john@company.com", "messages from user@company.com") → extract email addresses to "from" array
+          - "to" queries with SPECIFIC email addresses (e.g., "emails to jane@company.com", "sent to team@company.com") → extract email addresses to "to" array  
+          - "cc" queries with SPECIFIC email addresses (e.g., "emails cc'd to manager@company.com") → extract email addresses to "cc" array
+          - "bcc" queries with SPECIFIC email addresses (e.g., "emails bcc'd to admin@company.com") → extract email addresses to "bcc" array
+        - **Subject/Title Extraction**: ONLY extract when specific subject/topic keywords are mentioned:
+          - "subject"/"title"/"about" queries with specific content (e.g., "emails about 'meeting notes'", "subject contains 'project update'") → extract the specific keywords to "subject" array
+        
+        **CRITICAL RULES for Intent Extraction:**
+        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - DO NOT extract intent for queries with only person names: "emails from John", "messages from Sarah", "emails from prateek"
+        - ONLY extract intent when there are ACTUAL EMAIL ADDRESSES like:
+          - Specific email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Specific subjects: "emails with subject 'meeting'"
+        - If the query contains only person names without email addresses, return empty intent object: {}
+        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        
+        **Email Address Detection Rules:**
+        - ONLY detect valid email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+        - DO NOT extract person names - these are NOT email addresses
+        - Extract from phrases like:
+          - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "messages from [user@company.com]" → add [user@company.com] to "from" array  
+          - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "sent to [team@company.com]" → add [team@company.com] to "to" array
+        - If query contains email addresses but no clear direction indicator, default to "from" array
+        - If query contains only names without @ symbols, DO NOT extract any intent
+        
+        For other apps/entities:
+        - Currently no specific intent fields defined
+        - Return empty intent object: {}
+
+    12. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
@@ -1262,7 +1310,8 @@ export const searchQueryPrompt = (userContext: string): string => {
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
+           "sortDirection": "<'asc' | 'desc' | null>",
+           "intent": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1271,6 +1320,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
+       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
@@ -1799,6 +1849,7 @@ export const withToolQueryPrompt = (
   toolContext: string,
   toolOutput: string,
   agentContext?: AgentPromptData,
+  fallbackReasoning?: string,
 ): string => {
   return `
   Current date: ${getDateForAI()}.
@@ -1824,14 +1875,37 @@ export const withToolQueryPrompt = (
 
     **Context:**  
     ${toolOutput}
+    
+    ${
+      fallbackReasoning
+        ? `
+    ---
+    **SEARCH ANALYSIS:**
+    ${fallbackReasoning}
+    `
+        : ""
+    }
     ---
     **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**
 
    ### Response Instructions:
-    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
+    ${
+      fallbackReasoning
+        ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
+        : `- **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
+    - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
+    - **INSUFFICIENT CONTEXT**: If the context is incomplete, partially relevant, or doesn't contain the specific information requested:
+      * DO NOT provide partial answers or tangentially related information
+      * DO NOT list what you found if it doesn't directly answer the query
+      * Instead, honestly explain that you don't have sufficient information to answer the query
+      * Explain what specific information would be needed to provide a complete answer
+      * Suggest how the user could refine their query to get better results
+    - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
+    }
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
     - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
+    - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -1866,6 +1940,61 @@ ${synthesisContext}
   "answer": "Brief, synthesized answer based only on the context"
 }
   `
+}
+
+export const fallbackReasoningGenerationPrompt = (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+) => {
+  return `You are a search assistant analyzing why a search failed and providing structured feedback to help the user.
+
+**User Context:**
+${userContext}
+
+**Original Query:** "${originalQuery}"
+
+**Search History:**
+${agentScratchpad}
+
+**Tool Log:**
+${toolLog}
+
+**Context Found:**
+${gatheredFragments}
+
+**Your Task:**
+Provide a structured analysis following this exact format and order:
+
+**MANDATORY RESPONSE FORMAT:**
+
+{
+  "reasoning": "[Start with a clear statement about not finding the information]\n\n[Explain what specific information gaps exist that would help improve the search]\n\n[Share what was learned from the search attempt - what was actually found and how it relates to the query]"
+}
+
+**STRUCTURE REQUIREMENTS:**
+1. **Start with the main issue**: Begin with "I don't have sufficient information to answer your query about [specific topic]"
+2. **Identify information gaps**: Explain what specific details would help improve the search (suggestions for user)
+3. **Share search insights**: Explain what was actually found and how it relates (or doesn't relate) to their query
+
+**EXAMPLE FORMAT:**
+"I don't have sufficient information to answer your query about [topic].
+
+To get the results you're looking for, you might want to:
+- [Specific suggestion 1]
+- [Specific suggestion 2]
+- [Specific suggestion 3]
+
+[Explain what was actually found in the search and why it doesn't match the query]"
+
+**CRITICAL RULES:**
+- Start with the main problem statement
+- Focus on actionable suggestions in the middle section
+- End with what was actually found and why it doesn't help
+- Keep each section concise and helpful
+- Be specific about what the user could do differently`
 }
 
 export const meetingPromptJson = (

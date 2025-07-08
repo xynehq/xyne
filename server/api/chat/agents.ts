@@ -124,6 +124,8 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  VespaSearchResultsSchema,
+  type VespaSearchResult,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -222,6 +224,7 @@ async function* getToolContinuationIterator(
   results: MinimalAgentFragment[],
   agentPrompt?: string, // New optional parameter
   messages: Message[] = [],
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -239,6 +242,7 @@ async function* getToolContinuationIterator(
     toolsPrompt,
     context ?? "",
     agentPrompt, // Pass agentPrompt
+    fallbackReasoning, // Pass fallback reasoning
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -455,6 +459,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    const hasReferencedContext = fileIds && fileIds.length > 0
 
     if (!message) {
       throw new HTTPException(400, {
@@ -644,7 +649,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
-          const maxIterations = 9
+          const maxIterations = 10
           let iterationCount = 0
           let answered = false
           let isCustomMCP = false
@@ -794,6 +799,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let agentScratchpad = "" // To build the reasoning history for the prompt
           let planningContext = "" // To build the context for planning
           let toolsPrompt = "" // To build the context for available tools
+          let fallbackReasoning: string | undefined = undefined // To store fallback reasoning
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">
@@ -810,6 +816,96 @@ export const MessageWithToolsApi = async (c: Context) => {
               break
             }
             iterationCount++
+
+            // On the first iteration, check if this is a "@" reference case and synthesize the context.
+            // If the synthesized context is insufficient, continue gathering more context in subsequent iterations.
+            if (hasReferencedContext && iterationCount === 1) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
+              )
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
+                )
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  planningContext = cleanContext(
+                    results.root.children
+                      ?.map(
+                        (v, i) =>
+                          `Index ${i + 1} \n ${answerContextMap(
+                            v as z.infer<typeof VespaSearchResultsSchema>,
+                            0,
+                            true,
+                          )}`,
+                      )
+                      ?.join("\n"),
+                  )
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) => ({
+                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
+                      content: answerContextMap(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      ),
+                      source: searchToCitation(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                      ),
+                      confidence: 1.0,
+                    }),
+                  )
+                  const parseSynthesisOutput = await performSynthesis(
+                    ctx,
+                    message,
+                    planningContext,
+                    gatheredFragments,
+                    messagesWithNoErrResponse,
+                    logAndStreamReasoning,
+                    sub,
+                  )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                  })
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: ` Synthesis: ${
+                      parseSynthesisOutput?.answer || "No Synthesis details"
+                    }`,
+                  })
+                  const isContextSufficient =
+                    parseSynthesisOutput?.synthesisState ===
+                    ContextSysthesisState.Complete
+
+                  if (isContextSufficient) {
+                    // Context is complete. We can break the loop and generate the final answer.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Context is sufficient. Proceeding to generate final answer.",
+                    })
+                    break
+                  }
+                  continue
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
+                )
+              } finally {
+                contextFetchSpan?.end()
+              }
+            }
 
             let loopWarningPrompt = ""
             const reasoningHeader = `
@@ -1365,12 +1461,111 @@ export const MessageWithToolsApi = async (c: Context) => {
                     })
                     continue
                   } else {
-                    // We've hit the max iterations with insufficient context
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message:
-                        "Max iterations reached with partial context. Will generate best-effort answer.",
-                    })
+                    // Follow-back tool activation: when iterations are exhausted and synthesis is not complete
+                    if (planningContext.length > 0) {
+                      try {
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message:
+                            "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                        })
+
+                        // Show what tools were used and their results
+                        const toolExecutions = structuredReasoningSteps.filter(
+                          (step) =>
+                            step.type ===
+                              AgentReasoningStepType.ToolExecuting ||
+                            step.type === AgentReasoningStepType.ToolResult,
+                        )
+
+                        if (toolExecutions.length > 0) {
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message: `Previous search attempts: Used ${toolExecutions.filter((s) => s.type === AgentReasoningStepType.ToolExecuting).length} tools, gathered ${gatheredFragments.length} context fragments.`,
+                          })
+                        }
+
+                        // Prepare fallback tool parameters with more detailed context
+                        const toolLog = structuredReasoningSteps
+                          .filter(
+                            (step) =>
+                              step.type ===
+                                AgentReasoningStepType.ToolExecuting ||
+                              step.type === AgentReasoningStepType.ToolResult,
+                          )
+                          .map(convertReasoningStepToText)
+                          .join("\n")
+
+                        const fallbackParams = {
+                          originalQuery: message,
+                          agentScratchpad: agentScratchpad,
+                          toolLog: toolLog,
+                          gatheredFragments: planningContext,
+                        }
+
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.ToolExecuting,
+                          toolName: AgentToolName.FallBack,
+                        })
+
+                        // Execute fallback tool
+                        const fallbackResponse = await agentTools[
+                          "fall_back"
+                        ].execute(
+                          fallbackParams,
+                          streamSpan.startSpan("fallback_search_execution"),
+                          email,
+                          ctx,
+                          agentPromptForLLM,
+                          message,
+                        )
+
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.ToolResult,
+                          toolName: AgentToolName.FallBack,
+                          resultSummary: fallbackResponse.result,
+                          itemsFound: fallbackResponse.contexts?.length || 0,
+                          error: fallbackResponse.error,
+                        })
+
+                        // Store fallback reasoning separately - don't add to gathered fragments
+                        if (fallbackResponse.fallbackReasoning) {
+                          fallbackReasoning = fallbackResponse.fallbackReasoning
+
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message: `✓ Fallback analysis completed! Generated detailed reasoning about search limitations.`,
+                          })
+
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message:
+                              "Will provide explanation about why we couldn't find sufficient information.",
+                          })
+                        } else {
+                          await logAndStreamReasoning({
+                            type: AgentReasoningStepType.LogMessage,
+                            message:
+                              "Fallback analysis completed but no reasoning generated.",
+                          })
+                        }
+                      } catch (followBackError) {
+                        Logger.error(
+                          followBackError,
+                          "Error during followBack tool execution",
+                        )
+                        await logAndStreamReasoning({
+                          type: AgentReasoningStepType.LogMessage,
+                          message: `Follow-back search failed: ${getErrorMessage(followBackError)}. Will generate best-effort answer.`,
+                        })
+                      }
+                    } else {
+                      await logAndStreamReasoning({
+                        type: AgentReasoningStepType.LogMessage,
+                        message:
+                          "Max iterations reached with no context gathered. Will generate best-effort answer.",
+                      })
+                    }
                   }
                 }
               } else {
@@ -1460,6 +1655,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             gatheredFragments,
             agentPromptForLLM,
             messagesWithNoErrResponse,
+            fallbackReasoning,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -2271,6 +2467,7 @@ export const AgentMessageApi = async (c: Context) => {
               temporalDirection: null,
               filter_query: "",
               type: "",
+              intent: {},
               filters: queryFilters,
             }
 
@@ -2389,6 +2586,7 @@ export const AgentMessageApi = async (c: Context) => {
                   ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
+                  intent: parsed.intent || {},
                 },
               }
 

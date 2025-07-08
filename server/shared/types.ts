@@ -380,6 +380,7 @@ export enum AgentToolName {
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
   SynthesizeAnswer = "SYNTHESIZE_ANSWER", // For the explicit synthesis step
+  FallBack = "fall_back",
 }
 
 export enum AgentReasoningStepType {

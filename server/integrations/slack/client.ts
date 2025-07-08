@@ -1,11 +1,6 @@
-import {
-  App,
-  type AllMiddlewareArgs,
-  type SlackActionMiddlewareArgs,
-} from "@slack/bolt";
-import type { BlockAction, ButtonAction } from "@slack/bolt";
+import { WebClient } from "@slack/web-api";
+import { SocketModeClient, type LogLevel } from "@slack/socket-mode";
 import type { View } from "@slack/types";
-import type { WebClient } from "@slack/web-api";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
 import { getLogger } from "@/logger";
@@ -26,9 +21,8 @@ import {
 } from "./types";
 import {
   CACHE_TTL,
-  MODAL_RESULTS_DISPLAY_LIMIT,
-  SNIPPET_TRUNCATION_LENGTH,
   ACTION_IDS,
+  EVENT_CACHE_TTL,
 } from "./config";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
@@ -40,38 +34,44 @@ import { QueryType } from "@/ai/types";
 import { Apps } from "@/search/types";
 import { getTracer } from "@/tracer";
 
-
 const Logger = getLogger(Subsystem.Slack);
 
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  socketMode: true,
-  appToken: process.env.SLACK_APP_TOKEN,
-});
+// Check if Slack environment variables are available
+const hasSlackConfig = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
 
-// Add basic error handler to log connection issues
-app.error(async (error) => {
-  Logger.error(error, "Slack app error occurred");
-  // Don't exit the process, let it try to reconnect
-});
-
-// Add some debugging for the connection issues
-Logger.info("Starting Slack app with Socket Mode");
-
-// Check if tokens look valid (should start with xoxb- and xapp-)
-if (
-  process.env.SLACK_BOT_TOKEN &&
-  !process.env.SLACK_BOT_TOKEN.startsWith("xoxb-")
-) {
-  throw new Error("SLACK_BOT_TOKEN does not start with xoxb-");
-}
-if (
-  process.env.SLACK_APP_TOKEN &&
-  !process.env.SLACK_APP_TOKEN.startsWith("xapp-")
-) {
-  throw new Error("SLACK_APP_TOKEN does not start with xapp-");
+if (!hasSlackConfig) {
+  Logger.warn("Slack BOT_TOKEN and/or SLACK_APP_TOKEN not set. Slack integration will be disabled.");
+  Logger.info("To enable Slack integration, set SLACK_BOT_TOKEN and SLACK_APP_TOKEN environment variables.");
 }
 
+let webClient: WebClient | null = null;
+let socketModeClient: SocketModeClient | null = null;
+let isSocketModeConnected = false;
+
+// Event deduplication with timestamp-based expiry
+const processedEvents = new Map<string, number>();
+
+// Clean up expired events periodically
+const cleanupExpiredEvents = () => {
+  const now = Date.now();
+  const expiredEvents: string[] = [];
+  
+  for (const [eventId, timestamp] of processedEvents.entries()) {
+    if (now - timestamp > EVENT_CACHE_TTL) {
+      expiredEvents.push(eventId);
+    }
+  }
+  
+  for (const eventId of expiredEvents) {
+    processedEvents.delete(eventId);
+  }
+  
+  if (expiredEvents.length > 0) {
+    Logger.debug(`Cleaned up ${expiredEvents.length} expired event entries`);
+  }
+};
+
+setInterval(cleanupExpiredEvents, EVENT_CACHE_TTL / 2); // Run cleanup twice as often as TTL
 
 // --- Global Cache with TTL Management ---
 declare global {
@@ -81,154 +81,198 @@ declare global {
 global._searchResultsCache = global._searchResultsCache || {};
 global._agentResponseCache = global._agentResponseCache || {};
 
-/**
- * Periodically cleans up expired entries from the search results cache.
- */
-const cleanupCache = async () => {
-  const maxRetries = 3;
-  const baseDelay = 1000; // 1 second
+// Socket Mode implementation using official Slack SDK
+const connectSocketMode = async (): Promise<void> => {
+  if (!webClient || !process.env.SLACK_APP_TOKEN) {
+    Logger.error("Cannot connect to Socket Mode: missing WebClient or APP_TOKEN");
+    return;
+  }
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const now = Date.now();
-      let cleanedCount = 0;
+  try {
+    Logger.info("Attempting to connect to Slack Socket Mode...");
+    
+    // Create Socket Mode client
+    socketModeClient = new SocketModeClient({
+      appToken: process.env.SLACK_APP_TOKEN,
+      logLevel: 'warn' as LogLevel, // Reduce log noise
+    });
 
-      // Clean search cache
-      for (const key in global._searchResultsCache) {
-        if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
-          delete global._searchResultsCache[key];
-          cleanedCount++;
+    // Set up event handlers
+    socketModeClient.on('connected', () => {
+      Logger.info("Socket Mode WebSocket connected successfully");
+      isSocketModeConnected = true;
+    });
+
+    socketModeClient.on('disconnected', () => {
+      Logger.warn("Socket Mode WebSocket disconnected");
+      isSocketModeConnected = false;
+    });
+
+    socketModeClient.on('error', (error) => {
+      Logger.error(error, "Socket Mode WebSocket error");
+    });
+
+    // Handle app_mention events
+    socketModeClient.on('app_mention', async ({ event, ack }) => {
+      try {
+        await ack();
+        
+        // Create unique event ID for deduplication
+        const eventId = `${event.type}_${event.ts}_${event.user}_${event.channel}`;
+        const now = Date.now();
+        
+        // Check if event was already processed recently
+        const lastProcessedTime = processedEvents.get(eventId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate event: ${eventId} (last processed ${now - lastProcessedTime}ms ago)`);
+          return;
         }
+        
+        processedEvents.set(eventId, now);
+        Logger.info(`Received Socket Mode event: ${event.type}`);
+        await processSlackEvent(event);
+      } catch (error) {
+        Logger.error(error, "Error handling app_mention event");
       }
+    });
 
-      // Clean agent cache
-      for (const key in global._agentResponseCache) {
-        if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
-          delete global._agentResponseCache[key];
-          cleanedCount++;
+    // Handle interactive components (buttons, modals, etc.)
+    socketModeClient.on('interactive', async (args) => {
+      try {
+        // Log the full args structure to understand what we're receiving
+        Logger.info(`Received interactive event with args:`, JSON.stringify(args, null, 2));
+        
+        await args.ack();
+        
+        // Try different ways to access the payload
+        const payload = args.payload || args.body || args;
+        
+        if (!payload) {
+          Logger.warn("Received interactive event with undefined payload after checking args.payload, args.body, and args");
+          Logger.warn("Full args structure:", JSON.stringify(args, null, 2));
+          return;
         }
+        
+        // Create unique interaction ID for deduplication
+        const interactionId = `interactive_${payload.trigger_id || 'unknown'}_${payload.user?.id || 'unknown'}`;
+        const now = Date.now();
+        
+        // Check if interaction was already processed recently
+        const lastProcessedTime = processedEvents.get(interactionId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate interaction: ${interactionId} (last processed ${now - lastProcessedTime}ms ago)`);
+          return;
+        }
+        
+        processedEvents.set(interactionId, now);
+        Logger.info("Received Socket Mode interactive component");
+        await processSlackInteraction(payload);
+      } catch (error) {
+        Logger.error(error, "Error handling interactive component");
+        Logger.error("Args structure when error occurred:", JSON.stringify(args, null, 2));
       }
+    });
 
-      if (cleanedCount > 0) {
-        Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
-      }
+    // Start the Socket Mode connection
+    await socketModeClient.start();
+    Logger.info("Socket Mode client started successfully");
 
-      // Success - exit retry loop
-      return;
-    } catch (error) {
-      const isLastAttempt = attempt === maxRetries - 1;
-
-      if (isLastAttempt) {
-        Logger.error(
-          error,
-          `Cache cleanup failed after ${maxRetries} attempts`
-        );
-        return;
-      }
-
-      // Calculate exponential backoff delay
-      const delay = baseDelay * Math.pow(2, attempt);
-      Logger.warn(
-        error,
-        `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`
-      );
-
-      // Wait before retry
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
+  } catch (error) {
+    Logger.error(error, "Failed to connect to Socket Mode");
+    socketModeClient = null;
+    throw error;
   }
 };
 
-// Use setInterval with async function wrapper
-setInterval(() => {
-  cleanupCache().catch((error) => {
-    Logger.error(error, "Unexpected error in cache cleanup interval");
-  });
-}, 5 * 60 * 1000);
+// Only initialize Slack client if environment variables are present
+if (hasSlackConfig) {
+  // Validate token formats
+  if (!process.env.SLACK_BOT_TOKEN!.startsWith("xoxb-")) {
+    Logger.error("SLACK_BOT_TOKEN does not start with xoxb-. Slack integration disabled.");
+  } else if (!process.env.SLACK_APP_TOKEN!.startsWith("xapp-")) {
+    Logger.error("SLACK_APP_TOKEN does not start with xapp-. Slack integration disabled.");
+  } else {
+    try {
+      webClient = new WebClient(process.env.SLACK_BOT_TOKEN);
+      Logger.info("Slack Web API client initialized");
 
+      /**
+       * Periodically cleans up expired entries from the search results cache.
+       */
+      const cleanupCache = async () => {
+        const maxRetries = 3;
+        const baseDelay = 1000; // 1 second
 
-// --- Event Handlers ---
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            const now = Date.now();
+            let cleanedCount = 0;
 
-app.event("app_mention", async ({ event, client }) => {
-  Logger.info(`Received app_mention event: ${JSON.stringify(event.text)}`);
+            // Clean search cache
+            for (const key in global._searchResultsCache) {
+              if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
+                delete global._searchResultsCache[key];
+                cleanedCount++;
+              }
+            }
 
-  const { user, text, channel, ts, thread_ts } = event;
+            // Clean agent cache
+            for (const key in global._agentResponseCache) {
+              if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
+                delete global._agentResponseCache[key];
+                cleanedCount++;
+              }
+            }
 
-  try {
-    await client.conversations.join({ channel });
+            if (cleanedCount > 0) {
+              Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
+            }
 
-    if (!user) {
-      Logger.warn("No user ID found in app_mention event");
-      return;
-    }
+            // Success - exit retry loop
+            return;
+          } catch (error) {
+            const isLastAttempt = attempt === maxRetries - 1;
 
-    const userInfo = await client.users.info({ user });
-    if (!userInfo.ok || !userInfo.user?.profile?.email) {
-      Logger.warn(`Could not retrieve email for user ${user}.`);
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
-      });
-      return;
-    }
-    const userEmail = userInfo.user.profile.email;
+            if (isLastAttempt) {
+              Logger.error(
+                error,
+                `Cache cleanup failed after ${maxRetries} attempts`
+              );
+              return;
+            }
 
-    const dbUser = await getUserByEmail(db, userEmail);
-    if (!dbUser?.length) {
-      Logger.warn(`User with email ${userEmail} not found in the database.`);
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "It seems you're not registered in our system. Please contact support.",
-      });
-      return;
-    }
+            // Calculate exponential backoff delay
+            const delay = baseDelay * Math.pow(2, attempt);
+            Logger.warn(
+              error,
+              `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`
+            );
 
-    const processedText = text.replace(/<@.*?>\s*/, "").trim();
+            // Wait before retry
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
+      };
 
-    if (processedText.toLowerCase().startsWith("/agents")) {
-      await handleAgentsCommand(client, channel, user, dbUser[0]);
-    } else if (processedText.toLowerCase().startsWith("/search ")) {
-      const query = processedText.substring(8).trim();
-      await handleSearchQuery(
-        client,
-        channel,
-        user,
-        query,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else if (processedText.startsWith("/")) {
-      await handleAgentSearchCommand(
-        client,
-        channel,
-        user,
-        processedText,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else {
-      await handleHelpCommand(client, channel, user);
-    }
-  } catch (error: any) {
-    Logger.error(error, "Error processing app_mention event");
-    if (user) {
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `An unexpected error occurred: ${error.message}. Please try again.`,
-      });
+      // Use setInterval with async function wrapper
+      setInterval(() => {
+        cleanupCache().catch((error) => {
+          Logger.error(error, "Unexpected error in cache cleanup interval");
+        });
+      }, 5 * 60 * 1000);
+
+      // Note: Socket Mode connection will be started via startSocketMode() from server.ts
+
+    } catch (error) {
+      Logger.error(error, "Failed to initialize Slack Web API client. Slack integration disabled.");
+      webClient = null;
     }
   }
-});
+}
 
 // --- Command Logic ---
-
 const handleAgentsCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   dbUser: DbUser
@@ -250,7 +294,7 @@ const handleAgentsCommand = async (
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId, // Remove the fallback "|| 1"
+      dbUser.workspaceId,
       20,
       0
     );
@@ -319,7 +363,7 @@ const handleAgentsCommand = async (
 };
 
 const handleAgentSearchCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   agentCommand: string,
@@ -372,7 +416,7 @@ const handleAgentSearchCommand = async (
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId, // Remove the fallback "|| 1"
+      dbUser.workspaceId,
       100,
       0
     );
@@ -433,7 +477,7 @@ const handleAgentSearchCommand = async (
       );
 
       if (!agentConfig) {
-  
+
         let errorMessage = `❌ You don't have permission to use agent "/${agentName}".`;
 
         if (selectedAgent.isPublic) {
@@ -739,7 +783,7 @@ const executeSearch = async (
 };
 
 const handleSearchQuery = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   query: string,
@@ -835,7 +879,7 @@ const handleSearchQuery = async (
 };
 
 const handleHelpCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string
 ) => {
@@ -888,22 +932,177 @@ const handleHelpCommand = async (
   });
 };
 
-// --- Action Handlers ---
-
-app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
-
-  const interactionId = action.value;
-  if (!interactionId) {
-    throw new Error("No interaction ID provided");
+// --- Event Processing Function (to be called by external webhook handler) ---
+export const processSlackEvent = async (event: any) => {
+  if (!webClient) {
+    Logger.warn("Slack client not initialized, ignoring event");
+    return;
   }
-  const cachedData = global._searchResultsCache[interactionId];
 
+  if (event.type === "app_mention") {
+    Logger.info(`Received app_mention event: ${JSON.stringify(event.text)}`);
+
+    const { user, text, channel, ts, thread_ts } = event;
+
+    try {
+      await webClient.conversations.join({ channel });
+
+      if (!user) {
+        Logger.warn("No user ID found in app_mention event");
+        return;
+      }
+
+      const userInfo = await webClient.users.info({ user });
+      if (!userInfo.ok || !userInfo.user?.profile?.email) {
+        Logger.warn(`Could not retrieve email for user ${user}.`);
+        await webClient.chat.postEphemeral({
+          channel,
+          user,
+          text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+        });
+        return;
+      }
+      const userEmail = userInfo.user.profile.email;
+
+      const dbUser = await getUserByEmail(db, userEmail);
+      if (!dbUser?.length) {
+        Logger.warn(`User with email ${userEmail} not found in the database.`);
+        await webClient.chat.postEphemeral({
+          channel,
+          user,
+          text: "It seems you're not registered in our system. Please contact support.",
+        });
+        return;
+      }
+
+      const processedText = text.replace(/<@.*?>\s*/, "").trim();
+
+      if (processedText.toLowerCase().startsWith("/agents")) {
+        await handleAgentsCommand(webClient, channel, user, dbUser[0]);
+      } else if (processedText.toLowerCase().startsWith("/search ")) {
+        const query = processedText.substring(8).trim();
+        await handleSearchQuery(
+          webClient,
+          channel,
+          user,
+          query,
+          dbUser[0],
+          ts,
+          thread_ts ?? ""
+        );
+      } else if (processedText.startsWith("/")) {
+        await handleAgentSearchCommand(
+          webClient,
+          channel,
+          user,
+          processedText,
+          dbUser[0],
+          ts,
+          thread_ts ?? ""
+        );
+      } else {
+        await handleHelpCommand(webClient, channel, user);
+      }
+    } catch (error: any) {
+      Logger.error(error, "Error processing app_mention event");
+      if (user) {
+        await webClient.chat.postEphemeral({
+          channel,
+          user,
+          text: `An unexpected error occurred: ${error.message}. Please try again.`,
+        });
+      }
+    }
+  }
+};
+
+// --- Interactive Component Handler (to be called by external webhook handler) ---
+export const processSlackInteraction = async (payload: any) => {
+  if (!webClient) {
+    Logger.warn("Slack client not initialized, ignoring interaction");
+    return;
+  }
+
+  // Add null checks and safer destructuring
+  if (!payload) {
+    Logger.warn("Received null/undefined payload in processSlackInteraction");
+    return;
+  }
+
+  const type = payload.type;
+  const actions = payload.actions;
+  const trigger_id = payload.trigger_id;
+  const view = payload.view;
+  const channel = payload.channel;
+  const user = payload.user;
+  const container = payload.container;
+
+  if (type === "block_actions" && actions?.[0]) {
+    const action = actions[0];
+    
+    try {
+      // Log the payload structure for debugging
+      Logger.info(`Processing action: ${action.action_id}, trigger_id: ${trigger_id}`);
+      
+      switch (action.action_id) {
+        case ACTION_IDS.VIEW_SEARCH_MODAL:
+          await handleViewSearchModal(action, trigger_id, channel, user, container);
+          break;
+        case ACTION_IDS.VIEW_AGENT_MODAL:
+          await handleViewAgentModal(action, trigger_id, channel, user, container);
+          break;
+        case ACTION_IDS.SHARE_FROM_MODAL:
+          await handleShareFromModal(action, view, false);
+          break;
+        case ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL:
+          await handleShareFromModal(action, view, true);
+          break;
+        case ACTION_IDS.SHARE_AGENT_FROM_MODAL:
+          await handleShareAgentFromModal(action, view, false);
+          break;
+        case ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL:
+          await handleShareAgentFromModal(action, view, true);
+          break;
+        case ACTION_IDS.VIEW_ALL_SOURCES:
+          await handleViewAllSources(action, trigger_id, view);
+          break;
+        default:
+          Logger.warn(`Unknown action_id: ${action.action_id}`);
+      }
+    } catch (error: any) {
+      Logger.error(error, `Error handling action ${action.action_id}`);
+      Logger.error(`Payload structure:`, JSON.stringify(payload, null, 2));
+    }
+  }
+};
+
+// --- Individual Action Handlers ---
+const handleViewSearchModal = async (
+  action: any,
+  trigger_id: string,
+  channel: any,
+  user: any,
+  container: any
+) => {
   try {
-    if (!cachedData)
+    // Validate required parameters
+    if (!trigger_id) {
+      throw new Error("Missing trigger_id for modal");
+    }
+    
+    if (!user?.id) {
+      throw new Error("Missing user information for modal");
+    }
+
+    const interactionId = action?.value;
+    if (!interactionId) {
+      throw new Error("No interaction ID provided");
+    }
+
+    const cachedData = global._searchResultsCache[interactionId];
+    if (!cachedData) {
       throw new Error(`No cached search results found. They may have expired.`);
+    }
 
     const { query, results, isFromThread } = cachedData;
     const modal = createSearchResultsModal(query, results);
@@ -918,38 +1117,37 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
             type: "button",
             text: { type: "plain_text", text: "Share in Thread", emoji: true },
             action_id: ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL,
-            value: (block.elements[0] as ButtonAction).value,
+            value: (block.elements[0] as any).value,
           });
         }
         return block;
       });
     }
 
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
+    Logger.info(`Attempting to open search modal with trigger_id: ${trigger_id}`);
+
+    await webClient!.views.open({
+      trigger_id: trigger_id,
       view: {
         ...modal,
         callback_id: `search_results_modal`,
         private_metadata: JSON.stringify({
-          channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts || undefined,
-          user_id: (body as BlockAction).user.id,
+          channel_id: channel?.id,
+          thread_ts: container?.thread_ts || undefined,
+          user_id: user.id,
         }),
       },
     });
-    Logger.info(`Opened search results modal for user ${body.user.id}`);
+    
+    Logger.info(`Successfully opened search results modal for user ${user.id}`);
   } catch (error: any) {
     Logger.error(
       error,
-      `Error opening search modal for interaction ${interactionId}`
+      `Error opening search modal. trigger_id: ${trigger_id}, user: ${user?.id}, channel: ${channel?.id}`
     );
     
-    // Add proper null checks before accessing properties
-    const channel = (body as BlockAction).channel;
-    const user = (body as BlockAction).user;
-    
     if (channel?.id && user?.id) {
-      await client.chat.postEphemeral({
+      await webClient!.chat.postEphemeral({
         channel: channel.id,
         user: user.id,
         text: `Sorry, I couldn't open the results. ${error.message}. Please try again.`,
@@ -958,18 +1156,107 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
       Logger.warn("Could not send error message - missing channel or user information");
     }
   }
-});
+};
 
-/**
- * Handles sharing a result from the modal to the main channel.
- */
-const handleShareAction = async (
-  args: any,
+const handleViewAgentModal = async (
+  action: any,
+  trigger_id: string,
+  channel: any,
+  user: any,
+  container: any
+) => {
+  try {
+    // Validate required parameters
+    if (!trigger_id) {
+      throw new Error("Missing trigger_id for modal");
+    }
+    
+    if (!user?.id) {
+      throw new Error("Missing user information for modal");
+    }
+
+    const interactionId = action?.value;
+    if (interactionId === "no_interaction_id" || !interactionId) {
+      throw new Error("Cannot open modal: No interaction ID available");
+    }
+
+    const cachedData = global._agentResponseCache[interactionId];
+    if (!cachedData) {
+      throw new Error(`No cached agent response found. It may have expired.`);
+    }
+
+    const { query, agentName, response, citations, isFromThread } = cachedData;
+    
+    if (!query || !agentName || !response) {
+      throw new Error("Invalid cached data - missing required fields");
+    }
+
+    const modal = createAgentResponseModal(
+      query,
+      agentName,
+      response,
+      citations || [],
+      interactionId,
+      isFromThread || false
+    );
+
+    if (isFromThread) {
+      modal.blocks = modal.blocks.map((block: any) => {
+        if (block.type === "actions" && (block as any).elements) {
+          return {
+            ...block,
+            elements: (block as any).elements.map((element: any) => ({
+              ...element,
+              action_id:
+                element.action_id === ACTION_IDS.SHARE_FROM_MODAL
+                  ? ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL
+                  : element.action_id,
+            })),
+          };
+        }
+        return block;
+      });
+    }
+
+    Logger.info(`Attempting to open agent modal with trigger_id: ${trigger_id}`);
+
+    await webClient!.views.open({
+      trigger_id: trigger_id,
+      view: {
+        ...modal,
+        callback_id: `agent_response_modal`,
+        private_metadata: JSON.stringify({
+          channel_id: channel?.id,
+          thread_ts: container?.thread_ts,
+          user_id: user.id,
+        }),
+      },
+    });
+    
+    Logger.info(`Successfully opened agent response modal for user ${user.id}`);
+  } catch (error: any) {
+    Logger.error(
+      error,
+      `Error opening agent modal. trigger_id: ${trigger_id}, user: ${user?.id}, channel: ${channel?.id}`
+    );
+    
+    if (channel?.id && user?.id) {
+      await webClient!.chat.postEphemeral({
+        channel: channel.id,
+        user: user.id,
+        text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
+      });
+    } else {
+      Logger.warn("Could not send error message - missing channel or user information");
+    }
+  }
+};
+
+const handleShareFromModal = async (
+  action: any,
+  view: any,
   isThreadShare: boolean
 ) => {
-  const { ack, body, client, action } = args;
-  await ack();
-  const view = body.view;
   try {
     if (!view || !view.private_metadata) {
       throw new Error("Cannot access required modal metadata.");
@@ -986,7 +1273,7 @@ const handleShareAction = async (
     if (isThreadShare && !thread_ts)
       throw new Error("Thread timestamp not found for a thread share action.");
 
-    await client.chat.postMessage({
+    await webClient!.chat.postMessage({
       channel: channel_id,
       thread_ts: isThreadShare ? thread_ts : undefined,
       text: `${title} - Shared by <@${user_id}>`,
@@ -1027,7 +1314,7 @@ const handleShareAction = async (
       updatedView.close = view.close;
     }
 
-    await client.views.update({
+    await webClient!.views.update({
       view_id: view.id,
       hash: view.hash,
       view: updatedView,
@@ -1035,9 +1322,7 @@ const handleShareAction = async (
   } catch (error: any) {
     Logger.error(
       error,
-      `Error sharing result to ${
-        isThreadShare ? "thread" : "channel"
-      } from modal`
+      `Error sharing result to ${isThreadShare ? "thread" : "channel"} from modal`
     );
     
     if (view?.private_metadata) {
@@ -1047,7 +1332,7 @@ const handleShareAction = async (
         const userId = metadata?.user_id;
         
         if (channelId && userId) {
-          await client.chat.postEphemeral({
+          await webClient!.chat.postEphemeral({
             channel: channelId,
             user: userId,
             text: `Sorry, I couldn't share the result. ${error.message}. Please try again.`,
@@ -1060,286 +1345,97 @@ const handleShareAction = async (
   }
 };
 
-app.action(ACTION_IDS.SHARE_FROM_MODAL, async (args) => {
-  await handleShareAction(args, false);
-});
-
-app.action(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async (args) => {
-  await handleShareAction(args, true);
-});
-
-/**
- * Handles opening the agent response modal.
- */
-app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
-  const interactionId = action.value;
-
+const handleShareAgentFromModal = async (
+  action: any,
+  view: any,
+  isThreadShare: boolean
+) => {
   try {
-    // Check for the special "no_interaction_id" case
+    if (!view || !view.private_metadata)
+      throw new Error("Cannot access required modal metadata.");
+
+    const interactionId = action.value;
+
     if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot open modal: No interaction ID available");
+      throw new Error("Cannot share: No interaction ID available");
     }
 
-    const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached agent response found. It may have expired.`);
+    const agentResponseData = global._agentResponseCache[interactionId];
+    if (!agentResponseData) {
+      throw new Error(
+        "Agent response data not found in cache. The response may have expired."
+      );
     }
 
-    // Add proper null checks before accessing cachedData properties
-    const { query, agentName, response, citations, isFromThread } = cachedData;
-    
-    if (!query || !agentName || !response) {
-      throw new Error("Invalid cached data - missing required fields");
-    }
+    const { agentName, query, response, citations } = agentResponseData;
+    const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
 
-    const modal = createAgentResponseModal(
-      query,
-      agentName,
-      response,
-      citations || [],
-      interactionId,
-      isFromThread || false
-    );
+    if (!channel_id)
+      throw new Error("Channel ID not found in modal metadata.");
+    if (isThreadShare && !thread_ts)
+      throw new Error("Thread timestamp not found for a thread share action.");
 
-    if (isFromThread) {
-      // Modify buttons for thread sharing if needed
-      modal.blocks = modal.blocks.map((block: any) => {
-        if (block.type === "actions" && (block as any).elements) {
-          return {
-            ...block,
-            elements: (block as any).elements.map((element: any) => ({
-              ...element,
-              action_id:
-                element.action_id === ACTION_IDS.SHARE_FROM_MODAL
-                  ? ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL
-                  : element.action_id,
-            })),
-          };
-        }
-        return block;
-      });
-    }
-
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
-      view: {
-        ...modal,
-        callback_id: `agent_response_modal`,
-        private_metadata: JSON.stringify({
-          channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts,
-          user_id: (body as BlockAction).user.id,
-        }),
-      },
+    await webClient!.chat.postMessage({
+      channel: channel_id,
+      thread_ts: isThreadShare ? thread_ts : undefined,
+      text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
+      blocks: createSharedAgentResponseBlocks(
+        user_id,
+        agentName,
+        query,
+        response,
+        citations || []
+      ),
     });
-    Logger.info(
-      `Opened agent response modal for user ${(body as BlockAction).user.id}`
+
+    const newBlocks = view.blocks.map((b: any) =>
+      b.block_id === action.block_id
+        ? {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: `✅ *Agent response shared in ${
+                  isThreadShare ? "thread" : "channel"
+                } successfully!*`,
+              },
+            ],
+          }
+        : b
     );
+
+    const updatedView: View = {
+      type: "modal",
+      title: view.title,
+      blocks: newBlocks,
+      private_metadata: view.private_metadata,
+      callback_id: view.callback_id,
+    };
+    if (view.close) {
+      updatedView.close = view.close;
+    }
+
+    await webClient!.views.update({
+      view_id: view.id,
+      hash: view.hash,
+      view: updatedView,
+    });
   } catch (error: any) {
     Logger.error(
       error,
-      `Error opening agent modal for interaction ${interactionId}`
+      `Error sharing agent response to ${isThreadShare ? "thread" : "channel"} from modal`
     );
-    
-    // Add proper null checks before accessing properties
-    const channel = (body as BlockAction).channel;
-    const user = (body as BlockAction).user;
-    
-    if (channel?.id && user?.id) {
-      await client.chat.postEphemeral({
-        channel: channel.id,
-        user: user.id,
-        text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
-      });
-    } else {
-      Logger.warn("Could not send error message - missing channel or user information");
-    }
   }
-});
+};
 
-/**
- * Handles sharing an agent response from the modal to the main channel.
- */
-app.action(
-  ACTION_IDS.SHARE_AGENT_FROM_MODAL,
-  async ({ ack, body, client, action }) => {
-    await ack();
-    const view = (body as BlockAction).view;
-    try {
-      if (!view || !view.private_metadata)
-        throw new Error("Cannot access required modal metadata.");
-
-      const interactionId = (action as ButtonAction).value;
-
-      // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id" || !interactionId) {
-        throw new Error("Cannot share: No interaction ID available");
-      }
-
-      // Get agent response from cache
-      const agentResponseData = global._agentResponseCache[interactionId];
-      if (!agentResponseData) {
-        throw new Error(
-          "Agent response data not found in cache. The response may have expired."
-        );
-      }
-
-      const { agentName, query, response, citations } = agentResponseData;
-      const { channel_id, user_id } = JSON.parse(view.private_metadata);
-
-      if (!channel_id)
-        throw new Error("Channel ID not found in modal metadata.");
-
-      await client.chat.postMessage({
-        channel: channel_id,
-        text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
-        blocks: createSharedAgentResponseBlocks(
-          user_id,
-          agentName,
-          query,
-          response,
-          citations || []
-        ),
-      });
-
-      const newBlocks = view.blocks.map((b: any) =>
-        b.block_id === (action as ButtonAction).block_id
-          ? {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "✅ *Agent response shared in channel successfully!*",
-                },
-              ],
-            }
-          : b
-      );
-
-      const updatedView: View = {
-        type: "modal",
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
-      };
-      if (view.close) {
-        updatedView.close = view.close;
-      }
-
-      await client.views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: updatedView,
-      });
-    } catch (error: any) {
-      Logger.error(error, "Error sharing agent response to channel from modal");
-    }
-  }
-);
-
-/**
- * Handles sharing an agent response from the modal to a thread.
- */
-app.action(
-  ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL,
-  async ({ ack, body, client, action }) => {
-    await ack();
-    const view = (body as BlockAction).view;
-    try {
-      if (!view || !view.private_metadata)
-        throw new Error("Cannot access required modal metadata.");
-
-      const interactionId = (action as ButtonAction).value;
-
-      // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id" || !interactionId) {
-        throw new Error("Cannot share: No interaction ID available");
-      }
-
-      // Get agent response from cache
-      const agentResponseData = global._agentResponseCache[interactionId];
-      if (!agentResponseData) {
-        throw new Error(
-          "Agent response data not found in cache. The response may have expired."
-        );
-      }
-
-      const { agentName, query, response, citations } = agentResponseData;
-      const { channel_id, thread_ts, user_id } = JSON.parse(
-        view.private_metadata
-      );
-
-      if (!channel_id)
-        throw new Error("Channel ID not found in modal metadata.");
-      if (!thread_ts)
-        throw new Error(
-          "Thread timestamp not found for a thread share action."
-        );
-
-      await client.chat.postMessage({
-        channel: channel_id,
-        thread_ts: thread_ts,
-        text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
-        blocks: createSharedAgentResponseBlocks(
-          user_id,
-          agentName,
-          query,
-          response,
-          citations || []
-        ),
-      });
-
-      const newBlocks = view.blocks.map((b: any) =>
-        b.block_id === (action as ButtonAction).block_id
-          ? {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "✅ *Agent response shared in thread successfully!*",
-                },
-              ],
-            }
-          : b
-      );
-
-      const updatedView: View = {
-        type: "modal",
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
-      };
-      if (view.close) {
-        updatedView.close = view.close;
-      }
-
-      await client.views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: updatedView,
-      });
-    } catch (error: any) {
-      Logger.error(error, "Error sharing agent response to thread from modal");
-    }
-  }
-);
-
-/**
- * Handles opening a modal to view all sources/citations.
- */
-app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
+const handleViewAllSources = async (
+  action: any,
+  trigger_id: string,
+  view: any
+) => {
   const interactionId = action.value;
 
   try {
-    // Check for the special "no_interaction_id" case
     if (interactionId === "no_interaction_id" || !interactionId) {
       throw new Error("Cannot open sources: No interaction ID available");
     }
@@ -1349,7 +1445,6 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
       throw new Error(`No cached agent response found. It may have expired.`);
     }
 
-    // Add proper null checks before accessing cachedData properties
     const { query, agentName, citations } = cachedData;
     
     if (!query || !agentName) {
@@ -1362,21 +1457,18 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
 
     const modal = createAllSourcesModal(agentName, query, citations);
 
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
+    await webClient!.views.open({
+      trigger_id: trigger_id,
       view: modal,
     });
 
-    Logger.info(
-      `Opened all sources modal for user ${(body as BlockAction).user.id}`
-    );
+    Logger.info(`Opened all sources modal for interaction ${interactionId}`);
   } catch (error: any) {
     Logger.error(
       error,
       `Error opening sources modal for interaction ${interactionId}`
     );
 
-    // Try to show an error modal instead of ephemeral message since we're in a modal context
     try {
       const errorDetails = error.message.includes('No interaction ID') 
         ? 'The response data has expired or is no longer available.'
@@ -1392,8 +1484,8 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
         ? '\n\n**Note:** This response was generated from the agent\'s training data without citing external sources.'
         : '\n\n**Troubleshooting:**\n• Try refreshing and running the query again\n• Contact support if the issue persists';
 
-      await client.views.open({
-        trigger_id: (body as BlockAction).trigger_id,
+      await webClient!.views.open({
+        trigger_id: trigger_id,
         view: {
           type: "modal",
           title: {
@@ -1419,32 +1511,21 @@ app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
       });
     } catch (modalError) {
       Logger.error(modalError, "Failed to show error modal");
-      // If we can't show a modal, try to get channel info from the current modal
-      const view = (body as BlockAction).view;
-      let channelId;
-      try {
-        // Add proper null checks before accessing view properties
-        if (view?.private_metadata) {
-          const metadata = JSON.parse(view.private_metadata);
-          channelId = metadata?.channel_id;
-        }
-      } catch (parseError) {
-        Logger.warn("Could not parse modal private_metadata for error message");
-      }
-
-      // Add proper null checks before accessing user properties
-      const user = (body as BlockAction).user;
-      if (channelId && user?.id) {
-        await client.chat.postEphemeral({
-          channel: channelId,
-          user: user.id,
-          text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.`,
-        });
-      } else {
-        Logger.warn("Could not send fallback error message - missing channel or user information");
-      }
     }
   }
-});
+};
 
-export default app;
+// Export Socket Mode status and control functions
+export const getSocketModeStatus = () => isSocketModeConnected;
+export const startSocketMode = async () => {
+  if (hasSlackConfig && webClient && !isSocketModeConnected && !socketModeClient) {
+    await connectSocketMode();
+    return true;
+  }
+  Logger.info("Socket Mode already connected or configuration missing");
+  return false;
+};
+
+// Export the client and utility functions
+export const getSlackClient = () => webClient;
+export const isSlackEnabled = () => webClient !== null;
