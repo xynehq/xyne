@@ -99,6 +99,22 @@ export const updateChatByExternalIdWithAuth = async (
   return selectChatSchema.parse(chatArr[0])
 }
 
+export const updateChatBookmarkStatus = async (
+  trx: TxnOrClient,
+  chatId: string,
+  isBookmarked: boolean,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .update(chats)
+    .set({ isBookmarked })
+    .where(eq(chats.externalId, chatId))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
 export const deleteChatByExternalIdWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
@@ -154,7 +170,23 @@ export const getPublicChats = async (
   const chatsArr = await trx
     .select()
     .from(chats)
-    .where(eq(chats.email, email))
+    .where(and(eq(chats.email, email), eq(chats.isBookmarked, false)))
+    .limit(pageSize)
+    .offset(offset)
+    .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getFavoriteChats = async (
+  trx: TxnOrClient,
+  email: string,
+  pageSize: number,
+  offset: number,
+): Promise<SelectPublicChat[]> => {
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(and(eq(chats.email, email), eq(chats.isBookmarked, true)))
     .limit(pageSize)
     .offset(offset)
     .orderBy(desc(chats.updatedAt))

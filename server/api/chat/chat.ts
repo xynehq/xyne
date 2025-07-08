@@ -37,9 +37,11 @@ import {
   deleteMessagesByChatId,
   getChatByExternalId,
   getChatByExternalIdWithAuth,
+  getFavoriteChats,
   getPublicChats,
   insertChat,
   updateChatByExternalIdWithAuth,
+  updateChatBookmarkStatus,
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
@@ -501,6 +503,29 @@ export const ChatHistory = async (c: Context) => {
   }
 }
 
+export const ChatFavoritesApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const { page } = c.req.valid("query")
+    const offset = page * chatHistoryPageSize
+    return c.json(
+      await getFavoriteChats(db, email, chatHistoryPageSize, offset),
+    )
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Chat Favorites Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get favorite chats",
+    })
+  }
+}
+
 export const ChatBookmarkApi = async (c: Context) => {
   let email = ""
   try {
@@ -509,9 +534,7 @@ export const ChatBookmarkApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { chatId, bookmark } = body
-    await updateChatByExternalIdWithAuth(db, chatId, email, {
-      isBookmarked: bookmark,
-    })
+    await updateChatBookmarkStatus(db, chatId, bookmark)
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
