@@ -12,7 +12,6 @@ import {
   createSharedResultBlocks,
   createAgentResponseModal,
   createSharedAgentResponseBlocks,
-  createAllSourcesModal,
 } from "./formatters";
 import {
   createId
@@ -1063,8 +1062,9 @@ export const processSlackInteraction = async (payload: any) => {
         case ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL:
           await handleShareAgentFromModal(action, view, true);
           break;
-        case ACTION_IDS.VIEW_ALL_SOURCES:
-          await handleViewAllSources(action, trigger_id, view);
+        case ACTION_IDS.NEXT_SOURCE_PAGE:
+        case ACTION_IDS.PREVIOUS_SOURCE_PAGE:
+          await handleSourcePagination(action, view);
           break;
         default:
           Logger.warn(`Unknown action_id: ${action.action_id}`);
@@ -1233,6 +1233,7 @@ const handleViewAgentModal = async (
           channel_id: channel?.id,
           thread_ts: container?.thread_ts,
           user_id: user.id,
+          message_id: messageId,
         }),
       },
     });
@@ -1253,6 +1254,54 @@ const handleViewAgentModal = async (
     } else {
       Logger.warn("Could not send error message - missing channel or user information");
     }
+  }
+};
+
+const handleSourcePagination = async (action: any, view: any) => {
+  try {
+    if (!view || !view.private_metadata) {
+      throw new Error("Cannot access required modal metadata for pagination.");
+    }
+
+    const { message_id } = JSON.parse(view.private_metadata);
+    if (!message_id) {
+      throw new Error("Message ID not found in modal metadata.");
+    }
+
+    const { page } = JSON.parse(action.value);
+    const message = await getMessageByExternalId(db, message_id);
+
+    if (!message) {
+      throw new Error("Agent response not found for pagination.");
+    }
+
+    const {
+      message: response,
+      sources: citations,
+      modelId: agentName,
+      thinking: query,
+    } = message;
+    const isFromThread = !!view.thread_ts;
+
+    const newModal = createAgentResponseModal(
+      query,
+      agentName,
+      response,
+      (citations as any) || [],
+      message_id,
+      isFromThread,
+      page
+    );
+
+    newModal.private_metadata = view.private_metadata;
+
+    await webClient!.views.update({
+      view_id: view.id,
+      hash: view.hash,
+      view: newModal,
+    });
+  } catch (error: any) {
+    Logger.error(error, "Error handling source pagination");
   }
 };
 
@@ -1437,96 +1486,6 @@ const handleShareAgentFromModal = async (
   }
 };
 
-const handleViewAllSources = async (
-  action: any,
-  trigger_id: string,
-  view: any
-) => {
-    const messageId = action.value;
-
-  try {
-    if (messageId === "no_interaction_id" || !messageId) {
-      throw new Error("Cannot open sources: No message ID available");
-    }
-
-    const message = await getMessageByExternalId(db, messageId);
-    if (!message) {
-      throw new Error(`No agent response found. It may have been deleted.`);
-    }
-
-    const {
-      modelId: agentName,
-      sources: citations,
-      thinking: query,
-    } = message;
-    
-    if (!query || !agentName) {
-      throw new Error("Invalid cached data - missing required fields");
-    }
-
-    if (!citations || (citations as any).length === 0) {
-      throw new Error("No sources available for this response.");
-    }
-
-    const modal = createAllSourcesModal(agentName, query, citations as any);
-
-    await webClient!.views.open({
-      trigger_id: trigger_id,
-      view: modal,
-    });
-
-    Logger.info(`Opened all sources modal for interaction ${messageId}`);
-  } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening sources modal for interaction ${messageId}`
-    );
-
-    try {
-      const errorDetails = error.message.includes('No interaction ID') 
-        ? 'The response data has expired or is no longer available.'
-        : error.message.includes('No cached agent response')
-        ? 'The response data has expired. Please run your query again.'
-        : error.message.includes('No sources available')
-        ? 'This response was generated without source citations.'
-        : `Unexpected error: ${error.message}`;
-
-      const troubleshootingTips = error.message.includes('expired') || error.message.includes('No cached')
-        ? '\n\n**What to do:**\n• Run your agent query again\n• The system keeps responses for 10 minutes only'
-        : error.message.includes('No sources')
-        ? '\n\n**Note:** This response was generated from the agent\'s training data without citing external sources.'
-        : '\n\n**Troubleshooting:**\n• Try refreshing and running the query again\n• Contact support if the issue persists';
-
-      await webClient!.views.open({
-        trigger_id: trigger_id,
-        view: {
-          type: "modal",
-          title: {
-            type: "plain_text",
-            text: "Unable to Open Sources",
-            emoji: true,
-          },
-          close: {
-            type: "plain_text",
-            text: "Close",
-            emoji: true,
-          },
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `❌ *Could not display sources*\n\n${errorDetails}${troubleshootingTips}`,
-              },
-            },
-          ],
-        },
-      });
-    } catch (modalError) {
-      Logger.error(modalError, "Failed to show error modal");
-    }
-  }
-};
 
 // Export Socket Mode status and control functions
 export const getSocketModeStatus = () => isSocketModeConnected;

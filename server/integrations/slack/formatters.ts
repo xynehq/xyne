@@ -854,8 +854,9 @@ export function createAgentResponseModal(
   agentName: string,
   response: string,
   citations: unknown[],
-  interactionId: string,
-  isFromThread: boolean
+  messageId: string,
+  isFromThread: boolean,
+  page: number = 1
 ): View {
   const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Validate and filter citations
@@ -901,8 +902,12 @@ export function createAgentResponseModal(
       },
     });
 
-    // Limit citations in modal to prevent excessive scrolling
-    const displayCitations = validCitations.slice(0, MAX_CITATIONS_IN_MODAL);
+
+    // Paginate citations
+    const startIndex = (page - 1) * MAX_CITATIONS_IN_MODAL;
+    const endIndex = startIndex + MAX_CITATIONS_IN_MODAL;
+    const displayCitations = validCitations.slice(startIndex, endIndex);
+
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
       const rawTitle = citation.title || citation.name || "Untitled";
@@ -932,41 +937,55 @@ export function createAgentResponseModal(
           .replace(/\s+/g, " ")
           .trim();
         snippet =
-          snippet.length > SNIPPET_MAX_LENGTH_SOURCES ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...` : snippet;
+          snippet.length > SNIPPET_MAX_LENGTH_SOURCES
+            ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...`
+            : snippet;
       }
 
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${i + 1}. ${url ? `<${url}|${title}>` : title}*\n${
-            snippet || "_No preview available_"
-          }`,
-        },
-      });
-    }
-
-    // Show "See all sources" button if there are more than 2 sources
-    if (validCitations.length > MAX_CITATIONS_IN_MODAL) {
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `_${validCitations.length - MAX_CITATIONS_IN_MODAL} more sources available_`,
-        },
-        accessory: {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "See all sources",
-            emoji: true,
-          },
-          action_id: "view_all_sources",
-          value: interactionId,
+          text: `*${startIndex + i + 1}. ${
+            url ? `<${url}|${title}>` : title
+          }*\n${snippet || "_No preview available_"}`,
         },
       });
     }
   }
+
+  // --- PAGINATION ---
+  const totalPages = Math.ceil(
+    validCitations.length / MAX_CITATIONS_IN_MODAL
+  );
+  const paginationActions: any[] = [];
+
+  if (page > 1) {
+    paginationActions.push({
+      type: "button",
+      text: { type: "plain_text", text: "⬅️ Previous", emoji: true },
+      action_id: "previous_source_page",
+      value: JSON.stringify({ page: page - 1 }),
+    });
+  }
+
+  if (page < totalPages) {
+    paginationActions.push({
+      type: "button",
+      text: { type: "plain_text", text: "Next ➡️", emoji: true },
+      action_id: "next_source_page",
+      value: JSON.stringify({ page: page + 1 }),
+    });
+  }
+
+  if (paginationActions.length > 0) {
+    blocks.push({
+      type: "actions",
+      block_id: "source_pagination",
+      elements: paginationActions,
+    });
+  }
+  // --- END PAGINATION ---
 
   // Add sharing actions at the bottom (keep original order)
   blocks.push({ type: "divider" });
@@ -980,7 +999,7 @@ export function createAgentResponseModal(
       },
       style: "primary",
       action_id: "share_agent_from_modal",
-      value: interactionId,
+      value: messageId,
     },
   ];
 
@@ -993,7 +1012,7 @@ export function createAgentResponseModal(
         emoji: true,
       },
       action_id: "share_agent_in_thread_from_modal", // Use the constant here
-      value: interactionId,
+      value: messageId,
     });
   }
 
@@ -1157,124 +1176,4 @@ export function createSharedAgentResponseBlocks(
   );
 
   return blocks;
-}
-
-/**
- * Create a modal view for displaying all sources/citations
- * @param agentName Name of the agent that provided the response
- * @param query The original query string
- * @param citations Array of all citations
- * @returns Slack modal view object
- */
-export function createAllSourcesModal(
-  agentName: string,
-  query: string,
-  citations: unknown[]
-): View {
-  const agentDisplayName = agentName.replace(/\s+/g, "-");
-  // Validate and filter citations
-  const validCitations = validateCitations(citations);
-  const blocks: (KnownBlock | Block)[] = [
-    {
-      type: "section",
-      text: {
-        type: "plain_text",
-        text: `📚 All Sources from /${agentDisplayName}`,
-        emoji: true,
-      },
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*Query:* "${
-          query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
-        }"`,
-      },
-    },
-    {
-      type: "divider",
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*${citations.length} Sources:*`,
-      },
-    },
-  ];
-
-  // Display sources with smart truncation to avoid exceeding modal limits
-  // Slack modal has a ~50 block limit and each block has character limits
-  let totalCharacters = MODAL_HEADER_CHARACTERS; // Start with header characters
-  const maxSources = Math.min(citations.length, MAX_SOURCES_IN_MODAL); // Limit sources to prevent modal overflow
-
-  for (let i = 0; i < maxSources; i++) {
-    const citation = validCitations?.[i];
-    if (!citation) continue;
-
-    const title = citation.title || citation.name || "Untitled";
-    const url = citation.url || "";
-    let snippet = citation.snippet || citation.content || "";
-
-    // Clean and truncate snippet more aggressively for the sources modal
-    if (snippet) {
-      snippet = snippet.replace(/\s+/g, " ").trim();
-      snippet =
-        snippet.length > TITLE_MAX_LENGTH ? `${snippet.substring(0, TITLE_MAX_LENGTH)}...` : snippet;
-    }
-
-    const sourceText = `*${i + 1}. ${title}*\n${
-      snippet ? snippet : "No preview available"
-    }${url ? `\n<${url}|View Source>` : ""}`;
-
-    // Check if adding this source would exceed our character limit
-    if (totalCharacters + sourceText.length > MODAL_MAX_CHARACTERS) {
-      // Add a note about remaining sources
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `_...and ${
-            citations.length - i
-          } more sources (content truncated due to display limits)_`,
-        },
-      });
-      break;
-    }
-
-    totalCharacters += sourceText.length;
-
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: sourceText,
-      },
-    });
-
-    // Add divider between citations (except after the last one or if we're at the limit)
-    if (i < maxSources - 1 && i < citations.length - 1) {
-      blocks.push({
-        type: "divider",
-      });
-      totalCharacters += MODAL_DIVIDER_CHARACTERS; // Approximate divider character cost
-    }
-  }
-
-  // Create the modal view object
-  return {
-    type: "modal",
-    title: {
-      type: "plain_text",
-      text: "All Sources",
-      emoji: true,
-    },
-    close: {
-      type: "plain_text",
-      text: "Close",
-      emoji: true,
-    },
-    blocks: blocks,
-  };
 }
