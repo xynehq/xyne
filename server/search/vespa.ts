@@ -1825,7 +1825,7 @@ export const getAllReoccuringCalendarEvents = async (
 ): Promise<VespaSearchResponse> => {
   const { offset = 0, email } = params
 
-  const yql = `select * from sources event where permissions contains @email`
+  const yql = `select * from sources event where permissions contains @email and recurrence matches ".*"`
 
   const searchPayload = {
     yql,
@@ -1837,9 +1837,6 @@ export const getAllReoccuringCalendarEvents = async (
 
   try {
     let result = await vespa.getItems(searchPayload)
-    result.root.children = result.root.children.filter(
-      (e) => e?.fields?.recurrence?.length > 0,
-    )
     return result
   } catch (error) {
     const searchError = new ErrorPerformingSearch({
