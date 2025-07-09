@@ -979,10 +979,8 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
             toolsPrompt = ""
-            // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
-              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
-                AVAILABLE_TOOLS:\n\n`
+              toolsPrompt = ""
 
               // Format each client's tools
               for (const [connectorId, { tools }] of Object.entries(

@@ -937,14 +937,30 @@ export const SearchQueryToolContextPrompt = (
     - For "not found" errors, consider whether you assumed identifiers that might not exist.
     - Use available search/discovery tools to find what actually exists.
     
+    ---
+    **AVAILABLE_TOOLS:**
+    While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information.
+
     ${
       toolContext.length
         ? `
+    **MCP (Model Context Protocol) Tools Available:**
+    These are external tools that extend your capabilities beyond enterprise data. Use MCP tools when:
+    - The user's query requires real-time information (github PR's, Deepwiki documentation etc.)
+    - You need to access external APIs or services not available in enterprise data
+    - The enterprise data doesn't contain the specific information needed
+    
+    **Important MCP Tool Selection Guidelines:**
+    - First check if the query can be answered with enterprise data (emails, files, calendar, users)
+    - Only use MCP tools if enterprise data is insufficient or irrelevant
+    - Consider the user's intent: are they asking about internal company matters or external information?
+    - MCP tools are complementary to enterprise tools, not replacements
+    
     **MCP Tool Context:**  
     ${toolContext}`
         : ""
     }
-    
+
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
     ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
