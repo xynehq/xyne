@@ -834,9 +834,34 @@ export const SearchQueryToolContextPrompt = (
   },
   isDebugMode?: boolean,
 ): string => {
+  const getAppDescription = (app: string): string => {
+    switch (app) {
+      case Apps.Gmail:
+        return `${Apps.Gmail} (keywords: 'email', 'mail', 'emails', 'gmail')`
+      case Apps.GoogleCalendar:
+        return `${Apps.GoogleCalendar} (keywords: 'calendar', 'meetings', 'events', 'schedule')`
+      case Apps.GoogleDrive:
+        return `${Apps.GoogleDrive} (keywords: 'drive', 'files', 'documents', 'folders')`
+      case Apps.GoogleWorkspace:
+        return `${Apps.GoogleWorkspace} (keywords: 'contacts', 'people', 'address book')`
+      case Apps.DataSource:
+        return `${Apps.DataSource} (keywords: 'data-source', 'knowledge-base', 'sources') \n - This is a special app that contains all agent data sources and configurations. ALWAYS search this app FIRST when available, as it provides comprehensive information about all data sources and capabilities. Use this to understand what data is available before querying other apps.`
+      case Apps.Slack:
+        return `${Apps.Slack} (keywords: 'slack', 'chat', 'messages')`
+      default:
+        return app
+    }
+  }
+
   const availableApps = agentContext?.prompt.length
-    ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
-    : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
+    ? `${agentContext.sources.map((v: string) => `- ${getAppDescription(v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)}`).join(", ")}`
+    : `${Object.values(Apps)
+        .filter(
+          (v) =>
+            ![Apps.DataSource, Apps.Xyne, Apps.MCP, Apps.Github].includes(v),
+        )
+        .map((v) => `- ${getAppDescription(v)}\n`)
+        .join(", ")}`
 
   const toolsToUse = {
     internal: customTools?.internal || internalTools,
@@ -912,14 +937,30 @@ export const SearchQueryToolContextPrompt = (
     - For "not found" errors, consider whether you assumed identifiers that might not exist.
     - Use available search/discovery tools to find what actually exists.
     
+    ---
+    **AVAILABLE_TOOLS:**
+    While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information.
+
     ${
       toolContext.length
         ? `
+    **MCP (Model Context Protocol) Tools Available:**
+    These are external tools that extend your capabilities beyond enterprise data. Use MCP tools when:
+    - The user's query requires real-time information (github PR's, Deepwiki documentation etc.)
+    - You need to access external APIs or services not available in enterprise data
+    - The enterprise data doesn't contain the specific information needed
+    
+    **Important MCP Tool Selection Guidelines:**
+    - First check if the query can be answered with enterprise data (emails, files, calendar, users)
+    - Only use MCP tools if enterprise data is insufficient or irrelevant
+    - Consider the user's intent: are they asking about internal company matters or external information?
+    - MCP tools are complementary to enterprise tools, not replacements
+    
     **MCP Tool Context:**  
     ${toolContext}`
         : ""
     }
-    
+
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
     ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}

@@ -37,6 +37,7 @@ import {
   DriveEntity,
   CalendarEntity,
   GooglePeopleEntity,
+  SlackEntity,
 } from "@/search/types"
 import type {
   ConversationalParams,
@@ -512,6 +513,8 @@ export const internalTools: Record<string, ToolDefinition> = {
           - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
           - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
           - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+          - 'data-source', 'knowledge-base', 'sources' → '${Apps.DataSource}'
+          - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
         `,
       },
       {
@@ -524,6 +527,7 @@ export const internalTools: Record<string, ToolDefinition> = {
           - For App Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
           - For App Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
           - For App Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+          - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
           `,
       },
       {
@@ -748,7 +752,6 @@ export function createCustomToolSet(options: {
     excludeSlack = [],
   } = options
 
-  // Filter out excluded tools and merge with custom tools
   const filteredInternal = Object.fromEntries(
     Object.entries(internalTools).filter(
       ([key]) => !excludeInternal.includes(key),
@@ -801,7 +804,6 @@ export function removeToolParameter(
   }
 }
 
-// Import the AgentTool type to support conversion utilities
 export interface AgentToolParameter {
   type: string
   description: string
