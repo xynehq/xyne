@@ -6,6 +6,10 @@ schema mail {
       indexing: attribute | summary
       attribute: fast-search
     }
+    field parentThreadId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
 
     field threadId type string {
       indexing: attribute | summary

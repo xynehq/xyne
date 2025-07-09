@@ -449,8 +449,26 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
+  const Reference = getHeader("References") || ""
+  const inReplyTo = getHeader("In-Reply-To") || ""
+  let firstReferenceId = ""
+  // First value of Reference is the parent Message-id of the thread
+  if (Reference) {
+    const match = Reference.match(/<([^>]+)>/)
+    if (match && match[1]) {
+      firstReferenceId = match[1]
+    }
+  }
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let parentThreadId = mailId
+  if (Reference && firstReferenceId) {
+    parentThreadId = firstReferenceId
+  } else if (inReplyTo) {
+    // if Reference is empty then setting the value inReplyTo
+    // as parentThreadId
+    parentThreadId = inReplyTo.replace(/^<|>$/g, "")
+  }
   let docId = messageId
   let userMap: Record<string, string> = {}
   let mailExist = false
@@ -620,6 +638,7 @@ export const parseMail = async (
     threadId: threadId,
     mailId: mailId,
     subject: subject,
+    parentThreadId: parentThreadId,
     chunks: chunks,
     timestamp: timestamp,
     app: Apps.Gmail,
