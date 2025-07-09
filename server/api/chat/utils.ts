@@ -3,6 +3,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  DataSourceEntity,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -18,6 +19,7 @@ import {
   userSchema,
   type Entity,
   type VespaChatMessage,
+  type VespaDataSourceFile,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -293,6 +295,14 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: slackUrl,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
+    }
+  } else if (result.fields.sddocname === dataSourceFileSchema) {
+    return {
+      docId: (fields as VespaDataSourceFile).docId,
+      title: (fields as VespaDataSourceFile).fileName,
+      url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
+      app: (fields as VespaDataSourceFile).app,
+      entity: DataSourceEntity.DataSourceFile,
     }
   } else {
     throw new Error("Invalid search result type for citation")

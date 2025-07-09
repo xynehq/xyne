@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react" // Ensure React is imported
+import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -38,6 +39,7 @@ import {
   AuthType,
   ConnectorStatus,
   UserRole,
+  DataSourceEntity,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -297,6 +299,7 @@ export const ChatBox = ({
   const referenceSearchInputRef = useRef<HTMLInputElement | null>(null)
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
   const scrollPositionRef = useRef<number>(0)
+  const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [showReferenceBox, setShowReferenceBox] = useState(false)
@@ -1111,6 +1114,15 @@ export const ChatBox = ({
   // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
   const handleAddReference = (citation: Citation) => {
+    if (
+      citation.app === Apps.DataSource &&
+      citation.entity === DataSourceEntity.DataSourceFile
+    ) {
+      navigate({ to: `/dataSource/${citation.docId}` })
+      setShowReferenceBox(false)
+      return
+    }
+
     const docId = citation.docId
     const newRef: Reference = {
       id: docId,

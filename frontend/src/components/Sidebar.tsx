@@ -85,9 +85,7 @@ export const Sidebar = ({
       const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`)
       const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
       const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
-      const isBookmarkButton = target.closest(
-        `.${CLASS_NAMES.BOOKMARK_BUTTON}`,
-      )
+      const isBookmarkButton = target.closest(`.${CLASS_NAMES.BOOKMARK_BUTTON}`)
       if (
         !isSidebarClick &&
         !isHistoryModalClick &&
