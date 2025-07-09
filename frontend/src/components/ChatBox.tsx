@@ -80,6 +80,9 @@ interface SelectedFile {
   preview?: string // URL for image preview
 }
 
+// Add attachment limit constant
+const MAX_ATTACHMENTS = 5
+
 interface SourceItem {
   id: string
   name: string
@@ -349,10 +352,32 @@ export const ChatBox = ({
 
   const processFiles = useCallback(
     (files: FileList | File[]) => {
+      // Check attachment limit
+      if (selectedFiles.length >= MAX_ATTACHMENTS) {
+        showToast(
+          "Attachment limit reached",
+          `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          true,
+        )
+        return
+      }
+
       const validFiles = validateAndDeduplicateFiles(files, showToast)
       if (validFiles.length === 0) return
 
-      const newFiles: SelectedFile[] = validFiles.map((file) => ({
+      // Check if adding these files would exceed the limit
+      const remainingSlots = MAX_ATTACHMENTS - selectedFiles.length
+      const filesToAdd = validFiles.slice(0, remainingSlots)
+
+      if (filesToAdd.length < validFiles.length) {
+        showToast(
+          "Some files skipped",
+          `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          false,
+        )
+      }
+
+      const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
         file,
         id: generateFileId(),
         uploading: false,
@@ -377,7 +402,7 @@ export const ChatBox = ({
         return [...prev, ...filteredNewFiles]
       })
     },
-    [showToast],
+    [showToast, selectedFiles.length],
   )
 
   const uploadFiles = useCallback(
@@ -483,10 +508,19 @@ export const ChatBox = ({
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
       if (files.length > 0) {
+        // Check attachment limit before processing
+        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+          showToast(
+            "Attachment limit reached",
+            `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            true,
+          )
+          return
+        }
         processFiles(files)
       }
     },
-    [processFiles],
+    [processFiles, selectedFiles.length, showToast],
   )
 
   // Effect to initialize and update persistedAgentId
@@ -1711,7 +1745,11 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${
+          selectedFiles.length >= MAX_ATTACHMENTS
+            ? "border-amber-300 dark:border-amber-600"
+            : ""
+        } ${CLASS_NAMES.SEARCH_CONTAINER}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1729,6 +1767,40 @@ export const ChatBox = ({
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] dark:text-[#F1F3F4] placeholder-[#ACBCCC] dark:placeholder-gray-500 pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
+
+              const items = e.clipboardData?.items
+              if (items) {
+                // Handle image paste
+                for (let i = 0; i < items.length; i++) {
+                  const item = items[i]
+                  if (item.type.indexOf("image") !== -1) {
+                    // Check attachment limit before processing
+                    if (selectedFiles.length >= MAX_ATTACHMENTS) {
+                      showToast(
+                        "Attachment limit reached",
+                        `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                        true,
+                      )
+                      return
+                    }
+
+                    const file = item.getAsFile()
+                    if (file) {
+                      // Process the pasted image file directly
+                      // The file will be processed with a default name by the processFiles function
+                      processFiles([file])
+                      showToast(
+                        "Image pasted",
+                        "Image has been added to your message.",
+                        false,
+                      )
+                      return // Exit early since we handled the image
+                    }
+                  }
+                }
+              }
+
+              // Handle text paste (existing logic)
               const pastedText = e.clipboardData?.getData("text/plain")
               const currentInput = inputRef.current
 
@@ -1992,6 +2064,11 @@ export const ChatBox = ({
         {/* File Attachments Preview */}
         {selectedFiles.length > 0 && (
           <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Attachments ({selectedFiles.length}/{MAX_ATTACHMENTS})
+              </span>
+            </div>
             <div className="flex flex-wrap gap-2">
               {selectedFiles.map((selectedFile) => (
                 <div key={selectedFile.id} className="relative group">
@@ -2100,13 +2177,32 @@ export const ChatBox = ({
                 Uploading files...
               </div>
             )}
+            {selectedFiles.length >= MAX_ATTACHMENTS && (
+              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <span>⚠️</span>
+                Maximum attachments reached ({MAX_ATTACHMENTS})
+              </div>
+            )}
           </div>
         )}
 
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
           <Attach
-            className="text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400 transition-colors"
-            onClick={handleFileSelect}
+            className={`${
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+            } transition-colors`}
+            onClick={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? undefined
+                : handleFileSelect
+            }
+            title={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                : "Attach files"
+            }
           />
           <Globe
             size={16}

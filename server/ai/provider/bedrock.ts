@@ -127,10 +127,27 @@ export class BedrockProvider extends BaseProvider {
     // Transform messages to include images only in the last user message
     const transformedMessages = messages.map((message, index) => {
       if (index === lastUserMessageIndex && imageParts.length > 0) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+        // Create new content array with combined text and images
+        const newContent = [
+          { text: combinedText },
+          ...otherBlocks,
+          ...imageParts,
+        ]
         return {
           ...message,
-          content: [...message.content!, ...imageParts],
+          content: newContent,
         }
       }
       return message
@@ -142,7 +159,7 @@ export class BedrockProvider extends BaseProvider {
           text:
             modelParams.systemPrompt! +
             "\n\n" +
-            "You can also use the images in the context to answer questions.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
         },
       ],
       messages: transformedMessages,
@@ -226,14 +243,35 @@ export class BedrockProvider extends BaseProvider {
     // Transform messages to include images only in the last user message
     const transformedMessages = messages.map((message, index) => {
       if (index === lastUserMessageIndex && imageParts.length > 0) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+        // Create new content array with combined text and images
+        const newContent = [
+          { text: combinedText },
+          ...otherBlocks,
+          ...imageParts,
+        ]
         return {
           ...message,
-          content: [...message.content!, ...imageParts],
+          content: newContent,
         }
       }
       return message
     })
+
+    console.log("transformedMessages", transformedMessages)
+    console.log("imageFileNames", params.imageFileNames)
+    console.log("modelId", modelParams.modelId)
 
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
@@ -243,7 +281,7 @@ export class BedrockProvider extends BaseProvider {
           text:
             modelParams.systemPrompt! +
             "\n\n" +
-            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
         },
       ],
       messages: transformedMessages,

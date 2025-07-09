@@ -318,6 +318,11 @@ export const startStream = async (
     streamState.isStreaming = false
     streamState.es.close()
 
+    // Clear failed messages from cache for new chats
+    if (!chatId && queryClient) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+
     toast({
       title: "Error",
       description: event.data,
@@ -330,6 +335,11 @@ export const startStream = async (
     console.error(`EventSource error:`, error)
     streamState.isStreaming = false
     streamState.es.close()
+
+    // Clear failed messages from cache for new chats
+    if (!chatId && queryClient) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
 
     toast({
       title: "Error",

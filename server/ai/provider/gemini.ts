@@ -134,7 +134,7 @@ export class GeminiAIProvider extends BaseProvider {
               text:
                 modelParams.systemPrompt +
                 "\n\n" +
-                "You can also use the images in the context to answer questions.",
+                "Important: In case you don't have the context, you can use the images in the context to answer questions.",
             },
           ],
         },
@@ -147,7 +147,11 @@ export class GeminiAIProvider extends BaseProvider {
       const latestMessage =
         messages[messages.length - 1]?.content?.[0]?.text || ""
       const response = await chatComponent.sendMessage([
-        { text: latestMessage },
+        {
+          text:
+            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+            latestMessage,
+        },
         ...imageParts,
       ])
       const cost = 0
@@ -190,7 +194,7 @@ export class GeminiAIProvider extends BaseProvider {
               text:
                 modelParams.systemPrompt +
                 "\n\n" +
-                "You can also use the images in the context to answer questions.",
+                "Important: In case you don't have the context, you can use the images in the context to answer questions.",
             },
           ], // Wrap text in an array
         },
@@ -204,9 +208,15 @@ export class GeminiAIProvider extends BaseProvider {
       const latestMessage =
         messages[messages.length - 1]?.content?.[0]?.text || ""
       const streamResponse = await chatComponent.sendMessageStream([
-        { text: latestMessage },
+        {
+          text:
+            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+            latestMessage,
+        },
         ...imageParts,
       ])
+      console.log("imageParts", imageParts)
+      console.log("latestMessage", latestMessage)
 
       for await (const chunk of streamResponse.stream) {
         const text = chunk.text()

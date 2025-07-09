@@ -128,11 +128,16 @@ export class OpenAIProvider extends BaseProvider {
         imageParts.length > 0 &&
         role === "user"
       ) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        const userText = message.content![0].text!
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+
         return {
           role: "user" as const,
           content: [
-            { type: "text" as const, text: message.content![0].text! },
+            { type: "text" as const, text: combinedText },
             ...imageParts,
           ],
         }
@@ -151,7 +156,7 @@ export class OpenAIProvider extends BaseProvider {
           content:
             modelParams.systemPrompt! +
             "\n\n" +
-            "You can also use the images in the context to answer questions.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
         },
         ...transformedMessages,
       ],
@@ -204,11 +209,16 @@ export class OpenAIProvider extends BaseProvider {
         imageParts.length > 0 &&
         role === "user"
       ) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        const userText = message.content![0].text!
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+
         return {
           role: "user" as const,
           content: [
-            { type: "text" as const, text: message.content![0].text! },
+            { type: "text" as const, text: combinedText },
             ...imageParts,
           ],
         }
@@ -219,6 +229,10 @@ export class OpenAIProvider extends BaseProvider {
       }
     })
 
+    console.log("transformedMessages", transformedMessages)
+    console.log("imageFileNames", params.imageFileNames)
+    console.log("modelId", modelParams.modelId)
+
     const chatCompletion = await (
       this.client as OpenAI
     ).chat.completions.create({
@@ -228,7 +242,7 @@ export class OpenAIProvider extends BaseProvider {
           content:
             modelParams.systemPrompt! +
             "\n\n" +
-            "You can also use the images in the context to answer questions.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
         },
         ...transformedMessages,
       ],
