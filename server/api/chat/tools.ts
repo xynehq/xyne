@@ -19,6 +19,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  DataSourceEntity,
   dataSourceFileSchema,
   datasourceSchema,
   DriveEntity,
@@ -324,9 +325,9 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         source: {
           docId: fields.docId,
           title: fields.fileName || "Untitled",
-          url: "",
+          url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
           app: fields.app || Apps.DataSource,
-          entity: "" as Entity,
+          entity: DataSourceEntity.DataSourceFile,
         },
         confidence: r.relevance || 0.7,
       }
