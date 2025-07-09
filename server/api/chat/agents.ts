@@ -140,6 +140,7 @@ import {
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
+import { cleanupAttachmentFiles } from "@/api/files"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
@@ -225,6 +226,7 @@ async function* getToolContinuationIterator(
   agentPrompt?: string, // New optional parameter
   messages: Message[] = [],
   fallbackReasoning?: string,
+  attachmentFileIds?: string[], // Add attachmentFileIds parameter
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -238,6 +240,7 @@ async function* getToolContinuationIterator(
       json: true,
       reasoning: false,
       messages,
+      imageFileNames: attachmentFileIds?.map((id) => `${id}_0`), // Pass imageFileNames
     },
     toolsPrompt,
     context ?? "",
@@ -335,6 +338,7 @@ async function performSynthesis(
   messagesWithNoErrResponse: Message[],
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
+  attachmentFileIds?: string[],
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -354,6 +358,7 @@ async function performSynthesis(
         json: true,
         reasoning: false,
         messages: messagesWithNoErrResponse,
+        imageFileNames: attachmentFileIds?.map((id) => `${id}_0`),
       },
     )
 
@@ -447,6 +452,13 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
@@ -871,6 +883,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     messagesWithNoErrResponse,
                     logAndStreamReasoning,
                     sub,
+                    attachmentFileIds,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1426,6 +1439,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
 
                 await logAndStreamReasoning({
@@ -1612,6 +1626,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -1656,6 +1671,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentPromptForLLM,
             messagesWithNoErrResponse,
             fallbackReasoning,
+            attachmentFileIds,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -1855,6 +1871,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
             }
           }
+
+          // Clean up attachment files after response is complete
+          if (attachmentFileIds && attachmentFileIds.length > 0) {
+            await cleanupAttachmentFiles(attachmentFileIds, email)
+          }
+
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -1916,6 +1938,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+        // Clean up attachment files in error callback
+        if (attachmentFileIds && attachmentFileIds.length > 0) {
+          await cleanupAttachmentFiles(attachmentFileIds, email)
+        }
+
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
@@ -2020,6 +2047,13 @@ export const AgentMessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
     let {
       message,
       chatId,
@@ -2192,7 +2226,10 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          if (
+            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
@@ -2220,6 +2257,7 @@ export const AgentMessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               [],
+              attachmentFileIds,
               agentPromptForLLM,
             )
             stream.writeSSE({
@@ -2818,6 +2856,11 @@ export const AgentMessageApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
+          // Clean up attachment files after response is complete
+          if (attachmentFileIds && attachmentFileIds.length > 0) {
+            await cleanupAttachmentFiles(attachmentFileIds, email)
+          }
+
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -2877,6 +2920,12 @@ export const AgentMessageApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+
+        // Clean up attachment files in error callback
+        if (attachmentFileIds && attachmentFileIds.length > 0) {
+          await cleanupAttachmentFiles(attachmentFileIds, email)
+        }
+
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)

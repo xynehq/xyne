@@ -597,6 +597,15 @@ export const ChatPage = ({
     }
   }, [isStreaming, retryIsStreaming])
 
+  // Cleanup effect to clear failed messages from cache when chatId changes
+  useEffect(() => {
+    // Clear any cached data for null chatId when we have a real chatId
+    // This prevents old failed messages from appearing in new chats
+    if (chatId && chatId !== null) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+  }, [chatId, queryClient])
+
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
@@ -657,6 +666,7 @@ export const ChatPage = ({
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
+        chatParams.fileIds,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -668,6 +678,7 @@ export const ChatPage = ({
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
+          fileIds: undefined, // Clear fileIds from URL after processing
         }),
         replace: true,
       })
@@ -678,6 +689,7 @@ export const ChatPage = ({
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
+    chatParams.fileIds,
     router,
   ])
 
@@ -686,6 +698,7 @@ export const ChatPage = ({
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
+    fileIds?: string[],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -710,14 +723,41 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(
-      messageToSend,
-      selectedSources,
-      isReasoningActive,
-      isAgenticMode,
-      agentIdToUse,
-      toolsList,
-    )
+
+    try {
+      await startStream(
+        messageToSend,
+        selectedSources,
+        isReasoningActive,
+        isAgenticMode,
+        agentIdToUse,
+        toolsList,
+        fileIds,
+      )
+    } catch (error) {
+      // If there's an error, clear the optimistically added message from cache
+      // This prevents failed messages from persisting when creating new chats
+      queryClient.setQueryData<any>(
+        ["chatHistory", queryKey],
+        (oldData: any) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            messages:
+              oldData.messages?.filter(
+                (msg: any) => msg.message !== messageToSend,
+              ) || [],
+          }
+        },
+      )
+
+      // Also clear any cached data for null chatId to prevent old failed messages from appearing
+      if (!chatId) {
+        queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+      }
+
+      throw error // Re-throw the error so it can be handled by the calling code
+    }
   }
 
   const handleFeedback = async (
@@ -2152,6 +2192,7 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
+  fileIds: z.array(z.string()).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>
