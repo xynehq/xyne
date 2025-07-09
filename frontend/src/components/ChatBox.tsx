@@ -25,6 +25,9 @@ import {
   Bot, // Import Bot icon
   PlusCircle,
   Gavel, // For MCP connector tools
+  X,
+  File,
+  Loader2,
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import {
@@ -59,6 +62,28 @@ import { api } from "@/api"
 import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
 import { Reference, ToolsListItem } from "@/types"
+import { useToast } from "@/hooks/use-toast"
+import {
+  generateFileId,
+  createDragHandlers,
+  createFileSelectionHandlers,
+  validateAndDeduplicateFiles,
+  createToastNotifier,
+  createImagePreview,
+  cleanupPreviewUrls,
+} from "@/utils/fileUtils"
+
+interface SelectedFile {
+  file: File
+  id: string
+  docId?: string // Document ID from server after upload
+  uploading?: boolean
+  uploadError?: string
+  preview?: string // URL for image preview
+}
+
+// Add attachment limit constant
+const MAX_ATTACHMENTS = 5
 
 interface SourceItem {
   id: string
@@ -100,7 +125,8 @@ interface ChatBoxProps {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-  ) => void // Expects agentId string
+    fileIds?: string[],
+  ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
   handleStop?: () => void
@@ -263,6 +289,7 @@ export const ChatBox = ({
     displayName?: string // For UI
   }
 
+  const { toast } = useToast()
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
   const referenceItemsRef = useRef<
@@ -273,6 +300,7 @@ export const ChatBox = ({
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const navigate = useNavigate()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [showReferenceBox, setShowReferenceBox] = useState(false)
   const [searchMode, setSearchMode] = useState<"citations" | "global">(
@@ -315,10 +343,188 @@ export const ChatBox = ({
     left: number
   } | null>(null)
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false)
 
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
   const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
+
+  // File upload utility functions
+  const showToast = createToastNotifier(toast)
+
+  const processFiles = useCallback(
+    (files: FileList | File[]) => {
+      // Check attachment limit
+      if (selectedFiles.length >= MAX_ATTACHMENTS) {
+        showToast(
+          "Attachment limit reached",
+          `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          true,
+        )
+        return
+      }
+
+      const validFiles = validateAndDeduplicateFiles(files, showToast)
+      if (validFiles.length === 0) return
+
+      // Check if adding these files would exceed the limit
+      const remainingSlots = MAX_ATTACHMENTS - selectedFiles.length
+      const filesToAdd = validFiles.slice(0, remainingSlots)
+
+      if (filesToAdd.length < validFiles.length) {
+        showToast(
+          "Some files skipped",
+          `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          false,
+        )
+      }
+
+      const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
+        file,
+        id: generateFileId(),
+        uploading: false,
+        preview: createImagePreview(file),
+      }))
+
+      setSelectedFiles((prev) => {
+        const existingFileNames = new Set(prev.map((f) => f.file.name))
+        const filteredNewFiles = newFiles.filter(
+          (f) => !existingFileNames.has(f.file.name),
+        )
+
+        const filteredCount = newFiles.length - filteredNewFiles.length
+        if (filteredCount > 0) {
+          showToast(
+            "Files already selected",
+            `${filteredCount} file(s) were already selected and skipped.`,
+            false,
+          )
+        }
+
+        return [...prev, ...filteredNewFiles]
+      })
+    },
+    [showToast, selectedFiles.length],
+  )
+
+  const uploadFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      if (files.length === 0) return []
+
+      setIsUploadingFiles(true)
+      const uploadedFileIds: string[] = []
+
+      // Set all files to uploading state
+      setSelectedFiles((prev) =>
+        prev.map((f) =>
+          files.some((file) => file.id === f.id)
+            ? { ...f, uploading: true, uploadError: undefined }
+            : f,
+        ),
+      )
+
+      const uploadPromises = files.map(async (selectedFile) => {
+        try {
+          const formData = new FormData()
+          formData.append("attachment", selectedFile.file)
+
+          // Use the new attachment upload endpoint
+          const response = await fetch("/api/v1/files/upload-attachment", {
+            method: "POST",
+            body: formData,
+          })
+
+          if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.message || "Upload failed")
+          }
+
+          const result = await response.json()
+          const docId = result.storedFileIds?.[0]
+
+          if (docId) {
+            setSelectedFiles((prev) =>
+              prev.map((f) =>
+                f.id === selectedFile.id
+                  ? { ...f, uploading: false, docId }
+                  : f,
+              ),
+            )
+            return docId
+          } else {
+            throw new Error("No document ID returned from upload")
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Upload failed"
+          setSelectedFiles((prev) =>
+            prev.map((f) =>
+              f.id === selectedFile.id
+                ? { ...f, uploading: false, uploadError: errorMessage }
+                : f,
+            ),
+          )
+          showToast(
+            "Upload failed",
+            `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+            true,
+          )
+          return null
+        }
+      })
+
+      const results = await Promise.all(uploadPromises)
+      uploadedFileIds.push(...results.filter((id): id is string => id !== null))
+
+      setIsUploadingFiles(false)
+      return uploadedFileIds
+    },
+    [showToast],
+  )
+
+  const getExtension = (file: File) => {
+    const name = file.name
+    const ext = name.includes(".") ? name.split(".").pop()?.toLowerCase() : null
+    return ext || "file"
+  }
+
+  const removeFile = useCallback((id: string) => {
+    setSelectedFiles((prev) => {
+      const fileToRemove = prev.find((f) => f.id === id)
+      if (fileToRemove?.preview) {
+        URL.revokeObjectURL(fileToRemove.preview)
+      }
+      return prev.filter((f) => f.id !== id)
+    })
+  }, [])
+
+  const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
+    fileInputRef,
+    processFiles,
+  )
+
+  const { handleDragOver, handleDragLeave } = createDragHandlers()
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) {
+        // Check attachment limit before processing
+        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+          showToast(
+            "Attachment limit reached",
+            `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            true,
+          )
+          return
+        }
+        processFiles(files)
+      }
+    },
+    [processFiles, selectedFiles.length, showToast],
+  )
 
   // Effect to initialize and update persistedAgentId
   useEffect(() => {
@@ -1184,7 +1390,7 @@ export const ChatBox = ({
     return () => document.removeEventListener("mousedown", handleOutsideClick)
   }, [showReferenceBox])
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
@@ -1223,6 +1429,22 @@ export const ChatBox = ({
         toolsListArray.some((item) => item.tools.length > 0)
       ) {
         toolsListToSend = toolsListArray
+      }
+    }
+
+    // Handle file uploads
+    let fileIds: string[] = []
+    if (selectedFiles.length > 0) {
+      const filesToUpload = selectedFiles.filter(
+        (f) => !f.docId && !f.uploading,
+      )
+      const alreadyUploadedFiles = selectedFiles.filter((f) => f.docId)
+
+      if (filesToUpload.length > 0) {
+        const uploadedIds = await uploadFiles(filesToUpload)
+        fileIds = [...alreadyUploadedFiles.map((f) => f.docId!), ...uploadedIds]
+      } else {
+        fileIds = alreadyUploadedFiles.map((f) => f.docId!).filter(Boolean)
       }
     }
 
@@ -1274,13 +1496,21 @@ export const ChatBox = ({
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
       toolsListToSend,
+      fileIds,
     )
-    // setReferences([]) // This state and its setter are removed.
 
+    // Clear the input and attached files after sending
     if (inputRef.current) {
       inputRef.current.innerHTML = ""
     }
     setQuery("")
+
+    // Cleanup preview URLs before clearing files
+    const previewUrls = selectedFiles
+      .map((f) => f.preview)
+      .filter(Boolean) as string[]
+    cleanupPreviewUrls(previewUrls)
+    setSelectedFiles([])
   }
 
   const handleSourceSelectionChange = (sourceId: string, checked: boolean) => {
@@ -1323,6 +1553,19 @@ export const ChatBox = ({
   useEffect(() => {
     adjustInputHeight()
   }, [query, adjustInputHeight])
+
+  // Cleanup preview URLs when component unmounts
+  const selectedFilesRef = useRef(selectedFiles)
+  selectedFilesRef.current = selectedFiles
+
+  useEffect(() => {
+    return () => {
+      const previewUrls = selectedFilesRef.current
+        .map((f) => f.preview)
+        .filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
+    }
+  }, [])
 
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
@@ -1514,7 +1757,14 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${
+          selectedFiles.length >= MAX_ATTACHMENTS
+            ? "border-amber-300 dark:border-amber-600"
+            : ""
+        } ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
@@ -1529,6 +1779,40 @@ export const ChatBox = ({
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] dark:text-[#F1F3F4] placeholder-[#ACBCCC] dark:placeholder-gray-500 pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
+
+              const items = e.clipboardData?.items
+              if (items) {
+                // Handle image paste
+                for (let i = 0; i < items.length; i++) {
+                  const item = items[i]
+                  if (item.type.indexOf("image") !== -1) {
+                    // Check attachment limit before processing
+                    if (selectedFiles.length >= MAX_ATTACHMENTS) {
+                      showToast(
+                        "Attachment limit reached",
+                        `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                        true,
+                      )
+                      return
+                    }
+
+                    const file = item.getAsFile()
+                    if (file) {
+                      // Process the pasted image file directly
+                      // The file will be processed with a default name by the processFiles function
+                      processFiles([file])
+                      showToast(
+                        "Image pasted",
+                        "Image has been added to your message.",
+                        false,
+                      )
+                      return // Exit early since we handled the image
+                    }
+                  }
+                }
+              }
+
+              // Handle text paste (existing logic)
               const pastedText = e.clipboardData?.getData("text/plain")
               const currentInput = inputRef.current
 
@@ -1788,8 +2072,150 @@ export const ChatBox = ({
             }}
           />
         </div>
+
+        {/* File Attachments Preview */}
+        {selectedFiles.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Attachments ({selectedFiles.length}/{MAX_ATTACHMENTS})
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedFiles.map((selectedFile) => (
+                <div key={selectedFile.id} className="relative group">
+                  {selectedFile.preview ? (
+                    <div
+                      className="relative w-20 h-20 rounded-lg overflow-hidden bg-center bg-cover border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
+                      style={{
+                        backgroundImage: `url(${selectedFile.preview})`,
+                      }}
+                    >
+                      <div className="absolute top-1 left-1 flex gap-1">
+                        {selectedFile.uploading && (
+                          <div className="bg-black bg-opacity-60 rounded-full p-1">
+                            <Loader2
+                              size={10}
+                              className="text-white animate-spin"
+                            />
+                          </div>
+                        )}
+                        {selectedFile.uploadError && (
+                          <div
+                            className="bg-red-500 bg-opacity-80 rounded-full p-1"
+                            title={selectedFile.uploadError}
+                          >
+                            <span className="text-white text-xs">⚠</span>
+                          </div>
+                        )}
+                        {selectedFile.docId && (
+                          <div className="bg-green-500 bg-opacity-80 rounded-full p-1">
+                            <Check size={10} className="text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeFile(selectedFile.id)}
+                        className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
+                        disabled={selectedFile.uploading}
+                      >
+                        <X size={10} />
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1">
+                        <span
+                          className="text-white text-xs truncate block"
+                          title={selectedFile.file.name}
+                        >
+                          {selectedFile.file.name.length > 12
+                            ? `${selectedFile.file.name.substring(0, 9)}...`
+                            : selectedFile.file.name}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors min-w-0">
+                      <File
+                        size={24}
+                        className="text-gray-500 dark:text-gray-400 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className="text-sm text-gray-700 dark:text-gray-300 truncate block max-w-[120px]"
+                          title={selectedFile.file.name}
+                        >
+                          {selectedFile.file.name}
+                        </span>
+                        <span
+                          className="text-xs text-gray-500 dark:text-gray-400 truncate block max-w-[120px]"
+                          title={getExtension(selectedFile.file)}
+                        >
+                          {getExtension(selectedFile.file)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {selectedFile.uploading && (
+                          <Loader2
+                            size={12}
+                            className="text-blue-500 animate-spin"
+                          />
+                        )}
+                        {selectedFile.uploadError && (
+                          <span
+                            className="text-xs text-red-500"
+                            title={selectedFile.uploadError}
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                        {selectedFile.docId && (
+                          <Check size={12} className="text-green-500" />
+                        )}
+                        <button
+                          onClick={() => removeFile(selectedFile.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                          disabled={selectedFile.uploading}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {isUploadingFiles && (
+              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" />
+                Uploading files...
+              </div>
+            )}
+            {selectedFiles.length >= MAX_ATTACHMENTS && (
+              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <span>⚠️</span>
+                Maximum attachments reached ({MAX_ATTACHMENTS})
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-          <Attach className="text-[#464D53] dark:text-gray-400 cursor-pointer" />
+          <Attach
+            className={`${
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+            } transition-colors`}
+            onClick={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? undefined
+                : handleFileSelect
+            }
+            title={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                : "Attach files"
+            }
+          />
           <Globe
             size={16}
             className="text-[#464D53] dark:text-gray-400 cursor-pointer"
@@ -2493,19 +2919,33 @@ export const ChatBox = ({
             </button>
           ) : (
             <button
-              disabled={isStreaming || retryIsStreaming}
+              disabled={isStreaming || retryIsStreaming || isUploadingFiles}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
               className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
             >
-              <ArrowRight
-                className="text-white dark:text-slate-200"
-                size={16}
-              />
+              {isUploadingFiles ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ArrowRight
+                  className="text-white dark:text-slate-200"
+                  size={16}
+                />
+              )}
             </button>
           )}
         </div>
       </div>
+
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+      />
     </div>
   )
 }

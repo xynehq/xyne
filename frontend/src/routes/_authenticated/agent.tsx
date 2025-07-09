@@ -923,7 +923,7 @@ function AgentComponent() {
     }
   }, [isStreaming])
 
-  const handleSend = async (messageToSend: string) => {
+  const handleSend = async (messageToSend: string, fileIds?: string[]) => {
     if (!messageToSend || isStreaming) return
 
     setUserHasScrolled(false)
@@ -990,6 +990,10 @@ function AgentComponent() {
       url.searchParams.append("isReasoningEnabled", "true")
     }
     url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
+
+    if (fileIds && fileIds.length > 0) {
+      url.searchParams.append("attachmentFileIds", fileIds.join(","))
+    }
 
     eventSourceRef.current = new EventSource(url.toString(), {
       withCredentials: true,

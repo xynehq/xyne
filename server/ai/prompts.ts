@@ -17,7 +17,7 @@ import {
   type ToolDefinition,
 } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
-
+import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
   query: string,
   context: string,
@@ -1050,7 +1050,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1148,8 +1148,8 @@ export const searchQueryPrompt = (userContext: string): string => {
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>" or null,
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
@@ -1169,8 +1169,8 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "intent": <intent object with EXACT metadata like complete email addresses>
           }
         }
@@ -1189,8 +1189,8 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
             "sortDirection": <boolean or null>,
             "filterQuery": "<search keywords for content search>"
           }
@@ -1289,8 +1289,8 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
            "intent": {}
          }
@@ -1898,29 +1898,35 @@ export const synthesisContextPrompt = (
   synthesisContext: string,
 ) => {
   return `You are a helpful AI assistant.
-User Context: ${userCtx}
-Current date for comparison: ${getDateForAI()}
+  User Context: ${userCtx}
+  Current date for comparison: ${getDateForAI()}
 
-Instruction:
-- Analyze the provided "Context Fragments" to answer the current user-query.
-- The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that.
-- Your response MUST be a JSON object with only one keys: "synthesisState" (string).
-- The "synthesisState" key must be one of the following values:
-    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information (80% or more) to answer the "User Query". Even if some details are missing, as long as the core question can be addressed, use this state.
-    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the current user-query.
-    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the current user-query.
+  Instruction:
+  - Analyze the provided "Context Fragments" to answer the current user-query.
+  - The "answer" key should contain a **concise and focused** synthesis grounded only in the context. If relevant information is missing, state that explicitly.
+  - Your response MUST be a JSON object with the following two keys: "synthesisState" (string) and "answer" (string).
 
-- Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
+  - The "synthesisState" must be set to one of the following values:
+     - ${ContextSysthesisState.Complete}:
+       - Use this if the provided Context Fragments include enough information to meaningfully answer the User Query. Some details may be missing, but the main question is clearly addressed.
+       - **For date-based queries**, assume the context has already been filtered to match the requested date range—no need to question whether it's complete.
+       - If even a single relevant item fully satisfies the user's intent mark the state as **Complete**.
+     - ${ContextSysthesisState.Partial}:
+       - Use if the context provides **some** helpful information, but less than 80% of what's required to confidently answer the query.
+     - ${ContextSysthesisState.NotFound}:
+       - Use if the context contains no relevant information to answer the query.
 
-Context Fragments:s
-${synthesisContext}
+  - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
 
-## Response Format
-{
-  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
-  "answer": "Brief, synthesized answer based only on the context"
-}
-  `
+  Context Fragments:
+  ${synthesisContext}
+
+  ## Response Format
+  {
+    "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
+    "answer": "Brief, synthesized answer based only on the context"
+  }
+`
 }
 
 export const fallbackReasoningGenerationPrompt = (
