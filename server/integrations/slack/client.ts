@@ -301,25 +301,30 @@ const connectSocketMode = async (): Promise<void> => {
 };
 
 // Only initialize Slack client if environment variables are present
-if (hasSlackConfig) {
-  // Validate token formats
-  if (!process.env.SLACK_BOT_TOKEN!.startsWith("xoxb-")) {
-    Logger.error("SLACK_BOT_TOKEN does not start with xoxb-. Slack integration disabled.");
-  } else if (!process.env.SLACK_APP_TOKEN!.startsWith("xapp-")) {
-    Logger.error("SLACK_APP_TOKEN does not start with xapp-. Slack integration disabled.");
-  } else {
-    try {
+try {
+  if (hasSlackConfig) {
+    // Validate token formats
+    if (!process.env.SLACK_BOT_TOKEN!.startsWith("xoxb-")) {
+      Logger.error(
+        "SLACK_BOT_TOKEN does not start with xoxb-. Slack integration disabled."
+      );
+    } else if (!process.env.SLACK_APP_TOKEN!.startsWith("xapp-")) {
+      Logger.error(
+        "SLACK_APP_TOKEN does not start with xapp-. Slack integration disabled."
+      );
+    } else {
       webClient = new WebClient(process.env.SLACK_BOT_TOKEN);
       Logger.info("Slack Web API client initialized");
 
-
       // Note: Socket Mode connection will be started via startSocketMode() from server.ts
-
-    } catch (error) {
-      Logger.error(error, "Failed to initialize Slack Web API client. Slack integration disabled.");
-      webClient = null;
     }
   }
+} catch (error) {
+  Logger.error(
+    error,
+    "Failed to initialize Slack Web API client. Slack integration disabled."
+  );
+  webClient = null;
 }
 
 // --- Command Logic ---
@@ -1595,8 +1600,13 @@ const handleShareAgentFromModal = async (
 export const getSocketModeStatus = () => isSocketModeConnected;
 export const startSocketMode = async () => {
   if (hasSlackConfig && webClient && !isSocketModeConnected && !socketModeClient) {
-    await connectSocketMode();
-    return true;
+    try {
+      await connectSocketMode();
+      return true;
+    } catch (error) {
+      Logger.error(error, "Failed to start Socket Mode connection");
+      return false;
+    }
   }
   Logger.info("Socket Mode already connected or configuration missing");
   return false;
