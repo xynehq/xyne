@@ -455,7 +455,7 @@ const handleAgentSearchCommand = async (
 
   const [, agentName, query] = match;
   Logger.info(
-    `Agent search - Agent: ${agentName}, Query: "${query || ""}" by user ${
+    `Agent search - Agent: ${agentName}, Query: "${query ? query : ''}" by user ${
       dbUser.email
     }`
   );
@@ -789,14 +789,16 @@ const handleAgentSearchCommand = async (
       });
     } catch (agentError: any) {
       Logger.error(agentError, "Error in direct agent processing");
-      await handleError(agentError, {
-        client,
-        channel,
-        user,
-        threadTs,
-        action: "agent_processing",
-        payload: { agentName: agentDisplayName, query },
-      });
+      if(client) {
+        await handleError(agentError, {
+          client,
+          channel,
+          user,
+          threadTs,
+          action: "agent_processing",
+          payload: { agentName: agentDisplayName, query },
+        });
+      }
     }
   } catch (error: any) {
     await handleError(error, {
@@ -1116,7 +1118,7 @@ export const processSlackEvent = async (event: any) => {
       }
     } catch (error: any) {
       Logger.error(error, "Error processing app_mention event");
-      if (user) {
+      if (user && webClient) {
         await handleError(error, {
           client: webClient,
           channel,
