@@ -11,9 +11,9 @@ import {
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
-import { MessageRole } from "@/types"
+import { MessageRole, Platform } from "@/types"
 import { MessageFeedback } from "@/shared/types"
-import { chats } from "./chats"
+import { chats, platformEnum } from "./chats"
 import { users } from "./users"
 
 const messageRoleField = "message_role"
@@ -61,6 +61,7 @@ export const messages = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     feedback: messageFeedbackEnum("feedback"),
+    platform: platformEnum("platform").notNull().default(Platform.Web),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

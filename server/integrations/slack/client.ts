@@ -26,7 +26,8 @@ import {
   insertChat
 } from "@/db/chat";
 import {
-  MessageRole
+  MessageRole,
+  Platform
 } from "@/types";
 import {
   type SearchCacheEntry,
@@ -139,6 +140,7 @@ const getOrCreateChat = async (
       email: dbUser.email,
       workspaceExternalId: dbUser.workspaceExternalId,
       attachments: [],
+      platform: Platform.Slack,
     });
     return newChat;
   }
@@ -750,6 +752,7 @@ const handleAgentSearchCommand = async (
         thinking: query,
         userId: dbUser.id,
         chatId: chat.id,
+        platform: Platform.Slack,
       });
 
       await client.chat.postEphemeral({
@@ -886,6 +889,41 @@ const executeSearch = async (
   }
 };
 
+const formatSearchResultsForDisplay = (query: string, results: any[]): string => {
+  if (!results || results.length === 0) {
+    return `No results found for "${query}".`;
+  }
+
+  const summaryLines = results.slice(0, 5).map((result, index) => {
+    let title = result.subject || result.title || result.name || "Untitled";
+    title = title.replace(/\s+/g, " ").trim();
+    if (title.length > 100) {
+        title = title.substring(0, 100) + '...';
+    }
+
+    let snippet = "";
+    if (result.chunks_summary && result.chunks_summary.length > 0) {
+      snippet = result.chunks_summary[0]?.chunk || "";
+    } else if (result.snippet) {
+      snippet = result.snippet;
+    } else if (result.content) {
+      snippet = result.content;
+    }
+    snippet = snippet.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+    if (snippet.length > 150) {
+        snippet = snippet.substring(0, 150) + '...';
+    }
+
+    return `${index + 1}. *${title}*\n   ${snippet}`;
+  });
+
+  let message = `I found ${results.length} results for your query: "_${query}_"\n\n${summaryLines.join('\n\n')}`;
+  if (results.length > 5) {
+      message += `\n\n... and ${results.length - 5} more results.`
+  }
+  return message;
+};
+
 const handleSearchQuery = async (
   client: WebClient,
   channel: string,
@@ -949,7 +987,7 @@ const handleSearchQuery = async (
 
   const chat = await getOrCreateChat(threadTs || channel, dbUser);
   const newMessage = await insertMessage(db, {
-    message: JSON.stringify(results), // Store results as a JSON string
+    message: formatSearchResultsForDisplay(query, results),
     messageRole: MessageRole.Assistant,
     email: dbUser.email,
     workspaceExternalId: dbUser.workspaceExternalId,
@@ -960,6 +998,7 @@ const handleSearchQuery = async (
     thinking: query,
     userId: dbUser.id,
     chatId: chat.id,
+    platform: Platform.Slack,
   });
 
   await client.chat.postEphemeral({
@@ -1227,7 +1266,7 @@ const handleViewSearchModal = async (
       throw new Error(`No search results found for this message. They may have been deleted.`);
     }
 
-    const results = JSON.parse(message.message);
+    const results = (message.sources as any[]) || [];
     const query = message.thinking;
     const isFromThread = !!container?.thread_ts;
     const modal = createSearchResultsModal(query, results);
