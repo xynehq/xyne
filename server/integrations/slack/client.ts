@@ -134,16 +134,21 @@ const getOrCreateChat = async (
     return chat;
   } catch (error) {
     // Chat not found, create a new one
-    const newChat = await insertChat(db, {
-      workspaceId: dbUser.workspaceId,
-      userId: dbUser.id,
-      title: "Slack Chat",
-      email: dbUser.email,
-      workspaceExternalId: dbUser.workspaceExternalId,
-      attachments: [],
-      platform: Platform.Slack,
-    });
-    return newChat;
+    try {
+      const newChat = await insertChat(db, {
+        workspaceId: dbUser.workspaceId,
+        userId: dbUser.id,
+        title: "Slack Chat",
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        attachments: [],
+        platform: Platform.Slack,
+      });
+      return newChat;
+    } catch (insertError) {
+      Logger.error(insertError, `Failed to insert chat for externalId: ${chatExternalId}`);
+      throw insertError; // Re-throw the error to be handled by the caller
+    }
   }
 };
 
