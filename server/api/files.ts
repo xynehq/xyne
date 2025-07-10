@@ -16,8 +16,9 @@ import {
 import { NoUserFound } from "@/errors"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
-import { unlink } from "node:fs/promises"
 import { isValidFile } from "../../shared/filesutils"
+import { generateThumbnail, isImageFile, getThumbnailPath } from "@/utils/image"
+import type { AttachmentMetadata } from "@/shared/types"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
@@ -211,26 +212,75 @@ export const handleAttachmentUpload = async (c: Context) => {
       })
     }
 
-    const storedFiles: string[] = []
+    const attachmentMetadata: AttachmentMetadata[] = []
 
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
       const fileId = crypto.randomUUID()
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const fullFileName = `${0}.${ext}`
-      const baseDir = path.resolve(
-        process.env.IMAGE_DIR || "downloads/xyne_images_db",
-      )
+      const baseDir = isImageFile(file.type)
+        ? path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+        : path.resolve(
+            process.env.ATTACHMENTS_DIR || "downloads/xyne_attachments",
+          )
       const outputDir = path.join(baseDir, fileId)
 
       try {
         await mkdir(outputDir, { recursive: true })
         const filePath = path.join(outputDir, fullFileName)
         await Bun.write(filePath, new Uint8Array(fileBuffer))
-        storedFiles.push(fileId)
+
+        const isImage = isImageFile(file.type)
+        let thumbnailPath: string | undefined
+
+        // Generate thumbnail for images
+        if (isImage) {
+          thumbnailPath = getThumbnailPath(outputDir, fileId)
+
+          // Validate extension before casting to supported thumbnail formats
+          const supportedThumbnailFormats = [
+            "jpeg",
+            "jpg",
+            "png",
+            "webp",
+          ] as const
+          type SupportedFormat = "jpeg" | "png" | "webp"
+
+          if (supportedThumbnailFormats.includes(ext as any)) {
+            // Normalize jpg to jpeg for thumbnail generation
+            const normalizedFormat: SupportedFormat =
+              ext === "jpg" ? "jpeg" : (ext as SupportedFormat)
+            await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath, {
+              format: normalizedFormat,
+            })
+          } else {
+            // For unsupported image formats, skip thumbnail generation or use a default format
+            loggerWithChild({ email }).warn(
+              `Unsupported image format "${ext}" for thumbnail generation. Skipping thumbnail for file ${file.name}`,
+            )
+            thumbnailPath = undefined
+          }
+        }
+
+        // Create attachment metadata
+        const metadata: AttachmentMetadata = {
+          fileId,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          isImage,
+          thumbnailPath: thumbnailPath
+            ? path.relative(baseDir, thumbnailPath)
+            : undefined,
+          createdAt: new Date(),
+          url: `/api/attachments/${fileId}`,
+        }
+
+        attachmentMetadata.push(metadata)
 
         loggerWithChild({ email }).info(
-          `Attachment "${file.name}" stored as ${fullFileName}`,
+          `Attachment "${file.name}" stored with ID ${fileId}${isImage ? " (thumbnail generated)" : ""}`,
         )
       } catch (error) {
         // Cleanup: remove the directory if file write fails
@@ -251,8 +301,8 @@ export const handleAttachmentUpload = async (c: Context) => {
 
     return c.json({
       success: true,
-      storedFileIds: storedFiles,
-      message: `Stored ${storedFiles.length} attachment(s) successfully.`,
+      attachments: attachmentMetadata,
+      message: `Stored ${attachmentMetadata.length} attachment(s) successfully.`,
     })
   } catch (error) {
     loggerWithChild({ email }).error(
@@ -264,35 +314,118 @@ export const handleAttachmentUpload = async (c: Context) => {
 }
 
 /**
- * Clean up attachment files from the downloads directory
- * @param attachmentFileIds Array of file IDs to clean up
- * @param email User email for logging
+ * Serve attachment file by fileId
  */
-export const cleanupAttachmentFiles = async (
-  attachmentFileIds: string[],
-  email: string,
-) => {
-  if (!attachmentFileIds || attachmentFileIds.length === 0) {
-    return
-  }
+export const handleAttachmentServe = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
 
-  const baseDir = path.resolve(
-    process.env.IMAGE_DIR || "downloads/xyne_images_db",
-  )
-
-  for (const fileId of attachmentFileIds) {
-    try {
-      const fileDir = path.join(baseDir, fileId)
-      await rm(fileDir, { recursive: true, force: true })
-      loggerWithChild({ email }).info(
-        `Cleaned up attachment directory: ${fileDir}`,
-      )
-    } catch (error) {
-      // Log error but don't throw - cleanup failures shouldn't break the main flow
-      loggerWithChild({ email }).error(
-        error,
-        `Failed to cleanup attachment directory for fileId: ${fileId}`,
-      )
+  try {
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
     }
+
+    // First, try the legacy path structure
+    const legacyBaseDir = path.resolve(
+      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    )
+    const legacyDir = path.join(legacyBaseDir, fileId)
+
+    // Check for files in legacy structure
+    let filePath: string | null = null
+    let fileName: string | null = null
+    let fileType: string | null = null
+
+    // Look for any file in the legacy directory
+    const possibleExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
+    for (const ext of possibleExtensions) {
+      const testPath = path.join(legacyDir, `0.${ext}`)
+      const testFile = Bun.file(testPath)
+      if (await testFile.exists()) {
+        filePath = testPath
+        fileName = `${fileId}.${ext}`
+        fileType = testFile.type || `image/${ext}`
+        break
+      }
+    }
+
+    // Check if file exists
+    const file = Bun.file(filePath || "")
+    if (!(await file.exists())) {
+      throw new HTTPException(404, { message: "File not found on disk" })
+    }
+
+    loggerWithChild({ email }).info(
+      `Serving attachment ${fileId} (${fileName}) for user ${email}`,
+    )
+
+    // Set appropriate headers
+    c.header("Content-Type", fileType || "application/octet-stream")
+    c.header("Content-Disposition", `inline; filename="${fileName}"`)
+    c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+
+    // Stream the file
+    return new Response(file.stream(), {
+      headers: c.res.headers,
+    })
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      `Error serving attachment ${c.req.param("fileId")}`,
+    )
+    throw error
+  }
+}
+
+/**
+ * Serve thumbnail for attachment
+ */
+export const handleThumbnailServe = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+
+  try {
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
+    }
+
+    // First, try the legacy path structure
+    const legacyBaseDir = path.resolve(
+      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    )
+    const legacyThumbnailPath = path.join(
+      legacyBaseDir,
+      fileId,
+      `${fileId}_thumbnail.jpg`,
+    )
+
+    let thumbnailPath = legacyThumbnailPath
+    let thumbnailFile = Bun.file(thumbnailPath)
+
+    // Check if thumbnail exists
+    if (!(await thumbnailFile.exists())) {
+      throw new HTTPException(404, { message: "Thumbnail not found on disk" })
+    }
+
+    loggerWithChild({ email }).info(
+      `Serving thumbnail for ${fileId} for user ${email}`,
+    )
+
+    // Set appropriate headers for thumbnail
+    c.header("Content-Type", "image/jpeg")
+    c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+
+    // Stream the thumbnail
+    return new Response(thumbnailFile.stream(), {
+      headers: c.res.headers,
+    })
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      `Error serving thumbnail ${c.req.param("fileId")}`,
+    )
+    throw error
   }
 }

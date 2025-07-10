@@ -169,7 +169,12 @@ import {
   expandEmailThreadsInResults,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
-import { cleanupAttachmentFiles } from "@/api/files"
+import {
+  getAttachmentsByMessageId,
+  storeAttachmentMetadata,
+} from "@/db/attachment"
+import type { AttachmentMetadata } from "@/shared/types"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -2961,13 +2966,10 @@ export const MessageApi = async (c: Context) => {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -3023,6 +3025,7 @@ export const MessageApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
 
     let title = ""
+    let attachmentStorageError: Error | null = null
     if (!chatId) {
       loggerWithChild({ email: email }).info(
         `MessageApi before the span.. ${chatId}`,
@@ -3075,6 +3078,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [chat, insertedMsg]
         },
       )
@@ -3109,6 +3131,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -3149,6 +3190,31 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
 
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
@@ -3201,10 +3267,6 @@ export const MessageApi = async (c: Context) => {
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
-                // Clean up attachment files when stream is closed prematurely
-                if (attachmentFileIds && attachmentFileIds.length > 0) {
-                  await cleanupAttachmentFiles(attachmentFileIds, email)
-                }
                 break
               }
               if (chunk.text) {
@@ -3290,11 +3352,6 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-
-            // Clean up attachment files after response processing is complete
-            if (attachmentFileIds && attachmentFileIds.length > 0) {
-              await cleanupAttachmentFiles(attachmentFileIds, email)
-            }
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
@@ -4090,6 +4147,27 @@ export const MessageRetryApi = async (c: Context) => {
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
+
+    // Get the original message first to determine if it's a user or assistant message
+    const originalMessage = await getMessageByExternalId(db, messageId)
+    if (!originalMessage) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    const isUserMessage = originalMessage.messageRole === "user"
+
+    // If it's an assistant message, we need to get attachments from the previous user message
+    let attachmentMetadata: AttachmentMetadata[] = []
+    let attachmentFileIds: string[] = []
+
+    if (isUserMessage) {
+      // If retrying a user message, get attachments from that message
+      attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
+      attachmentFileIds = attachmentMetadata.map(
+        (m: AttachmentMetadata) => m.fileId,
+      )
+    }
+
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
@@ -4097,7 +4175,6 @@ export const MessageRetryApi = async (c: Context) => {
     const costArr: number[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
-    const originalMessage = await getMessageByExternalId(db, messageId)
     if (!originalMessage) {
       const errorSpan = fetchMessageSpan.startSpan("message_not_found")
       errorSpan.addEvent("error", { message: "Message not found" })
@@ -4105,7 +4182,6 @@ export const MessageRetryApi = async (c: Context) => {
       fetchMessageSpan.end()
       throw new HTTPException(404, { message: "Message not found" })
     }
-    const isUserMessage = originalMessage.messageRole === "user"
     fetchMessageSpan.setAttribute("isUserMessage", isUserMessage)
     fetchMessageSpan.end()
 
@@ -4132,6 +4208,21 @@ export const MessageRetryApi = async (c: Context) => {
     }
     conversationSpan.setAttribute("conversationLength", conversation.length)
     conversationSpan.end()
+
+    // If retrying an assistant message, get attachments from the previous user message
+    if (!isUserMessage && conversation && conversation.length > 0) {
+      const prevUserMessage = conversation[conversation.length - 1]
+      if (prevUserMessage.messageRole === "user") {
+        attachmentMetadata = await getAttachmentsByMessageId(
+          db,
+          prevUserMessage.externalId,
+          email,
+        )
+        attachmentFileIds = attachmentMetadata.map(
+          (m: AttachmentMetadata) => m.fileId,
+        )
+      }
+    }
 
     // Use the same modelId
     const modelId = originalMessage.modelId as Models
@@ -4205,7 +4296,10 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          if (fileIds && fileIds?.length > 0) {
+          if (
+            (fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
@@ -4234,6 +4328,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              attachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,

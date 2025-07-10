@@ -269,10 +269,6 @@ export class BedrockProvider extends BaseProvider {
       return message
     })
 
-    console.log("transformedMessages", transformedMessages)
-    console.log("imageFileNames", params.imageFileNames)
-    console.log("modelId", modelParams.modelId)
-
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
