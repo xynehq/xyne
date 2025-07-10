@@ -55,27 +55,37 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   const FileIcon = getFileIcon(attachment.fileType)
   const isImage = attachment.isImage && !imageError
   const thumbnailUrl = attachment.thumbnailPath
-    ? `/api/attachments/${attachment.fileId}/thumbnail`
+    ? `/api/v1/attachments/${attachment.fileId}/thumbnail`
     : null
 
   const handleDownload = async () => {
+    let url: string | null = null
     try {
-      const response = await fetch(`/api/attachments/${attachment.fileId}`, {
+      const response = await fetch(`/api/v1/attachments/${attachment.fileId}`, {
         credentials: "include",
       })
-      if (!response.ok) throw new Error("Download failed")
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Please log in to download attachments")
+        }
+        throw new Error(`Download failed: ${response.statusText}`)
+      }
 
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
+      url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
       a.download = attachment.fileName
       document.body.appendChild(a)
       a.click()
-      window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
     } catch (error) {
       console.error("Download failed:", error)
+      alert(error instanceof Error ? error.message : "Download failed")
+    } finally {
+      if (url) {
+        window.URL.revokeObjectURL(url)
+      }
     }
   }
 
@@ -99,6 +109,9 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           <div
             className="w-12 h-12 rounded-md overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
             onClick={handleImageView}
+            role="button"
+            tabIndex={0}
+            aria-label={`Preview ${attachment.fileName}`}
           >
             <img
               src={thumbnailUrl}
@@ -132,6 +145,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             size="sm"
             onClick={handleImageView}
             className="p-2"
+            aria-label={`Preview ${attachment.fileName}`}
           >
             <Eye className="w-4 h-4" />
           </Button>
@@ -141,6 +155,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           size="sm"
           onClick={handleDownload}
           className="p-2"
+          aria-label={`Download ${attachment.fileName}`}
         >
           <Download className="w-4 h-4" />
         </Button>
@@ -157,7 +172,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             </DialogHeader>
             <div className="px-6 pb-6">
               <img
-                src={`/api/attachments/${attachment.fileId}`}
+                src={`/api/v1/attachments/${attachment.fileId}`}
                 alt={attachment.fileName}
                 className="w-full h-auto max-h-[70vh] object-contain rounded-lg"
                 onError={handleImageError}

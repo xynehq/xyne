@@ -175,6 +175,9 @@ import {
 } from "@/db/attachment"
 import type { AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
+import { isImageFile } from "@/utils/image"
+import { promises as fs } from "node:fs"
+import path from "node:path"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -461,6 +464,90 @@ export const ChatDeleteApi = async (c: Context) => {
       if (!chat) {
         throw new HTTPException(404, { message: "Chat not found" })
       }
+
+      // Get all messages for the chat to find attachments
+      const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
+
+      // Collect all attachment file IDs that need to be deleted
+      const imageAttachmentFileIds: string[] = []
+      const nonImageAttachmentFileIds: string[] = []
+
+      for (const message of messagesToDelete) {
+        if (message.attachments && Array.isArray(message.attachments)) {
+          const attachments =
+            message.attachments as unknown as AttachmentMetadata[]
+          for (const attachment of attachments) {
+            if (attachment && typeof attachment === "object") {
+              if (attachment.fileId) {
+                // Check if this is an image attachment using both isImage field and fileType
+                const isImageAttachment =
+                  attachment.isImage ||
+                  (attachment.fileType && isImageFile(attachment.fileType))
+
+                if (isImageAttachment) {
+                  imageAttachmentFileIds.push(attachment.fileId)
+                } else {
+                  // TODO: Handle non-image attachments in future implementation
+                  nonImageAttachmentFileIds.push(attachment.fileId)
+                  loggerWithChild({ email: email }).info(
+                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Delete image attachments and their thumbnails from disk
+      if (imageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
+        )
+
+        for (const fileId of imageAttachmentFileIds) {
+          try {
+            const imageBaseDir = path.resolve(
+              process.env.IMAGE_DIR || "downloads/xyne_images_db",
+            )
+
+            const imageDir = path.join(imageBaseDir, fileId)
+            try {
+              await fs.access(imageDir)
+              await fs.rm(imageDir, { recursive: true, force: true })
+              loggerWithChild({ email: email }).info(
+                `Deleted image attachment directory: ${imageDir}`,
+              )
+            } catch (attachmentError) {
+              loggerWithChild({ email: email }).warn(
+                `Image attachment file ${fileId} not found in either directory during chat deletion`,
+              )
+            }
+          } catch (error) {
+            loggerWithChild({ email: email }).error(
+              error,
+              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+
+      // TODO: Implement deletion logic for non-image attachments
+      if (nonImageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+        )
+        // TODO: Add specific deletion logic for different types of non-image attachments
+        // This could include:
+        // - PDFs: Delete from document storage directories
+        // - Documents (DOCX, DOC): Delete from document storage directories
+        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
+        // - Presentations (PPTX, PPT): Delete from document storage directories
+        // - Text files: Delete from text storage directories
+        // - Other file types: Implement based on file type and storage location
+        // For now, we just log that we found them but don't delete them to avoid data loss
+      }
+
       // Delete shared chats associated with this chat
       await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
 

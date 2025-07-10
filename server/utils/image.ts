@@ -13,7 +13,6 @@ export interface ThumbnailOptions {
   width?: number
   height?: number
   quality?: number
-  format?: "jpeg" | "png" | "webp"
 }
 
 export const generateThumbnail = async (
@@ -25,7 +24,6 @@ export const generateThumbnail = async (
     width = THUMBNAIL_SIZE,
     height = THUMBNAIL_SIZE,
     quality = THUMBNAIL_QUALITY,
-    format = "jpeg",
   } = options
 
   try {
@@ -38,7 +36,7 @@ export const generateThumbnail = async (
         fit: "inside",
         withoutEnlargement: true,
       })
-      .toFormat(format, { quality })
+      .toFormat("jpeg", { quality })
       .toFile(outputPath)
 
     Logger.info(`Thumbnail generated successfully at ${outputPath}`)
@@ -49,10 +47,16 @@ export const generateThumbnail = async (
 }
 
 export const isImageFile = (mimeType: string): boolean => {
-  const imageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+  const imageTypes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ]
   return imageTypes.includes(mimeType)
 }
 
 export const getThumbnailPath = (baseDir: string, fileId: string): string => {
-  return path.join(baseDir, `${fileId}_thumbnail.jpg`)
+  return path.join(baseDir, `${fileId}_thumbnail.jpeg`)
 }

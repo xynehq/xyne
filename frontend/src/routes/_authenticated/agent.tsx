@@ -1067,25 +1067,53 @@ function AgentComponent() {
     eventSourceRef.current.addEventListener(
       ChatSSEvents.AttachmentUpdate,
       (event) => {
-        const { attachments } = JSON.parse(event.data)
+        try {
+          const { messageId, attachments } = JSON.parse(event.data)
 
-        // Store attachment metadata for this message
-        setMessages((prevMessages) => {
-          // Find the last user message
-          const lastUserMessage = prevMessages
-            .filter((msg) => msg.messageRole === "user")
-            .pop()
-          if (lastUserMessage) {
-            return prevMessages.map((msg) =>
-              msg.externalId === lastUserMessage.externalId
-                ? { ...msg, attachments }
-                : msg,
+          // Validate required fields
+          if (!messageId) {
+            console.error(
+              "AttachmentUpdate: Missing messageId in event data",
+              event.data,
             )
+            return
           }
-          return prevMessages
-        })
+
+          if (!attachments || !Array.isArray(attachments)) {
+            console.error(
+              "AttachmentUpdate: Invalid attachments data",
+              event.data,
+            )
+            return
+          }
+
+          // Store attachment metadata for the specific message using messageId
+          setMessages((prevMessages) => {
+            const messageIndex = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (messageIndex === -1) {
+              console.warn(
+                `AttachmentUpdate: Message with ID ${messageId} not found`,
+              )
+              return prevMessages
+            }
+
+            return prevMessages.map((msg, index) =>
+              index === messageIndex ? { ...msg, attachments } : msg,
+            )
+          })
+        } catch (error) {
+          console.error("AttachmentUpdate: Failed to parse event data", {
+            error,
+            eventData: event.data,
+          })
+          // Don't crash the application, just log the error
+        }
       },
     )
+
     eventSourceRef.current.addEventListener(ChatSSEvents.End, () => {
       const currentRespVal = currentRespRef.current
       if (currentRespVal) {

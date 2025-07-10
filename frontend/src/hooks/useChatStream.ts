@@ -2,7 +2,12 @@ import { useRef, useState, useEffect, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "@tanstack/react-router"
 import { api } from "@/api"
-import { AttachmentMetadata, ChatSSEvents, Citation } from "shared/types"
+import {
+  AttachmentMetadata,
+  ChatSSEvents,
+  Citation,
+  SelectPublicMessage,
+} from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 
@@ -271,7 +276,7 @@ export const startStream = async (
     if (queryClient && streamState.chatId) {
       queryClient.setQueryData(
         ["chatHistory", streamState.chatId],
-        (old: any) => {
+        (old: { messages: SelectPublicMessage[] } | undefined) => {
           if (!old?.messages || old.messages.length === 0) return old
           const updatedMessages = [...old.messages]
           for (let i = updatedMessages.length - 1; i >= 0; i--) {

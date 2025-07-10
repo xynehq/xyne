@@ -2198,7 +2198,8 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
-  metadata: z.array(attachmentMetadataSchema as any).optional(),
+  // @ts-ignore
+  metadata: z.array(attachmentMetadataSchema).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>

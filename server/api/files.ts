@@ -237,30 +237,7 @@ export const handleAttachmentUpload = async (c: Context) => {
         // Generate thumbnail for images
         if (isImage) {
           thumbnailPath = getThumbnailPath(outputDir, fileId)
-
-          // Validate extension before casting to supported thumbnail formats
-          const supportedThumbnailFormats = [
-            "jpeg",
-            "jpg",
-            "png",
-            "webp",
-          ] as const
-          type SupportedFormat = "jpeg" | "png" | "webp"
-
-          if (supportedThumbnailFormats.includes(ext as any)) {
-            // Normalize jpg to jpeg for thumbnail generation
-            const normalizedFormat: SupportedFormat =
-              ext === "jpg" ? "jpeg" : (ext as SupportedFormat)
-            await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath, {
-              format: normalizedFormat,
-            })
-          } else {
-            // For unsupported image formats, skip thumbnail generation or use a default format
-            loggerWithChild({ email }).warn(
-              `Unsupported image format "${ext}" for thumbnail generation. Skipping thumbnail for file ${file.name}`,
-            )
-            thumbnailPath = undefined
-          }
+          await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
         }
 
         // Create attachment metadata
@@ -274,7 +251,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             ? path.relative(baseDir, thumbnailPath)
             : undefined,
           createdAt: new Date(),
-          url: `/api/attachments/${fileId}`,
+          url: `/api/v1/attachments/${fileId}`,
         }
 
         attachmentMetadata.push(metadata)

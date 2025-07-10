@@ -86,7 +86,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
                 <img
                   src={`/api/v1/attachments/${images[0].fileId}`}
                   alt={images[0].fileName}
-                  className="rounded-md shadow border border-gray-200 block ml-auto cursor-pointer hover:opacity-80 transition-opacity"
+                  className="rounded-md shadow border border-gray-200 block ml-auto cursor-pointer hover:opacity-80 transition-opacity max-w-[50%] h-auto"
                   style={{ maxWidth: "50%", height: "auto" }}
                 />
               </div>

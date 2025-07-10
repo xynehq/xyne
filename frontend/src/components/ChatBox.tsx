@@ -1443,22 +1443,18 @@ export const ChatBox = ({
       const filesToUpload = selectedFiles.filter(
         (f) => !f.metadata && !f.uploading,
       )
-      const alreadyUploadedFiles = selectedFiles.filter(
-        (f) => f.metadata && f.metadata.fileId,
-      )
+      const alreadyUploadedMetadata = selectedFiles
+        .map((f) => f.metadata)
+        .filter((m): m is AttachmentMetadata => !!m)
 
       if (filesToUpload.length > 0) {
-        const uploadedMetadata = await uploadFiles(filesToUpload)
+        const newUploadedMetadata = await uploadFiles(filesToUpload)
         attachmentsMetadata = [
-          ...alreadyUploadedFiles
-            .map((f) => f.metadata)
-            .filter((m): m is AttachmentMetadata => !!m),
-          ...uploadedMetadata,
+          ...alreadyUploadedMetadata,
+          ...newUploadedMetadata,
         ]
       } else {
-        attachmentsMetadata = alreadyUploadedFiles
-          .map((f) => f.metadata)
-          .filter((m): m is AttachmentMetadata => !!m)
+        attachmentsMetadata = alreadyUploadedMetadata
       }
     }
 

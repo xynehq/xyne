@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception"
 import type { Context } from "hono"
 import { Subsystem } from "@/types"
 import { getLogger } from "@/logger"
+import { attachmentMetadataSchema } from "@/shared/types"
 
 const logger = getLogger(Subsystem.Utils).child({ module: "attachment" })
 
@@ -27,18 +28,22 @@ export const parseAttachmentMetadata = (c: Context): AttachmentMetadata[] => {
       })
     }
 
-    // Additional validation that each item has expected structure (optional but recommended)
-    for (let i = 0; i < parsed.length; i++) {
-      const item = parsed[i]
-      if (!item || typeof item !== "object" || !item.fileId) {
-        logger.warn(`Invalid attachment metadata at index ${i}`, { item })
+    // Validate each item against the schema
+    const validatedItems = parsed.map((item, index) => {
+      try {
+        return attachmentMetadataSchema.parse(item)
+      } catch (error) {
+        logger.warn(`Invalid attachment metadata at index ${index}`, {
+          item,
+          error,
+        })
         throw new HTTPException(400, {
-          message: `Invalid attachment metadata format at index ${i}`,
+          message: `Invalid attachment metadata format at index ${index}`,
         })
       }
-    }
+    })
 
-    return parsed as AttachmentMetadata[]
+    return validatedItems
   } catch (error) {
     if (error instanceof HTTPException) {
       throw error // Re-throw our own HTTPExceptions

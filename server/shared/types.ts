@@ -506,7 +506,12 @@ export const attachmentMetadataSchema = z.object({
   fileSize: z.number(),
   isImage: z.boolean(),
   thumbnailPath: z.string().optional(),
-  createdAt: z.date(),
+  createdAt: z.union([z.string(), z.date()]).transform((val) => {
+    if (typeof val === "string") {
+      return new Date(val)
+    }
+    return val
+  }),
   url: z.string().optional(),
 })
 
