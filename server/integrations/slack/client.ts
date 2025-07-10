@@ -18,6 +18,7 @@ import {
   createId
 } from "@paralleldrive/cuid2";
 import {
+  getChatMessagesBefore,
   insertMessage,
   getMessageByExternalId
 } from "@/db/message";
@@ -740,16 +741,31 @@ const handleAgentSearchCommand = async (
       }
 
       const chat = await getOrCreateChat(threadTs || channel, dbUser);
+      const finalModelId = selectedAgent.model === 'Auto' ? 'gpt-4o-mini' : selectedAgent.model;
+      Logger.info(`Model ID : ${finalModelId} and selectedAgent.model : ${selectedAgent.model}`);
+      await insertMessage(db, {
+        message: query,
+        messageRole: MessageRole.User,
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        chatExternalId: chat.externalId,
+        modelId: finalModelId,
+        sources: [],
+        fileIds: [],
+        userId: dbUser.id,
+        chatId: chat.id,
+        platform: Platform.Slack,
+      });
+
       const newMessage = await insertMessage(db, {
         message: finalResponse,
         messageRole: MessageRole.Assistant,
         email: dbUser.email,
         workspaceExternalId: dbUser.workspaceExternalId,
         chatExternalId: chat.externalId,
-        modelId: selectedAgent.model,
+        modelId: finalModelId,
         sources: citations,
         fileIds: [],
-        thinking: query,
         userId: dbUser.id,
         chatId: chat.id,
         platform: Platform.Slack,
@@ -986,16 +1002,29 @@ const handleSearchQuery = async (
   }
 
   const chat = await getOrCreateChat(threadTs || channel, dbUser);
+  await insertMessage(db, {
+    message: query,
+    messageRole: MessageRole.User,
+    email: dbUser.email,
+    workspaceExternalId: dbUser.workspaceExternalId,
+    chatExternalId: chat.externalId,
+    modelId: "",
+    sources: [],
+    fileIds: [],
+    userId: dbUser.id,
+    chatId: chat.id,
+    platform: Platform.Slack,
+  });
+
   const newMessage = await insertMessage(db, {
     message: formatSearchResultsForDisplay(query, results),
     messageRole: MessageRole.Assistant,
     email: dbUser.email,
     workspaceExternalId: dbUser.workspaceExternalId,
     chatExternalId: chat.externalId,
-    modelId: "search", // Or a more appropriate identifier
+    modelId: "",
     sources: results,
     fileIds: [],
-    thinking: query,
     userId: dbUser.id,
     chatId: chat.id,
     platform: Platform.Slack,
@@ -1267,7 +1296,15 @@ const handleViewSearchModal = async (
     }
 
     const results = (message.sources as any[]) || [];
-    const query = message.thinking;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
     const isFromThread = !!container?.thread_ts;
     const modal = createSearchResultsModal(query, results);
 
@@ -1347,8 +1384,16 @@ const handleViewAgentModal = async (
       message: response,
       sources: citations,
       modelId: agentName,
-      thinking: query,
     } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
     const isFromThread = !!container?.thread_ts;
 
     const modal = createAgentResponseModal(
@@ -1429,8 +1474,16 @@ const handleSourcePagination = async (action: any, view: any) => {
       message: response,
       sources: citations,
       modelId: agentName,
-      thinking: query,
     } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
     const isFromThread = !!view.thread_ts;
 
     const newModal = createAgentResponseModal(
@@ -1569,8 +1622,16 @@ const handleShareAgentFromModal = async (
       modelId: agentName,
       message: response,
       sources: citations,
-      thinking: query,
     } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
     const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
 
     if (!channel_id)
