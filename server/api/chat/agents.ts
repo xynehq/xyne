@@ -2105,8 +2105,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
-      console.log('Printing agentPromptForLLM')
-      console.log(agentPromptForLLM)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     if (!message) {
@@ -2346,6 +2344,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           }
         }
 
+        const messagesWithNoErrResponse = messages
+          .slice(0, messages.length - 1)
+          .filter((msg) => !msg?.errorMessage)
+          .map((m) => ({
+            role: m.messageRole as ConversationRole,
+            content: [{ text: m.message }],
+          }))
+        Logger.info("Before baselineRAGOffJsonStream")
         const ragOffIterator = baselineRAGOffJsonStream(
           message,
           ctx,
@@ -2355,10 +2361,15 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             stream: true,
             json: true,
             reasoning: false,
+            messages: messagesWithNoErrResponse,
           },
           agentPromptForLLM ?? "",
+          messages.map((m) => ({
+            role: m.messageRole as ConversationRole,
+            content: [{ text: m.message }],
+          })),
         )
-
+        Logger.info("After baselineRAGOffJsonStream")
         let answer = ""
         let currentAnswer = ""
         let buffer = ""

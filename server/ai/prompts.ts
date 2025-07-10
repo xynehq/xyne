@@ -2078,7 +2078,7 @@ Bad: "No clear meeting information found" (Use null instead)
 export const ragOffPromptJson = (
   userContext: string,
   retrievedContext: string,
-  agentPrompt: string,
+  agentPromptData?: AgentPromptData,
 ) => `You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
 1. Files (documents, spreadsheets, etc.)
 The context provided will be formatted with specific fields for each type:
@@ -2098,6 +2098,12 @@ This includes:
 - Company name and domain
 - Current time and date
 - Timezone
+# Context of the agent
+Name: ${agentPromptData?.name || "Not specified"}
+Description: ${agentPromptData?.description || "Not specified"}
+Prompt: ${agentPromptData?.prompt || ""}
+# Past Messages
+- Use the user's past messages to answer any follow up questions and to understand the context of the conversation.
 # Retrieved Context
 ${retrievedContext}
 # Guidelines for Response
@@ -2109,7 +2115,17 @@ ${retrievedContext}
    - Begin with the most relevant information
    - Maintain chronological order when relevant
 3. If the user's query is a greeting, a simple question, or a calculation that doesn't require the retrieved context, answer it directly.
-4. Quality Assurance:
+4. Evaluate query clarity:
+    - Identify ambiguous elements (pronouns like "it", "they", references like "the project")
+    - If the query is ambiguous, rewrite it to be more specific.
+    - Replace ambiguous references with specific entities from conversation history
+    - Preserve original query if already clear and specific
+5. Search conversation context:
+    - Look for direct answers within previous messages only
+    - Consider answers that can be clearly inferred from prior context
+    - Handle conversation meta-queries using available history
+    - Provide natural responses to conversational statements
+6. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
    - Indicate confidence levels based on relevance scores

@@ -523,6 +523,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     try {
       jsonVal = parse(text.trim())
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
+        
         let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
@@ -1122,6 +1123,7 @@ export const baselineRAGOffJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   agentPrompt: string,
+  messages: Message[],
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1130,7 +1132,7 @@ export const baselineRAGOffJsonStream = (
   params.systemPrompt = ragOffPromptJson(
     userCtx,
     indexToCitation(retrievedCtx),
-    agentPrompt,
+    parseAgentPrompt(agentPrompt),
   )
   params.json = true
 
@@ -1145,10 +1147,13 @@ export const baselineRAGOffJsonStream = (
   }
 
   if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
     : [baseMessage]
-  return getProviderByModel(params.modelId).converseStream(messages, params)
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
 }
 
 export const temporalPromptJsonStream = (
