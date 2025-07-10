@@ -698,7 +698,6 @@ export const createAgentConversationModal = (
 };
 
 export const createAgentResponseBlocks = (
-  agentName: string,
   userQuestion: string,
   agentResponse: string,
   conversationId?: string,
@@ -710,7 +709,7 @@ export const createAgentResponseBlocks = (
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 *${agentName}* responded:`,
+        text: `🤖 Agent responded:`,
       },
     },
     {
@@ -789,22 +788,21 @@ export const createAgentResponseBlocks = (
     });
   }
 
-  actionElements.push({
-    type: "button",
-    text: {
-      type: "plain_text",
-      text: "Share Response",
-      emoji: true,
-    },
-    style: "primary",
-    action_id: "share_agent_response",
-    value: JSON.stringify({
-      agent_name: agentName,
-      question: userQuestion,
-      response: agentResponse,
-      conversation_id: conversationId,
-    }),
-  });
+    actionElements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Share Response",
+        emoji: true,
+      },
+      style: "primary",
+      action_id: "share_agent_response",
+      value: JSON.stringify({
+        question: userQuestion,
+        response: agentResponse,
+        conversation_id: conversationId,
+      }),
+    });
 
   if (actionElements.length > 0) {
     blocks.push({
@@ -855,7 +853,6 @@ export function cleanAgentResponse(response: string): string {
  * The modal shows the agent's name, the original query (truncated if necessary), the cleaned and truncated response, and a paginated list of sources if citations are provided. Users can navigate between citation pages and share the response in the channel or thread.
  *
  * @param query - The original user query
- * @param agentName - Name of the responding agent
  * @param response - The agent's response text
  * @param citations - Array of citation objects to display as sources
  * @param messageId - Unique identifier for this message interaction
@@ -865,14 +862,12 @@ export function cleanAgentResponse(response: string): string {
  */
 export function createAgentResponseModal(
   query: string,
-  agentName: string,
   response: string,
   citations: unknown[],
   messageId: string,
   isFromThread: boolean,
   page: number = 1
 ): View {
-  const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Validate and filter citations
   const validCitations = validateCitations(citations);
   // Clean up and format the main response body for Slack mrkdwn
@@ -883,7 +878,7 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 */${agentDisplayName}* responded to: "_${
+        text: `Query: "_${
           query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
         }_"`,
       },
@@ -1058,7 +1053,6 @@ export function createAgentResponseModal(
  * The response text is cleaned and truncated if necessary. Citations are displayed with titles, snippets, and links when available, with a limit on the number shown. Attribution is included at the end.
  *
  * @param userId - Slack user ID of the person sharing the response
- * @param agentName - Name of the agent providing the response
  * @param query - The original user query
  * @param response - The agent's response text
  * @param citations - Optional array of source citations to display
@@ -1066,12 +1060,10 @@ export function createAgentResponseModal(
  */
 export function createSharedAgentResponseBlocks(
   userId: string,
-  agentName: string,
   query: string,
   response: string,
   citations: any[] = []
 ): (KnownBlock | Block)[] {
-  const agentDisplayName = agentName.replace(/\s+/g, "-");
   // Clean up and format the main response body for Slack markdown
   const displayResponse = cleanAgentResponse(response);
 
@@ -1080,7 +1072,7 @@ export function createSharedAgentResponseBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*🤖 ${agentDisplayName} Response*`,
+        text: `*🤖 Agent Response*`,
       },
     },
     {

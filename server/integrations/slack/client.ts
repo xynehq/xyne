@@ -742,7 +742,6 @@ const handleAgentSearchCommand = async (
 
       const chat = await getOrCreateChat(threadTs || channel, dbUser);
       const finalModelId = selectedAgent.model === 'Auto' ? 'gpt-4o-mini' : selectedAgent.model;
-      Logger.info(`Model ID : ${finalModelId} and selectedAgent.model : ${selectedAgent.model}`);
       await insertMessage(db, {
         message: query,
         messageRole: MessageRole.User,
@@ -1383,7 +1382,6 @@ const handleViewAgentModal = async (
     const {
       message: response,
       sources: citations,
-      modelId: agentName,
     } = message;
     const previousMessages = await getChatMessagesBefore(
       db,
@@ -1398,7 +1396,6 @@ const handleViewAgentModal = async (
 
     const modal = createAgentResponseModal(
       query,
-      agentName,
       response,
       (citations as any) || [],
       messageId,
@@ -1473,7 +1470,6 @@ const handleSourcePagination = async (action: any, view: any) => {
     const {
       message: response,
       sources: citations,
-      modelId: agentName,
     } = message;
     const previousMessages = await getChatMessagesBefore(
       db,
@@ -1488,7 +1484,6 @@ const handleSourcePagination = async (action: any, view: any) => {
 
     const newModal = createAgentResponseModal(
       query,
-      agentName,
       response,
       (citations as any) || [],
       message_id,
@@ -1619,7 +1614,6 @@ const handleShareAgentFromModal = async (
     }
 
     const {
-      modelId: agentName,
       message: response,
       sources: citations,
     } = message;
@@ -1642,10 +1636,9 @@ const handleShareAgentFromModal = async (
     await webClient!.chat.postMessage({
       channel: channel_id,
       thread_ts: isThreadShare ? thread_ts : undefined,
-      text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
+      text: `Agent response - Shared by <@${user_id}>`,
       blocks: createSharedAgentResponseBlocks(
         user_id,
-        agentName,
         query,
         response,
         (citations as any) || []
