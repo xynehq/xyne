@@ -507,6 +507,17 @@ export const ChatDeleteApi = async (c: Context) => {
 
         for (const fileId of imageAttachmentFileIds) {
           try {
+            // Validate fileId to prevent path traversal
+            if (
+              fileId.includes("..") ||
+              fileId.includes("/") ||
+              fileId.includes("\\")
+            ) {
+              loggerWithChild({ email: email }).error(
+                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
+              )
+              continue
+            }
             const imageBaseDir = path.resolve(
               process.env.IMAGE_DIR || "downloads/xyne_images_db",
             )

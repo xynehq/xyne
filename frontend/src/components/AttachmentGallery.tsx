@@ -79,15 +79,12 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
         <div className="space-y-2 mt-2">
           {images.length === 1 ? (
             <div className="flex justify-end ml-auto w-fit">
-              <div
-                className="relative rounded-md overflow-hidden ml-auto"
-                onClick={() => handleImageGalleryOpen(0)}
-              >
+              <div className="relative rounded-md overflow-hidden ml-auto">
                 <img
                   src={`/api/v1/attachments/${images[0].fileId}`}
                   alt={images[0].fileName}
                   className="rounded-md shadow border border-gray-200 block ml-auto cursor-pointer hover:opacity-80 transition-opacity max-w-[50%] h-auto"
-                  style={{ maxWidth: "50%", height: "auto" }}
+                  onClick={() => handleImageGalleryOpen(0)}
                 />
               </div>
             </div>
@@ -188,7 +185,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
                     variant="ghost"
                     size="lg"
                     onClick={prevImage}
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white hover:bg-opacity-20"
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white hover:bg-opacity-20 bg-black bg-opacity-50 hover:bg-opacity-70 rounded-full p-2"
                   >
                     <ChevronLeft className="w-6 h-6" />
                   </Button>
@@ -196,7 +193,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
                     variant="ghost"
                     size="lg"
                     onClick={nextImage}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white hover:bg-opacity-20"
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white hover:bg-opacity-20 bg-black bg-opacity-50 hover:bg-opacity-70 rounded-full p-2"
                   >
                     <ChevronRight className="w-6 h-6" />
                   </Button>
