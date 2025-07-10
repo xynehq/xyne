@@ -197,7 +197,7 @@ const isValidMimeType = (mimeType: string | null | undefined): boolean => {
   return supportedTypes.has(mimeType.toLowerCase().split(";")[0].trim())
 }
 
-const extractEmailAddresses = (headerValue: string): string[] => {
+export const extractEmailAddresses = (headerValue: string): string[] => {
   if (!headerValue) return []
   // Regular expression to match anything inside angle brackets
 
