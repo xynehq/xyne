@@ -753,7 +753,6 @@ const handleAgentSearchCommand = async (
         fileIds: [],
         userId: dbUser.id,
         chatId: chat.id,
-        platform: Platform.Slack,
       });
 
       const newMessage = await insertMessage(db, {
@@ -767,7 +766,6 @@ const handleAgentSearchCommand = async (
         fileIds: [],
         userId: dbUser.id,
         chatId: chat.id,
-        platform: Platform.Slack,
       });
 
       await client.chat.postEphemeral({
@@ -1012,7 +1010,6 @@ const handleSearchQuery = async (
     fileIds: [],
     userId: dbUser.id,
     chatId: chat.id,
-    platform: Platform.Slack,
   });
 
   const newMessage = await insertMessage(db, {
@@ -1026,7 +1023,6 @@ const handleSearchQuery = async (
     fileIds: [],
     userId: dbUser.id,
     chatId: chat.id,
-    platform: Platform.Slack,
   });
 
   await client.chat.postEphemeral({
