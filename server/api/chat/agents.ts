@@ -18,6 +18,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  baselineRAGOffJsonStream,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -107,6 +108,7 @@ import {
   searchVespaThroughAgent,
   searchVespaAgent,
   SearchVespaThreads,
+  getAllDocumentsForAgent,
 } from "@/search/vespa"
 import {
   Apps,
@@ -2047,9 +2049,440 @@ export const MessageWithToolsApi = async (c: Context) => {
     rootSpan.end()
   }
 }
-
 // END OF AgentMessageApi
-// The new CombinedAgentSlackApi function will be inserted after this comment.
+export const AgentMessageApiRagOff = async (c: Context) => {
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
+
+  let stream: any
+  let chat: SelectChat
+  let assistantMessageId: string | null = null
+  let streamKey: string | null = null
+  let email = ""
+
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+
+    // @ts-ignore
+    const body = c.req.valid("query")
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
+    let {
+      message,
+      chatId,
+      modelId,
+      isReasoningEnabled,
+      agentId,
+    }: MessageReqType = body
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId, // This workspaceId is the externalId from JWT
+      email,
+    )
+    const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
+
+    let agentPromptForLLM: string | undefined = undefined
+    let agentForDb: SelectAgent | null = null
+    if (agentId && isCuid(agentId)) {
+      // Use the numeric workspace.id for the database query with permission check
+      agentForDb = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        agentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentForDb) {
+        throw new HTTPException(403, {
+          message: "Access denied: You don't have permission to use this agent",
+        })
+      }
+      agentPromptForLLM = JSON.stringify(agentForDb)
+      console.log('Printing agentPromptForLLM')
+      console.log(agentPromptForLLM)
+    }
+    const agentIdToStore = agentForDb ? agentForDb.externalId : null
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
+    message = decodeURIComponent(message)
+    rootSpan.setAttribute("message", message)
+
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
+
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+
+    const chatCreationSpan = rootSpan.startSpan("chat_creation")
+
+    let title = ""
+    if (!chatId) {
+      const titleSpan = chatCreationSpan.startSpan("generate_title")
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+        titleSpan.setAttribute("cost", cost)
+      }
+      titleSpan.setAttribute("title", title)
+      titleSpan.end()
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+            agentId: agentIdToStore,
+          })
+
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds: fileIds,
+          })
+          return [chat, insertedMsg]
+        },
+      )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+      chatCreationSpan.end()
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
+          // we are updating the chat and getting it's value in one call itself
+
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
+
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      Logger.info("Existing conversation, fetched previous messages")
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+      chatCreationSpan.end()
+    }
+    return streamSSE(c, async (stream) => {
+      streamKey = `${chat.externalId}` // Create the stream key
+      activeStreams.set(streamKey, stream) // Add stream to the map
+      Logger.info(`Added stream ${streamKey} to active streams map.`)
+      let wasStreamClosedPrematurely = false
+      const streamSpan = rootSpan.startSpan("stream_response")
+      streamSpan.setAttribute("chatId", chat.externalId)
+      try {
+        if (!chatId) {
+          const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+          await stream.writeSSE({
+            data: title,
+            event: ChatSSEvents.ChatTitleUpdate,
+          })
+          titleUpdateSpan.end()
+        }
+
+        Logger.info("Chat stream started")
+        // we do not set the message Id as we don't have it
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+          }),
+        })
+        
+        const agentAppEnums: Apps[] = []
+        const agentSpecificDataSourceIds: string[] = []
+
+        if (
+          agentForDb?.appIntegrations &&
+          Array.isArray(agentForDb.appIntegrations)
+        ) {
+          for (const integration of agentForDb.appIntegrations) {
+            if (typeof integration === "string") {
+              const lowerIntegration = integration.toLowerCase()
+              if (
+                lowerIntegration.startsWith("ds-") ||
+                lowerIntegration.startsWith("ds_")
+              ) {
+                agentSpecificDataSourceIds.push(integration)
+                if (!agentAppEnums.includes(Apps.DataSource)) {
+                  agentAppEnums.push(Apps.DataSource)
+                }
+              } else {
+                switch (lowerIntegration) {
+                  case Apps.GoogleDrive.toLowerCase():
+                  case "googledrive":
+                    if (!agentAppEnums.includes(Apps.GoogleDrive))
+                      agentAppEnums.push(Apps.GoogleDrive)
+                    break
+                  case Apps.DataSource.toLowerCase(): // 'data-source'
+                    if (!agentAppEnums.includes(Apps.DataSource))
+                      agentAppEnums.push(Apps.DataSource)
+                    break
+                  case "googlesheets":
+                    if (!agentAppEnums.includes(Apps.GoogleDrive))
+                      agentAppEnums.push(Apps.GoogleDrive)
+                    break
+                  case Apps.Gmail.toLowerCase():
+                  case "gmail":
+                    if (!agentAppEnums.includes(Apps.Gmail))
+                      agentAppEnums.push(Apps.Gmail)
+                    break
+                  case Apps.GoogleCalendar.toLowerCase():
+                  case "googlecalendar":
+                    if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                      agentAppEnums.push(Apps.GoogleCalendar)
+                    break
+                  case Apps.Slack.toLowerCase():
+                  case "slack":
+                    if (!agentAppEnums.includes(Apps.Slack))
+                      agentAppEnums.push(Apps.Slack)
+                    break
+                  default:
+                    loggerWithChild({ email: email }).warn(
+                      `Unknown integration type in agent prompt: ${integration}`,
+                    )
+                    break
+                }
+              }
+            } else {
+              loggerWithChild({ email: email }).warn(
+                `Invalid integration item in agent prompt (not a string): ${integration}`,
+              )
+            }
+          }
+        }
+
+        const allDataSources = await getAllDocumentsForAgent(
+          email,
+          agentAppEnums,
+          agentSpecificDataSourceIds,
+        )
+
+        const docIds = [
+          ...new Set(
+            allDataSources.root.children
+              .map(
+                (child: VespaSearchResult) =>
+                  (child.fields as any)?.docId as string,
+              )
+              .filter(Boolean),
+          ),
+        ]
+
+        let context = ""
+        if (docIds.length > 0) {
+          const allChunks = await GetDocumentsByDocIds(docIds, rootSpan)
+          if (allChunks?.root?.children) {
+            context = answerContextMapFromFragments(
+              allChunks.root.children.map((child: VespaSearchResult) => ({
+                id: `${(child.fields as any)?.docId || "Frangment_id_"}`,
+                content: answerContextMap(
+                  child as z.infer<typeof VespaSearchResultsSchema>,
+                  0,
+                  true,
+                ),
+                source: searchToCitation(
+                  child as z.infer<typeof VespaSearchResultsSchema>,
+                ),
+                confidence: 1.0,
+              })),
+              maxDefaultSummary,
+            )
+          }
+        }
+
+        const ragOffIterator = baselineRAGOffJsonStream(
+          message,
+          ctx,
+          context,
+          {
+            modelId: defaultBestModel,
+            stream: true,
+            json: true,
+            reasoning: false,
+          },
+          agentPromptForLLM ?? "",
+        )
+
+        let answer = ""
+        let currentAnswer = ""
+        let buffer = ""
+        let parsed = { answer: "" }
+        for await (const chunk of ragOffIterator) {
+          if (stream.closed) {
+            Logger.info(
+              "[AgentMessageApiRagOff] Stream closed. Breaking.",
+            )
+            wasStreamClosedPrematurely = true
+            break
+          }
+          if (chunk.text) {
+            buffer += chunk.text
+            try {
+              parsed = jsonParseLLMOutput(buffer) || { answer: "" }
+              if (parsed.answer && currentAnswer !== parsed.answer) {
+                if (currentAnswer === "") {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: parsed.answer,
+                  })
+                } else {
+                  const newText = parsed.answer.slice(currentAnswer.length)
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: newText,
+                  })
+                }
+                currentAnswer = parsed.answer
+              }
+            } catch (e) {
+              // It's okay if it fails to parse, just means the JSON is not complete yet.
+            }
+          }
+          if (chunk.cost) {
+            costArr.push(chunk.cost)
+          }
+        }
+        answer = currentAnswer
+
+        if (answer) {
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: [],
+            message: answer,
+            thinking: "",
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: assistantMessageId,
+            }),
+          })
+        } else if (wasStreamClosedPrematurely) {
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: [],
+            message: answer,
+            thinking: "",
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+        } else {
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: [],
+            message: "",
+            thinking: "No answer found in context",
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: assistantMessageId,
+            }),
+          })
+        }
+
+        const endSpan = streamSpan.startSpan("send_end_event")
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        endSpan.end()
+        streamSpan.end()
+        rootSpan.end()
+      } catch (error) {
+        // ... (error handling as in AgentMessageApi)
+      } finally {
+        if (streamKey && activeStreams.has(streamKey)) {
+          activeStreams.delete(streamKey)
+          Logger.info(
+            `Removed stream ${streamKey} from active streams map.`,
+          )
+        }
+      }
+    })
+  } catch (error) {
+    // ... (error handling as in AgentMessageApi)
+  }
+}
+
 
 export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
@@ -2109,6 +2542,9 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
+      if (!agentForDb.isRagOn) {
+        return AgentMessageApiRagOff(c)
+      }
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     const userRequestsReasoning = isReasoningEnabled

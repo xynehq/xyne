@@ -74,6 +74,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1099,6 +1100,41 @@ export const baselineRAGJsonStream = (
   }
   params.json = true
 
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    indexToCitation(retrievedCtx),
+    agentPrompt,
+  )
+  params.json = true
+
+  // console.log(`params.systemPrompt : ${params.systemPrompt}`)
   const baseMessage = {
     role: ConversationRole.USER,
     content: [

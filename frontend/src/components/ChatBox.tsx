@@ -323,6 +323,9 @@ export const ChatBox = ({
   const [showSourcesButton, _] = useState(false) // Added this line
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
   const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
     new Set(),
@@ -556,22 +559,27 @@ export const ChatBox = ({
             )
             if (currentAgent) {
               setDisplayAgentName(currentAgent.name)
+              setSelectedAgent(currentAgent)
             } else {
               console.error(
                 `Agent with ID ${persistedAgentId} not found for display.`,
               )
               setDisplayAgentName(null)
+              setSelectedAgent(null)
             }
           } else {
             console.error("Failed to load agents for display.")
             setDisplayAgentName(null)
+            setSelectedAgent(null)
           }
         } catch (error) {
           console.error("Error fetching agent details for display:", error)
           setDisplayAgentName(null)
+          setSelectedAgent(null)
         }
       } else {
         setDisplayAgentName(null) // Clear display name if no persistedAgentId
+        setSelectedAgent(null)
       }
     }
 
@@ -2874,11 +2882,12 @@ export const ChatBox = ({
           <div className="flex items-center">
             <button
               onClick={() => setIsReasoningActive(!isReasoningActive)}
+              disabled={selectedAgent ? !selectedAgent.isRagOn : false}
               className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
                 isReasoningActive
                   ? "text-green-600 dark:text-green-400"
                   : "text-[#464D53] dark:text-gray-400"
-              }`}
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               <Atom
                 size={16}
@@ -2893,12 +2902,13 @@ export const ChatBox = ({
               </span>
             </button>
           </div>
-          <div
+          <button
             onClick={(e) => {
               e.stopPropagation()
               setIsAgenticMode(!isAgenticMode)
             }}
-            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
+            disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Infinity
               size={14}
@@ -2910,7 +2920,7 @@ export const ChatBox = ({
             >
               Agent
             </span>
-          </div>
+          </button>
           {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}

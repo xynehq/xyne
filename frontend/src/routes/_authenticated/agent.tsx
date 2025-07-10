@@ -208,6 +208,7 @@ function AgentComponent() {
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
   const [isPublic, setIsPublic] = useState(false)
+  const [isRagOn, setIsRagOn] = useState(true)
 
   // Prompt generation states
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
@@ -687,6 +688,7 @@ function AgentComponent() {
     setAgentDescription("")
     setAgentPrompt("")
     setIsPublic(false)
+    setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
     setEditingAgent(null)
@@ -732,6 +734,7 @@ function AgentComponent() {
       setAgentDescription(editingAgent.description || "")
       setAgentPrompt(editingAgent.prompt || "")
       setIsPublic(editingAgent.isPublic || false)
+      setIsRagOn(editingAgent.isRagOn === false ? false : true)
       setSelectedModel(editingAgent.model)
 
       const currentIntegrations: Record<string, boolean> = {}
@@ -823,6 +826,7 @@ function AgentComponent() {
       prompt: agentPrompt,
       model: selectedModel,
       isPublic: isPublic,
+      isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
@@ -1645,6 +1649,46 @@ function AgentComponent() {
                         className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
                       >
                         Public (all workspace members can access)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    RAG
+                  </Label>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOn"
+                        name="rag"
+                        checked={isRagOn}
+                        onChange={() => setIsRagOn(true)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOn"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        On
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOff"
+                        name="rag"
+                        checked={!isRagOn}
+                        onChange={() => setIsRagOn(false)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOff"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        Off
                       </Label>
                     </div>
                   </div>

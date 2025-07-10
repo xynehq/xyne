@@ -1178,7 +1178,107 @@ const HybridDefaultProfileAppEntityCounts = (
   }
 }
 
-// TODO: extract out the fetch and make an api client
+export const getAllDocumentsForAgent = async (
+  email: string,
+  AllowedApps: Apps[] | null,
+  dataSourceIds: string[] = [],
+  limit: number = 400,
+): Promise<VespaSearchResponse> => {
+  const emailorkey = process.env.API_KEY || email
+  const { client, email: resolvedEmail } = await getVespaClientAndEmail(
+    emailorkey,
+  )
+
+  const sources: string[] = []
+  const conditions: string[] = []
+
+  if (AllowedApps && AllowedApps.length > 0) {
+    for (const allowedApp of AllowedApps) {
+      switch (allowedApp) {
+        case Apps.GoogleWorkspace:
+          if (!sources.includes(userSchema)) sources.push(userSchema)
+          conditions.push(`app contains "${Apps.GoogleWorkspace}"`)
+          break
+        case Apps.Gmail:
+          if (!sources.includes(mailSchema)) sources.push(mailSchema)
+          conditions.push(`app contains "${Apps.Gmail}"`)
+          break
+        case Apps.GoogleDrive:
+          if (!sources.includes(fileSchema)) sources.push(fileSchema)
+          conditions.push(`app contains "${Apps.GoogleDrive}"`)
+          break
+        case Apps.GoogleCalendar:
+          if (!sources.includes(eventSchema)) sources.push(eventSchema)
+          conditions.push(`app contains "${Apps.GoogleCalendar}"`)
+          break
+        case Apps.Slack:
+          if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+          if (!sources.includes(chatMessageSchema))
+            sources.push(chatMessageSchema)
+          conditions.push(`app contains "${Apps.Slack}"`)
+          break
+        case Apps.DataSource:
+          if (dataSourceIds && dataSourceIds.length > 0) {
+            if (!sources.includes(dataSourceFileSchema))
+              sources.push(dataSourceFileSchema)
+            const dsConditions = dataSourceIds
+              .map((id) => `dataSourceId contains '${id.trim()}'`)
+              .join(" or ")
+            conditions.push(`(${dsConditions})`)
+          }
+          break
+      }
+    }
+  } else if (dataSourceIds && dataSourceIds.length > 0) {
+    if (!sources.includes(dataSourceFileSchema))
+      sources.push(dataSourceFileSchema)
+    const dsConditions = dataSourceIds
+      .map((id) => `dataSourceId contains '${id.trim()}'`)
+      .join(" or ")
+    conditions.push(`(${dsConditions})`)
+  }
+
+  const sourcesString = [...new Set(sources)].join(", ")
+  if (!sourcesString) {
+    return {
+      root: {
+        id: "toplevel",
+        relevance: 1.0,
+        fields: { totalCount: 0 },
+        children: [],
+        coverage: {
+          coverage: 100,
+          documents: 0,
+          full: true,
+          nodes: 1,
+          results: 0,
+          resultsFull: 0,
+        },
+      },
+    }
+  }
+
+  const whereClause = `where ${conditions.join(" or ")}`
+  const yql = `select * from sources ${sourcesString} ${whereClause}`
+
+  const payload = {
+    yql,
+    hits: limit,
+    email: resolvedEmail,
+    timeout: "30s",
+    "ranking.profile": "unranked",
+  }
+
+  try {
+    return await client.search<VespaSearchResponse>(payload)
+  } catch (error) {
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: sourcesString,
+    })
+  }
+}
+
 export const groupVespaSearch = async (
   query: string,
   email: string,
