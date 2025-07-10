@@ -1,6 +1,34 @@
 [
   {
-    "input": "what is my email",
-    "expected": "user@gmail.com"
+  "input": "Hi",
+  "isReasoningEnabled": true,
+  "attachmentFileIds": [],
+  "expected": {
+    "hasAnswer": true,
+    "answerType": "context",
+    "hasCitations": true,
+    "citationCount": 1,
+    "errorExpected": false
+  },
+  "context": {
+    "fileIds": [],
+    "hasContext": true
   }
+},
+{
+  "input": "Summarize the key points from the document with file ID doc12345 and explain how they relate to project Alpha.",
+  "isReasoningEnabled": true,
+  "attachmentFileIds": [],
+  "expected": {
+    "hasAnswer": true,
+    "answerType": "context",
+    "hasCitations": true,
+    "citationCount": 1,
+    "errorExpected": false
+  },
+  "context": {
+    "fileIds": [],
+    "hasContext": true
+  }
+}
 ]

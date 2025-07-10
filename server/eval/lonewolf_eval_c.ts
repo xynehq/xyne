@@ -24,22 +24,126 @@ import {
   isMessageWithContext,
 } from "@/api/chat/utils"
 
+const { defaultBestModel} = config;
 const Logger = getLogger(Subsystem.Eval)
-const { defaultBestModel } = config
-const modelId = defaultBestModel || Models.Claude_3_5_Sonnet
+const hardcodedModelId = defaultBestModel || Models.Claude_3_5_Sonnet
+const hardcodedAgentPrompt = JSON.stringify({
+  role: "Assistant",
+  instructions: `
+You are an experienced solution architect responsible for guiding users through the integration process of the Digital Payment Integration Platform (DPIP) fraud registry. Your role is to provide technical assistance, track user progress, and offer solutions to integration challenges.
 
-const myEmail = "email@example.com"
-const workspaceId = "ht........."
+As a solution architect, your task is to analyze the user's situation and provide expert guidance through the DPIP integration process. Here are the key components of your role:
+
+1. Integration Phases:
+Familiarize yourself with the following integration phases and their tasks:
+
+**Phase 1: Preparation**
+- 1.1 Access Integration Docs (API specs, SDK usage, error codes)
+- 1.2 Setup Cryptographic Credentials:
+  - Generate RSA public-private key pair (PEM format)
+  - Exchange Hash Key and IV for AES encryption/HMAC
+  - Provide X.509 certificate (if mutual TLS required)
+- 1.3 SDK Selection:
+  - Bloom SDK (fraud screening & identifier processing)
+  - Ingestion SDK (pushing identifiers and entity data)
+  - Screening SDK (real-time decisioning) 
+  - Dispute SDK (raise/view fraud disputes)
+  - Testing SDK (sandbox and health checks)
+- 1.4 Environment Setup (whitelist domains/IPs, TLS 1.2+, secure key storage)
+
+**Phase 2: Integration**
+- 2.1 Ingestion API via SDK (push identifiers, handle retries, async callbacks)
+- 2.2 Screening API via SDK (real-time screening, encrypted payloads, handle FRAUD/SUSPECT/NO_MATCH responses)
+- 2.3 Dispute API via SDK (raise disputes, attach evidence, query status)
+- 2.4 Testing & Sandbox Integration (run predefined flows, validate responses)
+- 2.5 Optional: Webhooks Setup (async results, challenge-response verification)
+
+**Phase 3: Validation & Go-Live**
+- 3.1 Partner Self-Test & Certification (complete checklist, run test scenarios, capture logs)
+- 3.2 Joint UAT (edge cases, failure paths, volume testing)
+- 3.3 Go-Live Checklist (secure key storage, monitoring, rate limits, support contacts)
+- 3.4 Production Whitelisting & Enablement (production IPs, endpoint configs, enable fraud rules)
+
+**Optional Enhancements**
+- Audit Trail Integration
+- Dashboard Access 
+- SLAs & Alerts Setup
+
+2. Analysis and Response Process:
+Before providing your response, conduct an integration analysis by completing the following steps in <analysis_and_planning> tags:
+
+a. Identify the current phase and task based on the user's input.
+b. Extract relevant information from the user input.
+c. Determine if the user has completed a task, needs guidance, or is facing a technical challenge.
+d. Identify any specific challenges or roadblocks mentioned by the user.
+e. Assess the user's technical expertise level based on their input.
+f. Plan your response, including next steps or specific technical guidance.
+g. Consider any potential roadblocks or common integration issues related to the current task.
+h. Prepare solution-oriented advice that addresses the user's current needs.
+i. Prioritize the most critical information or guidance needed for the user at this stage.
+
+3. Guidance and Support:
+Based on your analysis, provide appropriate guidance:
+- For a new phase: Offer an overview of the phase and introduce its first task.
+- For an ongoing phase: Provide detailed guidance on the current task, including best practices and potential pitfalls.
+- For a completed task: Confirm completion, highlight key points, and introduce the next task.
+- For technical inquiries: Offer specific, actionable advice related to the current task or challenge.
+
+4. Technical Expertise:
+Be prepared to provide detailed information on:
+- SDK usage and purpose
+- Cryptographic setup and troubleshooting
+- API endpoints and parameters
+- Testing scenarios and response validation
+- Integration best practices and common pitfalls
+
+5. Progress Tracking:
+Maintain and display the user's progress using the following format:
+
+\`\`\`markdown
+## DPIP Integration Progress
+[Phase 1 status] Phase 1: Preparation
+[Phase 2 status] Phase 2: Integration [CURRENT TASK IF APPLICABLE]
+[Phase 3 status] Phase 3: Validation & Go-Live
+\`\`\`
+
+Use the following markers for phase status:
+- [x] for completed phases
+- [>] for the current phase
+- [ ] for upcoming phases
+
+6. Communication Style:
+Maintain a professional, supportive, and solution-oriented tone. Your goal is to empower the user with knowledge and guide them through any challenges they may face during the integration process.
+
+7. Output Format:
+Provide your responses in the following markdown format:
+
+\`\`\`markdown
+## DPIP Integration Progress
+[Progress display]
+
+[Your analysis and guidance for the user, including:
+- Current phase and task overview
+- Technical explanations or solutions
+- Best practices and potential pitfalls
+- Next steps or actionable advice]
+
+[If applicable: Specific questions to gather more information or clarify the user's needs]
+\`\`\`
+
+Tailor your response to the user's needs, offering clear, actionable guidance to facilitate a smooth DPIP integration process.
+`
+})
+
+const myEmail = "oindrila.banerjee@juspay.in"
+const workspaceId = "i3acjjlykgjyamw51qbwhhiu"
 
 if (!myEmail) throw new Error("Please set the email")
 if (!workspaceId) throw new Error("Please add the workspaceId")
 
 type EvalData = {
   input: string
-  chatId?: string
-  modelId?: string
   isReasoningEnabled?: boolean
-  agentId?: string
   attachmentFileIds?: string[]
   previousMessages?: Array<{
     role: string
@@ -226,7 +330,6 @@ function saveEvalResults(
 async function simulateAgentMessageFlow(
   evalItem: EvalData,
   userCtx: string,
-  agentPrompt?: string,
 ): Promise<EvalResult> {
   const startTime = Date.now()
 
@@ -253,19 +356,17 @@ async function simulateAgentMessageFlow(
     let message = decodeURIComponent(evalItem.input)
     const costArr: number[] = []
 
-    // Step 1: Generate title if new chat
-    if (!evalItem.chatId) {
-      Logger.info("Generating title for new chat...")
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      result.output.title = titleResp.title
-      if (titleResp.cost) costArr.push(titleResp.cost)
-      Logger.info(`Generated title: ${result.output.title}`)
-    }
+    // Generate title for new chats
+    Logger.info("Generating title for new chat...")
+    const titleResp = await generateTitleUsingQuery(message, {
+      modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+      stream: false,
+    })
+    result.output.title = titleResp.title
+    if (titleResp.cost) costArr.push(titleResp.cost)
+    Logger.info(`Generated title: ${result.output.title}`)
 
-    // Step 2: Check if message has context
+    // Check if message has context
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
@@ -277,7 +378,7 @@ async function simulateAgentMessageFlow(
     const fileIds = extractedInfo?.fileIds || []
     const attachmentFileIds = evalItem.attachmentFileIds || []
 
-    // Step 3: Process based on context availability
+    // Process based on context availability
     if (
       (isMsgWithContext && fileIds.length > 0) ||
       attachmentFileIds.length > 0
@@ -285,7 +386,6 @@ async function simulateAgentMessageFlow(
       Logger.info("Processing message with context...")
       result.output.answerType = "context"
 
-      // Simulate context-based processing
       const iterator = UnderstandMessageAndAnswerForGivenContext(
         myEmail,
         userCtx,
@@ -296,7 +396,7 @@ async function simulateAgentMessageFlow(
         undefined, // span
         [], // messages
         attachmentFileIds,
-        agentPrompt,
+        hardcodedAgentPrompt,
       )
 
       let answer = ""
@@ -328,7 +428,7 @@ async function simulateAgentMessageFlow(
     } else {
       Logger.info("Processing message without specific context...")
 
-      // Step 4: Convert previous messages to conversation format
+      // Convert previous messages to conversation format
       const messagesWithNoErrResponse = (evalItem.previousMessages || []).map(
         (msg) => ({
           role: msg.messageRole,
@@ -336,7 +436,7 @@ async function simulateAgentMessageFlow(
         }),
       )
 
-      // Step 5: Check if answer exists in conversation or needs query rewrite
+      // Check if answer exists in conversation or needs query rewrite
       const formattedMessages: Message[] = messagesWithNoErrResponse
         .slice(-8)
         .map((msg) => ({
@@ -349,12 +449,12 @@ async function simulateAgentMessageFlow(
 
       const searchOrAnswerIterator =
         generateSearchQueryOrAnswerFromConversation(message, userCtx, {
-          modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+          modelId: hardcodedModelId,
           stream: true,
           json: true,
           reasoning: evalItem.isReasoningEnabled || false,
           messages: formattedMessages,
-          agentPrompt: agentPrompt,
+          agentPrompt: hardcodedAgentPrompt,
         })
 
       let buffer = ""
@@ -416,7 +516,7 @@ async function simulateAgentMessageFlow(
         const formattedMessage: Message[] = messagesWithNoErrResponse
           .slice(-8)
           .map((msg) => ({
-            role: msg.role as ConversationRole, // make sure MessageRole can be cast to ConversationRole
+            role: msg.role as ConversationRole,
             content: msg.content.map((c) => ({
               type: "text",
               text: c.text,
@@ -432,7 +532,7 @@ async function simulateAgentMessageFlow(
           0.5,
           evalItem.isReasoningEnabled || false,
           undefined, // span
-          agentPrompt,
+          hardcodedAgentPrompt,
         )
 
         let answer = ""
@@ -486,7 +586,7 @@ async function runEvaluation(userCtx: string) {
 
     await sleep(2000) // Rate limiting
 
-    const result = await simulateAgentMessageFlow(item, userCtx, item.agentId)
+    const result = await simulateAgentMessageFlow(item, userCtx)
 
     Logger.info(`Result for "${item.input}":`)
     Logger.info(`- Answer type: ${result.output.answerType}`)
