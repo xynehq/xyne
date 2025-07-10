@@ -19,7 +19,9 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  DataSourceEntity,
   dataSourceFileSchema,
+  datasourceSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -151,6 +153,7 @@ interface UnifiedSearchOptions {
   span?: Span
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
+  intent?: any | null
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -257,6 +260,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         return { result: errorMsg, contexts: [] }
       }
     }
+    console.log("[TOOLS] Calling getItems with intent from filters")
+    console.log(
+      "🔧 [TOOLS] Intent being passed:",
+      JSON.stringify(options.intent, null, 2),
+    )
+    console.log("[TOOLS] App:", app, "Entity:", entity, "Schema:", schema)
+
     searchResults = await getItems({
       email,
       schema,
@@ -270,7 +280,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       offset,
       asc: orderDirection === "asc",
       excludedIds,
+      intent: options.intent || null,
     })
+
+    console.log(
+      "[TOOLS] getItems completed, results count:",
+      searchResults?.root?.children?.length || 0,
+    )
   } else {
     const errorMsg = "No query or schema provided for search."
     execSpan?.setAttribute("error", errorMsg)
@@ -309,9 +325,9 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         source: {
           docId: fields.docId,
           title: fields.fileName || "Untitled",
-          url: "",
+          url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
           app: fields.app || Apps.DataSource,
-          entity: "" as Entity,
+          entity: DataSourceEntity.DataSourceFile,
         },
         confidence: r.relevance || 0.7,
       }
@@ -472,6 +488,11 @@ const appMapping: Record<string, SchemaMapping> = {
     defaultEntity: null,
     timestampField: "creationTime",
   },
+  [Apps.DataSource.toLowerCase()]: {
+    schema: datasourceSchema,
+    defaultEntity: null,
+    timestampField: "updatedAt",
+  },
   // [Apps.Slack.toLowerCase()]: {
   //   schema: chatMessageSchema,
   //   defaultEntity: SlackEntity.Message,
@@ -525,7 +546,17 @@ export const metadataRetrievalTool: AgentTool = {
         Logger.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
         return { result: unknownItemMsg, error: `Unknown item_type` }
       }
+
       const mapping = appMapping[appToUse.toLowerCase()]
+      if (!mapping) {
+        const unknownItemMsg = `Error: No mapping found for app '${appToUse}'`
+        execSpan?.setAttribute("error", unknownItemMsg)
+        Logger.error("[metadata_retrieval] No mapping found:", unknownItemMsg)
+        return {
+          result: unknownItemMsg,
+          error: `No mapping found for item_type`,
+        }
+      }
       schema = mapping.schema
       entity = mapping.defaultEntity
       timestampField = mapping.timestampField

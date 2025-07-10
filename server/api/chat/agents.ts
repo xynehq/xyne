@@ -124,6 +124,8 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  VespaSearchResultsSchema,
+  type VespaSearchResult,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -138,6 +140,7 @@ import {
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
+import { cleanupAttachmentFiles } from "@/api/files"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
@@ -223,6 +226,7 @@ async function* getToolContinuationIterator(
   agentPrompt?: string, // New optional parameter
   messages: Message[] = [],
   fallbackReasoning?: string,
+  attachmentFileIds?: string[], // Add attachmentFileIds parameter
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -236,6 +240,7 @@ async function* getToolContinuationIterator(
       json: true,
       reasoning: false,
       messages,
+      imageFileNames: attachmentFileIds?.map((id) => `${id}_0`), // Pass imageFileNames
     },
     toolsPrompt,
     context ?? "",
@@ -333,6 +338,7 @@ async function performSynthesis(
   messagesWithNoErrResponse: Message[],
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
+  attachmentFileIds?: string[],
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -352,6 +358,7 @@ async function performSynthesis(
         json: true,
         reasoning: false,
         messages: messagesWithNoErrResponse,
+        imageFileNames: attachmentFileIds?.map((id) => `${id}_0`),
       },
     )
 
@@ -445,6 +452,13 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     const isMsgWithContext = isMessageWithContext(message)
@@ -457,6 +471,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    const hasReferencedContext = fileIds && fileIds.length > 0
 
     if (!message) {
       throw new HTTPException(400, {
@@ -646,7 +661,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               client: Client
             }
           > = {}
-          const maxIterations = 2
+          const maxIterations = 10
           let iterationCount = 0
           let answered = false
           let isCustomMCP = false
@@ -813,6 +828,97 @@ export const MessageWithToolsApi = async (c: Context) => {
               break
             }
             iterationCount++
+
+            // On the first iteration, check if this is a "@" reference case and synthesize the context.
+            // If the synthesized context is insufficient, continue gathering more context in subsequent iterations.
+            if (hasReferencedContext && iterationCount === 1) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
+              )
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
+                )
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  planningContext = cleanContext(
+                    results.root.children
+                      ?.map(
+                        (v, i) =>
+                          `Index ${i + 1} \n ${answerContextMap(
+                            v as z.infer<typeof VespaSearchResultsSchema>,
+                            0,
+                            true,
+                          )}`,
+                      )
+                      ?.join("\n"),
+                  )
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) => ({
+                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
+                      content: answerContextMap(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      ),
+                      source: searchToCitation(
+                        child as z.infer<typeof VespaSearchResultsSchema>,
+                      ),
+                      confidence: 1.0,
+                    }),
+                  )
+                  const parseSynthesisOutput = await performSynthesis(
+                    ctx,
+                    message,
+                    planningContext,
+                    gatheredFragments,
+                    messagesWithNoErrResponse,
+                    logAndStreamReasoning,
+                    sub,
+                    attachmentFileIds,
+                  )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                  })
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: ` Synthesis: ${
+                      parseSynthesisOutput?.answer || "No Synthesis details"
+                    }`,
+                  })
+                  const isContextSufficient =
+                    parseSynthesisOutput?.synthesisState ===
+                    ContextSysthesisState.Complete
+
+                  if (isContextSufficient) {
+                    // Context is complete. We can break the loop and generate the final answer.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Context is sufficient. Proceeding to generate final answer.",
+                    })
+                    break
+                  }
+                  continue
+                }
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
+                )
+              } finally {
+                contextFetchSpan?.end()
+              }
+            }
 
             let loopWarningPrompt = ""
             const reasoningHeader = `
@@ -1313,13 +1419,37 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
+              // if the timestamp range was specified and no results were found
+              // then  that no results were found in this timastamp range
+              const hasTimestampFilter = toolParams?.from || toolParams?.to
+              if (hasTimestampFilter && !gatheredFragments.length) {
+                const fromDate = new Date(
+                  toolParams?.from || 0,
+                ).toLocaleDateString()
+                const toDate = new Date(
+                  toolParams?.to || Date.now(),
+                ).toLocaleDateString()
+
+                const appName = toolParams.app
+                  ? `${toolParams.app} data`
+                  : "content"
+
+                const context = {
+                  id: "",
+                  content: `No ${appName} found within the specified date range (${fromDate} to ${toDate}). No further action needed - this simply means there was no activity during this time period.`,
+                  source: {} as any,
+                  confidence: 0,
+                }
+                gatheredFragments.push(context)
+              }
+
               planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(
                       (f, i) =>
                         `[${i + 1}] ${
                           f.source.title || `Source ${f.source.docId}`
-                        }: ${f.content}...`,
+                        }: ${f.content}`,
                     )
                     .join("\n")
                 : ""
@@ -1333,6 +1463,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
 
                 await logAndStreamReasoning({
@@ -1519,6 +1650,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -1563,6 +1695,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentPromptForLLM,
             messagesWithNoErrResponse,
             fallbackReasoning,
+            attachmentFileIds,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -1762,6 +1895,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
             }
           }
+
+          // Clean up attachment files after response is complete
+          if (attachmentFileIds && attachmentFileIds.length > 0) {
+            await cleanupAttachmentFiles(attachmentFileIds, email)
+          }
+
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -1823,6 +1962,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+        // Clean up attachment files in error callback
+        if (attachmentFileIds && attachmentFileIds.length > 0) {
+          await cleanupAttachmentFiles(attachmentFileIds, email)
+        }
+
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
@@ -1927,6 +2071,13 @@ export const AgentMessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
     let {
       message,
       chatId,
@@ -2099,7 +2250,10 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          if (
+            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
@@ -2127,6 +2281,7 @@ export const AgentMessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               [],
+              attachmentFileIds,
               agentPromptForLLM,
             )
             stream.writeSSE({
@@ -2374,6 +2529,7 @@ export const AgentMessageApi = async (c: Context) => {
               temporalDirection: null,
               filter_query: "",
               type: "",
+              intent: {},
               filters: queryFilters,
             }
 
@@ -2492,6 +2648,7 @@ export const AgentMessageApi = async (c: Context) => {
                   ...(parsed?.filters ?? {}),
                   app: parsed.filters?.app as Apps,
                   entity: parsed.filters?.entity as any,
+                  intent: parsed.intent || {},
                 },
               }
 
@@ -2723,6 +2880,11 @@ export const AgentMessageApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
+          // Clean up attachment files after response is complete
+          if (attachmentFileIds && attachmentFileIds.length > 0) {
+            await cleanupAttachmentFiles(attachmentFileIds, email)
+          }
+
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -2782,6 +2944,12 @@ export const AgentMessageApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+
+        // Clean up attachment files in error callback
+        if (attachmentFileIds && attachmentFileIds.length > 0) {
+          await cleanupAttachmentFiles(attachmentFileIds, email)
+        }
+
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)

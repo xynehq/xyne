@@ -79,10 +79,12 @@ import {
   DeleteDocumentApi,
   deleteDocumentSchema,
   GetAgentsForDataSourceApi,
+  GetDataSourceFile,
 } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
+  ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
@@ -128,7 +130,7 @@ import {
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
-import { handleFileUpload } from "@/api/files"
+import { handleAttachmentUpload, handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
@@ -404,6 +406,7 @@ export const AppRoutes = app
     AutocompleteApi,
   )
   .post("files/upload", handleFileUpload)
+  .post("/files/upload-attachment", handleAttachmentUpload)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -414,6 +417,11 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get(
+    "/chat/favorites",
+    zValidator("query", chatHistorySchema),
+    ChatFavoritesApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -456,6 +464,7 @@ export const AppRoutes = app
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
+  .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .get("/proxy/:url", ProxyUrl)

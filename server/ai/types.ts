@@ -130,6 +130,17 @@ export const ToolAnswerResponse = z.object({
   arguments: z.record(z.string(), z.any()).optional(),
 })
 
+// Intent Schema - only includes fields with actual values (modular for different apps)
+export const IntentSchema = z.object({
+  from: z.array(z.string()).optional(),
+  to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
+  subject: z.array(z.string()).optional(),
+})
+
+export type Intent = z.infer<typeof IntentSchema>
+
 // Zod schemas for filters
 export const FiltersSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
@@ -138,6 +149,7 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  intent: IntentSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({

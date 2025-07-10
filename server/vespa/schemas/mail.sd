@@ -172,17 +172,22 @@ schema mail {
       function matchedFieldCount() {
         expression {
           # The `matches` returns 1 if the field contains a match, otherwise 0
-          matches(subject) + matches(chunks)
+          matches(subject) + matches(chunks) + matches(from) + matches(to) + matches(cc) + matches(bcc)
         }
       }
 
+      function peopleRank() {
+        expression: (0.8 * (nativeRank(from))+ 0.4 * (nativeRank(to)) +  0.2 * (nativeRank(cc) + nativeRank(bcc)))
+      }
+
       function combined_nativeRank() {
-        expression: (nativeRank(subject) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+        expression: (nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount)
       }
 
       function chunk_scores() {
         expression: elementwise(bm25(chunks), x, double)
       }
+
 
     }
 
