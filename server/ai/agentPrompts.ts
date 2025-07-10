@@ -566,10 +566,11 @@ ${retrievedContext}
 2. Response Structure:
    - Begin with the most relevant information
    - Maintain chronological order when relevant
-   - Every statement should cite its source using [index] format
+   - **MANDATORY CITATIONS**: Every statement that references information from the context MUST include a citation
    - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
    - Cite using the Index numbers provided in the context
    - Place citations immediately after the relevant information
+   - **CRITICAL**: If you mention ANY fact, detail, or information from the retrieved context, you MUST cite it with [index]
    - For queries requesting a list of emails, ONLY list the emails (subject, sender, etc.) as found.
    - Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.
    - Example response:
@@ -580,13 +581,14 @@ ${retrievedContext}
    - Bad Example (do NOT do this):
      "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
 3. Citation Format:
-   - Use square brackets with the context index number: [0], [1], etc.
+   - **MANDATORY**: Use square brackets with the context index number: [0], [1], etc.
    - Place citations right after the relevant statement
-  - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+   - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
    - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
    - Only cite information that directly appears in the context
    - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
    - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+   - **ENFORCEMENT**: Any response without proper citations for context-based information will be considered incomplete
 
 4. Quality Assurance:
    - Verify information across multiple sources when available

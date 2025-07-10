@@ -250,51 +250,12 @@ async function* getToolContinuationIterator(
 
   for await (const chunk of continuationIterator) {
     if (chunk.text) {
-      // if (reasoning) {
-      //   if (thinking && !chunk.text.includes(EndThinkingToken)) {
-      //     thinking += chunk.text
-      //     yield* checkAndYieldCitationsForAgent(
-      //       thinking,
-      //       yieldedCitations,
-      //       results,
-      //       previousResultsLength,
-      //     )
-      //     yield { text: chunk.text, reasoning }
-      //   } else {
-      //     // first time
-      //     const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-      //     if (
-      //       startThinkingIndex !== -1 &&
-      //       chunk.text.trim().length > StartThinkingToken.length
-      //     ) {
-      //       let token = chunk.text.slice(
-      //         startThinkingIndex + StartThinkingToken.length,
-      //       )
-      //       if (chunk.text.includes(EndThinkingToken)) {
-      //         token = chunk.text.split(EndThinkingToken)[0]
-      //         thinking += token
-      //       } else {
-      //         thinking += token
-      //       }
-      //       yield* checkAndYieldCitationsForAgent(
-      //         thinking,
-      //         yieldedCitations,
-      //         results,
-      //         previousResultsLength,
-      //       )
-      //       yield { text: token, reasoning }
-      //     }
-      //   }
-      // }
-      // if (reasoning && chunk.text.includes(EndThinkingToken)) {
-      //   reasoning = false
-      //   chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-      // }
-      // if (!reasoning) {
       buffer += chunk.text
+      
       try {
         yield { text: chunk.text }
 
+        
         yield* checkAndYieldCitationsForAgent(
           chunk.text,
           yieldedCitations,
@@ -716,24 +677,88 @@ export const MessageWithToolsApi = async (c: Context) => {
                 agentDocsSpan,
               )
               
+              
               if (agentDocsResponse.root.children && agentDocsResponse.root.children.length > 0) {
-                const agentDocFragments = agentDocsResponse.root.children.map((child, index) => {
+                // Use a Map to deduplicate documents by docId before creating fragments
+                const uniqueDocuments = new Map<string, any>()
+                
+                // First pass: collect unique documents by docId
+                agentDocsResponse.root.children.forEach((child) => {
+                  const fields = child.fields as any
+                  const docId = fields?.docId
+                  if (docId && !uniqueDocuments.has(docId)) {
+                    uniqueDocuments.set(docId, child)
+                  }
+                })
+                
+                // Second pass: create fragments only from unique documents
+                const agentDocFragments = Array.from(uniqueDocuments.values()).map((child, index) => {
                   const citation = searchToCitation(child as any)
                   const fields = child.fields as any
-                  return {
-                    id: `agent-doc-${index}`,
-                    content: fields?.content || fields?.text || fields?.chunks || "",
-                    source: citation,
-                    confidence: 0.9, // High confidence for agent-selected documents
+                  
+                  // Try multiple content fields - prioritize chunks_summary for search results
+                  let content = ""
+                  if (fields?.chunks_summary && Array.isArray(fields.chunks_summary)) {
+                    // chunks_summary can contain either strings or ScoredChunk objects
+                    content = fields.chunks_summary.map((chunk: any) => 
+                      typeof chunk === 'string' ? chunk : chunk.chunk || chunk
+                    ).join(" ")
+                  } else if (fields?.chunks && Array.isArray(fields.chunks)) {
+                    content = fields.chunks.join(" ")
+                  } else if (fields?.content) {
+                    content = fields.content
+                  } else if (fields?.text) {
+                    content = fields.text
+                  } else if (fields?.summary) {
+                    content = fields.summary
+                  } else if (fields?.description) {
+                    content = fields.description
                   }
-                }).filter(fragment => fragment.content.trim().length > 0)
+                  
+                  
+                  // Create custom citation for agent documents
+                  // For calendar events, preserve original URL; for other documents, use custom URL
+        const agentCitation = {
+          ...citation,
+          url: citation.app === Apps.GoogleCalendar 
+            ? citation.url // Keep original URL for calendar events
+            : `/docs/files/${citation.docId}`, // Use the existing document endpoint
+          app: citation.app,
+          entity: citation.entity,
+          docId: citation.docId,
+          title: citation.title || fields?.fileName || fields?.title || 'Untitled Document'
+        }
+                  
+                  return agentCitation ? {
+                    id: `agent-doc-${index}`,
+                    content: content || `Document: ${agentCitation.title} (${agentCitation.docId})`, // Fallback to title if no content
+                    source: agentCitation,
+                    confidence: 0.9, // High confidence for agent-selected documents
+                  } : null
+                }).filter(fragment => fragment !== null && fragment.content.trim().length > 0) as MinimalAgentFragment[]
+                
+                // Log document details after mapping
+                for (let i = 0; i < agentDocFragments.length; i++) {
+                  const fragment = agentDocFragments[i]
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Document ${i + 1}: docId=${fragment.source.docId}, contentLength=${fragment.content.length}`,
+                  })
+                }
                 
                 gatheredFragments.push(...agentDocFragments)
+                // Add agent document IDs to excludedIds to prevent duplicates in search
                 excludedIds.push(...agentForDb.docIds)
                 
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: `Loaded ${agentDocFragments.length} documents from agent knowledge base.`,
+                  message: `Loaded ${agentDocFragments.length} documents from agent knowledge base. Added ${agentForDb.docIds.length} docIds to exclusion list.`,
+                })
+                
+              } else {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `No documents found in Vespa for docIds: ${JSON.stringify(agentForDb.docIds)}`,
                 })
               }
               agentDocsSpan.end()
@@ -1239,10 +1264,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                       (f, i) =>
                         `[${i + 1}] ${
                           f.source.title || `Source ${f.source.docId}`
-                        }: ${f.content}...`,
+                        }: ${f.content}`,
                     )
                     .join("\n")
                 : ""
+              
 
               if (planningContext.length) {
                 type SynthesisResponse = {
@@ -1334,8 +1360,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                 })
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: ` Synthesis: ${
-                    parseSynthesisOutput.answer || "No Synthesis details"
+                  message: `Synthesis details: ${
+                    typeof parseSynthesisOutput.answer === 'string' 
+                      ? parseSynthesisOutput.answer 
+                      : JSON.stringify(parseSynthesisOutput.answer) || "No synthesis details"
                   }`,
                 })
                 const isContextSufficient =
@@ -1457,6 +1485,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
             if (chunk.citation) {
               const { index, item } = chunk.citation
+              
+              // Apply URL override for agent documents in agentic mode
+              if (item && (item.app === Apps.GoogleDrive || item.app === Apps.DataSource) && 
+                  item.entity !== CalendarEntity.Event) {
+                loggerWithChild({ email: sub }).info(
+                  `Overriding agent document URL for docId ${item.docId}: ${item.url} -> /api/v1/datasource/document/${item.docId}/raw`
+                )
+                item.url = `/api/v1/datasource/document/${item.docId}/raw`
+              }
+              
               citations.push(item)
               citationMap[index] = citations.length - 1
               loggerWithChild({ email: sub }).info(

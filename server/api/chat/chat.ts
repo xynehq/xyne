@@ -260,11 +260,6 @@ const checkAndYieldCitations = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - baseIndex]
       if (item) {
-        // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === dataSourceFileSchema) {
-          // Removed transcriptSchema check
-          continue
-        }
         yield {
           citation: {
             index: citationIndex,
@@ -565,6 +560,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
   agentPrompt?: string,
+  agentDocuments?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -739,20 +735,21 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
-    searchResults = await searchVespaAgent(
-      message,
-      email,
-      null,
-      null,
-      agentAppEnums,
-      {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange,
-        span: initialSearchSpan,
-        dataSourceIds: agentSpecificDataSourceIds,
-      },
-    )
+        searchResults = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            timestampRange,
+            span: initialSearchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
+          },
+        )
   }
 
   // Expand email threads in the results
@@ -807,6 +804,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           },
         )
       }
@@ -873,6 +871,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 timestampRange,
                 span: latestSearchSpan,
                 dataSourceIds: agentSpecificDataSourceIds,
+                docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
               },
             ))
         
@@ -927,6 +926,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 ?.map((v: VespaSearchResult) => (v.fields as any).docId)
                 ?.filter((v) => !!v),
               dataSourceIds: agentSpecificDataSourceIds,
+              docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
             },
           )
         }
@@ -1035,6 +1035,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           },
         )
       }
@@ -1086,6 +1087,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           },
         )
       }
@@ -1567,6 +1569,7 @@ async function* generatePointQueryTimeExpansion(
   userRequestsReasoning: boolean,
   eventRagSpan?: Span,
   agentPrompt?: string,
+  agentDocuments?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1797,6 +1800,7 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -1806,6 +1810,7 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           }),
         ])
         results.root.children = [
@@ -2061,6 +2066,7 @@ async function* generateMetadataQueryAnswer(
   userRequestsReasoning?: boolean,
   span?: Span,
   agentPrompt?: string,
+  agentDocuments?: string[],
   maxIterations = 5,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -2246,6 +2252,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           },
         )
       }
@@ -2473,6 +2480,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
+            docIds: agentDocuments && agentDocuments.length > 0 ? agentDocuments : undefined,
           },
         )
       }
@@ -2622,6 +2630,8 @@ export async function* UnderstandMessageAndAnswer(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   agentPrompt?: string,
+  hasAgentDocuments?: boolean,
+  agentDocuments?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2663,6 +2673,7 @@ export async function* UnderstandMessageAndAnswer(
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
       agentPrompt,
+      hasAgentDocuments ? agentDocuments : undefined,
     )
 
     let hasYieldedAnswer = false
@@ -2731,6 +2742,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       ragSpan,
       agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
+      agentDocuments, // Pass agentDocuments to generateIterativeTimeFilterAndQueryRewrite
     )
   }
 }
@@ -2910,9 +2922,15 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
-      if (!isAgentic && agentDetails) {
-        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
-        return AgentMessageApi(c)
+      if (agentDetails) {
+        // Only route to agentic mode if agentic=true, otherwise use regular RAG with agent context
+        if (isAgentic) {
+          Logger.info(`Routing to MessageWithToolsApi for agent ${agentPromptValue} with agentic mode.`)
+          return MessageWithToolsApi(c)
+        } else {
+          Logger.info(`Using agent ${agentPromptValue} with App Integrations and documents in regular RAG flow.`)
+          // Continue with regular RAG flow - this handles both agent documents AND App Integrations
+        }
       }
     }
 
@@ -2950,6 +2968,36 @@ export const MessageApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
+    // Load agent details and documents if agent is selected but agentic mode is OFF
+    let agentForDb: SelectAgent | null = null
+    let agentDocuments: string[] = []
+    let agentPromptForLLM: string | undefined = undefined
+    if (agentPromptValue && !isAgentic) {
+      agentForDb = await getAgentByExternalId(
+        db,
+        agentPromptValue,
+        workspace.id,
+      )
+    if (agentForDb) {
+      // Convert agent to JSON string for LLM processing
+      agentPromptForLLM = JSON.stringify(agentForDb)
+      
+      if (agentForDb.docIds && agentForDb.docIds.length > 0) {
+        agentDocuments = agentForDb.docIds
+        loggerWithChild({ email: email }).info(
+          `Non-agentic mode: Using agent ${agentPromptValue} with ${agentDocuments.length} documents for RAG`,
+        )
+      } else {
+        console.log("[DEBUG] No docIds found in agentForDb or docIds array is empty")
+      }
+        
+        loggerWithChild({ email: email }).info(
+          `Non-agentic mode: Agent loaded with App Integrations: ${JSON.stringify(agentForDb.appIntegrations || [])}`,
+        )
+      }
+    }
+
+    
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
 
     let title = ""
@@ -3108,6 +3156,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              agentPromptForLLM,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3173,6 +3222,24 @@ export const MessageApi = async (c: Context) => {
                       `inbox/${item.docId}`,
                     )
                   }
+                }
+                
+                // Check if this is an agent document and override URL for raw content access
+                // Only override for file documents, not calendar events or other types
+                if (item && agentDocuments && agentDocuments.length > 0 && agentDocuments.includes(item.docId) && 
+                    (item.app === Apps.GoogleDrive || item.app === Apps.DataSource) &&
+                    item.entity !== CalendarEntity.Event) {
+                  loggerWithChild({ email: email }).info(
+                    `Overriding agent document URL for docId ${item.docId}: ${item.url} -> /api/v1/datasource/document/${item.docId}/raw`
+                  )
+                  item.url = `/api/v1/datasource/document/${item.docId}/raw`
+                }
+                // Ensure data source files use the document endpoint (but not calendar events)
+                else if (item && item.app === Apps.DataSource && item.entity !== CalendarEntity.Event) {
+                  loggerWithChild({ email: email }).info(
+                    `Setting data source document URL for docId ${item.docId}: /api/v1/datasource/document/${item.docId}/raw`
+                  )
+                  item.url = `/api/v1/datasource/document/${item.docId}/raw`
                 }
                 citations.push(item)
                 citationMap[index] = citations.length - 1
@@ -3560,17 +3627,80 @@ export const MessageApi = async (c: Context) => {
               citationMap = {}
               let citationValues: Record<number, string> = {}
               if (iterator === undefined) {
-                iterator = UnderstandMessageAndAnswer(
+              // Priority system: Only use selected context path if user explicitly selected files
+              // Agent documents should use selected context path to get proper raw URLs
+              if (fileIds && fileIds.length > 0) {
+                // User explicitly selected files - use selected context path
+                let finalFileIds = fileIds
+                let finalThreadIds = threadIds || []
+                
+                // If we also have agent documents, combine them with user-selected files
+                if (agentDocuments.length > 0) {
+                  // Combine agent documents with user-selected files, agent docs first
+                  finalFileIds = [...agentDocuments, ...fileIds]
+                  loggerWithChild({ email: email }).info(
+                    `Combining agent documents (${agentDocuments.length}) with user-selected files (${fileIds.length}) for selected context RAG`,
+                  )
+                } else {
+                  loggerWithChild({ email: email }).info(
+                    `Using user-selected files for RAG: ${fileIds.length} files`,
+                  )
+                }
+                
+                loggerWithChild({ email: email }).info(
+                  `Final document IDs being passed to selected context: ${JSON.stringify(finalFileIds)}`,
+                )
+                
+                iterator = UnderstandMessageAndAnswerForGivenContext(
                   email,
                   ctx,
                   message,
-                  classification,
-                  llmFormattedMessages,
                   0.5,
+                  finalFileIds,
                   userRequestsReasoning,
                   understandSpan,
-                  agentPromptValue,
+                  finalThreadIds,
+                  agentPromptForLLM,
                 )
+              } else if (agentDocuments.length > 0) {
+                  // Agent documents available but no user-selected files - use selected context path to get proper raw URLs
+                  loggerWithChild({ email: email }).info(
+                    `Agent documents available (${agentDocuments.length}), using selected context RAG to ensure proper raw URLs`,
+                  )
+                  loggerWithChild({ email: email }).info(
+                    `Using agent documents as priority context for RAG: ${agentDocuments.length} documents`,
+                  )
+                  loggerWithChild({ email: email }).info(
+                    `Final document IDs being passed to selected context: ${JSON.stringify(agentDocuments)}`,
+                  )
+                  iterator = UnderstandMessageAndAnswerForGivenContext(
+                    email,
+                    ctx,
+                    message,
+                    0.5,
+                    agentDocuments, // Use agent documents directly
+                    userRequestsReasoning,
+                    understandSpan,
+                    [], // No thread IDs for agent documents
+                    agentPromptForLLM,
+                  )
+                } else {
+                  // No agent documents and no user-selected files, use regular RAG
+                  loggerWithChild({ email: email }).info(
+                    `No agent documents or user-selected files, using regular RAG`,
+                  )
+                  iterator = UnderstandMessageAndAnswer(
+                    email,
+                    ctx,
+                    message,
+                    classification,
+                    llmFormattedMessages,
+                    0.5,
+                    userRequestsReasoning,
+                    understandSpan,
+                    agentPromptForLLM,
+                  )
+                }
               }
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -3606,18 +3736,37 @@ export const MessageApi = async (c: Context) => {
                 }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
-                  if (item && item.app == Apps.Gmail) {
-                    item.docId = await replaceDocIdwithUserDocId(
-                      item.docId,
-                      email,
+                if (item && item.app == Apps.Gmail) {
+                  item.docId = await replaceDocIdwithUserDocId(
+                    item.docId,
+                    email,
+                  )
+                  if (item.url) {
+                    item.url = item.url.replace(
+                      /inbox\/[^/]+/,
+                      `inbox/${item.docId}`,
                     )
-                    if (item.url) {
-                      item.url = item.url.replace(
-                        /inbox\/[^/]+/,
-                        `inbox/${item.docId}`,
-                      )
-                    }
                   }
+                }
+                
+                // Check if this is an agent document and override URL for raw content access
+                // Only override for file documents, not calendar events or other types
+                if (item && agentDocuments && agentDocuments.length > 0 && agentDocuments.includes(item.docId) && 
+                    (item.app === Apps.GoogleDrive || item.app === Apps.DataSource) &&
+                    item.entity !== CalendarEntity.Event) {
+                  loggerWithChild({ email: email }).info(
+                    `Overriding agent document URL for docId ${item.docId}: ${item.url} -> /api/v1/datasource/document/${item.docId}/raw`
+                  )
+                  item.url = `/api/v1/datasource/document/${item.docId}/raw`
+                }
+                // Ensure data source files use the document endpoint (but not calendar events)
+                else if (item && item.app === Apps.DataSource && item.entity !== CalendarEntity.Event) {
+                  loggerWithChild({ email: email }).info(
+                    `Setting data source document URL for docId ${item.docId}: /api/v1/datasource/document/${item.docId}/raw`
+                  )
+                  item.url = `/api/v1/datasource/document/${item.docId}/raw`
+                }
+                  
                   citations.push(item)
                   citationMap[index] = citations.length - 1
                   loggerWithChild({ email: email }).info(
@@ -4187,6 +4336,27 @@ export const MessageRetryApi = async (c: Context) => {
               }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
+                
+                if (item && item.app == Apps.Gmail) {
+                  item.docId = await replaceDocIdwithUserDocId(
+                    item.docId,
+                    email,
+                  )
+                  if (item.url) {
+                    item.url = item.url.replace(
+                      /inbox\/[^/]+/,
+                      `inbox/${item.docId}`,
+                    )
+                  }
+                }
+                
+                // For selected context, always use the document endpoint for file documents
+                // This ensures proper raw content access for both agent documents and regular files
+                if (item && (item.app === Apps.GoogleDrive || item.app === Apps.DataSource) && item.entity !== CalendarEntity.Event) {
+                  item.url = `/docs/files/${item.docId}`
+                }
+                
+                
                 citations.push(item)
                 citationMap[index] = citations.length - 1
                 loggerWithChild({ email: email }).info(
@@ -4607,22 +4777,42 @@ export const MessageRetryApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
-                if (chunk.citation) {
-                  const { index, item } = chunk.citation
-                  citations.push(item)
-                  citationMap[index] = citations.length - 1
-                  loggerWithChild({ email: email }).info(
-                    `retry: Found citations and sending it, current count: ${citations.length}`,
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                
+                if (item && item.app == Apps.Gmail) {
+                  item.docId = await replaceDocIdwithUserDocId(
+                    item.docId,
+                    email,
                   )
-                  stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: citations,
-                      citationMap,
-                    }),
-                  })
-                  citationValues[index] = item
+                  if (item.url) {
+                    item.url = item.url.replace(
+                      /inbox\/[^/]+/,
+                      `inbox/${item.docId}`,
+                    )
+                  }
                 }
+                
+                // For retry, ensure data source files use the document endpoint (but not calendar events)
+                if (item && item.app === Apps.DataSource && item.entity !== CalendarEntity.Event) {
+                  item.url = `/docs/files/${item.docId}`
+                }
+                
+                
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                loggerWithChild({ email: email }).info(
+                  `retry: Found citations and sending it, current count: ${citations.length}`,
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+                citationValues[index] = item
+              }
               }
               understandSpan.setAttribute("citation_count", citations.length)
               understandSpan.setAttribute(
@@ -4984,23 +5174,59 @@ export const MessageFeedbackApi = async (c: Context) => {
 }
 
 export const GetDocumentApi = async (c: Context) => {
+  let email = ""
   try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
+    
     const docId = c.req.param("docId")
     
     if (!docId) {
       throw new HTTPException(400, { message: "Document ID is required" })
     }
 
-    // For now, return basic document info without authentication
-    // This allows citations to work, but you may want to add auth later
+    loggerWithChild({ email: email }).info(
+      `[GetDocumentApi] User ${email} requesting document ${docId}`,
+    )
+
+    // Get user and workspace for permission checking
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Try to get document from dataSourceFileSchema first (agent documents)
     try {
       const document = await GetDocument(dataSourceFileSchema, docId)
       
       if (!document || !document.fields) {
-        throw new HTTPException(404, { message: "Document not found" })
+        throw new Error("Document not found in dataSourceFileSchema")
       }
 
       const fields = document.fields as any
+      
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentApi] Found document in dataSourceFileSchema: ${docId}, dataSourceName: ${fields.dataSourceName}, uploadedBy: ${fields.uploadedBy}`,
+      )
+
+      // Check if user has access to this document through agent permissions
+      // For agent documents, we need to check if the user has access to any agent that contains this document
+      const agentWithDoc = await getAgentByExternalId(db, docId, workspace.id)
+      
+      // If no agent found with this docId, try to find any agent that contains this document in its docIds
+      if (!agentWithDoc) {
+        // For now, we'll allow access to agent documents if the user is in the same workspace
+        // This is a simplified permission check - you may want to implement more granular permissions
+        loggerWithChild({ email: email }).info(
+          `[GetDocumentApi] Document ${docId} found in dataSourceFileSchema, allowing access for workspace user ${email}`,
+        )
+      } else {
+        loggerWithChild({ email: email }).info(
+          `[GetDocumentApi] User ${email} has access to document ${docId} through agent permissions`,
+        )
+      }
       
       // Return document metadata
       return c.json({
@@ -5012,6 +5238,10 @@ export const GetDocumentApi = async (c: Context) => {
         url: fields.url
       })
     } catch (vespaError) {
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentApi] Document ${docId} not found in dataSourceFileSchema, trying fileSchema`,
+      )
+      
       // If document not found in dataSourceFileSchema, try fileSchema
       try {
         const document = await GetDocument(fileSchema, docId)
@@ -5022,6 +5252,12 @@ export const GetDocumentApi = async (c: Context) => {
 
         const fields = document.fields as any
         
+        loggerWithChild({ email: email }).info(
+          `[GetDocumentApi] Found document in fileSchema: ${docId}, app: ${fields.app}, entity: ${fields.entity}`,
+        )
+        
+        // For regular file schema documents, basic workspace check should be sufficient
+        // since they're already filtered by user email in the search
         return c.json({
           docId: fields.docId,
           title: fields.title,
@@ -5030,9 +5266,9 @@ export const GetDocumentApi = async (c: Context) => {
           url: fields.url
         })
       } catch (secondVespaError) {
-        loggerWithChild({ email: "anonymous" }).error(
+        loggerWithChild({ email: email }).error(
           secondVespaError,
-          `Error fetching document ${docId}: ${getErrorMessage(secondVespaError)}`
+          `[GetDocumentApi] Error fetching document ${docId}: ${getErrorMessage(secondVespaError)}`
         )
         throw new HTTPException(404, { message: "Document not found" })
       }
@@ -5044,7 +5280,7 @@ export const GetDocumentApi = async (c: Context) => {
       throw error
     }
     
-    loggerWithChild({ email: "anonymous" }).error(
+    loggerWithChild({ email: email }).error(
       error,
       `Get Document Error: ${errMsg} ${(error as Error).stack}`,
     )

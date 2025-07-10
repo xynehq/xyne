@@ -91,6 +91,7 @@ import {
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
+  agentBaselineFilesContextPromptJson,
   agentEmailPromptJson,
   agentGenerateMarkdownTableSystemPrompt,
   agentOptimizedPrompt,
@@ -1043,10 +1044,18 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    params.systemPrompt = baselineFilesContextPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {

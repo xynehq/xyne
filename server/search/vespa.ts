@@ -741,6 +741,7 @@ export const HybridDefaultProfileForAgent = (
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
   dataSourceIds: string[] = [],
+  docIds?: string[],
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -882,10 +883,30 @@ export const HybridDefaultProfileForAgent = (
       )`
   }
 
+  const buildDocIdsYQL = () => {
+    // Direct document ID search - search across all schemas for specific document IDs
+    if (!docIds || docIds.length === 0) {
+      return ""
+    }
+    
+    const docIdConditions = docIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        and (${docIdConditions})
+      )`
+  }
+
   // Build app-specific queries and sources
   const appQueries: string[] = []
   const sources: string[] = []
 
+  // Handle app integrations
   if (AllowedApps && AllowedApps.length > 0) {
     for (const allowedApp of AllowedApps) {
       switch (allowedApp) {
@@ -931,12 +952,27 @@ export const HybridDefaultProfileForAgent = (
           break
       }
     }
-  } else if (dataSourceIds && dataSourceIds.length > 0) {
-    // This handles the case where AllowedApps might be empty or null,
-    // but specific dataSourceIds are provided (e.g., agent is only for specific data sources).
+  }
+
+  // Handle specific data source IDs (independent of AllowedApps)
+  if (dataSourceIds && dataSourceIds.length > 0 && (!AllowedApps || !AllowedApps.includes(Apps.DataSource))) {
+    // This handles the case where specific dataSourceIds are provided but DataSource is not in AllowedApps
     appQueries.push(buildDataSourceFileYQL())
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
+  }
+
+  console.log("DocIDs : ", docIds)
+  // Handle specific document IDs (independent of other conditions)
+  if (docIds && docIds.length > 0) {
+    // Direct document ID search using dedicated builder
+    appQueries.push(buildDocIdsYQL())
+    console.log("Doc IDs provided, building query for specific documents:", docIds)
+    // Add all possible sources since we're searching by docId across schemas
+    const allSources = [fileSchema, dataSourceFileSchema, eventSchema, mailSchema, userSchema]
+    allSources.forEach(source => {
+      if (!sources.includes(source)) sources.push(source)
+    })
   }
 
   // Combine all queries
@@ -1456,7 +1492,8 @@ export const searchVespaAgent = async (
     maxHits = 400,
     recencyDecayRate = 0.02,
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
-  }: Partial<VespaQueryConfig>,
+    docIds = [], // Add docIds parameter
+  }: Partial<VespaQueryConfig & { docIds?: string[] }>,
 ): Promise<VespaSearchResponse> => {
   const emailorkey = process.env.API_KEY || email
   // Get appropriate client and email
@@ -1480,6 +1517,7 @@ export const searchVespaAgent = async (
     notInMailLabels,
     Apps,
     dataSourceIds, // Pass dataSourceIds here
+    docIds, // Pass docIds here
   )
 
   const hybridDefaultPayload = {

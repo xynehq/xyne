@@ -79,6 +79,7 @@ import {
   DeleteDocumentApi,
   deleteDocumentSchema,
   GetAgentsForDataSourceApi,
+  GetDocumentRawContent,
 } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
@@ -366,6 +367,7 @@ export const AppRoutes = app
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
+  .get("/datasource/document/:docId/raw", GetDocumentRawContent)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(

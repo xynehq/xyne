@@ -930,7 +930,11 @@ export const SearchQueryToolContextPrompt = (
      - offset (opt: 0) use this if you need to goto next page to find better result.
     6. ${XyneTools.Conversational}: Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi", "Hello", "Hey", what is the time in Japan. select this tool with empty params. No parameters needed.
-       
+    7. ${XyneTools.FetchDataSources}: Fetches documents from the agent's uploaded knowledge base. Use this tool to access the agent's specific documents and files that were uploaded to it. IMPORTANT: Even if documents are mentioned in your current context, you should still retrieve them to get their full content. Do NOT exclude documents just because they appear in your context.
+      Params: 
+        - limit (opt: Maximum number of documents to retrieve, default: 10), 
+        
+        
     **Slack Tool Context:**
     1. ${XyneTools.getSlackThreads}: Search and retrieve Slack thread messages for conversational context.
        Params: 
@@ -1817,7 +1821,7 @@ export const withToolQueryPrompt = (
           **Agent Context**:
           ${agentContext.prompt}`
         : `You are a permission-aware retrieval-augmented generation (RAG) system.
-            Do not worry about privacy — you are not allowed to reject a user query as all context is already permission-aware.
+            Do not worry about privacy — you are not allowed to reject a user query as all search context is already permission-aware.
             Only respond in plain text unless a specific format is requested.
             Your answer must come from the provided **Context** only.`
     }
@@ -1834,10 +1838,14 @@ export const withToolQueryPrompt = (
    ### Response Instructions:
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
-    - Cite any context-based information using [index] format, matching the provided source indices.
+    - **MANDATORY CITATIONS**: Every statement that references information from the context MUST include a citation using [index] format referring to the relevant context source.
+    - Place citations immediately after the relevant information
+    - Use the exact index numbers from the provided context sources
+    - Never group multiple indices in one bracket like [0, 1] - use separate brackets: [0] [1]
+    - **ENFORCEMENT**: Any response without proper citations for context-based information will be considered incomplete
     - **Do NOT** reject any query. Respond using the available context only.
 
-    Be concise, accurate, and context-aware in all replies.
+    Be concise, accurate, and context-aware in all replies. Remember: Citations are mandatory for all context-based information.
   `
 }
 

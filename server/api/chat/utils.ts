@@ -216,6 +216,7 @@ export const extractImageFileNames = (
 
 export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
+  
   if (result.fields.sddocname === userSchema) {
     return {
       docId: (fields as VespaUser).docId,
@@ -224,16 +225,37 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaUser).app,
       entity: (fields as VespaUser).entity,
     }
-  } else if (
-    result.fields.sddocname === fileSchema ||
-    result.fields.sddocname === dataSourceFileSchema
-  ) {
+  } else if (result.fields.sddocname === fileSchema) {
     return {
       docId: (fields as VespaFile).docId,
       title: (fields as VespaFile).title,
       url: (fields as VespaFile).url || "",
       app: (fields as VespaFile).app,
       entity: (fields as VespaFile).entity,
+    }
+  } else if (result.fields.sddocname === dataSourceFileSchema) {
+    // For agent documents (data source files), provide raw content access
+    const dataSourceFields = fields as any
+    
+    // Check if this is a calendar file that was ingested in the file section
+    // If so, use the original URL instead of creating a custom raw URL
+    if (dataSourceFields.app === Apps.GoogleCalendar) {
+      return {
+        docId: dataSourceFields.docId,
+        title: dataSourceFields.title || dataSourceFields.fileName || "Calendar Event",
+        url: dataSourceFields.url || "", // Use the original calendar URL
+        app: dataSourceFields.app, // Keep the original app (GoogleCalendar)
+        entity: dataSourceFields.entity,
+      }
+    }
+    
+    // For other agent documents, provide raw content access
+    return {
+      docId: dataSourceFields.docId,
+      title: dataSourceFields.title || dataSourceFields.fileName || "Agent Document",
+      url: `/datasource/file/${dataSourceFields.docId}`,
+      app: Apps.DataSource, // Force the app to be DataSource for agent documents
+      entity: dataSourceFields.entity,
     }
   } else if (result.fields.sddocname === mailSchema) {
     return {

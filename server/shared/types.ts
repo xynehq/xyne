@@ -487,6 +487,9 @@ export enum XyneTools {
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",
   getUserSlackProfile = "get_user_slack_profile",
+  
+  // Agent knowledge base tool
+  FetchDataSources = "fetchdatasources",
 }
 
 export enum IngestionType {

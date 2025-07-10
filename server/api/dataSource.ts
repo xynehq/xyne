@@ -34,7 +34,10 @@ import {
   removeAppIntegrationFromAllAgents,
   getAgentsByDataSourceId,
 } from "@/db/agent"
+import { checkUserAgentAccessByExternalId } from "@/db/userAgentPermission"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
+import { getDocumentOrNull } from "@/search/vespa"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "dataSourceService",
@@ -520,6 +523,222 @@ export const ListDataSourceFilesApi = async (c: Context) => {
     return c.json(
       {
         error: "Failed to fetch files for datasource",
+        message: "An internal error occurred.",
+      },
+      500,
+    )
+  }
+}
+
+export const GetDocumentRawContent = async (c: Context) => {
+  const jwtPayload = c.var.jwtPayload
+  const docId = c.req.param("docId")
+  const email = jwtPayload.sub ?? ""
+
+  if (!docId) {
+    loggerWithChild({ email: email }).error(
+      "docId path parameter is missing in GetDocumentRawContent",
+    )
+    return c.json({ error: "Bad Request", message: "docId is required." }, 400)
+  }
+
+  if (!jwtPayload || typeof jwtPayload.sub !== "string") {
+    loggerWithChild().error(
+      "JWT payload or sub is missing/invalid in GetDocumentRawContent",
+    )
+    return c.json(
+      {
+        error: "Unauthorized",
+        message: "User email not found or invalid in token",
+      },
+      401,
+    )
+  }
+
+  try {
+    loggerWithChild({ email: email }).info(
+      `User ${email} requesting raw content for document ${docId}`,
+    )
+
+    // Try dataSourceFileSchema first (for agent documents)
+    let vespaResponse = await getDocumentOrNull(dataSourceFileSchema, docId)
+    let isDataSourceFile = true
+
+    if (!vespaResponse || !vespaResponse.fields) {
+      // If not found in dataSourceFileSchema, try fileSchema
+      loggerWithChild({ email: email }).info(
+        `Document ${docId} not found in dataSourceFileSchema, trying fileSchema`,
+      )
+      const { fileSchema } = await import("@/search/types")
+      vespaResponse = await getDocumentOrNull(fileSchema, docId)
+      isDataSourceFile = false
+    }
+
+    if (!vespaResponse || !vespaResponse.fields) {
+      loggerWithChild({ email: email }).warn(
+        `Document not found in any schema: ${docId}`,
+      )
+      return c.json(
+        { error: "Not Found", message: "Document not found." },
+        404,
+      )
+    }
+
+    const fields = vespaResponse.fields as any
+    
+    loggerWithChild({ email: email }).info(
+      `Found document ${docId} in ${isDataSourceFile ? 'dataSourceFileSchema' : 'fileSchema'}`,
+    )
+
+    // Extract and return the raw content
+    let rawContent = ""
+    
+    // For data source files (agent documents), the content is in 'chunks' field
+    if (fields.chunks && Array.isArray(fields.chunks) && fields.chunks.length > 0) {
+      rawContent = fields.chunks.join("\n\n")
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] Extracted content from chunks field: ${fields.chunks.length} chunks`,
+      )
+    } 
+    // For regular files, try chunks_summary first
+    else if (fields.chunks_summary && Array.isArray(fields.chunks_summary)) {
+      rawContent = fields.chunks_summary.map((chunk: any) => 
+        typeof chunk === 'string' ? chunk : chunk.chunk || chunk
+      ).join("\n\n")
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] Extracted content from chunks_summary field: ${fields.chunks_summary.length} chunks`,
+      )
+    } 
+    // Fallback to other content fields
+    else if (fields.content) {
+      rawContent = fields.content
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] Extracted content from content field`,
+      )
+    } else if (fields.text) {
+      rawContent = fields.text
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] Extracted content from text field`,
+      )
+    } else {
+      // Log all available fields for debugging
+      const availableFields = Object.keys(fields)
+      loggerWithChild({ email: email }).warn(
+        `[GetDocumentRawContent] No content found in expected fields. Available fields: ${availableFields.join(', ')}`,
+      )
+      rawContent = "No content available for this document."
+    }
+    
+    // Also include image chunks if available (for documents with images)
+    if (fields.image_chunks && Array.isArray(fields.image_chunks) && fields.image_chunks.length > 0) {
+      const imageContent = fields.image_chunks.join("\n\n")
+      if (rawContent && rawContent !== "No content available for this document.") {
+        rawContent += "\n\n--- Image Descriptions ---\n\n" + imageContent
+      } else {
+        rawContent = imageContent
+      }
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] Added image content: ${fields.image_chunks.length} image descriptions`,
+      )
+    }
+
+    // Permission checks
+    if (isDataSourceFile) {
+      // For data source files (agent documents), check agent permissions
+      const dataSourceRefId = fields.dataSourceRef?.split("::").pop()
+      
+      if (dataSourceRefId) {
+        const workspaceExternalId = jwtPayload.workspaceId
+        const userWorkspace = await getUserAndWorkspaceByEmail(
+          db,
+          workspaceExternalId,
+          email,
+        )
+        const userId = userWorkspace.user.id
+        const workspaceId = userWorkspace.workspace.id
+
+        const agentsWithDataSource = await getAgentsByDataSourceId(
+          db,
+          dataSourceRefId as string,
+        )
+
+        if (!agentsWithDataSource || agentsWithDataSource.length === 0) {
+          loggerWithChild({ email: email }).warn(
+            `[GetDocumentRawContent] No agents found using data source ${dataSourceRefId} for file ${docId}`,
+          )
+          return c.json(
+            {
+              error: "Forbidden",
+              message: "Access denied to this data source file.",
+            },
+            403,
+          )
+        }
+
+        // Check if user has access to any of the agents that use this data source
+        let hasAccess = false
+        for (const agent of agentsWithDataSource) {
+          const permission = await checkUserAgentAccessByExternalId(
+            db,
+            userId,
+            agent.externalId,
+            workspaceId,
+          )
+
+          if (permission) {
+            hasAccess = true
+            loggerWithChild({ email: email }).info(
+              `[GetDocumentRawContent] User ${email} has access to data source file ${docId} via agent ${agent.externalId}`,
+            )
+            break
+          }
+        }
+
+        if (!hasAccess) {
+          loggerWithChild({ email: email }).warn(
+            `[GetDocumentRawContent] User ${email} does not have access to any agents using data source ${dataSourceRefId}`,
+          )
+          return c.json(
+            {
+              error: "Forbidden",
+              message: "Access denied to this data source file.",
+            },
+            403,
+          )
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[GetDocumentRawContent] User ${email} accessing agent document ${docId} - access granted via agent permissions`,
+        )
+      } else {
+        // For data source files without dataSourceRef, allow access if user is in same workspace
+        loggerWithChild({ email: email }).info(
+          `[GetDocumentRawContent] User ${email} accessing data source file ${docId} - no dataSourceRef found, allowing workspace access`,
+        )
+      }
+    } else {
+      // For regular files (not data source files), allow access
+      loggerWithChild({ email: email }).info(
+        `[GetDocumentRawContent] User ${email} accessing regular document ${docId}`,
+      )
+    }
+
+    loggerWithChild({ email: email }).info(
+      `[GetDocumentRawContent] Returning raw content for document ${docId} (${rawContent.length} characters)`,
+    )
+
+    // Return the raw content as plain text
+    return c.text(rawContent, 200, {
+      'Content-Type': 'text/plain; charset=utf-8'
+    })
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      `[GetDocumentRawContent] Error fetching document "${docId}" for user ${email}: ${getErrorMessage(error)}`,
+    )
+    return c.json(
+      {
+        error: "Failed to fetch document",
         message: "An internal error occurred.",
       },
       500,

@@ -58,6 +58,7 @@ import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
 import { expandEmailThreadsInResults } from "./utils"
+const { GetDocumentsByDocIds } = await import("@/search/vespa")
 
 const { maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -2099,6 +2100,156 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
   },
 }
 
+const fetchDataSourcesTool: AgentTool = {
+  name: "fetchdatasources",
+  description:
+    "Fetches documents from the agent's uploaded knowledge base. Use this tool to access the agent's specific documents and files that were uploaded to it. This tool retrieves ALL agent documents by default and provides their full content.",
+  parameters: {
+    limit: {
+      type: "number",
+      description: "Maximum number of documents to retrieve (default: 10).",
+      required: false,
+    },
+  },
+  execute: async (
+    params: { limit?: number },
+    span?: Span,
+    email?: string,
+    usrCtx?: string,
+    agentPrompt?: string,
+    userMessage?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_fetchdatasources_tool")
+    try {
+      if (!email) {
+        const errorMsg = "Email is required for fetchdatasources tool execution."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing email" }
+      }
+
+      if (!agentPrompt) {
+        const errorMsg = "Agent prompt is required to fetch agent documents."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing agent prompt" }
+      }
+
+      // Parse agent prompt to get docIds
+      let agentData: { docIds?: string[] } = {}
+      try {
+        agentData = JSON.parse(agentPrompt)
+      } catch (error) {
+        const errorMsg = "Failed to parse agent prompt."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Invalid agent prompt" }
+      }
+
+      if (!agentData.docIds || agentData.docIds.length === 0) {
+        return {
+          result: "No documents found in agent knowledge base.",
+          contexts: [],
+        }
+      }
+
+      // Apply limit
+      const limit = params.limit || 10
+      let docIdsToFetch = agentData.docIds
+      if (docIdsToFetch.length > limit) {
+        docIdsToFetch = docIdsToFetch.slice(0, limit)
+      }
+
+      Logger.debug(`Fetching ${docIdsToFetch.length} documents from agent knowledge base: ${docIdsToFetch.join(', ')}`)
+
+      // Fetch documents from Vespa
+      const agentDocsResponse = await GetDocumentsByDocIds(
+        docIdsToFetch,
+        execSpan!,
+      )
+
+      if (!agentDocsResponse.root.children || agentDocsResponse.root.children.length === 0) {
+        return {
+          result: "No documents found in Vespa for the agent's document IDs.",
+          contexts: [],
+        }
+      }
+
+      // Convert to MinimalAgentFragment format
+      const fragments: MinimalAgentFragment[] = agentDocsResponse.root.children.map((child, index) => {
+        const citation = searchToCitation(child as any)
+        const fields = child.fields as any
+        
+        
+        // Schema-specific content extraction based on actual data structure
+        let content = ""
+        let contentSource = "none"
+        
+        // Handle different document schemas appropriately
+        if (fields?.sddocname === "file") {
+          // For file documents, use chunks_summary (contains processed document chunks)
+          if (fields?.chunks_summary && Array.isArray(fields.chunks_summary)) {
+            content = fields.chunks_summary.join(" ")
+            contentSource = "chunks_summary"
+          }
+        }
+        else if (fields?.sddocname === "event") {
+          // For calendar events, use description (contains event details)
+          if (fields?.description && typeof fields.description === 'string') {
+            content = fields.description
+            contentSource = "description"
+          }
+        }
+        else {
+          // For other schemas, try common content fields
+          if (fields?.chunks && Array.isArray(fields.chunks)) {
+            content = fields.chunks.join(" ")
+            contentSource = "chunks"
+          }
+          else if (fields?.content && typeof fields.content === 'string') {
+            content = fields.content
+            contentSource = "content"
+          }
+          else if (fields?.description && typeof fields.description === 'string') {
+            content = fields.description
+            contentSource = "description"
+          }
+        }
+        
+        return {
+          id: `agent-doc-${citation.docId}`,
+          content: content || `Document: ${citation.title || 'Untitled'} (${citation.docId}) - Content not available`,
+          source: citation,
+          confidence: 0.9, // High confidence for agent-selected documents
+        }
+      })
+
+      // Filter out fragments with no meaningful content
+      const validFragments = fragments.filter(fragment => {
+        const hasContent = fragment.content.trim().length > 50 // Require at least 50 characters
+        if (!hasContent) {
+          Logger.warn(`Filtered out document ${fragment.source.docId} due to insufficient content`)
+        }
+        return hasContent
+      })
+
+      const resultText = `Successfully retrieved ${validFragments.length} documents from agent knowledge base (${fragments.length} total, ${fragments.length - validFragments.length} filtered out due to insufficient content).`
+      
+      execSpan?.setAttribute("documents_retrieved", validFragments.length)
+      execSpan?.setAttribute("documents_filtered", fragments.length - validFragments.length)
+      
+      return {
+        result: resultText,
+        contexts: validFragments,
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Error in fetchdatasources tool: ${errMsg}`)
+      return { result: `Error fetching agent documents: ${errMsg}`, error: errMsg }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
@@ -2108,4 +2259,5 @@ export const agentTools: Record<string, AgentTool> = {
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
+  fetchdatasources: fetchDataSourcesTool,
 }
