@@ -1569,6 +1569,19 @@ export const ChatBox = ({
 
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
+      {persistedAgentId && displayAgentName && (
+        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-t-[20px] border-x border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <Bot size={18} className="text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-mono tracking-wider uppercase text-blue-600 dark:text-blue-400">
+              {displayAgentName}
+            </span>
+          </div>
+          <span className="text-sm font-mono tracking-wider uppercase text-blue-600 dark:text-blue-400">
+            ASK AGENT
+          </span>
+        </div>
+      )}
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
@@ -1757,7 +1770,7 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${
+        className={`flex flex-col w-full border dark:border-gray-700 ${persistedAgentId && displayAgentName ? "rounded-b-[20px] rounded-t-none !border-t-0" : "rounded-[20px]"} bg-white dark:bg-[#1E1E1E] ${
           selectedFiles.length >= MAX_ATTACHMENTS
             ? "border-amber-300 dark:border-amber-600"
             : ""
@@ -2879,17 +2892,6 @@ export const ChatBox = ({
                 Reasoning
               </span>
             </button>
-            {displayAgentName && (
-              <div className="flex items-center text-xs text-[#464D53] dark:text-gray-400 ml-2 px-1 py-0.5 cursor-default">
-                <Bot
-                  size={16}
-                  className="mr-1 text-[#464D53] dark:text-gray-400"
-                />
-                <span className="font-medium dark:text-gray-300">
-                  {displayAgentName}
-                </span>
-              </div>
-            )}
           </div>
           <div
             onClick={(e) => {

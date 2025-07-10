@@ -126,6 +126,7 @@ import {
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
+  GetAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
@@ -486,6 +487,7 @@ export const AppRoutes = app
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
