@@ -48,7 +48,8 @@ import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 const { maxValidLinks } = config
-
+import fs from "fs"
+import path from "path"
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
@@ -208,6 +209,7 @@ export async function mergeThreadResults(
 
 export const extractImageFileNames = (
   context: string,
+  results?: VespaSearchResult[],
 ): { imageFileNames: string[] } => {
   // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
   const imageContentRegex =
@@ -215,10 +217,20 @@ export const extractImageFileNames = (
   const matches = [...context.matchAll(imageContentRegex)]
 
   let imageFileNames: string[] = []
-
   for (const match of matches) {
-    const imageContent = match[1].trim()
+    let imageContent = match[1].trim()
     if (imageContent) {
+      const docId = imageContent.split("_")[0]
+      const docIndex =
+        results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+
+      if (docIndex === -1) {
+        console.warn(
+          `No matching document found for docId: ${docId} in results for image content extraction.`,
+        )
+        continue
+      }
+
       // Split by newlines and filter out empty strings
       const fileNames = imageContent
         .split("\n")
@@ -227,6 +239,7 @@ export const extractImageFileNames = (
         // Additional safety: split by spaces and filter out empty strings
         // in case multiple filenames are on the same line
         .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
+        .map((name) => `${docIndex}_${name}`)
       imageFileNames.push(...fileNames)
     }
   }
@@ -477,5 +490,123 @@ export const convertReasoningStepToText = (
       return step.message + "\n"
     default:
       return "Unknown reasoning step"
+  }
+}
+
+export const mimeTypeMap: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+}
+export const getCitationToImage = async (
+  citationIndex: string,
+  doc: VespaSearchResult,
+  email: string,
+): Promise<{
+  imagePath: string
+  imageBuffer: Buffer
+  extension: string | null
+} | null> => {
+  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+  try {
+    // Parse the citation index format: docIndex_imageNumber
+    const parts = citationIndex.split("_")
+    if (parts.length < 2) {
+      loggerWithChild({ email: email }).error(
+        "Invalid citation index format, expected docIndex_imageNumber",
+        citationIndex,
+      )
+      return null
+    }
+
+    const docIndex = parseInt(parts[0], 10)
+    const imageNumber = parseInt(parts[1], 10)
+    if (isNaN(docIndex) || isNaN(imageNumber)) {
+      loggerWithChild({ email: email }).error(
+        "Invalid numeric values in citation index",
+        { citationIndex, docIndex, imageNumber },
+      )
+      return null
+    }
+
+    const document = doc
+    if (!document) {
+      loggerWithChild({ email: email }).error("Document not found at index", {
+        docIndex,
+      })
+      return null
+    }
+
+    const docId = (document.fields as any)?.docId
+    if (!docId) {
+      loggerWithChild({ email: email }).error("DocId not found in document", {
+        docIndex,
+        document,
+      })
+      return null
+    }
+
+    const imageDir = process.env.IMAGE_DIR || "downloads/xyne_images_db"
+    const imagePathProcess = path.join(process.cwd(), imageDir, docId)
+
+    let imagePath: string | null = null
+    let ext: string | null = null
+
+    try {
+      const files = await fs.promises.readdir(imagePathProcess)
+
+      // Find file that matches the pattern: imageNumber.extension
+      const imageFile = files.find((file) => {
+        const nameWithoutExt = path.parse(file).name
+        return nameWithoutExt === imageNumber.toString()
+      })
+
+      if (imageFile) {
+        imagePath = path.join(imagePathProcess, imageFile)
+        ext = path.parse(imageFile).ext.slice(1) // Remove the dot
+      }
+    } catch (dirError) {
+      loggerWithChild({ email: email }).error("Error reading image directory", {
+        citationIndex,
+        docId,
+        imageNumber,
+        directory: imagePathProcess,
+        error: getErrorMessage(dirError),
+      })
+      return null
+    }
+
+    if (!imagePath) {
+      loggerWithChild({ email: email }).error(
+        "Image file not found in directory",
+        { citationIndex, docId, imageNumber, directory: imagePathProcess },
+      )
+      return null
+    }
+
+    const imageBuffer = await fs.promises.readFile(imagePath)
+
+    loggerWithChild({ email: email }).info("Successfully retrieved image", {
+      citationIndex,
+      docId,
+      imageNumber,
+      imagePath,
+      extension: ext,
+    })
+
+    return {
+      imagePath,
+      imageBuffer,
+      extension: ext,
+    }
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error retrieving image for citation",
+      { citationIndex, error: getErrorMessage(error) },
+    )
+    return null
   }
 }
