@@ -75,6 +75,7 @@ mermaid.initialize({
 import {
   SelectPublicMessage,
   Citation,
+  ImageCitation,
   MessageFeedback,
   // Apps,
   // DriveEntity,
@@ -354,6 +355,7 @@ export const ChatPage = ({
     partial,
     thinking,
     sources,
+    imageCitations,
     citationMap,
     isStreaming,
     messageId: streamInfoMessageId,
@@ -383,6 +385,7 @@ export const ChatPage = ({
         resp: partial,
         thinking,
         sources,
+        imageCitations,
         citationMap,
         messageId: streamInfoMessageId,
         chatId,
@@ -1083,6 +1086,7 @@ export const ChatPage = ({
                       responseDone={true}
                       thinking={message.thinking}
                       citations={message.sources}
+                      imageCitations={message.imageCitations || []}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
@@ -1123,6 +1127,7 @@ export const ChatPage = ({
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
+                        imageCitations={message.imageCitation || []}
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
@@ -1161,6 +1166,7 @@ export const ChatPage = ({
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
+                  imageCitations={currentResp.imageCitations}
                   thinking={currentResp.thinking || ""}
                   isUser={false}
                   responseDone={false}
@@ -1394,7 +1400,42 @@ const Sources = ({
   ) : null
 }
 
+// Image Citation Component
+interface ImageCitationComponentProps {
+  citationKey: string
+  imageCitations: ImageCitation[]
+  className?: string
+}
+
+const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+  citationKey,
+  imageCitations,
+  className = "",
+}) => {
+  const imageCitation = imageCitations.find(
+    (ic) => ic.citationKey === citationKey,
+  )
+
+  if (!imageCitation) {
+    return (
+      <span className="text-blue-600 dark:text-blue-400">[{citationKey}]</span>
+    )
+  }
+
+  return (
+    <div className={`block ${className}`}>
+      <img
+        src={`data:${imageCitation.mimeType};base64,${imageCitation.imageData}`}
+        alt={`Image from document`}
+        className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md"
+        style={{ maxHeight: "400px" }}
+      />
+    </div>
+  )
+}
+
 export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 const renderMarkdownLink = ({
   node,
@@ -1853,6 +1894,7 @@ export const ChatMessage = ({
   responseDone,
   isRetrying,
   citations = [],
+  imageCitations = [],
   messageId,
   handleRetry,
   dots = "",
@@ -1873,6 +1915,7 @@ export const ChatMessage = ({
   responseDone: boolean
   isRetrying?: boolean
   citations?: Citation[]
+  imageCitations?: ImageCitation[]
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
@@ -1892,6 +1935,13 @@ export const ChatMessage = ({
   const citationUrls = citations?.map((c: Citation) => c.url)
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
+
+    //replace image citations with a special markdown syntax
+    const originalText = text
+    text = text.replace(textToImageCitationIndex, (match, citationKey) => {
+      console.log("Found image citation:", match, "key:", citationKey)
+      return `![image-citation:${citationKey}](image-citation:${citationKey})`
+    })
 
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
@@ -1981,6 +2031,33 @@ export const ChatMessage = ({
                   components={{
                     a: renderMarkdownLink,
                     code: Code,
+                    img: ({ src, alt, ...props }: any) => {
+                      console.log(
+                        "Custom img handler called with src:",
+                        src,
+                        "alt:",
+                        alt,
+                      )
+                      // Check if this is our special image citation syntax
+                      if (src?.startsWith("image-citation:")) {
+                        const citationKey = src.replace("image-citation:", "")
+                        console.log(
+                          "Rendering ImageCitationComponent for key:",
+                          citationKey,
+                          "imageCitations:",
+                          imageCitations,
+                        )
+                        return (
+                          <ImageCitationComponent
+                            citationKey={citationKey}
+                            imageCitations={imageCitations}
+                            className="my-3"
+                          />
+                        )
+                      }
+                      // Regular image handling
+                      return <img src={src} alt={alt} {...props} />
+                    },
                     ...createTableComponents(), // Use extracted table components
                     h1: ({ node, ...props }) => (
                       <h1

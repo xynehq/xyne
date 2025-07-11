@@ -147,6 +147,7 @@ import {
   ragPipelineConfig,
   RagPipelineStages,
   type AgentTool,
+  type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
 import {
@@ -2259,6 +2260,7 @@ export const AgentMessageApi = async (c: Context) => {
             )
             let answer = ""
             let citations = []
+            let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -2293,6 +2295,7 @@ export const AgentMessageApi = async (c: Context) => {
             thinking = ""
             reasoning = isReasoning && userRequestsReasoning
             citations = []
+            imageCitations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
             let count = 0
@@ -2350,6 +2353,17 @@ export const AgentMessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                imageCitations.push(chunk.imageCitation)
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -2385,6 +2399,7 @@ export const AgentMessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
                 modelId:
@@ -2514,6 +2529,7 @@ export const AgentMessageApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations = []
+            let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
               app: "",
@@ -2722,6 +2738,18 @@ export const AgentMessageApi = async (c: Context) => {
                   })
                   citationValues[index] = item
                 }
+                if (chunk.imageCitation) {
+                  console.log("Found image citation, sending it")
+                  loggerWithChild({ email: email }).info(
+                    `Found image citation, sending it`,
+                    { citationKey: chunk.imageCitation.citationKey },
+                  )
+                  imageCitations.push(chunk.imageCitation)
+                  stream.writeSSE({
+                    event: ChatSSEvents.ImageCitationUpdate,
+                    data: JSON.stringify(chunk.imageCitation),
+                  })
+                }
               }
               understandSpan.setAttribute("citation_count", citations.length)
               understandSpan.setAttribute(
@@ -2761,6 +2789,7 @@ export const AgentMessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
                 modelId:

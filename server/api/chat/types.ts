@@ -73,6 +73,14 @@ export const MinimalCitationSchema = z.object({
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
 
+export interface ImageCitation {
+  citationKey: string
+  imagePath: string
+  imageData: string
+  mimeType: string
+  item: Citation
+}
+
 export interface MinimalAgentFragment {
   id: string // Unique ID for the fragment
   content: string

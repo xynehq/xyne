@@ -48,7 +48,8 @@ import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 const { maxValidLinks } = config
-
+import fs from "fs"
+import path from "path"
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
@@ -489,5 +490,81 @@ export const convertReasoningStepToText = (
       return step.message + "\n"
     default:
       return "Unknown reasoning step"
+  }
+}
+
+export const getCitationToImage = async (
+  citationIndex: string,
+  doc: VespaSearchResult,
+  email: string,
+): Promise<{ imagePath: string; imageBuffer: Buffer } | null> => {
+  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+  try {
+    // Parse the citation index format: docIndex_imageNumber
+    const parts = citationIndex.split("_")
+    if (parts.length < 2) {
+      loggerWithChild({ email: email }).error(
+        "Invalid citation index format, expected docIndex_imageNumber",
+        citationIndex,
+      )
+      return null
+    }
+
+    const docIndex = parseInt(parts[0], 10)
+    const imageNumber = parseInt(parts[1], 10)
+    if (isNaN(docIndex) || isNaN(imageNumber)) {
+      loggerWithChild({ email: email }).error(
+        "Invalid numeric values in citation index",
+        { citationIndex, docIndex, imageNumber },
+      )
+      return null
+    }
+
+    const document = doc
+    if (!document) {
+      loggerWithChild({ email: email }).error("Document not found at index", {
+        docIndex,
+      })
+      return null
+    }
+
+    // Extract docId from the document
+    const docId = (document.fields as any)?.docId
+    if (!docId) {
+      loggerWithChild({ email: email }).error("DocId not found in document", {
+        docIndex,
+        document,
+      })
+      return null
+    }
+
+    const imageDir = process.env.IMAGE_DIR || "downloads/xyne_images_db"
+    const imagePath = path.join(
+      process.cwd(),
+      imageDir,
+      docId,
+      `${imageNumber}.png`,
+    )
+
+    const imageBuffer = await fs.promises.readFile(imagePath)
+
+    loggerWithChild({ email: email }).info("Successfully retrieved image", {
+      citationIndex,
+      docId,
+      imageNumber,
+      imagePath,
+    })
+
+    return {
+      imagePath,
+      imageBuffer,
+    }
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error retrieving image for citation",
+      { citationIndex, error: getErrorMessage(error) },
+    )
+    return null
   }
 }

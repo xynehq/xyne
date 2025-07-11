@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "@tanstack/react-router"
 import { api } from "@/api"
-import { ChatSSEvents, Citation } from "shared/types"
+import { ChatSSEvents, Citation, ImageCitation } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 
@@ -12,6 +12,7 @@ interface StreamState {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -24,6 +25,7 @@ interface StreamInfo {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -238,6 +240,7 @@ export const startStream = async (
     partial: "",
     thinking: "",
     sources: [],
+    imageCitations: [],
     citationMap: {},
     messageId: undefined,
     chatId: chatId || undefined,
@@ -262,6 +265,20 @@ export const startStream = async (
     const { contextChunks, citationMap } = JSON.parse(event.data)
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
+    notifySubscribers(streamKey)
+  })
+
+  streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
+    const imageCitation: ImageCitation = JSON.parse(event.data)
+    // Check if this citation key already exists to avoid duplicates
+    const existingIndex = streamState.imageCitations.findIndex(
+      (ic) => ic.citationKey === imageCitation.citationKey,
+    )
+    if (existingIndex >= 0) {
+      streamState.imageCitations[existingIndex] = imageCitation
+    } else {
+      streamState.imageCitations.push(imageCitation)
+    }
     notifySubscribers(streamKey)
   })
 
@@ -404,6 +421,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       partial: "",
       thinking: "",
       sources: [],
+      imageCitations: [],
       citationMap: {},
       messageId: undefined,
       chatId: undefined,
@@ -415,6 +433,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     partial: stream.partial,
     thinking: stream.thinking,
     sources: stream.sources,
+    imageCitations: stream.imageCitations,
     citationMap: stream.citationMap,
     messageId: stream.messageId,
     chatId: stream.chatId,
@@ -664,6 +683,7 @@ export const useChatStream = (
         partial: "",
         thinking: "",
         sources: [],
+        imageCitations: [],
         citationMap: {},
         messageId: undefined,
         chatId: chatId || undefined,
@@ -743,6 +763,23 @@ export const useChatStream = (
         streamState.sources = contextChunks
         streamState.citationMap = citationMap
       })
+
+      eventSource.addEventListener(
+        ChatSSEvents.ImageCitationUpdate,
+        (event) => {
+          const imageCitation: ImageCitation = JSON.parse(event.data)
+          console.log("Processing retry image citation", imageCitation)
+          // Check if this citation key already exists to avoid duplicates
+          const existingIndex = streamState.imageCitations.findIndex(
+            (ic) => ic.citationKey === imageCitation.citationKey,
+          )
+          if (existingIndex >= 0) {
+            streamState.imageCitations[existingIndex] = imageCitation
+          } else {
+            streamState.imageCitations.push(imageCitation)
+          }
+        },
+      )
 
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId } = JSON.parse(event.data)
