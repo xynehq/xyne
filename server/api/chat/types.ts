@@ -86,6 +86,7 @@ export interface MinimalAgentFragment {
   content: string
   source: Citation
   confidence: number
+  imageFileNames?: string[]
 }
 
 export const messageFeedbackSchema = z.object({

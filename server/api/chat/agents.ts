@@ -153,9 +153,12 @@ import {
 import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
+  extractImageFileNames,
   flattenObject,
+  getCitationToImage,
   handleError,
   isMessageWithContext,
+  mimeTypeMap,
   processMessage,
   searchToCitation,
 } from "./utils"
@@ -165,6 +168,7 @@ import {
   buildUserQuery,
   cleanBuffer,
   isContextSelected,
+  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
@@ -187,33 +191,100 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
-const checkAndYieldCitationsForAgent = function* (
+const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
   baseIndex: number = 0,
+  yieldedImageCitations: Set<number>,
+  email: string,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
-  while ((match = textToCitationIndex.exec(text)) !== null) {
-    const citationIndex = parseInt(match[1], 10)
-    if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex - 1]
+  let imgMatch
+  while (
+    (match = textToCitationIndex.exec(text)) !== null ||
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+  ) {
+    if (match) {
+      const citationIndex = parseInt(match[1], 10)
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - 1]
 
-      if (!item?.source?.docId || !item.source?.url) {
-        Logger.info(
-          "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
-        )
-        continue
-      }
+        if (!item?.source?.docId || !item.source?.url) {
+          Logger.info(
+            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+          )
+          continue
+        }
 
-      yield {
-        citation: {
-          index: citationIndex,
-          item: item.source,
-        },
+        yield {
+          citation: {
+            index: citationIndex,
+            item: item.source,
+          },
+        }
+        yieldedCitations.add(citationIndex)
+      } else if (imgMatch) {
+        const parts = imgMatch[1].split("_")
+        if (parts.length >= 2) {
+          const docIndex = parseInt(parts[0], 10)
+          const imageIndex = parseInt(parts[1], 10)
+          const citationIndex = docIndex + baseIndex
+          if (!yieldedImageCitations.has(citationIndex)) {
+            const item = results[docIndex]
+            if (item) {
+              try {
+                const imageData = await getCitationToImage(
+                  imgMatch[1],
+                  {
+                    id: item.id,
+                    relevance: item.confidence,
+                    fields: {
+                      docId: item.source.docId,
+                    } as any,
+                  } as VespaSearchResult,
+                  email,
+                )
+                if (imageData) {
+                  if (!imageData.imagePath || !imageData.imageBuffer) {
+                    loggerWithChild({ email: email }).error(
+                      "Invalid imageData structure returned",
+                      { citationKey: imgMatch[1], imageData },
+                    )
+                    continue
+                  }
+                  yield {
+                    imageCitation: {
+                      citationKey: imgMatch[1],
+                      imagePath: imageData.imagePath,
+                      imageData: imageData.imageBuffer.toString("base64"),
+                      ...(imageData.extension
+                        ? { mimeType: mimeTypeMap[imageData.extension] }
+                        : {}),
+                      item: item.source,
+                    },
+                  }
+                }
+              } catch (error) {
+                loggerWithChild({ email: email }).error(
+                  error,
+                  "Error processing image citation",
+                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
+                )
+              }
+              yieldedImageCitations.add(citationIndex)
+            } else {
+              loggerWithChild({ email: email }).error(
+                "Found a citation index but could not find it in the search result ",
+                citationIndex,
+                results.length,
+              )
+              continue
+            }
+          }
+        }
       }
-      yieldedCitations.add(citationIndex)
     }
   }
 }
@@ -224,14 +295,31 @@ async function* getToolContinuationIterator(
   toolsPrompt: string,
   toolOutput: string,
   results: MinimalAgentFragment[],
-  agentPrompt?: string, // New optional parameter
+  agentPrompt?: string,
   messages: Message[] = [],
   fallbackReasoning?: string,
-  attachmentFileIds?: string[], // Add attachmentFileIds parameter
+  attachmentFileIds?: string[],
+  email?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const context = answerContextMapFromFragments(results, maxDefaultSummary)
+  const { imageFileNames } = extractImageFileNames(
+    context,
+    results.map(
+      (v) =>
+        ({
+          fields: {
+            docId: v.source.docId,
+            title: v.source.title,
+            url: v.source.url,
+          },
+        }) as any,
+    ),
+  )
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -241,12 +329,12 @@ async function* getToolContinuationIterator(
       json: true,
       reasoning: false,
       messages,
-      imageFileNames: attachmentFileIds?.map((id) => `${id}_0`), // Pass imageFileNames
+      imageFileNames,
     },
     toolsPrompt,
     context ?? "",
-    agentPrompt, // Pass agentPrompt
-    fallbackReasoning, // Pass fallback reasoning
+    agentPrompt,
+    fallbackReasoning,
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -256,6 +344,7 @@ async function* getToolContinuationIterator(
   let thinking = ""
   let reasoning = config.isReasoning
   let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
   const ANSWER_TOKEN = '"answer":'
 
   for await (const chunk of continuationIterator) {
@@ -306,10 +395,12 @@ async function* getToolContinuationIterator(
         yield { text: chunk.text }
 
         yield* checkAndYieldCitationsForAgent(
-          chunk.text,
+          buffer,
           yieldedCitations,
           results,
           previousResultsLength,
+          yieldedImageCitations,
+          email ?? "",
         )
       } catch (e) {
         Logger.error(`Error parsing LLM output: ${e}`)
@@ -802,6 +893,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let answer = ""
           let currentAnswer = ""
           let citations = []
+          let imageCitations: any = []
           let citationMap: Record<number, number> = {}
           let citationValues: Record<number, string> = {}
           let thinking = ""
@@ -1697,6 +1789,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             messagesWithNoErrResponse,
             fallbackReasoning,
             attachmentFileIds,
+            email,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -1744,6 +1837,18 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               citationValues[index] = item
             }
+            if (chunk.imageCitation) {
+              loggerWithChild({ email: email }).info(
+                `Found image citation, sending it`,
+                { citationKey: chunk.imageCitation.citationKey },
+              )
+              imageCitations.push(chunk.imageCitation)
+              stream.writeSSE({
+                event: ChatSSEvents.ImageCitationUpdate,
+                data: JSON.stringify(chunk.imageCitation),
+              })
+            }
+
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
@@ -1767,6 +1872,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: citations,
+              imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
               modelId:
@@ -2739,7 +2845,6 @@ export const AgentMessageApi = async (c: Context) => {
                   citationValues[index] = item
                 }
                 if (chunk.imageCitation) {
-                  console.log("Found image citation, sending it")
                   loggerWithChild({ email: email }).info(
                     `Found image citation, sending it`,
                     { citationKey: chunk.imageCitation.citationKey },
