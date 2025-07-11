@@ -269,6 +269,7 @@ function AgentComponent() {
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
   const [listSearchQuery, setListSearchQuery] = useState("")
+  const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<
     "all" | "shared-to-me" | "made-by-me"
   >("all")
@@ -465,6 +466,9 @@ function AgentComponent() {
   useEffect(() => {
     if (viewMode === "list") {
       fetchAllAgentData()
+    } else {
+      // When switching to create/edit view, also fetch all agents for the dropdown
+      fetchAgents("all")
     }
   }, [viewMode])
 
@@ -729,7 +733,15 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
-      setIsRagOn(editingAgent.isRagOn === false ? false : true)
+      const currentAgentIsRagOn =
+        editingAgent.isRagOn === false ? false : true
+      setIsRagOn(currentAgentIsRagOn)
+      setTestAgentIsRagOn(currentAgentIsRagOn)
+      setAgentName(editingAgent.name)
+      setAgentDescription(editingAgent.description || "")
+      setAgentPrompt(editingAgent.prompt || "")
+      setIsPublic(editingAgent.isPublic || false)
+      setSelectedModel(editingAgent.model)
     }
   }, [editingAgent, viewMode])
 
@@ -739,12 +751,6 @@ function AgentComponent() {
       (viewMode === "create" || viewMode === "edit") &&
       allAvailableIntegrations.length > 0
     ) {
-      setAgentName(editingAgent.name)
-      setAgentDescription(editingAgent.description || "")
-      setAgentPrompt(editingAgent.prompt || "")
-      setIsPublic(editingAgent.isPublic || false)
-      setSelectedModel(editingAgent.model)
-
       const currentIntegrations: Record<string, boolean> = {}
       allAvailableIntegrations.forEach((int) => {
         currentIntegrations[int.id] =
@@ -933,7 +939,12 @@ function AgentComponent() {
         return newSelections
       })
     }
-  }, [isRagOn])
+    // Also update the test agent's RAG status when the form's RAG changes,
+    // but only if we are testing the current form config.
+    if (selectedChatAgentExternalId === null) {
+      setTestAgentIsRagOn(isRagOn)
+    }
+  }, [isRagOn, selectedChatAgentExternalId])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -1954,7 +1965,10 @@ function AgentComponent() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuItem
-                      onSelect={() => setSelectedChatAgentExternalId(null)}
+                      onSelect={() => {
+                        setSelectedChatAgentExternalId(null)
+                        setTestAgentIsRagOn(isRagOn) // When switching to form, use form's RAG
+                      }}
                     >
                       Test Current Form Config
                     </DropdownMenuItem>
@@ -1965,9 +1979,10 @@ function AgentComponent() {
                     {allAgentsList.map((agent) => (
                       <DropdownMenuItem
                         key={agent.externalId}
-                        onSelect={() =>
+                        onSelect={() => {
                           setSelectedChatAgentExternalId(agent.externalId)
-                        }
+                          setTestAgentIsRagOn(agent.isRagOn) // Use selected agent's RAG
+                        }}
                       >
                         {agent.name}
                       </DropdownMenuItem>
@@ -2040,6 +2055,7 @@ function AgentComponent() {
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
                 setIsReasoningActive={setIsReasoningActive}
+                overrideIsRagOn={testAgentIsRagOn}
               />
             </div>
           </div>

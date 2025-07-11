@@ -2469,7 +2469,7 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
-      if (config.ragOffFeature && !agentForDb.isRagOn) {
+      if (config.ragOffFeature && agentForDb.isRagOn === false) {
         return AgentMessageApiRagOff(c)
       }
     }

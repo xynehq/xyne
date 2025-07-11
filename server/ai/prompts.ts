@@ -2138,9 +2138,12 @@ ${retrievedContext}
    - Note any inconsistencies in the data
    - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
+7. Technical Response Guidelines:
+   - When responding to queries involving API details or payload structures, always enclose the content within properly formatted code blocks for clarity and accuracy.
+   - All responses to code-related technical questions must include relevant code snippets or blocks, properly formatted using language-specific syntax highlighting to enhance readability and maintain correctness.
 
 #Response Format:
- "answer": "Your detailed answer to the query found in context .This can be well formatted markdown value inside the answer field . Or If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base ."  
+ "answer": "Your detailed answer to the query found in context .This can be well formatted markdown value inside the answer field."
 
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
