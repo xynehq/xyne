@@ -2241,75 +2241,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chatId: chat.externalId,
           }),
         })
-        
-        const agentAppEnums: Apps[] = []
-        const agentSpecificDataSourceIds: string[] = []
 
-        if (
-          agentForDb?.appIntegrations &&
-          Array.isArray(agentForDb.appIntegrations)
-        ) {
-          for (const integration of agentForDb.appIntegrations) {
-            if (typeof integration === "string") {
-              const lowerIntegration = integration.toLowerCase()
-              if (
-                lowerIntegration.startsWith("ds-") ||
-                lowerIntegration.startsWith("ds_")
-              ) {
-                agentSpecificDataSourceIds.push(integration)
-                if (!agentAppEnums.includes(Apps.DataSource)) {
-                  agentAppEnums.push(Apps.DataSource)
-                }
-              } else {
-                switch (lowerIntegration) {
-                  case Apps.GoogleDrive.toLowerCase():
-                  case "googledrive":
-                    if (!agentAppEnums.includes(Apps.GoogleDrive))
-                      agentAppEnums.push(Apps.GoogleDrive)
-                    break
-                  case Apps.DataSource.toLowerCase(): // 'data-source'
-                    if (!agentAppEnums.includes(Apps.DataSource))
-                      agentAppEnums.push(Apps.DataSource)
-                    break
-                  case "googlesheets":
-                    if (!agentAppEnums.includes(Apps.GoogleDrive))
-                      agentAppEnums.push(Apps.GoogleDrive)
-                    break
-                  case Apps.Gmail.toLowerCase():
-                  case "gmail":
-                    if (!agentAppEnums.includes(Apps.Gmail))
-                      agentAppEnums.push(Apps.Gmail)
-                    break
-                  case Apps.GoogleCalendar.toLowerCase():
-                  case "googlecalendar":
-                    if (!agentAppEnums.includes(Apps.GoogleCalendar))
-                      agentAppEnums.push(Apps.GoogleCalendar)
-                    break
-                  case Apps.Slack.toLowerCase():
-                  case "slack":
-                    if (!agentAppEnums.includes(Apps.Slack))
-                      agentAppEnums.push(Apps.Slack)
-                    break
-                  default:
-                    loggerWithChild({ email: email }).warn(
-                      `Unknown integration type in agent prompt: ${integration}`,
-                    )
-                    break
-                }
-              }
-            } else {
-              loggerWithChild({ email: email }).warn(
-                `Invalid integration item in agent prompt (not a string): ${integration}`,
-              )
-            }
-          }
-        }
-
-        const allDataSources = await getAllDocumentsForAgent(
-          email,
-          agentAppEnums,
-          agentSpecificDataSourceIds,
-        )
+        const allDataSources = await getAllDocumentsForAgent(email, [
+          Apps.DataSource,
+        ])
 
         const docIds = [
           ...new Set(
@@ -2359,7 +2294,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           {
             modelId: defaultBestModel,
             stream: true,
-            json: true,
+            json: false,
             reasoning: false,
             messages: messagesWithNoErrResponse,
           },
@@ -2371,45 +2306,23 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         )
         Logger.info("After baselineRAGOffJsonStream")
         let answer = ""
-        let currentAnswer = ""
-        let buffer = ""
-        let parsed = { answer: "" }
         for await (const chunk of ragOffIterator) {
           if (stream.closed) {
-            Logger.info(
-              "[AgentMessageApiRagOff] Stream closed. Breaking.",
-            )
+            Logger.info("[AgentMessageApiRagOff] Stream closed. Breaking.")
             wasStreamClosedPrematurely = true
             break
           }
           if (chunk.text) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer) || { answer: "" }
-              if (parsed.answer && currentAnswer !== parsed.answer) {
-                if (currentAnswer === "") {
-                  stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: parsed.answer,
-                  })
-                } else {
-                  const newText = parsed.answer.slice(currentAnswer.length)
-                  stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: newText,
-                  })
-                }
-                currentAnswer = parsed.answer
-              }
-            } catch (e) {
-              // It's okay if it fails to parse, just means the JSON is not complete yet.
-            }
+            answer += chunk.text
+            stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: chunk.text,
+            })
           }
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }
         }
-        answer = currentAnswer
 
         if (answer) {
           const msg = await insertMessage(db, {
@@ -2448,6 +2361,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           })
           assistantMessageId = msg.externalId
         } else {
+          const errorMessage =
+            "There seems to be an issue on our side. Please try again after some time."
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2456,8 +2371,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             messageRole: MessageRole.Assistant,
             email: user.email,
             sources: [],
-            message: "",
-            thinking: "No answer found in context",
+            message: errorMessage,
+            thinking: "",
             modelId: defaultBestModel,
           })
           assistantMessageId = msg.externalId
@@ -2467,6 +2382,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               chatId: chat.externalId,
               messageId: assistantMessageId,
             }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseUpdate,
+            data: errorMessage,
           })
         }
 
@@ -2483,9 +2402,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       } finally {
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          Logger.info(
-            `Removed stream ${streamKey} from active streams map.`,
-          )
+          Logger.info(`Removed stream ${streamKey} from active streams map.`)
         }
       }
     })
@@ -2493,7 +2410,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     // ... (error handling as in AgentMessageApi)
   }
 }
-
 
 export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
@@ -2553,7 +2469,7 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
-      if (!agentForDb.isRagOn) {
+      if (config.ragOffFeature && !agentForDb.isRagOn) {
         return AgentMessageApiRagOff(c)
       }
     }

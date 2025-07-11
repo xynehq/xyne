@@ -1136,7 +1136,6 @@ export const baselineRAGOffJsonStream = (
   )
   params.json = true
 
-  // console.log(`params.systemPrompt : ${params.systemPrompt}`)
   const baseMessage = {
     role: ConversationRole.USER,
     content: [

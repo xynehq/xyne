@@ -721,8 +721,17 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
+    if (!isRagOn) {
+      return dynamicDataSources
+    }
     return [...availableIntegrationsList, ...dynamicDataSources]
-  }, [fetchedDataSources])
+  }, [fetchedDataSources, isRagOn])
+
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
+      setIsRagOn(editingAgent.isRagOn === false ? false : true)
+    }
+  }, [editingAgent, viewMode])
 
   useEffect(() => {
     if (
@@ -734,7 +743,6 @@ function AgentComponent() {
       setAgentDescription(editingAgent.description || "")
       setAgentPrompt(editingAgent.prompt || "")
       setIsPublic(editingAgent.isPublic || false)
-      setIsRagOn(editingAgent.isRagOn === false ? false : true)
       setSelectedModel(editingAgent.model)
 
       const currentIntegrations: Record<string, boolean> = {}
@@ -743,7 +751,11 @@ function AgentComponent() {
           editingAgent.appIntegrations?.includes(int.id) || false
       })
       setSelectedIntegrations(currentIntegrations)
+    }
+  }, [editingAgent, viewMode, allAvailableIntegrations])
 
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
       // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
@@ -770,7 +782,7 @@ function AgentComponent() {
         setSelectedUsers([]) // Clear users for public agents
       }
     }
-  }, [editingAgent, viewMode, allAvailableIntegrations, users])
+  }, [editingAgent, viewMode, users])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
     setConfirmModalTitle("Delete Agent")
@@ -910,6 +922,18 @@ function AgentComponent() {
       (integration) => selectedIntegrations[integration.id],
     )
   }, [selectedIntegrations, allAvailableIntegrations])
+
+  useEffect(() => {
+    if (!isRagOn) {
+      setSelectedIntegrations((prev) => {
+        const newSelections = { ...prev }
+        availableIntegrationsList.forEach((int) => {
+          newSelections[int.id] = false
+        })
+        return newSelections
+      })
+    }
+  }, [isRagOn])
 
   useEffect(() => {
     if (inputRef.current) {
