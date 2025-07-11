@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Pencil, ArrowLeft } from "lucide-react"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType, IngestionType } from "shared/types"
+import { Apps, AuthType, IngestionType, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
@@ -683,11 +683,19 @@ const SlackOAuthTab = ({
             <div className="flex items-center py-2">
               {hasSlackSyncJob ? (
                 <span className="text-600">Connected</span>
+              ) : userRole === UserRole.User ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Your request has been sent to admin. Processing will take a
+                  few hours, depending on the size of your data.
+                </p>
               ) : (
-                <span>
-                  Your Slack data ingestion request has been submitted. It will
-                  take few hours, depending on size of your data
-                </span>
+                <Button
+                  onClick={handleRegularIngestion}
+                  disabled={isRegularIngestionActive}
+                  className="text-sm px-4 py-2"
+                >
+                  {isRegularIngestionActive ? "Starting..." : "Start Ingestion"}
+                </Button>
               )}
             </div>
           ) : null}
