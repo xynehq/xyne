@@ -453,9 +453,9 @@ const constructDataSourceFileContext = (
   let imageChunks: ScoredChunk[] = []
   const maxImageChunks =
     fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length < 5
+    fields.image_chunks_summary?.length < 1
       ? fields.image_chunks_summary?.length
-      : 5
+      : 1
   if (fields.matchfeatures) {
     imageChunks = getSortedScoredImageChunks(
       fields.matchfeatures,
