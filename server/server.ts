@@ -135,10 +135,20 @@ import { z } from "zod" // Ensure z is imported if not already at the top for sc
 import { messageFeedbackSchema } from "@/api/chat/types"
 
 import {
-  isSlackEnabled,
-  startSocketMode,
-  getSocketModeStatus,
-} from "@/integrations/slack/client"
+  CreateKnowledgeBaseApi,
+  ListKnowledgeBasesApi,
+  GetKnowledgeBaseApi,
+  UpdateKnowledgeBaseApi,
+  DeleteKnowledgeBaseApi,
+  ListKbItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+} from "@/api/knowledgeBase"
+
+import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
 import {
@@ -336,6 +346,7 @@ const handleAppValidation = async (c: Context) => {
     })
   }
 
+
   const user = await userInfoRes.json()
 
   const email = user?.email
@@ -502,6 +513,20 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  // Knowledge Base Routes
+  .post("/kb", CreateKnowledgeBaseApi)
+  .get("/kb", ListKnowledgeBasesApi)
+  .get("/kb/:kbId", GetKnowledgeBaseApi)
+  .put("/kb/:kbId", UpdateKnowledgeBaseApi)
+  .delete("/kb/:kbId", DeleteKnowledgeBaseApi)
+  .get("/kb/:kbId/items", ListKbItemsApi)
+  .post("/kb/:kbId/items/folder", CreateFolderApi)
+  .post("/kb/:kbId/items/upload", UploadFilesApi)
+  .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/kb/:kbId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
+  .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -845,22 +870,22 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/knowledge-base", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/kb-test", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
-      const socketStarted = await startSocketMode()
+      const socketStarted = await startSocketMode();
       if (socketStarted) {
-        Logger.info("Slack Socket Mode connection initiated successfully.")
+        Logger.info("Slack Socket Mode connection initiated successfully.");
       } else {
-        Logger.warn(
-          "Failed to start Slack Socket Mode - missing configuration.",
-        )
+        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
       }
     } catch (error) {
-      Logger.error(error, "Error starting Slack Socket Mode")
+      Logger.error(error, "Error starting Slack Socket Mode");
     }
   } else {
     Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")

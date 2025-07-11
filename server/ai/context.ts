@@ -18,6 +18,8 @@ import {
   // Corrected import name for datasourceFileSchema
   dataSourceFileSchema,
   type VespaDataSourceFileSearch,
+  kbFileSchema,
+  type VespaKbFileSearch,
 } from "@/search/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
@@ -187,12 +189,7 @@ const constructSlackMessageContext = (
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    ${fields.threadId ? "it's a message thread" : ""}
-    ${
-      typeof fields.createdAt === "number" && isFinite(fields.createdAt)
-        ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})`
-        : ""
-    }
+    ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -510,6 +507,60 @@ const constructDataSourceFileContext = (
   \nvespa relevance score: ${relevance}\n`
 }
 
+const constructKbFileContext = (
+  fields: VespaKbFileSearch,
+  relevance: number,
+  maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
+): string => {
+  if (!maxSummaryChunks && !isSelectedFiles) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
+
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures && fields.chunks_summary) {
+    const summaryStrings = fields.chunks_summary.map((c) =>
+      typeof c === "string" ? c : c.chunk,
+    )
+    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+  } else if (fields.chunks_summary) {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: typeof chunk === "string" ? 0 : chunk.score,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  }
+
+  return `Source: Knowledge Base
+File: ${fields.fileName || "N/A"}
+Knowledge Base ID: ${fields.kbId || "N/A"}
+Mime Type: ${fields.mimeType || "N/A"}
+${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
+${content ? `Content: ${content}` : ""}
+\nvespa relevance score: ${relevance}\n`
+}
+
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
@@ -607,6 +658,13 @@ export const answerContextMap = (
   } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
     return constructDataSourceFileContext(
       searchResult.fields as VespaDataSourceFileSearch,
+      searchResult.relevance,
+      maxSummaryChunks,
+      isSelectedFiles,
+    )
+  } else if (searchResult.fields.sddocname === kbFileSchema) {
+    return constructKbFileContext(
+      searchResult.fields as VespaKbFileSearch,
       searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
