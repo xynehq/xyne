@@ -135,7 +135,7 @@ function processTextParagraphs(
   text_chunks: string[],
   text_chunk_pos: number[],
   globalSeq: { value: number },
-  overlapBytes: number = 128,
+  overlapBytes: number = 32,
 ): string {
   if (paragraphs.length === 0) return ""
 
@@ -469,7 +469,13 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
               if (imageProcessed) {
                 const imgBuffer = new Uint8Array(uint8Data.buffer)
-                const type = await imageType(imgBuffer)
+                let type = await imageType(imgBuffer)
+                if (!type) {
+                  Logger.warn(
+                    `Could not determine MIME type for ${imageName}. Defaulting to image/png`,
+                  )
+                  type = { mime: "image/png", ext: "png" }
+                }
                 if (
                   !type ||
                   !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
