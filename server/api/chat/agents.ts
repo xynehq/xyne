@@ -2107,6 +2107,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
+    const userRequestsReasoning = isReasoningEnabled
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -2303,6 +2304,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             role: m.messageRole as ConversationRole,
             content: [{ text: m.message }],
           })),
+          attachmentFileIds,
         )
         Logger.info("After baselineRAGOffJsonStream")
         let answer = ""
