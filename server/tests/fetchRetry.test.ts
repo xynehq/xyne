@@ -67,7 +67,7 @@ describe("VespaClient", () => {
       Promise.resolve(
         new Response(JSON.stringify(mockResponse), { status: 200 }),
       ),
-    )
+    ) as any
 
     const result = await vespaClient.search(mockPayload)
 
@@ -88,7 +88,7 @@ describe("VespaClient", () => {
   test("search should not retry on 404", async () => {
     global.fetch = mock(() =>
       Promise.resolve(new Response("Not Found", { status: 404 })),
-    )
+    ) as any
 
     try {
       await vespaClient.search(mockPayload)
@@ -102,7 +102,7 @@ describe("VespaClient", () => {
   test("search should retry on 500 up to maxRetries", async () => {
     global.fetch = mock(() =>
       Promise.resolve(new Response("Server Error", { status: 500 })),
-    )
+    ) as any
 
     // Mock setTimeout to speed up tests
     // @ts-ignore
@@ -138,7 +138,7 @@ describe("VespaClient", () => {
         Promise.resolve(
           new Response(JSON.stringify(mockResponse), { status: 200 }),
         ),
-      )
+      ) as any
 
     // Mock setTimeout to speed up tests
     // @ts-ignore

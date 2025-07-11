@@ -36,7 +36,7 @@ import {
   getUserPersonalizationByEmail,
 } from "@/db/personalization" // Import personalization getters
 import { Ollama } from "ollama" // Import the base Ollama client library
-import { OllamaProvider } from "@/ai/provider/ollama" // Import our specific provider wrapper
+import { OllamaProvider } from "ai-providers" // Import our specific provider wrapper
 
 // --- Define and Export WS Connections Map --- (Defined ONCE)
 export const tuningWsConnections = new Map<

@@ -1,4 +1,5 @@
 {
+  "extends": "../tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
@@ -26,6 +27,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["."],
+  "include": [".", "../shared"],
   "exclude": ["node_modules", "build"]
 }

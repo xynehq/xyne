@@ -5,20 +5,20 @@ import {
   type Message,
   type ContentBlock,
 } from "@aws-sdk/client-bedrock-runtime"
-import { modelDetailsMap } from "@/ai/mappers"
-import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders, Models } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
-import { calculateCost } from "@/utils/index"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { modelDetailsMap } from "../mappers"
+import type { ConverseResponse, ModelParams } from "../types"
+import { AIProviders, Models } from "../types"
+import BaseProvider from "./base"
+import { calculateCost } from "../utils"
+import { getLogger } from "../logger"
+import { Subsystem } from "../server-types"
 import fs from "fs"
 import path from "path"
 import os from "os"
 const Logger = getLogger(Subsystem.AI)
-import config from "@/config"
+import config from "../config"
 const { StartThinkingToken, EndThinkingToken } = config
-import { findImageByName } from "@/ai/provider/base"
+import { findImageByName } from "./base"
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (

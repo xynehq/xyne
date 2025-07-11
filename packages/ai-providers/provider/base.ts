@@ -1,7 +1,7 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
-import type { ConverseResponse, LLMProvider, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
-import config from "@/config"
+import type { ConverseResponse, LLMProvider, ModelParams } from "../types"
+import { AIProviders } from "../types"
+import config from "../config"
 import path from "path"
 import fs from "fs"
 

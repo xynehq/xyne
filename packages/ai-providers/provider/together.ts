@@ -1,15 +1,15 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
-import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
-import type { Ollama } from "ollama"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import type { ConverseResponse, ModelParams } from "../types"
+import { AIProviders } from "../types"
+import BaseProvider from "./base"
+import { getLogger } from "../logger"
+import { Subsystem } from "../server-types"
 const Logger = getLogger(Subsystem.AI)
+import Together from "together-ai"
 
-export class OllamaProvider extends BaseProvider {
-  constructor(client: Ollama) {
-    super(client, AIProviders.Ollama)
+export class TogetherProvider extends BaseProvider {
+  constructor(client: Together) {
+    super(client, AIProviders.Together)
   }
 
   async converse(
@@ -19,7 +19,7 @@ export class OllamaProvider extends BaseProvider {
     const modelParams = this.getModelParams(params)
 
     try {
-      const response = await (this.client as Ollama).chat({
+      const response = await (this.client as Together).chat.completions.create({
         model: modelParams.modelId,
         messages: [
           {
@@ -31,20 +31,19 @@ export class OllamaProvider extends BaseProvider {
             role: v.role! as "user" | "assistant",
           })),
         ],
-        options: {
-          temperature: modelParams.temperature,
-          top_p: modelParams.topP,
-          num_predict: modelParams.maxTokens,
-        },
+        temperature: modelParams.temperature,
+        top_p: modelParams.topP,
+        max_tokens: modelParams.maxTokens,
+        stream: false,
       })
 
       const cost = 0 // Explicitly setting 0 as cost
       return {
-        text: response.message.content,
+        text: response.choices[0].message?.content || "",
         cost,
       }
     } catch (error) {
-      throw new Error("Failed to get response from Ollama")
+      throw new Error("Failed to get response from Together")
     }
   }
 
@@ -54,7 +53,7 @@ export class OllamaProvider extends BaseProvider {
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
     try {
-      const stream = await (this.client as Ollama).chat({
+      const stream = await (this.client as Together).chat.completions.create({
         model: modelParams.modelId,
         messages: [
           {
@@ -66,23 +65,27 @@ export class OllamaProvider extends BaseProvider {
             role: v.role! as "user" | "assistant",
           })),
         ],
-        options: {
-          temperature: modelParams.temperature,
-          top_p: modelParams.topP,
-          num_predict: modelParams.maxTokens,
-        },
+        temperature: modelParams.temperature,
+        top_p: modelParams.topP,
+        // max_tokens: modelParams.maxTokens,
         stream: true,
       })
 
       for await (const chunk of stream) {
-        yield {
-          text: chunk.message.content,
-          metadata: chunk.done ? "stop" : undefined,
-          cost: 0, // Ollama is typically free to run locally
+        const text = chunk.choices[0]?.delta?.content
+        const finishReason = chunk.choices[0]?.finish_reason
+
+        if (text || finishReason) {
+          yield {
+            text: text || "",
+            metadata: finishReason,
+            // Only send cost with first meaningful chunk
+            cost: 0,
+          }
         }
       }
     } catch (error) {
-      Logger.error(error, "Error in converseStream of Ollama")
+      Logger.error(error, "Error in converseStream of Together")
       throw error
     }
   }

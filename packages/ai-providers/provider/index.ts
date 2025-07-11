@@ -4,7 +4,7 @@ import {
   ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
-import config from "@/config"
+import config from "../config"
 import { z } from "zod"
 const {
   AwsAccessKey,
@@ -24,12 +24,12 @@ const {
   aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
-import { getLogger } from "@/logger"
-import { MessageRole, Subsystem } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { getLogger } from "../logger"
+import { Subsystem, MessageRole } from "../server-types"
+import { getErrorMessage } from "../utils"
 import { parse } from "partial-json"
 
-import { ModelToProviderMap } from "@/ai/mappers"
+import { ModelToProviderMap } from "../mappers"
 import type {
   AnswerResponse,
   ConverseResponse,
@@ -38,14 +38,14 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
-} from "@/ai/types"
+} from "../types"
 import {
   QueryContextRank,
   QueryAnalysisSchema,
   QueryRouterResponseSchema,
   Models,
   AIProviders,
-} from "@/ai/types"
+} from "../types"
 import {
   analyzeInitialResultsOrRewriteSystemPrompt,
   analyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -74,18 +74,34 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
-} from "@/ai/prompts"
+} from "../prompts"
 
-import { BedrockProvider } from "ai-providers"
-import { OpenAIProvider } from "ai-providers"
+import { BedrockProvider } from "./bedrock"
+import { OpenAIProvider } from "./openai"
 import { Ollama } from "ollama"
-import { OllamaProvider } from "ai-providers"
+import { OllamaProvider } from "./ollama"
 import Together from "together-ai"
-import { TogetherProvider } from "ai-providers"
-import { Fireworks } from "ai-providers"
-import { FireworksProvider } from "ai-providers"
+import { TogetherProvider } from "./together"
+import { Fireworks } from "./fireworksClient"
+import { FireworksProvider } from "./fireworks"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { GeminiAIProvider } from "ai-providers"
+import { GeminiAIProvider } from "./gemini"
+export { BedrockProvider } from "./bedrock"
+export { OpenAIProvider } from "./openai"
+export { OllamaProvider } from "./ollama"
+export { TogetherProvider } from "./together"
+export { FireworksProvider } from "./fireworks"
+export { GeminiAIProvider } from "./gemini"
+export { Fireworks } from "./fireworksClient"
+import AzureOpenAIProvider from "./azure-openai"
+export { AzureOpenAIProvider }
+import { OpenRouterProvider } from "./openrouter"
+export { OpenRouterProvider }
+import { VertexAIProvider } from "./vertex"
+export { VertexAIProvider }
+import BaseProvider from "./base"
+export { BaseProvider }
+
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -100,7 +116,7 @@ import {
   agentTemporalDirectionJsonPrompt,
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
-import type { ToolDefinition } from "@/api/chat/mapper"
+import type { ToolDefinition } from "../chat/mapper"
 
 const Logger = getLogger(Subsystem.AI)
 

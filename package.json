@@ -1,0 +1,17 @@
+{
+  "name": "xyne",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": ["packages/*", "server"],
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "scripts": {
+    "build": "bun run build:all",
+    "build:all": "tsc -b",
+    "clean": "rm -rf server/dist packages/*/dist"
+  },
+  "dependencies": {
+    "mysql2": "3.14.1"
+  }
+}

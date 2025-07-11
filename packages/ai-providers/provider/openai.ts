@@ -1,15 +1,15 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import OpenAI from "openai"
-import { modelDetailsMap } from "@/ai/mappers"
-import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
-import { calculateCost } from "@/utils/index"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { modelDetailsMap } from "../mappers"
+import type { ConverseResponse, ModelParams } from "../types"
+import { AIProviders } from "../types"
+import BaseProvider from "./base"
+import { calculateCost } from "../utils"
+import { getLogger } from "../logger"
+import { Subsystem } from "../server-types"
 import fs from "fs"
 import path from "path"
-import { findImageByName } from "@/ai/provider/base"
+import { findImageByName } from "./base"
 
 const Logger = getLogger(Subsystem.AI)
 

@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/esm",
+    "baseUrl": ".",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": ["es2021", "dom"],
+    "target": "es2021"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
