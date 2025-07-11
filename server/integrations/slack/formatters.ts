@@ -141,23 +141,32 @@ export function createAnalysisParentMessage(
   ];
 }
 
+/**
+ * Creates Slack blocks to display an error message with details and a reference error ID.
+ *
+ * @param error - The error message or details to display
+ * @param errorId - A unique identifier for the error instance
+ * @param title - Optional title for the error message; defaults to "An error occurred"
+ * @returns An array of Slack blocks representing the error message, details, and context
+ */
 export function createErrorBlocks(
   error: string,
-  sessionId: string
+  errorId: string,
+  title: string = "An error occurred"
 ): (KnownBlock | Block)[] {
   return [
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*An error occurred:*`,
+        text: `*${title}:*`,
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "```" + error + "```",
+        text: "```" + (error || "No details available.") + "```",
       },
     },
     {
@@ -165,7 +174,7 @@ export function createErrorBlocks(
       elements: [
         {
           type: "mrkdwn",
-          text: `Session ID: \`${sessionId}\``,
+          text: `Error ID: \`${errorId}\`. If the issue persists, please report this ID to your administrator.`,
         },
       ],
     },
@@ -689,7 +698,6 @@ export const createAgentConversationModal = (
 };
 
 export const createAgentResponseBlocks = (
-  agentName: string,
   userQuestion: string,
   agentResponse: string,
   conversationId?: string,
@@ -701,7 +709,7 @@ export const createAgentResponseBlocks = (
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 *${agentName}* responded:`,
+        text: `🤖 Agent responded:`,
       },
     },
     {
@@ -780,22 +788,21 @@ export const createAgentResponseBlocks = (
     });
   }
 
-  actionElements.push({
-    type: "button",
-    text: {
-      type: "plain_text",
-      text: "Share Response",
-      emoji: true,
-    },
-    style: "primary",
-    action_id: "share_agent_response",
-    value: JSON.stringify({
-      agent_name: agentName,
-      question: userQuestion,
-      response: agentResponse,
-      conversation_id: conversationId,
-    }),
-  });
+    actionElements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Share Response",
+        emoji: true,
+      },
+      style: "primary",
+      action_id: "share_agent_response",
+      value: JSON.stringify({
+        question: userQuestion,
+        response: agentResponse,
+        conversation_id: conversationId,
+      }),
+    });
 
   if (actionElements.length > 0) {
     blocks.push({
@@ -841,21 +848,25 @@ export function cleanAgentResponse(response: string): string {
 }
 
 /**
- * Create a modal view for agent responses
- * @param query The original query string
- * @param agentName Name of the agent that responded
- * @param response The agent's response text
- * @param citations Array of citations if available
- * @param interactionId The cache key for this interaction (required)
- * @returns Slack modal view object
+ * Creates a Slack modal view displaying an agent's response to a user query, including the response text, paginated citations, and sharing actions.
+ *
+ * The modal shows the agent's name, the original query (truncated if necessary), the cleaned and truncated response, and a paginated list of sources if citations are provided. Users can navigate between citation pages and share the response in the channel or thread.
+ *
+ * @param query - The original user query
+ * @param response - The agent's response text
+ * @param citations - Array of citation objects to display as sources
+ * @param messageId - Unique identifier for this message interaction
+ * @param isFromThread - Whether the modal was opened from a thread context
+ * @param page - The current page of citations to display (defaults to 1)
+ * @returns A Slack modal view object containing the agent response and related actions
  */
 export function createAgentResponseModal(
   query: string,
-  agentName: string,
   response: string,
   citations: unknown[],
-  interactionId: string,
-  isFromThread: boolean
+  messageId: string,
+  isFromThread: boolean,
+  page: number = 1
 ): View {
   // Validate and filter citations
   const validCitations = validateCitations(citations);
@@ -867,7 +878,7 @@ export function createAgentResponseModal(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `🤖 */${agentName}* responded to: "_${
+        text: `Query: "_${
           query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
         }_"`,
       },
@@ -900,8 +911,12 @@ export function createAgentResponseModal(
       },
     });
 
-    // Limit citations in modal to prevent excessive scrolling
-    const displayCitations = validCitations.slice(0, MAX_CITATIONS_IN_MODAL);
+
+    // Paginate citations
+    const startIndex = (page - 1) * MAX_CITATIONS_IN_MODAL;
+    const endIndex = startIndex + MAX_CITATIONS_IN_MODAL;
+    const displayCitations = validCitations.slice(startIndex, endIndex);
+
     for (let i = 0; i < displayCitations.length; i++) {
       const citation = displayCitations[i];
       const rawTitle = citation.title || citation.name || "Untitled";
@@ -931,41 +946,55 @@ export function createAgentResponseModal(
           .replace(/\s+/g, " ")
           .trim();
         snippet =
-          snippet.length > SNIPPET_MAX_LENGTH_SOURCES ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...` : snippet;
+          snippet.length > SNIPPET_MAX_LENGTH_SOURCES
+            ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...`
+            : snippet;
       }
 
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${i + 1}. ${url ? `<${url}|${title}>` : title}*\n${
-            snippet || "_No preview available_"
-          }`,
-        },
-      });
-    }
-
-    // Show "See all sources" button if there are more than 2 sources
-    if (validCitations.length > MAX_CITATIONS_IN_MODAL) {
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `_${validCitations.length - MAX_CITATIONS_IN_MODAL} more sources available_`,
-        },
-        accessory: {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "See all sources",
-            emoji: true,
-          },
-          action_id: "view_all_sources",
-          value: interactionId,
+          text: `*${startIndex + i + 1}. ${
+            url ? `<${url}|${title}>` : title
+          }*\n${snippet || "_No preview available_"}`,
         },
       });
     }
   }
+
+  // --- PAGINATION ---
+  const totalPages = Math.ceil(
+    validCitations.length / MAX_CITATIONS_IN_MODAL
+  );
+  const paginationActions: any[] = [];
+
+  if (page > 1) {
+    paginationActions.push({
+      type: "button",
+      text: { type: "plain_text", text: "⬅️ Previous", emoji: true },
+      action_id: "previous_source_page",
+      value: JSON.stringify({ page: page - 1 }),
+    });
+  }
+
+  if (page < totalPages) {
+    paginationActions.push({
+      type: "button",
+      text: { type: "plain_text", text: "Next ➡️", emoji: true },
+      action_id: "next_source_page",
+      value: JSON.stringify({ page: page + 1 }),
+    });
+  }
+
+  if (paginationActions.length > 0) {
+    blocks.push({
+      type: "actions",
+      block_id: "source_pagination",
+      elements: paginationActions,
+    });
+  }
+  // --- END PAGINATION ---
 
   // Add sharing actions at the bottom (keep original order)
   blocks.push({ type: "divider" });
@@ -979,7 +1008,7 @@ export function createAgentResponseModal(
       },
       style: "primary",
       action_id: "share_agent_from_modal",
-      value: interactionId,
+      value: messageId,
     },
   ];
 
@@ -992,7 +1021,7 @@ export function createAgentResponseModal(
         emoji: true,
       },
       action_id: "share_agent_in_thread_from_modal", // Use the constant here
-      value: interactionId,
+      value: messageId,
     });
   }
 
@@ -1019,17 +1048,18 @@ export function createAgentResponseModal(
 }
 
 /**
- * Create blocks for sharing an agent response in the main channel
- * @param userId The Slack user ID of the person sharing
- * @param agentName Name of the agent that provided the response
- * @param query The original query
- * @param response The agent's response text (may be truncated)
- * @param citations Array of citations if available
- * @returns Slack blocks for the shared agent response in channel
+ * Generates Slack blocks for sharing an agent's response in a channel, including the user's query, the agent's response, and a list of sources if provided.
+ *
+ * The response text is cleaned and truncated if necessary. Citations are displayed with titles, snippets, and links when available, with a limit on the number shown. Attribution is included at the end.
+ *
+ * @param userId - Slack user ID of the person sharing the response
+ * @param query - The original user query
+ * @param response - The agent's response text
+ * @param citations - Optional array of source citations to display
+ * @returns An array of Slack blocks representing the shared agent response
  */
 export function createSharedAgentResponseBlocks(
   userId: string,
-  agentName: string,
   query: string,
   response: string,
   citations: any[] = []
@@ -1042,7 +1072,7 @@ export function createSharedAgentResponseBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*🤖 ${agentName} Response*`,
+        text: `*🤖 Agent Response*`,
       },
     },
     {
@@ -1155,123 +1185,4 @@ export function createSharedAgentResponseBlocks(
   );
 
   return blocks;
-}
-
-/**
- * Create a modal view for displaying all sources/citations
- * @param agentName Name of the agent that provided the response
- * @param query The original query string
- * @param citations Array of all citations
- * @returns Slack modal view object
- */
-export function createAllSourcesModal(
-  agentName: string,
-  query: string,
-  citations: unknown[]
-): View {
-  // Validate and filter citations
-  const validCitations = validateCitations(citations);
-  const blocks: (KnownBlock | Block)[] = [
-    {
-      type: "section",
-      text: {
-        type: "plain_text",
-        text: `📚 All Sources from /${agentName}`,
-        emoji: true,
-      },
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*Query:* "${
-          query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
-        }"`,
-      },
-    },
-    {
-      type: "divider",
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*${citations.length} Sources:*`,
-      },
-    },
-  ];
-
-  // Display sources with smart truncation to avoid exceeding modal limits
-  // Slack modal has a ~50 block limit and each block has character limits
-  let totalCharacters = MODAL_HEADER_CHARACTERS; // Start with header characters
-  const maxSources = Math.min(citations.length, MAX_SOURCES_IN_MODAL); // Limit sources to prevent modal overflow
-
-  for (let i = 0; i < maxSources; i++) {
-    const citation = validCitations?.[i];
-    if (!citation) continue;
-
-    const title = citation.title || citation.name || "Untitled";
-    const url = citation.url || "";
-    let snippet = citation.snippet || citation.content || "";
-
-    // Clean and truncate snippet more aggressively for the sources modal
-    if (snippet) {
-      snippet = snippet.replace(/\s+/g, " ").trim();
-      snippet =
-        snippet.length > TITLE_MAX_LENGTH ? `${snippet.substring(0, TITLE_MAX_LENGTH)}...` : snippet;
-    }
-
-    const sourceText = `*${i + 1}. ${title}*\n${
-      snippet ? snippet : "No preview available"
-    }${url ? `\n<${url}|View Source>` : ""}`;
-
-    // Check if adding this source would exceed our character limit
-    if (totalCharacters + sourceText.length > MODAL_MAX_CHARACTERS) {
-      // Add a note about remaining sources
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `_...and ${
-            citations.length - i
-          } more sources (content truncated due to display limits)_`,
-        },
-      });
-      break;
-    }
-
-    totalCharacters += sourceText.length;
-
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: sourceText,
-      },
-    });
-
-    // Add divider between citations (except after the last one or if we're at the limit)
-    if (i < maxSources - 1 && i < citations.length - 1) {
-      blocks.push({
-        type: "divider",
-      });
-      totalCharacters += MODAL_DIVIDER_CHARACTERS; // Approximate divider character cost
-    }
-  }
-
-  // Create the modal view object
-  return {
-    type: "modal",
-    title: {
-      type: "plain_text",
-      text: "All Sources",
-      emoji: true,
-    },
-    close: {
-      type: "plain_text",
-      text: "Close",
-      emoji: true,
-    },
-    blocks: blocks,
-  };
 }

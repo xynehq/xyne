@@ -192,8 +192,11 @@ export enum SystemEntity {
   SystemInfo = "system_info",
   UserProfile = "user_profile",
 }
+export enum DataSourceEntity {
+  DataSourceFile = "data_source_file",
+}
 export const SystemEntitySchema = z.nativeEnum(SystemEntity)
-
+export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -203,6 +206,7 @@ export const entitySchema = z.union([
   EventEntitySchema,
   MailAttachmentEntitySchema,
   ChatEntitySchema,
+  DataSourceEntitySchema,
 ])
 
 export type Entity =
@@ -214,6 +218,7 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | DataSourceEntity
 
 export type WorkspaceEntity = DriveEntity
 

@@ -1,9 +1,17 @@
 import type React from "react"
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
+import {
+  generateFileId,
+  createFileSelectionHandlers,
+  validateAndDeduplicateFiles,
+  createToastNotifier,
+  createImagePreview,
+  cleanupPreviewUrls,
+} from "@/utils/fileUtils"
 import { isValidFile } from "../../../shared/filesutils"
 
 interface SelectedFile {
@@ -55,31 +63,7 @@ export default function FileUpload({
 
   const isEditingExisting = !!initialDatasourceName
 
-  const showToast = useCallback(
-    (title: string, description: string, isError = false) => {
-      const { dismiss } = toast({
-        title,
-        description,
-        variant: isError ? "destructive" : "default",
-        duration: 2000, // Auto dismiss after 2 seconds
-        action: (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              dismiss()
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ),
-      })
-    },
-    [toast],
-  )
-
-  const generateId = () => Math.random().toString(36).substring(2, 9)
+  const showToast = createToastNotifier(toast)
 
   // Calculate FormData size estimation
   const estimateFormDataSize = (
@@ -303,50 +287,14 @@ export default function FileUpload({
 
   const processFiles = useCallback(
     (files: FileList | File[]) => {
-      const fileArray = Array.from(files).filter(
-        (file) => !file.name.startsWith("."),
-      )
-      const validFiles = fileArray.filter(isValidFile)
-      const invalidFiles = fileArray.length - validFiles.length
-
-      if (invalidFiles > 0) {
-        showToast(
-          "Invalid file(s)",
-          `${invalidFiles} file(s) ignored. Files must be under 40MB and of supported types.`,
-          true,
-        )
-      }
-
+      const validFiles = validateAndDeduplicateFiles(files, showToast)
       if (validFiles.length === 0) return
 
-      // Create a map to track files by name for deduplication
-      const fileMap = new Map<string, File>()
-      let duplicateCount = 0
-
-      // Keep only the first occurrence of each filename
-      validFiles.forEach((file) => {
-        if (!fileMap.has(file.name)) {
-          fileMap.set(file.name, file)
-        } else {
-          duplicateCount++
-        }
-      })
-
-      // Notify about duplicates if any were found
-      if (duplicateCount > 0) {
-        showToast(
-          "Duplicate files",
-          `${duplicateCount} duplicate file(s) were ignored.`,
-          false,
-        )
-      }
-
       // Create selected file objects from unique files
-      const uniqueFiles = Array.from(fileMap.values())
-      const newFiles: SelectedFile[] = uniqueFiles.map((file) => ({
+      const newFiles: SelectedFile[] = validFiles.map((file) => ({
         file,
-        id: generateId(),
-        preview: undefined,
+        id: generateFileId(),
+        preview: createImagePreview(file),
       }))
 
       // Check if any files with the same name already exist in selectedFiles
@@ -445,20 +393,9 @@ export default function FileUpload({
     folderInputRef.current?.click()
   }, [])
 
-  const handleFileSelect = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (files && files.length > 0) {
-        processFiles(files)
-      }
-      // Reset the input value so the same file can be selected again
-      e.target.value = ""
-    },
-    [processFiles],
+  const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
+    fileInputRef,
+    processFiles,
   )
 
   const handleFolderChange = useCallback(
@@ -475,13 +412,33 @@ export default function FileUpload({
 
   const removeFile = useCallback((id: string) => {
     setSelectedFiles((prev) => {
-      const updated = prev.filter((f) => f.id !== id)
-      return updated
+      const fileToRemove = prev.find((f) => f.id === id)
+      if (fileToRemove?.preview) {
+        URL.revokeObjectURL(fileToRemove.preview)
+      }
+      return prev.filter((f) => f.id !== id)
     })
   }, [])
 
   const removeAllFiles = useCallback(() => {
-    setSelectedFiles([])
+    setSelectedFiles((prev) => {
+      const previewUrls = prev.map((f) => f.preview).filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
+      return []
+    })
+  }, [])
+
+  // Cleanup preview URLs when component unmounts
+  const selectedFilesRef = useRef(selectedFiles)
+  selectedFilesRef.current = selectedFiles
+
+  useEffect(() => {
+    return () => {
+      const previewUrls = selectedFilesRef.current
+        .map((f) => f.preview)
+        .filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
+    }
   }, [])
 
   return (
@@ -630,7 +587,15 @@ export default function FileUpload({
                         )}
 
                         <div className="flex flex-col items-center justify-center w-full">
-                          <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                          {selectedFile.preview ? (
+                            <img
+                              src={selectedFile.preview}
+                              alt={selectedFile.file.name}
+                              className="w-12 h-12 object-cover rounded border border-gray-200 dark:border-gray-600"
+                            />
+                          ) : (
+                            <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                          )}
                           <div className="w-full text-center mt-1">
                             <p
                               className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-full px-1"

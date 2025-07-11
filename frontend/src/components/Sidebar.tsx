@@ -10,6 +10,7 @@ import {
   LogOut,
   ExternalLink,
   Key,
+  BookOpen,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -85,9 +86,7 @@ export const Sidebar = ({
       const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`)
       const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
       const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
-      const isBookmarkButton = target.closest(
-        `.${CLASS_NAMES.BOOKMARK_BUTTON}`,
-      )
+      const isBookmarkButton = target.closest(`.${CLASS_NAMES.BOOKMARK_BUTTON}`)
       if (
         !isSidebarClick &&
         !isHistoryModalClick &&
@@ -204,6 +203,26 @@ export const Sidebar = ({
                 />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
+            </Tooltip>
+          </Link>
+
+          <Link
+            to="/knowledgeManagement"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+              location.pathname.includes("/knowledgeManagement")
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : ""
+            }`}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BookOpen
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Knowledge" />
             </Tooltip>
           </Link>
 

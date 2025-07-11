@@ -170,6 +170,7 @@ import {
   expandEmailThreadsInResults,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
+import { cleanupAttachmentFiles } from "@/api/files"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -1233,6 +1234,7 @@ async function* generateAnswerFromGivenContext(
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
+  attachmentFileIds?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1352,6 +1354,12 @@ async function* generateAnswerFromGivenContext(
   )
 
   const { imageFileNames } = extractImageFileNames(initialContext)
+
+  const finalImageFileNames = imageFileNames || []
+
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(...attachmentFileIds.map((id) => `${id}_${0}`))
+  }
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
@@ -2807,6 +2815,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   threadIds?: string[],
+  attachmentFileIds?: string[],
   agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -2833,6 +2842,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     agentPrompt,
     passedSpan,
     threadIds,
+    attachmentFileIds,
   )
 }
 
@@ -2961,6 +2971,13 @@ export const MessageApi = async (c: Context) => {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
+    const attachmentFileIds = c.req.query("attachmentFileIds")
+      ? c.req
+          .query("attachmentFileIds")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : []
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -3171,6 +3188,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              attachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3190,6 +3208,10 @@ export const MessageApi = async (c: Context) => {
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
+                // Clean up attachment files when stream is closed prematurely
+                if (attachmentFileIds && attachmentFileIds.length > 0) {
+                  await cleanupAttachmentFiles(attachmentFileIds, email)
+                }
                 break
               }
               if (chunk.text) {
@@ -3275,6 +3297,11 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
+
+            // Clean up attachment files after response processing is complete
+            if (attachmentFileIds && attachmentFileIds.length > 0) {
+              await cleanupAttachmentFiles(attachmentFileIds, email)
+            }
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
