@@ -1185,9 +1185,39 @@ export const getAllDocumentsForAgent = async (
   limit: number = 400,
 ): Promise<VespaSearchResponse> => {
   const emailorkey = process.env.API_KEY || email
-  const { client, email: resolvedEmail } = await getVespaClientAndEmail(
-    emailorkey,
-  )
+  const { client, email: resolvedEmail } =
+    await getVespaClientAndEmail(emailorkey)
+
+  if (AllowedApps?.includes(Apps.DataSource) && dataSourceIds.length === 0) {
+    try {
+      const dataSourcesResponse = await getDataSourcesByCreator(email)
+      if (dataSourcesResponse.root.children) {
+        dataSourceIds = dataSourcesResponse.root.children.map(
+          (child) => (child.fields as VespaDataSource).docId,
+        )
+      }
+    } catch (error) {
+      Logger.error(error, "Failed to fetch data sources for agent")
+      if (AllowedApps.length === 1 && AllowedApps[0] === Apps.DataSource) {
+        return {
+          root: {
+            id: "toplevel",
+            relevance: 1.0,
+            fields: { totalCount: 0 },
+            children: [],
+            coverage: {
+              coverage: 100,
+              documents: 0,
+              full: true,
+              nodes: 1,
+              results: 0,
+              resultsFull: 0,
+            },
+          },
+        }
+      }
+    }
+  }
 
   const sources: string[] = []
   const conditions: string[] = []
@@ -1237,7 +1267,7 @@ export const getAllDocumentsForAgent = async (
       .join(" or ")
     conditions.push(`(${dsConditions})`)
   }
-
+  //return null
   const sourcesString = [...new Set(sources)].join(", ")
   if (!sourcesString) {
     return {
