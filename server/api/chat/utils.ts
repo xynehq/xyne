@@ -208,6 +208,7 @@ export async function mergeThreadResults(
 
 export const extractImageFileNames = (
   context: string,
+  results?: VespaSearchResult[],
 ): { imageFileNames: string[] } => {
   // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
   const imageContentRegex =
@@ -215,10 +216,20 @@ export const extractImageFileNames = (
   const matches = [...context.matchAll(imageContentRegex)]
 
   let imageFileNames: string[] = []
-
   for (const match of matches) {
-    const imageContent = match[1].trim()
+    let imageContent = match[1].trim()
     if (imageContent) {
+      const docId = imageContent.split("_")[0]
+      const docIndex =
+        results?.findIndex((c) => (c.fields as any).docId === docId) || 0
+
+      if (docIndex === -1) {
+        console.warn(
+          `No matching document found for docId: ${docId} in results for image content extraction.`,
+        )
+        continue
+      }
+
       // Split by newlines and filter out empty strings
       const fileNames = imageContent
         .split("\n")
@@ -227,6 +238,7 @@ export const extractImageFileNames = (
         // Additional safety: split by spaces and filter out empty strings
         // in case multiple filenames are on the same line
         .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
+        .map((name) => `${docIndex}_${name}`)
       imageFileNames.push(...fileNames)
     }
   }
