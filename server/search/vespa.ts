@@ -1183,7 +1183,7 @@ export const getAllDocumentsForAgent = async (
   AllowedApps: Apps[] | null,
   dataSourceIds: string[] = [],
   limit: number = 400,
-): Promise<VespaSearchResponse> => {
+): Promise<VespaSearchResponse | null> => {
   const emailorkey = process.env.API_KEY || email
   const { client, email: resolvedEmail } =
     await getVespaClientAndEmail(emailorkey)
@@ -1199,22 +1199,7 @@ export const getAllDocumentsForAgent = async (
     } catch (error) {
       Logger.error(error, "Failed to fetch data sources for agent")
       if (AllowedApps.length === 1 && AllowedApps[0] === Apps.DataSource) {
-        return {
-          root: {
-            id: "toplevel",
-            relevance: 1.0,
-            fields: { totalCount: 0 },
-            children: [],
-            coverage: {
-              coverage: 100,
-              documents: 0,
-              full: true,
-              nodes: 1,
-              results: 0,
-              resultsFull: 0,
-            },
-          },
-        }
+        return null
       }
     }
   }
@@ -1270,22 +1255,7 @@ export const getAllDocumentsForAgent = async (
   //return null
   const sourcesString = [...new Set(sources)].join(", ")
   if (!sourcesString) {
-    return {
-      root: {
-        id: "toplevel",
-        relevance: 1.0,
-        fields: { totalCount: 0 },
-        children: [],
-        coverage: {
-          coverage: 100,
-          documents: 0,
-          full: true,
-          nodes: 1,
-          results: 0,
-          resultsFull: 0,
-        },
-      },
-    }
+    return null
   }
 
   const whereClause = `where ${conditions.join(" or ")}`

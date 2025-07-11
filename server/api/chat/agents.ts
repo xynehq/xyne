@@ -2246,17 +2246,20 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(email, [
           Apps.DataSource,
         ])
-
-        const docIds = [
-          ...new Set(
-            allDataSources.root.children
-              .map(
-                (child: VespaSearchResult) =>
-                  (child.fields as any)?.docId as string,
-              )
-              .filter(Boolean),
-          ),
-        ]
+        
+        let docIds: string[] = []
+        if (allDataSources && allDataSources.root && allDataSources.root.children) {
+          docIds = [
+            ...new Set(
+              allDataSources.root.children
+                .map(
+                  (child: VespaSearchResult) =>
+                    (child.fields as any)?.docId as string,
+                )
+                .filter(Boolean),
+            ),
+          ]
+        }
 
         let context = ""
         if (docIds.length > 0) {
