@@ -27,6 +27,8 @@ export {
   Apps,
   isMailAttachment,
   SystemEntity,
+  dataSourceFileSchema,
+  DataSourceEntity,
 } from "search/types"
 export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
 

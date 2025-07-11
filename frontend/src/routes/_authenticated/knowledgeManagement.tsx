@@ -17,29 +17,32 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import {
-  saveFilesToTempFolder,
-  removeCollectionFromTempFolder,
-  addFilesToExistingCollection,
-  removeFileFromTempFolder,
   buildFileTree,
   type FileNode,
   uploadFileBatch,
+  createKnowledgeBase,
+  deleteKnowledgeBase,
+  deleteItem,
+  addFilesToExistingKnowledgeBase,
 } from "@/utils/fileUtils"
+import type { KnowledgeBase, KbItem } from "@/types/knowledgeBase"
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
 })
 
-
 interface Collection {
   id: string;
   name: string;
+  description?: string | null;
   files: number;
   lastUpdated: string;
   updatedBy: string;
   items: FileNode[];
-  folders?: any[];
   isOpen?: boolean;
+  // For compatibility with KnowledgeBase
+  totalCount?: number;
+  isPrivate?: boolean;
 }
 
 
@@ -62,15 +65,32 @@ function RouteComponent() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
-        const response = await fetch("/api/v1/kb/collections");
+        const response = await fetch("/api/v1/kb");
         if (response.ok) {
           const data = await response.json();
-          setCollections(data.map((c: Collection) => ({ ...c, files: 0, items: [], folders: [], isOpen: false })));
+          setCollections(data.map((kb: KnowledgeBase) => ({
+            id: kb.id,
+            name: kb.name,
+            description: kb.description,
+            files: kb.totalCount || 0,
+            items: [],
+            isOpen: false,
+            lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            updatedBy: kb.lastUpdatedByEmail || "Unknown",
+            totalCount: kb.totalCount,
+            isPrivate: kb.isPrivate,
+          })));
         } else {
-          showToast("Error", "Failed to fetch collections.", true);
+          showToast("Error", "Failed to fetch knowledge bases.", true);
         }
       } catch (error) {
-        showToast("Error", "An error occurred while fetching collections.", true);
+        showToast("Error", "An error occurred while fetching knowledge bases.", true);
       }
     };
 
@@ -123,36 +143,50 @@ function RouteComponent() {
     setBatchProgress({ total: selectedFiles.length, current: 0, batch: 0, totalBatches: 0 })
 
     try {
+      // First create the knowledge base
+      const kb = await createKnowledgeBase(collectionName.trim(), "");
+      
+      // Then upload files in batches
       const batches = createBatches(selectedFiles, collectionName.trim());
       setBatchProgress(prev => ({ ...prev, totalBatches: batches.length }))
 
       for (let i = 0; i < batches.length; i++) {
         setBatchProgress(prev => ({ ...prev, batch: i + 1 }))
         const batchFiles = batches[i].map(f => f.file);
-        await uploadFileBatch(batchFiles, collectionName.trim());
+        console.log(`Uploading batch ${i + 1}/${batches.length} with ${batchFiles.length} files to KB ${kb.id}`);
+        const uploadResult = await uploadFileBatch(batchFiles, kb.id);
+        console.log('Upload batch result:', uploadResult);
         setBatchProgress(prev => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
+      // Fetch the updated KB data from the backend
+      const kbResponse = await fetch(`/api/v1/kb/${kb.id}`);
+      const updatedKb = await kbResponse.json();
+      
       const newCollection: Collection = {
-        id: crypto.randomUUID(),
-        name: collectionName.trim(),
-        files: selectedFiles.length,
-        lastUpdated: new Date().toLocaleString("en-GB", {
+        id: updatedKb.id,
+        name: updatedKb.name,
+        description: updatedKb.description,
+        files: updatedKb.totalCount || selectedFiles.length,
+        lastUpdated: new Date(updatedKb.updatedAt).toLocaleString("en-GB", {
           day: "numeric",
           month: "short",
           year: "numeric",
           hour: "2-digit",
           minute: "2-digit",
         }),
-        updatedBy: "rahim.h@rbi.gov.in",
-        items: buildFileTree(selectedFiles.map(f => ({ name: (f.file as any).webkitRelativePath || f.file.name, type: 'file' }))),
+        updatedBy: updatedKb.lastUpdatedByEmail || user?.email || "Unknown",
+        items: [],
+        isOpen: false,
+        totalCount: updatedKb.totalCount,
+        isPrivate: updatedKb.isPrivate,
       }
 
       setCollections((prev) => [...prev, newCollection])
       handleCloseModal()
       showToast(
-        "Collection Created",
-        `Successfully created collection "${collectionName.trim()}" with ${selectedFiles.length} files.`,
+        "Knowledge Base Created",
+        `Successfully created knowledge base "${collectionName.trim()}" with ${selectedFiles.length} files.`,
       )
     } catch (error) {
       console.error("Upload failed:", error)
@@ -197,24 +231,36 @@ function RouteComponent() {
     setIsUploading(true);
 
     try {
-      await addFilesToExistingCollection(selectedFiles, addingToCollection.name);
+      await addFilesToExistingKnowledgeBase(selectedFiles, addingToCollection.id);
 
+      // Refresh the collection by fetching updated data from backend
+      const kbResponse = await fetch(`/api/v1/kb/${addingToCollection.id}`);
+      const updatedKb = await kbResponse.json();
+      
+      const itemsResponse = await fetch(`/api/v1/kb/${addingToCollection.id}/items`);
+      const items = await itemsResponse.json();
+      
       setCollections(prev => prev.map(c => {
-        if (c.name === addingToCollection.name) {
-          const allFileNames = [...c.items.flatMap(item => getAllFileNames(item)), ...selectedFiles.map(f => ({ name: (f.file as any).webkitRelativePath || f.file.name, type: 'file' }))]
-          const uniqueFiles = Array.from(new Set(allFileNames.map(f => f.name))).map(name => ({name, type: 'file' as 'file' | 'folder'}))
-
+        if (c.id === addingToCollection.id) {
           return {
             ...c,
-            files: uniqueFiles.length,
-            items: buildFileTree(uniqueFiles),
-            lastUpdated: new Date().toLocaleString("en-GB", {
+            files: updatedKb.totalCount || 0,
+            items: buildFileTree(items.map((item: KbItem) => ({
+              name: item.name,
+              type: item.type as 'file' | 'folder',
+              totalCount: item.totalCount,
+              updatedAt: item.updatedAt,
+              id: item.id,
+              updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+            }))),
+            lastUpdated: new Date(updatedKb.updatedAt).toLocaleString("en-GB", {
               day: "numeric",
               month: "short",
               year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
             }),
+            updatedBy: updatedKb.lastUpdatedByEmail || "Unknown",
           };
         }
         return c;
@@ -238,17 +284,43 @@ function RouteComponent() {
 
     setIsUploading(true);
     try {
-      await removeFileFromTempFolder(deletingItem.collection.name, deletingItem.path);
+      // Find the item to delete based on the path
+      const itemToDelete = findItemByPath(deletingItem.collection.items, deletingItem.path);
+      if (itemToDelete) {
+        await deleteItem(deletingItem.collection.id, itemToDelete.id);
+      }
 
-      // Optimistically update the UI
-      const updatedCollections = collections.map(c => {
-        if (c.name === deletingItem.collection.name) {
-          const newItems = removeItemByPath(c.items, deletingItem.path);
-          return { ...c, items: newItems, files: countFilesInTree(newItems) };
+      // Refresh the collection data from backend
+      const kbResponse = await fetch(`/api/v1/kb/${deletingItem.collection.id}`);
+      const updatedKb = await kbResponse.json();
+      
+      const itemsResponse = await fetch(`/api/v1/kb/${deletingItem.collection.id}/items`);
+      const items = await itemsResponse.json();
+      
+      setCollections(prev => prev.map(c => {
+        if (c.id === deletingItem.collection.id) {
+          return {
+            ...c,
+            files: updatedKb.totalCount || 0,
+            items: buildFileTree(items.map((item: KbItem) => ({
+              name: item.name,
+              type: item.type as 'file' | 'folder',
+              totalCount: item.totalCount,
+              updatedAt: item.updatedAt,
+              id: item.id,
+              updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+            }))),
+            lastUpdated: new Date(updatedKb.updatedAt).toLocaleString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
         }
         return c;
-      });
-      setCollections(updatedCollections);
+      }));
 
       showToast("Item Deleted", `Successfully deleted "${deletingItem.node.name}".`);
     } catch (error) {
@@ -268,18 +340,35 @@ function RouteComponent() {
   const handleUpdateCollection = async () => {
     if (!editingCollection || !collectionName.trim()) return;
 
-    const response = await fetch(`/api/v1/files/${editingCollection.name}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: collectionName }),
-    });
+    try {
+      const response = await fetch(`/api/v1/kb/${editingCollection.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: collectionName.trim() }),
+      });
 
-    if (response.ok) {
-      setCollections(prev => prev.map(c => c.name === editingCollection.name ? { ...c, name: collectionName } : c));
-      setEditingCollection(null);
-      setCollectionName("");
-      showToast("Collection Updated", "Successfully updated collection name.");
-    } else {
+      if (response.ok) {
+        const updatedKb = await response.json();
+        setCollections(prev => prev.map(c => c.id === editingCollection.id ? { 
+          ...c, 
+          name: updatedKb.name,
+          lastUpdated: new Date(updatedKb.updatedAt).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        } : c));
+        setEditingCollection(null);
+        setCollectionName("");
+        showToast("Collection Updated", "Successfully updated collection name.");
+      } else {
+        const errorText = await response.text();
+        showToast("Update Failed", `Failed to update collection name: ${errorText}`, true);
+      }
+    } catch (error) {
+      console.error("Update failed:", error);
       showToast("Update Failed", "Failed to update collection name.", true);
     }
   };
@@ -290,11 +379,11 @@ function RouteComponent() {
     setIsUploading(true)
     
     try {
-      // Remove collection from temp folder
-      await removeCollectionFromTempFolder(deletingCollection.name)
+      // Delete the knowledge base
+      await deleteKnowledgeBase(deletingCollection.id)
       
       // Remove from state
-      setCollections(prev => prev.filter(c => c.name !== deletingCollection.name));
+      setCollections(prev => prev.filter(c => c.id !== deletingCollection.id));
       setDeletingCollection(null);
       showToast("Collection Deleted", "Successfully deleted collection and all associated files.");
     } catch (error) {
@@ -387,9 +476,16 @@ function RouteComponent() {
                       if (coll) {
                         coll.isOpen = !coll.isOpen;
                         if (coll.isOpen) {
-                          const response = await fetch(`/api/v1/kb/collections/${collection.id}/folders`);
+                          const response = await fetch(`/api/v1/kb/${collection.id}/items`);
                           const data = await response.json();
-                          coll.items = buildFileTree(data);
+                          coll.items = buildFileTree(data.map((item: KbItem) => ({
+                            name: item.name,
+                            type: item.type as 'file' | 'folder',
+                            totalCount: item.totalCount,
+                            updatedAt: item.updatedAt,
+                            id: item.id,
+                            updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+                          })));
                         } else {
                           // coll.items = []; // This would clear the items, maybe not desired
                         }
@@ -469,20 +565,56 @@ function RouteComponent() {
                           }
                         }}
                         onToggle={async (node) => {
+                          if (node.type !== 'folder') return;
+                          
                           const updatedCollections = [...collections];
                           const coll = updatedCollections.find(c => c.id === collection.id);
                           if (coll) {
-                            const toggleNode = (nodes: FileNode[]): FileNode[] => {
-                              return nodes.map(n => {
+                            // Toggle the folder state
+                            const toggleNode = async (nodes: FileNode[]): Promise<FileNode[]> => {
+                              const updatedNodes = [...nodes];
+                              for (let i = 0; i < updatedNodes.length; i++) {
+                                const n = updatedNodes[i];
                                 if (n === node) {
                                   n.isOpen = !n.isOpen;
+                                  
+                                  // If opening the folder and it has an ID, fetch its contents
+                                  if (n.isOpen && n.id) {
+                                    try {
+                                      console.log(`Fetching contents for folder ${n.name} with id ${n.id}`);
+                                      const response = await fetch(`/api/v1/kb/${collection.id}/items?parentId=${n.id}`);
+                                      if (response.ok) {
+                                        const items = await response.json();
+                                        console.log(`Fetched ${items.length} items for folder ${n.name}`);
+                                        
+                                        // Build the children structure
+                                        n.children = items.map((item: KbItem) => ({
+                                          id: item.id,
+                                          name: item.name,
+                                          type: item.type as 'file' | 'folder',
+                                          files: item.totalCount,
+                                          lastUpdated: item.updatedAt,
+                                          updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+                                          isOpen: false,
+                                          children: item.type === 'folder' ? [] : undefined,
+                                        }));
+                                      }
+                                    } catch (error) {
+                                      console.error(`Failed to fetch folder contents for ${n.name}:`, error);
+                                      showToast("Error", `Failed to load folder contents`, true);
+                                    }
+                                  } else if (!n.isOpen) {
+                                    // Optionally clear children when closing
+                                    // n.children = [];
+                                  }
                                 } else if (n.children) {
-                                  n.children = toggleNode(n.children);
+                                  n.children = await toggleNode(n.children);
                                 }
-                                return n;
-                              });
+                              }
+                              return updatedNodes;
                             };
-                            coll.items = toggleNode(coll.items);
+                            
+                            coll.items = await toggleNode(coll.items);
                             setCollections(updatedCollections);
                           }
                         }}
@@ -597,6 +729,24 @@ function countFilesInTree(nodes: FileNode[]): number {
     }
   }
   return count;
+}
+
+function findItemByPath(items: FileNode[], targetPath: string): any | null {
+  const findInNodes = (nodes: FileNode[], currentPath: string): any | null => {
+    for (const node of nodes) {
+      const nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+      if (nodePath === targetPath) {
+        return node;
+      }
+      if (node.children) {
+        const found = findInNodes(node.children, nodePath);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  
+  return findInNodes(items, '');
 }
 
 const estimateFormDataSize = (

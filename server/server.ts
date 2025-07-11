@@ -147,20 +147,6 @@ import {
   GetFileContentApi,
 } from "@/api/knowledgeBase"
 
-import {
-  CreateKnowledgeBaseApi,
-  ListKnowledgeBasesApi,
-  GetKnowledgeBaseApi,
-  UpdateKnowledgeBaseApi,
-  DeleteKnowledgeBaseApi,
-  ListKbItemsApi,
-  CreateFolderApi,
-  UploadFilesApi,
-  DeleteItemApi,
-  GetFilePreviewApi,
-  GetFileContentApi,
-} from "@/api/knowledgeBase"
-
 import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
@@ -884,6 +870,7 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/knowledge-base", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/knowledgeManagement", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/kb-test", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {

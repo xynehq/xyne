@@ -137,6 +137,7 @@ export const createToastNotifier = (
 
 // build file tree
 export interface FileNode {
+  id?: string;
   name: string;
   type: 'folder' | 'file';
   children?: FileNode[];
@@ -146,7 +147,7 @@ export interface FileNode {
   isOpen?: boolean;
 }
 
-export const buildFileTree = (files: { name: string, type: 'file' | 'folder', totalCount?: number, updatedAt?: string }[]): FileNode[] => {
+export const buildFileTree = (files: { id?: string, name: string, type: 'file' | 'folder', totalCount?: number, updatedAt?: string, updatedBy?: string }[]): FileNode[] => {
   const root: FileNode = { name: 'root', type: 'folder', children: [], files: 0, lastUpdated: '', updatedBy: '' };
 
   for (const file of files) {
@@ -161,12 +162,13 @@ export const buildFileTree = (files: { name: string, type: 'file' | 'folder', to
 
       if (!childNode) {
         childNode = {
+          id: isFile && file.id ? file.id : undefined,
           name: part,
           type: isFile ? file.type : 'folder',
           children: isFile ? undefined : [],
           files: file.totalCount,
           lastUpdated: file.updatedAt,
-          updatedBy: "rahim.h@rbi.gov.in",
+          updatedBy: file.updatedBy,
         };
         if (!currentNode.children) {
             currentNode.children = [];
@@ -188,138 +190,94 @@ export const buildFileTree = (files: { name: string, type: 'file' | 'folder', to
   return root.children || [];
 };
 
-// Collection management functions
-export const saveFilesToTempFolder = async (files: SelectedFile[], collectionName: string): Promise<void> => {
-  try {
-    // Create FormData to send files to backend
-    const formData = new FormData();
-    formData.append('collectionName', collectionName);
-    
-    // Add all files to FormData with the same key name
-    files.forEach((selectedFile) => {
-      formData.append('files', selectedFile.file);
-    });
-    
-    console.log(`Saving collection "${collectionName}" with ${files.length} files to backend kbtemp folder`);
-    
-    // Send files to backend API
-    const response = await fetch('/api/v1/collections/temp/upload', {
-      method: 'POST',
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    
-    const result = await response.json();
-    console.log('Upload successful:', result);
-    
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Failed to save files to temp folder:', error);
-    throw error;
-  }
-};
-
-export const removeCollectionFromTempFolder = async (collectionName: string): Promise<void> => {
-  try {
-    console.log(`Removing collection "${collectionName}" from temp folder`);
-    
-    // Send delete request to backend API
-    const response = await fetch(`/api/v1/collections/temp/${encodeURIComponent(collectionName)}`, {
-      method: 'DELETE',
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Delete failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    
-    const result = await response.json();
-    console.log(`Successfully removed collection "${collectionName}":`, result);
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Failed to remove collection from temp folder:', error);
-    throw error;
-  }
-};
-
-export const removeFileFromTempFolder = async (collectionName: string, filePath: string): Promise<void> => {
-  try {
-    console.log(`Removing file "${filePath}" from collection "${collectionName}"`);
-    
-    const response = await fetch(`/api/v1/collections/temp/delete-file`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ collectionName, filePath }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Delete failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log(`Successfully removed file "${filePath}":`, result);
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Failed to remove file from temp folder:', error);
-    throw error;
-  }
-};
-
-export const addFilesToExistingCollection = async (files: SelectedFile[], collectionName: string): Promise<void> => {
-  try {
-    console.log(`Adding ${files.length} files to existing collection "${collectionName}"`);
-    
-    // Create FormData to send files to backend
-    const formData = new FormData();
-    formData.append('collectionName', collectionName);
-    
-    // Add all files to FormData
-    files.forEach((selectedFile, index) => {
-      formData.append(`files`, selectedFile.file);
-    });
-    
-    // Send files to backend API
-    const response = await fetch('/api/v1/collections/temp/add-files', {
-      method: 'POST',
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Add files failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    
-    const result = await response.json();
-    console.log('Add files successful:', result);
-    
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Failed to add files to collection:', error);
-    throw error;
-  }
-};
-
-export const uploadFileBatch = async (files: File[], collectionName: string): Promise<void> => {
+// API functions for Knowledge Base operations
+export const uploadFileBatch = async (files: File[], kbId: string, parentId?: string | null): Promise<any> => {
   const formData = new FormData();
-  formData.append('collectionName', collectionName);
+  
+  // If parentId is provided, add it to formData
+  if (parentId !== undefined && parentId !== null) {
+    formData.append('parentId', parentId);
+  }
+  
+  // Add files with their paths
   files.forEach(file => {
-    formData.append('files', file, (file as any).webkitRelativePath || file.name);
+    formData.append('files', file);
+    // Add file paths if available (for maintaining folder structure)
+    const relativePath = (file as any).webkitRelativePath || file.name;
+    formData.append('paths', relativePath);
   });
 
-  const response = await fetch('/api/v1/collections/batch-upload', {
+  console.log(`Sending ${files.length} files to /api/v1/kb/${kbId}/items/upload`);
+  
+  try {
+    const response = await fetch(`/api/v1/kb/${kbId}/items/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    console.log('Upload response status:', response.status);
+    console.log('Upload response:', responseText);
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${responseText}`);
+    }
+
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse response as JSON:', e);
+      return { success: true, message: responseText };
+    }
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
+  }
+};
+
+export const createKnowledgeBase = async (name: string, description?: string): Promise<any> => {
+  const response = await fetch('/api/v1/kb', {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      description,
+      isPrivate: true,
+    }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Batch upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`Failed to create knowledge base: ${response.status} ${response.statusText} - ${errorText}`);
   }
+
+  return response.json();
+};
+
+export const deleteKnowledgeBase = async (kbId: string): Promise<void> => {
+  const response = await fetch(`/api/v1/kb/${kbId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to delete knowledge base: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+};
+
+export const deleteItem = async (kbId: string, itemId: string): Promise<void> => {
+  const response = await fetch(`/api/v1/kb/${kbId}/items/${itemId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to delete item: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+};
+
+export const addFilesToExistingKnowledgeBase = async (files: SelectedFile[], kbId: string, parentId?: string | null): Promise<any> => {
+  return uploadFileBatch(files.map(f => f.file), kbId, parentId);
 };
