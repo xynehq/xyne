@@ -77,8 +77,8 @@ export interface ImageCitation {
   citationKey: string
   imagePath: string
   imageData: string
-  mimeType: string
   item: Citation
+  mimeType?: string
 }
 
 export interface MinimalAgentFragment {

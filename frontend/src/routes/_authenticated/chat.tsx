@@ -1412,6 +1412,7 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   imageCitations,
   className = "",
 }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const imageCitation = imageCitations.find(
     (ic) => ic.citationKey === citationKey,
   )
@@ -1422,15 +1423,150 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
     )
   }
 
+  const imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+
+  const ImageModal = () => {
+    const handleCloseModal = () => {
+      setIsModalOpen(false)
+    }
+
+    // Handle escape key
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          handleCloseModal()
+        }
+      }
+
+      if (isModalOpen) {
+        document.addEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "hidden"
+      }
+
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "unset"
+      }
+    }, [isModalOpen])
+
+    if (!isModalOpen) return null
+
+    const Controls = () => {
+      const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+
+      const buttonBaseClass =
+        "bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200"
+
+      const handleResetAndCenter = () => {
+        resetTransform()
+        setTimeout(() => {
+          centerView()
+        }, 10)
+      }
+
+      return (
+        <div className="absolute top-4 left-4 flex space-x-2 z-20">
+          <button
+            onClick={() => zoomIn()}
+            className={buttonBaseClass}
+            title="Zoom In"
+          >
+            <ZoomIn size={20} />
+          </button>
+          <button
+            onClick={() => zoomOut()}
+            className={buttonBaseClass}
+            title="Zoom Out"
+          >
+            <ZoomOut size={20} />
+          </button>
+          <button
+            onClick={handleResetAndCenter}
+            className={buttonBaseClass}
+            title="Reset View"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center"
+        onClick={handleCloseModal}
+      >
+        <div
+          className="relative w-full h-full flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            onClick={handleCloseModal}
+            className="absolute top-4 right-4 bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200 z-20"
+            title="Close (ESC)"
+          >
+            <X size={20} />
+          </button>
+          <TransformWrapper
+            initialScale={1}
+            minScale={0.1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            centerZoomedOut={false}
+            doubleClick={{ disabled: false, step: 2 }}
+            wheel={{ step: 0.1 }}
+            panning={{ velocityDisabled: true }}
+          >
+            <Controls />
+            <TransformComponent
+              wrapperStyle={{
+                width: "100%",
+                height: "100%",
+                cursor: "grab",
+              }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt={`Image from document - ${citationKey}`}
+                className="max-w-none max-h-none object-contain"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  width: "auto",
+                  height: "auto",
+                }}
+                draggable={false}
+              />
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`block ${className}`}>
-      <img
-        src={`data:${imageCitation.mimeType};base64,${imageCitation.imageData}`}
-        alt={`Image from document`}
-        className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md"
-        style={{ maxHeight: "400px" }}
-      />
-    </div>
+    <>
+      <div className={`block ${className}`}>
+        <img
+          src={imageSrc}
+          alt={`Image from document - ${citationKey}`}
+          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
+          style={{ maxHeight: "400px" }}
+          onClick={() => setIsModalOpen(true)}
+        />
+      </div>
+
+      {isModalOpen && <ImageModal />}
+    </>
   )
 }
 
@@ -1936,8 +2072,6 @@ export const ChatMessage = ({
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
 
-    //replace image citations with a special markdown syntax
-    const originalText = text
     text = text.replace(textToImageCitationIndex, (match, citationKey) => {
       console.log("Found image citation:", match, "key:", citationKey)
       return `![image-citation:${citationKey}](image-citation:${citationKey})`
@@ -2032,26 +2166,13 @@ export const ChatMessage = ({
                     a: renderMarkdownLink,
                     code: Code,
                     img: ({ src, alt, ...props }: any) => {
-                      console.log(
-                        "Custom img handler called with src:",
-                        src,
-                        "alt:",
-                        alt,
-                      )
-                      // Check if this is our special image citation syntax
                       if (src?.startsWith("image-citation:")) {
                         const citationKey = src.replace("image-citation:", "")
-                        console.log(
-                          "Rendering ImageCitationComponent for key:",
-                          citationKey,
-                          "imageCitations:",
-                          imageCitations,
-                        )
                         return (
                           <ImageCitationComponent
                             citationKey={citationKey}
                             imageCitations={imageCitations}
-                            className="my-3"
+                            className="flex justify-center"
                           />
                         )
                       }

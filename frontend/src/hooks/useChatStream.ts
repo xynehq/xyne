@@ -270,15 +270,7 @@ export const startStream = async (
 
   streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
     const imageCitation: ImageCitation = JSON.parse(event.data)
-    // Check if this citation key already exists to avoid duplicates
-    const existingIndex = streamState.imageCitations.findIndex(
-      (ic) => ic.citationKey === imageCitation.citationKey,
-    )
-    if (existingIndex >= 0) {
-      streamState.imageCitations[existingIndex] = imageCitation
-    } else {
-      streamState.imageCitations.push(imageCitation)
-    }
+    streamState.imageCitations = imageCitation
     notifySubscribers(streamKey)
   })
 
@@ -768,16 +760,7 @@ export const useChatStream = (
         ChatSSEvents.ImageCitationUpdate,
         (event) => {
           const imageCitation: ImageCitation = JSON.parse(event.data)
-          console.log("Processing retry image citation", imageCitation)
-          // Check if this citation key already exists to avoid duplicates
-          const existingIndex = streamState.imageCitations.findIndex(
-            (ic) => ic.citationKey === imageCitation.citationKey,
-          )
-          if (existingIndex >= 0) {
-            streamState.imageCitations[existingIndex] = imageCitation
-          } else {
-            streamState.imageCitations.push(imageCitation)
-          }
+          streamState.imageCitations = imageCitation
         },
       )
 

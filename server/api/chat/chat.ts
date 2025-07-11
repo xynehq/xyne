@@ -173,6 +173,7 @@ import {
   mergeThreadResults,
   expandEmailThreadsInResults,
   getCitationToImage,
+  mimeTypeMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import { cleanupAttachmentFiles } from "@/api/files"
@@ -195,8 +196,6 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-import fs from "fs"
-import path from "path"
 
 export const GetChatTraceApi = async (c: Context) => {
   let email = ""
@@ -299,7 +298,6 @@ const checkAndYieldCitations = async function* (
         const docIndex = parseInt(parts[0], 10)
         const imageIndex = parseInt(parts[1], 10)
         const citationIndex = docIndex + baseIndex
-
         if (!yieldedImageCitations.has(citationIndex)) {
           const item = results[docIndex]
           if (item) {
@@ -310,12 +308,21 @@ const checkAndYieldCitations = async function* (
                 email,
               )
               if (imageData) {
+                if (!imageData.imagePath || !imageData.imageBuffer) {
+                  loggerWithChild({ email: email }).error(
+                    "Invalid imageData structure returned",
+                    { citationKey: imgMatch[1], imageData },
+                  )
+                  continue
+                }
                 yield {
                   imageCitation: {
                     citationKey: imgMatch[1],
                     imagePath: imageData.imagePath,
                     imageData: imageData.imageBuffer.toString("base64"),
-                    mimeType: "image/png",
+                    ...(imageData.extension
+                      ? { mimeType: mimeTypeMap[imageData.extension] }
+                      : {}),
                     item: searchToCitation(item as VespaSearchResults),
                   },
                 }

@@ -174,7 +174,6 @@ export class BedrockProvider extends BaseProvider {
         )
         const userText = textBlocks.map((tb) => tb.text).join("\n")
 
-        // Create new content array with labeled images
         const newContent = createLabeledImageContent(
           userText,
           otherBlocks,
@@ -289,7 +288,6 @@ export class BedrockProvider extends BaseProvider {
         )
         const userText = textBlocks.map((tb) => tb.text).join("\n")
 
-        // Create new content array with labeled images
         const newContent = createLabeledImageContent(
           userText,
           otherBlocks,

@@ -493,11 +493,22 @@ export const convertReasoningStepToText = (
   }
 }
 
+export const mimeTypeMap: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+}
 export const getCitationToImage = async (
   citationIndex: string,
   doc: VespaSearchResult,
   email: string,
-): Promise<{ imagePath: string; imageBuffer: Buffer } | null> => {
+): Promise<{
+  imagePath: string
+  imageBuffer: Buffer
+  extension: string | null
+} | null> => {
   const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
   try {
     // Parse the citation index format: docIndex_imageNumber
@@ -528,7 +539,6 @@ export const getCitationToImage = async (
       return null
     }
 
-    // Extract docId from the document
     const docId = (document.fields as any)?.docId
     if (!docId) {
       loggerWithChild({ email: email }).error("DocId not found in document", {
@@ -539,12 +549,42 @@ export const getCitationToImage = async (
     }
 
     const imageDir = process.env.IMAGE_DIR || "downloads/xyne_images_db"
-    const imagePath = path.join(
-      process.cwd(),
-      imageDir,
-      docId,
-      `${imageNumber}.png`,
-    )
+    const imagePathProcess = path.join(process.cwd(), imageDir, docId)
+
+    let imagePath: string | null = null
+    let ext: string | null = null
+
+    try {
+      const files = await fs.promises.readdir(imagePathProcess)
+
+      // Find file that matches the pattern: imageNumber.extension
+      const imageFile = files.find((file) => {
+        const nameWithoutExt = path.parse(file).name
+        return nameWithoutExt === imageNumber.toString()
+      })
+
+      if (imageFile) {
+        imagePath = path.join(imagePathProcess, imageFile)
+        ext = path.parse(imageFile).ext.slice(1) // Remove the dot
+      }
+    } catch (dirError) {
+      loggerWithChild({ email: email }).error("Error reading image directory", {
+        citationIndex,
+        docId,
+        imageNumber,
+        directory: imagePathProcess,
+        error: getErrorMessage(dirError),
+      })
+      return null
+    }
+
+    if (!imagePath) {
+      loggerWithChild({ email: email }).error(
+        "Image file not found in directory",
+        { citationIndex, docId, imageNumber, directory: imagePathProcess },
+      )
+      return null
+    }
 
     const imageBuffer = await fs.promises.readFile(imagePath)
 
@@ -553,11 +593,13 @@ export const getCitationToImage = async (
       docId,
       imageNumber,
       imagePath,
+      extension: ext,
     })
 
     return {
       imagePath,
       imageBuffer,
+      extension: ext,
     }
   } catch (error) {
     loggerWithChild({ email: email }).error(
