@@ -16,7 +16,7 @@
   }
 },
 {
-  "input": "Summarize the key points from the document with file ID doc12345 and explain how they relate to project Alpha.",
+  "input": "What are dpip platforms?",
   "isReasoningEnabled": true,
   "attachmentFileIds": [],
   "expected": {
