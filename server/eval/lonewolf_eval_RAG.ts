@@ -17,20 +17,120 @@ import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import {
   // baselineRAGIterationJsonStream,
   generateSearchQueryOrAnswerFromConversation,
+  jsonParseLLMOutput,
 } from "@/ai/provider"
 
 
 const { defaultBestModel} = config;
-const myEmail = "oindrila.banerjee@juspay.in"
-const workspaceId = "i3acjjlykgjyamw51qbwhhiu"
-const agentId = "" // This is the externalId of the agent
+const myEmail = "email@domain.in"
+const workspaceId = "i3ac.........." // This is the externalId of workspace
+const agentId = "kekosrqyf78w1tlt90psfa4vc" // This is the externalId of the agent
 const modelId = defaultBestModel
 const Logger = getLogger(Subsystem.Eval)
-let agentPromptForLLM: string | undefined = undefined
+const agentPromptForLLM = JSON.stringify({
+  name: "DPIP Assistant",
+  description: "An AI product manager assistant for the Digital Payments Intelligence Platform (DPIP)",
+  prompt: `You are an AI assistant acting as the Product Manager for the Digital Payments Intelligence Platform (DPIP). Your role is to answer questions about DPIP with enthusiasm, professionalism, and expertise. You have access to a comprehensive knowledge base about DPIP, which is provided below:
+
+<dpip_knowledge_base>
+{{DPIP_KNOWLEDGE_BASE}}
+</dpip_knowledge_base>
+
+Here is the question you need to answer:
+
+<question>
+{{QUESTION}}
+</question>
+
+When presented with a question, you should draw upon this knowledge base to provide accurate and relevant answers. Your responses should showcase the value and importance of DPIP, highlighting its key features, benefits, and impact on the Indian financial ecosystem.
+
+Instructions for answering:
+
+1. Carefully read the question and identify the key points that need to be addressed.
+
+2. Wrap your analysis inside <question_analysis> tags:
+   a. Summarize the question in one sentence.
+   b. List 3–5 key points from the knowledge base relevant to the question.
+   c. Outline the structure of your response (use headings, bullet points, or numbered lists if appropriate).
+   d. Determine if a Mermaid diagram would help explain any concepts. If so, draft the diagram.
+   e. Highlight potential problems solved and benefits provided by DPIP related to the question.
+   f. Identify and list any gaps in the knowledge base related to the question.
+   g. Consider and note potential counterarguments or limitations of DPIP related to the question.
+
+3. If you decided a Mermaid diagram would be helpful, include it in your analysis using the following format:
+\`\`\`mermaid
+[Your diagram code here]
+\`\`\`
+
+4. Compose your final answer within <answer> tags. Your response should:
+   - Be accurate and based on the information in the knowledge base.
+   - Present facts where available, without altering or embellishing.
+   - Clearly state when specific information is not available rather than speculating.
+   - Be clear, concise, yet comprehensive.
+   - Maintain an enthusiastic and professional tone.
+   - Highlight key features, benefits, or statistics.
+   - Include the Mermaid diagram if you created one.
+   - Address any identified gaps, counterarguments, or limitations if relevant.
+
+5. Review your answer to ensure it addresses all aspects of the question and adheres to these guidelines.
+
+Example output structure:
+
+<question_analysis>
+Question summary: [One-sentence summary of the question]
+
+Relevant key points:
+1. [Key point 1]
+2. [Key point 2]
+3. [Key point 3]
+
+Response structure:
+- [Main topic 1]
+  - [Subtopic 1.1]
+  - [Subtopic 1.2]
+- [Main topic 2]
+  - [Subtopic 2.1]
+  - [Subtopic 2.2]
+
+Mermaid diagram (if applicable):
+\`\`\`mermaid
+graph TD
+    A[Example Node] --> B[Example Node 2]
+    B --> C[Example Node 3]
+\`\`\`
+
+Problems solved and benefits:
+- [Problem/Benefit 1]
+- [Problem/Benefit 2]
+- [Problem/Benefit 3]
+
+Knowledge gaps:
+- [Gap 1]
+- [Gap 2]
+
+Potential counterarguments or limitations:
+- [Counterargument/Limitation 1]
+- [Counterargument/Limitation 2]
+</question_analysis>
+
+<answer>
+[Your structured, enthusiastic, and professional response to the question, incorporating the analysis and any relevant Mermaid diagrams]
+</answer>
+
+Remember to maintain a tone that is:
+- Enthusiastic and passionate about DPIP
+- Professional and knowledgeable
+- Clear and concise, yet comprehensive
+
+If you cannot answer a question based on the information in the knowledge base, clearly state that you don't have that specific information.
+
+Please proceed with your response to the given question.`,
+  appIntegrations: []
+});
+
 
 if (!myEmail) throw new Error("Please set the email")
 if (!workspaceId) throw new Error("Please add the workspaceId")
-if (!agentId) throw new Error("Please add the valid agentid")
 
 type EvalData = {
   input: string
@@ -99,7 +199,7 @@ const loadTestData = (): EvalData[] => {
       throw new Error("Test data must be an array")
     return parsedData.map(item => ({
       input: item.input,
-      expected: item.expected.answer
+      expected: item.expected
     }))
   } catch (error) {
     console.error("Error loading test data:", error)
@@ -194,6 +294,8 @@ async function simulateAgentMessageFlow(
     processingTime: 0,
   }
 
+  Logger.info(`Simulating agent message flow for input: "${JSON.stringify(result)}"`)
+
   try {
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -202,21 +304,7 @@ async function simulateAgentMessageFlow(
     )
     const { user, workspace } = userAndWorkspace
 
-    if (agentId && isCuid(agentId)) {
-      // Use the numeric workspace.id for the database query with permission check
-      let agentForDb = await getAgentByExternalIdWithPermissionCheck(
-        db,
-        agentId,
-        workspace.id,
-        user.id,
-      )
-      if (!agentForDb) {
-        throw new HTTPException(403, {
-          message: "Access denied: You don't have permission to use this agent",
-        })
-      }
-      agentPromptForLLM = JSON.stringify(agentForDb)
-    }
+    Logger.info(`Simulating agent message flow for user: ${user.id}, workspace: ${workspace.id}`)
 
     const message = decodeURIComponent(evalItem.input)
     let answer = ""
@@ -308,7 +396,7 @@ async function simulateAgentMessageFlow(
       if (chunk.text) {
         buffer += chunk.text
         try {
-          parsed = JSON.parse(buffer) || {}
+          parsed = jsonParseLLMOutput(buffer) || {}
           if (parsed.answer && currentAnswer !== parsed.answer) {
             if (currentAnswer === "") {
               Logger.info("Found answer in conversation, sending full response")
@@ -328,6 +416,7 @@ async function simulateAgentMessageFlow(
               })
             }
             currentAnswer = parsed.answer
+            Logger.info("Current answer updated:", currentAnswer)
           }
         } catch (err) {
           const errMessage = (err as Error).message
@@ -356,9 +445,7 @@ async function runEvaluation(userCtx: string) {
   Logger.info("User context:\n" + userCtx)
 
   for (const item of data) {
-    Logger.info(`Processing query: "${item.input}"`)
-
-    await sleep(2000) // Rate limiting
+    Logger.info(`Processing query: "${JSON.stringify(item)}"`)// Rate limiting
 
     const result = await simulateAgentMessageFlow(item, userCtx)
 
