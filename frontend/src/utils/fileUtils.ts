@@ -1,4 +1,5 @@
 import { isValidFile } from "../../../shared/filesutils"
+import { SelectedFile } from "@/components/KbFileUpload"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
@@ -133,3 +134,192 @@ export const createToastNotifier = (
     })
   }
 }
+
+// build file tree
+export interface FileNode {
+  name: string;
+  type: 'folder' | 'file';
+  children?: FileNode[];
+  files?: number;
+  lastUpdated?: string;
+  updatedBy?: string;
+  isOpen?: boolean;
+}
+
+export const buildFileTree = (files: { name: string, type: 'file' | 'folder', totalCount?: number, updatedAt?: string }[]): FileNode[] => {
+  const root: FileNode = { name: 'root', type: 'folder', children: [], files: 0, lastUpdated: '', updatedBy: '' };
+
+  for (const file of files) {
+    const parts = file.name.split('/');
+    let currentNode = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isFile = i === parts.length - 1;
+
+      let childNode = currentNode.children?.find(child => child.name === part);
+
+      if (!childNode) {
+        childNode = {
+          name: part,
+          type: isFile ? file.type : 'folder',
+          children: isFile ? undefined : [],
+          files: file.totalCount,
+          lastUpdated: file.updatedAt,
+          updatedBy: "rahim.h@rbi.gov.in",
+        };
+        if (!currentNode.children) {
+            currentNode.children = [];
+        }
+        currentNode.children.push(childNode);
+        currentNode.children.sort((a, b) => {
+            if (a.type === 'folder' && b.type === 'file') return -1;
+            if (a.type === 'file' && b.type === 'folder') return 1;
+            return a.name.localeCompare(b.name);
+        });
+      }
+      
+      if (childNode.type === 'folder') {
+        currentNode = childNode;
+      }
+    }
+  }
+
+  return root.children || [];
+};
+
+// Collection management functions
+export const saveFilesToTempFolder = async (files: SelectedFile[], collectionName: string): Promise<void> => {
+  try {
+    // Create FormData to send files to backend
+    const formData = new FormData();
+    formData.append('collectionName', collectionName);
+    
+    // Add all files to FormData with the same key name
+    files.forEach((selectedFile) => {
+      formData.append('files', selectedFile.file);
+    });
+    
+    console.log(`Saving collection "${collectionName}" with ${files.length} files to backend kbtemp folder`);
+    
+    // Send files to backend API
+    const response = await fetch('/api/v1/collections/temp/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Upload successful:', result);
+    
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Failed to save files to temp folder:', error);
+    throw error;
+  }
+};
+
+export const removeCollectionFromTempFolder = async (collectionName: string): Promise<void> => {
+  try {
+    console.log(`Removing collection "${collectionName}" from temp folder`);
+    
+    // Send delete request to backend API
+    const response = await fetch(`/api/v1/collections/temp/${encodeURIComponent(collectionName)}`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Delete failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log(`Successfully removed collection "${collectionName}":`, result);
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Failed to remove collection from temp folder:', error);
+    throw error;
+  }
+};
+
+export const removeFileFromTempFolder = async (collectionName: string, filePath: string): Promise<void> => {
+  try {
+    console.log(`Removing file "${filePath}" from collection "${collectionName}"`);
+    
+    const response = await fetch(`/api/v1/collections/temp/delete-file`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ collectionName, filePath }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Delete failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(`Successfully removed file "${filePath}":`, result);
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Failed to remove file from temp folder:', error);
+    throw error;
+  }
+};
+
+export const addFilesToExistingCollection = async (files: SelectedFile[], collectionName: string): Promise<void> => {
+  try {
+    console.log(`Adding ${files.length} files to existing collection "${collectionName}"`);
+    
+    // Create FormData to send files to backend
+    const formData = new FormData();
+    formData.append('collectionName', collectionName);
+    
+    // Add all files to FormData
+    files.forEach((selectedFile, index) => {
+      formData.append(`files`, selectedFile.file);
+    });
+    
+    // Send files to backend API
+    const response = await fetch('/api/v1/collections/temp/add-files', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Add files failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Add files successful:', result);
+    
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Failed to add files to collection:', error);
+    throw error;
+  }
+};
+
+export const uploadFileBatch = async (files: File[], collectionName: string): Promise<void> => {
+  const formData = new FormData();
+  formData.append('collectionName', collectionName);
+  files.forEach(file => {
+    formData.append('files', file, (file as any).webkitRelativePath || file.name);
+  });
+
+  const response = await fetch('/api/v1/collections/batch-upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Batch upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+};
