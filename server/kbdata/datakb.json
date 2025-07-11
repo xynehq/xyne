@@ -1,0 +1,140 @@
+{
+  "collections": [
+    {
+        "id": "e235b620-0294-4ae3-bf97-b3d368a5227e",
+        "name": "collection8",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-11T07:21:06.187Z",
+        "updatedAt": "2025-07-11T07:21:06.187Z",
+        "deletedAt": null
+    },
+    {
+        "id": "004f85d7-9cc2-4d58-8410-ba1cd4da7a7e",
+        "name": "Collection 7",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-11T06:19:07.643Z",
+        "updatedAt": "2025-07-11T06:19:07.643Z",
+        "deletedAt": null
+    },
+    {
+        "id": "b5c579ea-21da-461a-bbf8-47c0167bef24",
+        "name": "Collection 6",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-11T05:59:13.400Z",
+        "updatedAt": "2025-07-11T05:59:13.400Z",
+        "deletedAt": null
+    },
+    {
+        "id": "5e85a659-eedd-4790-9c4d-f90feb2ffc7a",
+        "name": "Collection 5",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-10T18:56:38.254Z",
+        "updatedAt": "2025-07-10T18:56:38.254Z",
+        "deletedAt": null
+    },
+    {
+        "id": "74c7e6a2-f466-47eb-a3fa-041b7f5d5256",
+        "name": "Collection 4",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-10T18:13:52.404Z",
+        "updatedAt": "2025-07-10T18:13:52.404Z",
+        "deletedAt": null
+    },
+    {
+        "id": "95c69750-a46a-4cde-861e-1c67a2cac7a1",
+        "name": "Collection3",
+        "description": null,
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-10T17:51:29.291Z",
+        "updatedAt": "2025-07-10T17:51:29.291Z",
+        "deletedAt": null
+    },
+    {
+        "id": "48cff27c-5de3-4045-ae68-e5001f82a941",
+        "name": "Collection 2",
+        "description": "Testing",
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-10T15:37:41.825Z",
+        "updatedAt": "2025-07-10T15:37:41.825Z",
+        "deletedAt": null
+    },
+    {
+        "id": "40f703a1-43b3-4968-a3b1-12a947e68d6d",
+        "name": "Collection 1",
+        "description": "Testing",
+        "workspaceId": 1,
+        "ownerId": 1,
+        "metadata": {},
+        "createdAt": "2025-07-10T15:30:46.606Z",
+        "updatedAt": "2025-07-10T15:30:46.606Z",
+        "deletedAt": null
+    }
+  ],
+  "folders/files": [
+    {
+        "id": "144e2712-1188-4b49-a769-843126ee1c59",
+        "kbId": "40f703a1-43b3-4968-a3b1-12a947e68d6d",
+        "parentId": null,
+        "name": "euler-team",
+        "type": "folder",
+        "path": "/",
+        "position": 0,
+        "totalCount": 32,
+        "metadata": {},
+        "createdAt": "2025-07-10T15:31:02.234Z",
+        "updatedAt": "2025-07-10T15:31:39.599Z",
+        "deletedAt": null
+    },
+    {
+        "id": "2a86b865-0b8c-4081-b642-8e201c24e833",
+        "kbId": "40f703a1-43b3-4968-a3b1-12a947e68d6d",
+        "parentId": null,
+        "name": "eRupi",
+        "type": "folder",
+        "path": "/",
+        "position": 1,
+        "totalCount": 28,
+        "metadata": {},
+        "createdAt": "2025-07-10T15:35:02.259Z",
+        "updatedAt": "2025-07-10T15:37:17.444Z",
+        "deletedAt": null
+    },
+     {
+        "id": "1151f1a9-ec3f-4035-b877-321e7f9e6331",
+        "kbId": "e235b620-0294-4ae3-bf97-b3d368a5227e",
+        "parentId": null,
+        "name": "UPI Central Mapper V5 (2).pdf",
+        "type": "file",
+        "path": "/",
+        "position": 2,
+        "totalCount": 0,
+        "metadata": {
+            "originalPath": "UPI Central Mapper V5 (2).pdf",
+            "wasOverwritten": null,
+            "folderStructure": ""
+        },
+        "createdAt": "2025-07-11T09:14:45.787Z",
+        "updatedAt": "2025-07-11T09:14:45.787Z",
+        "deletedAt": null
+    }
+  ]
+}

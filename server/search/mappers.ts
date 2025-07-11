@@ -42,6 +42,8 @@ import {
   SlackEntity,
   datasourceSchema,
   dataSourceFileSchema,
+  kbFileSchema,
+  type VespaKbFileSearch,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -317,6 +319,35 @@ export const VespaSearchResponseToSearchResult = (
               matchfeatures: dsFields.matchfeatures,
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
+          } else if (
+            (child.fields as { sddocname?: string }).sddocname === kbFileSchema
+          ) {
+            const kbFields = child.fields as VespaKbFileSearch
+            const processedChunks = getSortedScoredChunks(
+              kbFields.matchfeatures,
+              kbFields.chunks_summary as string[],
+              maxSearchChunks,
+            )
+
+            const mappedResult = {
+              docId: kbFields.docId,
+              type: kbFileSchema,
+              app: "knowledgebase" as any,
+              entity: "kb_file",
+              title: kbFields.fileName,
+              fileName: kbFields.fileName,
+              url: null,
+              updatedAt: kbFields.updatedAt,
+              createdAt: kbFields.createdAt,
+              mimeType: kbFields.mimeType,
+              size: kbFields.fileSize,
+              owner: kbFields.createdBy,
+              relevance: child.relevance,
+              chunks_summary: processedChunks,
+              matchfeatures: kbFields.matchfeatures,
+              kbId: kbFields.kbId,
+            }
+            return FileResponseSchema.parse(mappedResult)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
