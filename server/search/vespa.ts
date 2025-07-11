@@ -1590,22 +1590,18 @@ export const UpdateDocument = async (
 ) => {
   const opts = { namespace: NAMESPACE, docId, schema }
 
-  return fallbackVespa
-    .updateDocument(updatedFields, opts)
-    .catch((error) => {
-      Logger.error(error, `Error updating document for docId: ${docId}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.updateDocument(updatedFields, opts).catch((error) => {
+    Logger.error(error, `Error updating document for docId: ${docId}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   const opts = { namespace: NAMESPACE, docId, schema }
-  return fallbackVespa
-    .deleteDocument(opts)
-    .catch((error) => {
-      Logger.error(error, `Error deleting document for docId: ${docId}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.deleteDocument(opts).catch((error) => {
+    Logger.error(error, `Error deleting document for docId: ${docId}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 // Define a type for Entity Counts (where the key is the entity name and the value is the count)
@@ -2106,11 +2102,11 @@ export const getItems = async (
   if (schema === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
-    conditions.push(`permissions contains '${resolvedEmail}'`)
+    conditions.push(`permissions contains '${email}'`)
   } else {
     // For user schema
     if (app !== Apps.GoogleWorkspace) {
-      conditions.push(`owner contains '${resolvedEmail}'`)
+      conditions.push(`owner contains '${email}'`)
     }
   }
 
@@ -2226,7 +2222,6 @@ export const getItems = async (
     hits: limit,
     ...(offset ? { offset } : {}),
     timeout: "30s",
-    ...(isProductionClient ? { apiKey: emailorkey } : {}), // Add API key for production client
   }
 
   return vespa
