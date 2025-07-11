@@ -29,6 +29,7 @@ import {
   isMailAttachment,
   ConnectorType,
   SystemEntity,
+  DataSourceEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -129,9 +130,12 @@ export const getIcon = (
     return <Github size={size?.w || 12} className={classNameVal} />
   } else if (entity === SystemEntity.SystemInfo) {
     return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
+  } else if (
+    app === Apps.DataSource &&
+    entity === DataSourceEntity.DataSourceFile
+  ) {
+    return <FileText size={12} className={classNameVal} />
   } else {
-    // Fallback or handle unknown app/entity
-    console.warn(`Invalid app ${app} and entity ${entity}`)
     return <FileText size={12} className={classNameVal} /> // Generic fallback icon
   }
 }

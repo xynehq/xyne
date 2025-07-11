@@ -10,6 +10,7 @@ import {
   getDataSourceFilesByName,
   getDataSourcesByCreator,
   GetDocument,
+  getDocumentOrNull,
 } from "@/search/vespa"
 import { handleDataSourceFileUpload } from "@/integrations/dataSource"
 import {
@@ -35,6 +36,8 @@ import {
   getAgentsByDataSourceId,
 } from "@/db/agent"
 import { db } from "@/db/client"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { checkUserAgentAccessByExternalId } from "@/db/userAgentPermission"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "dataSourceService",
@@ -520,6 +523,131 @@ export const ListDataSourceFilesApi = async (c: Context) => {
     return c.json(
       {
         error: "Failed to fetch files for datasource",
+        message: "An internal error occurred.",
+      },
+      500,
+    )
+  }
+}
+
+export const GetDataSourceFile = async (c: Context) => {
+  const jwtPayload = c.var.jwtPayload
+  const docId = c.req.param("docId")
+  const email = jwtPayload.sub ?? ""
+
+  if (!docId) {
+    loggerWithChild({ email: email }).error(
+      "docId path parameter is missing in GetDataSourceFile",
+    )
+    return c.json({ error: "Bad Request", message: "docId is required." }, 400)
+  }
+
+  if (!jwtPayload || typeof jwtPayload.sub !== "string") {
+    loggerWithChild().error(
+      "JWT payload or sub is missing/invalid in GetDataSourceFile",
+    )
+    return c.json(
+      {
+        error: "Unauthorized",
+        message: "User email not found or invalid in token",
+      },
+      401,
+    )
+  }
+
+  try {
+    const vespaResponse = await getDocumentOrNull(dataSourceFileSchema, docId)
+
+    if (!vespaResponse || !vespaResponse.fields) {
+      loggerWithChild({ email: email }).warn(
+        `Data source file not found: ${docId}`,
+      )
+      return c.json(
+        { error: "Not Found", message: "Data source file not found." },
+        404,
+      )
+    }
+
+    const dataSourceFile = vespaResponse.fields as VespaDataSourceFile
+    const dataSourceRefId = dataSourceFile.dataSourceRef.split("::").pop()
+    const uploadedBy = dataSourceFile.uploadedBy
+
+    // if user is the original uploader
+    if (uploadedBy === email) {
+      loggerWithChild({ email: email }).info(
+        `User ${email} is the original uploader of data source file ${docId}`,
+      )
+      return c.json(vespaResponse)
+    }
+
+    const workspaceExternalId = jwtPayload.workspaceId
+    const userWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    const userId = userWorkspace.user.id
+    const workspaceId = userWorkspace.workspace.id
+
+    const agentsWithDataSource = await getAgentsByDataSourceId(
+      db,
+      dataSourceRefId as string,
+    )
+
+    if (!agentsWithDataSource || agentsWithDataSource.length === 0) {
+      loggerWithChild({ email: email }).warn(
+        `No agents found using data source ${dataSourceRefId} for file ${docId}`,
+      )
+      return c.json(
+        {
+          error: "Forbidden",
+          message: "Access denied to this data source file.",
+        },
+        403,
+      )
+    }
+
+    // if user has access to any of the agents that use this data source
+    let hasAccess = false
+    for (const agent of agentsWithDataSource) {
+      const permission = await checkUserAgentAccessByExternalId(
+        db,
+        userId,
+        agent.externalId,
+        workspaceId,
+      )
+
+      if (permission) {
+        hasAccess = true
+        loggerWithChild({ email: email }).info(
+          `User ${email} has access to data source file ${docId} via agent ${agent.externalId}`,
+        )
+        break
+      }
+    }
+
+    if (!hasAccess) {
+      loggerWithChild({ email: email }).warn(
+        `User ${email} does not have access to any agents using data source ${dataSourceRefId}`,
+      )
+      return c.json(
+        {
+          error: "Forbidden",
+          message: "Access denied to this data source file.",
+        },
+        403,
+      )
+    }
+
+    return c.json(vespaResponse)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      `Error fetching data source file "${docId}" for user ${email} in GetDataSourceFile`,
+    )
+    return c.json(
+      {
+        error: "Failed to fetch data source file",
         message: "An internal error occurred.",
       },
       500,

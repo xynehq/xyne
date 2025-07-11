@@ -77,7 +77,8 @@ import {
   totalConversationsSkipped,
   totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
-
+import config from "@/config"
+import { periodicSaveState } from "./config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "slack",
@@ -226,6 +227,7 @@ export const safeConversationHistory = async (
   channelId: string,
   cursor: string | undefined,
   timestamp: string = "0",
+  latestTs: string = (Date.now() / 1000).toString(),
 ): Promise<ConversationsHistoryResponse> => {
   return retryOnFatal(
     () =>
@@ -234,6 +236,7 @@ export const safeConversationHistory = async (
         limit: 999,
         cursor,
         oldest: timestamp,
+        latest: latestTs,
       }),
     3,
     1000,
@@ -304,15 +307,31 @@ export async function insertChannelMessages(
   tracker: Tracker,
   timestamp: string = "0",
   channelMap: Map<string, string>,
+  ingestionState?: IngestionState<SlackOAuthIngestionState>,
+  latestTs: string = (Date.now() / 1000).toString(),
 ): Promise<void> {
   let cursor: string | undefined = undefined
 
-  let replyCount = 0
-
+  let messageCount = 0
   const subtypes = new Set()
+
   do {
+    // Check for abort signal
+    if (abortController.signal.aborted) {
+      loggerWithChild({ email }).info(
+        `Aborted message insertion for channel ${channelId}`,
+      )
+      break
+    }
+
     const response: ConversationsHistoryResponse =
-      await safeConversationHistory(client, channelId, cursor, timestamp)
+      await safeConversationHistory(
+        client,
+        channelId,
+        cursor,
+        timestamp,
+        latestTs,
+      )
 
     if (!response.ok) {
       throw new Error(
@@ -320,14 +339,18 @@ export async function insertChannelMessages(
       )
     }
 
-    if (response.messages) {
+    if (response.messages && response.messages.length > 0) {
       totalChatToBeInsertedCount.inc(
         { conversation_id: channelId ?? "", email: email },
-        response.messages?.length,
+        response.messages.length,
       )
-      for (const message of response.messages as (SlackMessage & {
+
+      // Process messages (keep the most recent first for proper state tracking)
+      const messages = response.messages as (SlackMessage & {
         mentions: string[]
-      })[]) {
+      })[]
+
+      for (const message of messages) {
         // replace user id with username
 
         const mentions = extractUserIdsFromBlocks(message)
@@ -409,19 +432,11 @@ export async function insertChannelMessages(
           message.reply_count &&
           message.reply_count > 0
         ) {
-          replyCount += 1
-          // this is the part that takes the longest and uses up all the rate limit quota
-          // for slack api
-          // for each thread that exists it will count as at least 1 api call
-          // if not for this I was able to achieve 200+ messages per second ingestion
-          // but with this we will have to accept ~5-10 messages per second rate.
-          // there is no way around this, as long as we want to ingest replies.
           const threadMessages: SlackMessage[] = await fetchThreadMessages(
             client,
             channelId,
             message.thread_ts,
           )
-          // Exclude the parent message (already added)
           const replies: (SlackMessage & { mentions?: string[] })[] =
             threadMessages.filter((msg) => msg.ts !== message.ts)
           for (const reply of replies) {
@@ -431,7 +446,6 @@ export async function insertChannelMessages(
               reply.user &&
               reply.client_msg_id &&
               reply.text != ""
-              // memberMap[reply.user]
             ) {
               const mentions = extractUserIdsFromBlocks(reply)
               let text = reply.text
@@ -496,11 +510,25 @@ export async function insertChannelMessages(
             }
           }
         }
+
+        messageCount++
+
+        // Update state with latest message timestamp every 10 messages
+        if (ingestionState && messageCount % 10 === 0) {
+          await ingestionState.update({
+            currentChannelId: channelId,
+            lastMessageTs: message.ts,
+          })
+        }
       }
     }
 
     cursor = response.response_metadata?.next_cursor
   } while (cursor)
+
+  loggerWithChild({ email }).info(
+    `Processed ${messageCount} messages for channel ${channelId}`,
+  )
 }
 
 /**
@@ -515,8 +543,6 @@ async function fetchChannelFiles(
   do {
     const response = (await client.files.list({
       channel: channelId,
-      // limit: 200,
-      // cursor,
     })) as FilesListResponse
 
     if (!response.ok) {
@@ -588,7 +614,6 @@ const insertConversations = async (
         isPrivate: (conversation as Channel).is_private!,
         isGeneral: (conversation as Channel).is_general!,
         isArchived: (conversation as Channel).is_archived!,
-        // @ts-ignore
         isIm: (conversation as Channel).is_im!,
         isMpim: (conversation as Channel).is_mpim!,
         createdAt: (conversation as Channel).created!,
@@ -708,9 +733,7 @@ export const insertChatMessage = async (
       mentions: message.mentions || [],
       updatedAt: editedTimestamp,
       deletedAt: 0,
-      // files: [],
       metadata: "",
-      // files: message.files,
     } as VespaChatMessage,
     chatMessageSchema,
   )
@@ -757,11 +780,36 @@ export const insertMember = async (member: Member) => {
 }
 
 export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
+  let ingestionState: IngestionState<SlackOAuthIngestionState> | undefined
+  let ingestionOldState: IngestionState<SlackOAuthIngestionState> | undefined
   try {
     const abortController = new AbortController()
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(
       db,
       data.connectorId,
+    )
+
+    // Initialize ingestion state
+    const initialState: SlackOAuthIngestionState = {
+      app: Apps.Slack,
+      authType: AuthType.OAuth,
+      currentChannelId: undefined,
+      lastMessageTs: undefined,
+      lastUpdated: new Date().toISOString(),
+    }
+    ingestionState = new IngestionState(
+      connector.id,
+      connector.workspaceId,
+      connector.userId,
+      db,
+      initialState,
+    )
+    ingestionOldState = new IngestionState(
+      connector.id,
+      connector.workspaceId,
+      connector.userId,
+      db,
+      initialState,
     )
 
     const { accessToken } = connector.oauthCredentials
@@ -771,6 +819,22 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     const tracker = new Tracker(Apps.Slack, AuthType.OAuth)
     const team = await safeGetTeamInfo(client)
     const channelMap = new Map<string, string>()
+
+    // Load existing state if it exists and isn't empty
+    const connectorState = connector.state as Record<string, any>
+    const isFreshSync =
+      !connectorState || Object.keys(connectorState).length === 0
+
+    if (!isFreshSync) {
+      await ingestionState.load()
+      await ingestionOldState.load()
+      Logger.info(
+        `Resuming ingestion from existing state for connector ${connector.id}`,
+      )
+    } else {
+      Logger.info(`Starting fresh ingestion for connector ${connector.id}`)
+    }
+
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
@@ -782,6 +846,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         connector?.externalId,
       )
     }, 4000)
+
     try {
       await insertTeam(team, true)
       ingestedTeamTotalCount.inc({
@@ -800,6 +865,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         email: data.email,
       })
     }
+
     const conversations = (
       (await getAllConversations(
         client,
@@ -817,6 +883,36 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           conversation.is_member)
       )
     })
+
+    // Sort conversations by creation time for consistent resuming
+    conversations.sort((a, b) => {
+      return b.created! - a.created!
+    })
+
+    // Add channel names to map
+    for (const conv of conversations) {
+      if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
+    }
+
+    // Determine which conversations to process based on sync type
+    let conversationsToProcess: typeof conversations
+
+    const existenceMap = await ifDocumentsExistInSchema(
+      chatContainerSchema,
+      conversations.map((c) => c.id!),
+    )
+    conversationsToProcess = conversations.filter(
+      (conversation) =>
+        (existenceMap[conversation.id!] &&
+          !existenceMap[conversation.id!].exists) ||
+        !existenceMap[conversation.id!],
+    )
+
+    loggerWithChild({ email: data.email }).info(
+      ` ${conversationsToProcess.length} conversations to process`,
+    )
+
+    // Update metrics
     allConversationsInTotal.inc(
       {
         team_id: team.id ?? team.name ?? "",
@@ -825,46 +921,62 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       },
       conversations.length,
     )
-    for (const conv of conversations) {
-      if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
-    }
-    // only insert conversations that are not yet inserted already
-    const existenceMap = await ifDocumentsExistInSchema(
-      chatContainerSchema,
-      conversations.map((c) => c.id!),
-    )
-    const conversationsToInsert = conversations.filter(
-      (conversation) =>
-        (existenceMap[conversation.id!] &&
-          !existenceMap[conversation.id!].exists) ||
-        !existenceMap[conversation.id!],
-    )
-    loggerWithChild({ email: data.email }).info(
-      `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
-    )
+
     totalConversationsSkipped.inc(
       { team_id: team.id ?? team.name ?? "", email: data.email },
-      conversations.length - conversationsToInsert.length,
+      conversations.length - conversationsToProcess.length,
     )
+
+    totalConversationsToBeInserted.inc(
+      { team_id: team.id ?? team.name ?? "", email: data.email },
+      conversationsToProcess.length,
+    )
+
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
     teamMap.set(team.id!, team)
     const memberMap = new Map<string, User>()
-    tracker.setCurrent(0)
-    tracker.setTotal(conversationsToInsert.length)
+    tracker.setTotal(conversationsToProcess.length)
+
+    // Start periodic saving
+    const saveInterval = setInterval(async () => {
+      try {
+        await ingestionState?.save()
+        Logger.debug(`Periodic state save for connector ${connector.id}`)
+      } catch (error) {
+        Logger.error(`Failed to periodically save state: ${error}`)
+      }
+    }, periodicSaveState)
+
     let conversationIndex = 0
-    // can be done concurrently, but can cause issues with ratelimits
-    totalConversationsToBeInserted.inc(
-      { team_id: team.id ?? team.name ?? "", email: data.email },
-      conversationsToInsert.length,
-    )
-    for (const conversation of conversationsToInsert) {
+
+    // put the conversation where it last stopped to the front of conversationsToProcess
+    const prevState = ingestionOldState.get()
+    if (prevState.currentChannelId) {
+      const idx = conversationsToProcess.findIndex(
+        (c) => c.id === prevState.currentChannelId,
+      )
+      if (idx > 0) {
+        // Move the found conversation to the front
+        const [conv] = conversationsToProcess.splice(idx, 1)
+        conversationsToProcess.unshift(conv)
+      }
+    }
+
+    for (const conversation of conversationsToProcess) {
+      // Update state with current conversation
+      await ingestionState.update({
+        currentChannelId: conversation.id!,
+        lastUpdated: new Date().toISOString(),
+      })
+
       const memberIds = await getConversationUsers(
         user,
         client,
         conversation,
         data.email,
       )
+
       const membersToFetch = memberIds.filter((m: string) => !memberMap.get(m))
       const concurrencyLimit = pLimit(5)
       const memberPromises = membersToFetch.map((memberId: string) =>
@@ -878,9 +990,8 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           }
         })
         .filter((user) => !!user)
-      // check if already exists
+
       for (const member of members) {
-        // team first time encountering
         if (!teamMap.get(member.team_id!)) {
           const teamResp: TeamInfoResponse = await client.team.info({
             team: member.team_id!,
@@ -932,7 +1043,6 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           return user?.profile?.email
         })
         .filter((email): email is string => !!email)
-      // this case shouldn't even be there
       if (!permissions.length || permissions.indexOf(data.email) == -1) {
         permissions = permissions.concat(data.email)
       }
@@ -941,6 +1051,19 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         permissions,
       }
 
+      // Determine timestamp for incremental message fetching
+      let messageTimestamp = (Date.now() / 1000).toString()
+
+      const oldState = ingestionOldState.get()
+      if (
+        conversation.id === oldState.currentChannelId &&
+        oldState.lastMessageTs
+      ) {
+        messageTimestamp = oldState.lastMessageTs
+        loggerWithChild({ email: data.email }).info(
+          `Resuming messages from timestamp ${messageTimestamp} for channel ${conversation.id}`,
+        )
+      }
       const channelMessageInsertionDuration =
         insertChannelMessageDuration.startTimer({
           conversation_id: conversation.id,
@@ -957,6 +1080,8 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           tracker,
           "0",
           channelMap,
+          ingestionState,
+          messageTimestamp,
         )
         channelMessageInsertionDuration()
         insertChannelMessagesCount.inc({
@@ -1009,9 +1134,10 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         })
       }
     }
-    setTimeout(() => {
-      clearInterval(interval)
-    }, 8000)
+
+    // Clear periodic saving
+    clearInterval(saveInterval)
+    clearInterval(interval)
 
     db.transaction(async (trx) => {
       await trx
@@ -1027,7 +1153,6 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         app: Apps.Slack,
         connectorId: connector.id,
         authType: AuthType.OAuth,
-        // config: {lastUpdated: new Date().toISOString()},
         config: { type: "updatedAt", updatedAt: new Date().toISOString() },
         email: data.email,
         type: SyncCron.Partial,
@@ -1036,6 +1161,18 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     })
   } catch (error) {
     loggerWithChild({ email: data.email }).error(error)
+    // Save state on error for resuming
+    try {
+      if (ingestionState) {
+        await ingestionState.save()
+        Logger.info(
+          `State saved for resume after error in connector ${data.connectorId}`,
+        )
+      }
+    } catch (saveError) {
+      Logger.error(`Failed to save state on error: ${saveError}`)
+    }
+    throw error // Re-throw to ensure proper error handling
   }
 }
 
@@ -1048,9 +1185,6 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
  * @returns True if the error is fatal, false otherwise.
  */
 function isFatalError(error: any): boolean {
-  // For example, if your error has a code or property indicating it’s fatal,
-  // you can check for that. Here, we assume every error is fatal.
-  // Modify this as needed.
   return true
 }
 
@@ -1084,7 +1218,6 @@ async function retryOnFatal<T>(
           await new Promise((resolve) => setTimeout(resolve, delayMs))
         }
       } else {
-        // If error is not fatal, rethrow immediately.
         throw error
       }
     }

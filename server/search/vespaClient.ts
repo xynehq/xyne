@@ -1204,7 +1204,6 @@ class VespaClient {
     // Include permissions check to ensure user has access to these emails
     const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
     const url = `${this.vespaEndpoint}/search/`
-    console.log(`getEmailsByThreadIds - YQL Query: ${yqlQuery}`)
     try {
       const payload = {
         yql: yqlQuery,
@@ -1225,7 +1224,7 @@ class VespaClient {
         const errorText = response.statusText
         const errorBody = await response.text()
         Logger.error(
-          `getEmailsByThreadIds - Query failed: ${response.status} ${response.statusText} - ${errorBody}`
+          `getEmailsByThreadIds - Query failed: ${response.status} ${response.statusText} - ${errorBody}`,
         )
         throw new Error(
           `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
@@ -1233,16 +1232,16 @@ class VespaClient {
       }
 
       const result = await response.json()
-      
+
       Logger.info(
-        `getEmailsByThreadIds - Results: ${result?.root?.children?.length || 0} emails found for threadIds: ${JSON.stringify(threadIds)}`
+        `getEmailsByThreadIds - Results: ${result?.root?.children?.length || 0} emails found for threadIds: ${JSON.stringify(threadIds)}`,
       )
-      
+
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
       Logger.error(
-        `getEmailsByThreadIds - Error: ${errMessage} for threadIds: ${JSON.stringify(threadIds)}`
+        `getEmailsByThreadIds - Error: ${errMessage} for threadIds: ${JSON.stringify(threadIds)}`,
       )
       throw new Error(`Error fetching emails by threadIds: ${errMessage}`)
     }

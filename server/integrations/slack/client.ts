@@ -1,11 +1,6 @@
-import {
-  App,
-  type AllMiddlewareArgs,
-  type SlackActionMiddlewareArgs,
-} from "@slack/bolt";
-import type { BlockAction, ButtonAction } from "@slack/bolt";
+import { WebClient } from "@slack/web-api";
+import { SocketModeClient, type LogLevel } from "@slack/socket-mode";
 import type { View } from "@slack/types";
-import type { WebClient } from "@slack/web-api";
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
 import { getLogger } from "@/logger";
@@ -17,18 +12,32 @@ import {
   createSharedResultBlocks,
   createAgentResponseModal,
   createSharedAgentResponseBlocks,
-  createAllSourcesModal,
+  createErrorBlocks,
 } from "./formatters";
+import {
+  createId
+} from "@paralleldrive/cuid2";
+import {
+  getChatMessagesBefore,
+  insertMessage,
+  getMessageByExternalId
+} from "@/db/message";
+import {
+  getChatByExternalId,
+  insertChat
+} from "@/db/chat";
+import {
+  MessageRole,
+  Platform
+} from "@/types";
 import {
   type SearchCacheEntry,
   type AgentCacheEntry,
   type DbUser,
 } from "./types";
 import {
-  CACHE_TTL,
-  MODAL_RESULTS_DISPLAY_LIMIT,
-  SNIPPET_TRUNCATION_LENGTH,
   ACTION_IDS,
+  EVENT_CACHE_TTL
 } from "./config";
 import { getUserAccessibleAgents } from "@/db/userAgentPermission";
 import { getUserAndWorkspaceByEmail } from "@/db/user";
@@ -40,195 +49,295 @@ import { QueryType } from "@/ai/types";
 import { Apps } from "@/search/types";
 import { getTracer } from "@/tracer";
 
-
 const Logger = getLogger(Subsystem.Slack);
 
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  socketMode: true,
-  appToken: process.env.SLACK_APP_TOKEN,
-});
+const truncateObjectForLog = (obj: any, maxLength: number = 100): string => {
+  if (obj === undefined || obj === null) {
+    return "";
+  }
+  // For strings, just truncate
+  if (typeof obj === 'string') {
+    return obj.length > maxLength ? obj.substring(0, maxLength) + '...' : obj;
+  }
+  // For other objects, stringify and truncate
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxLength) {
+      return str.substring(0, maxLength) + "...(truncated)";
+    }
+    return str;
+  } catch {
+    return "Unserializable object";
+  }
+};
 
-// Add basic error handler to log connection issues
-app.error(async (error) => {
-  Logger.error(error, "Slack app error occurred");
-  // Don't exit the process, let it try to reconnect
-});
+const handleError = async (
+  error: any,
+  context: {
+    client: WebClient;
+    channel?: string;
+    user?: string;
+    threadTs?: string;
+    action?: string;
+    payload?: any;
+  }
+) => {
+  const errorId = createId();
+  const { client, channel, user, threadTs, action, payload } = context;
 
-// Add some debugging for the connection issues
-Logger.info("Starting Slack app with Socket Mode");
+  Logger.error(
+    {
+      errorId,
+      action,
+      channel,
+      user,
+      threadTs,
+      error: truncateObjectForLog(error.message, 200),
+      stack: truncateObjectForLog(error.stack, 300),
+      payload: truncateObjectForLog(payload, 500),
+    },
+    `Slack Action Failed: ${action}`
+  );
 
-// Check if tokens look valid (should start with xoxb- and xapp-)
-if (
-  process.env.SLACK_BOT_TOKEN &&
-  !process.env.SLACK_BOT_TOKEN.startsWith("xoxb-")
-) {
-  throw new Error("SLACK_BOT_TOKEN does not start with xoxb-");
-}
-if (
-  process.env.SLACK_APP_TOKEN &&
-  !process.env.SLACK_APP_TOKEN.startsWith("xapp-")
-) {
-  throw new Error("SLACK_APP_TOKEN does not start with xapp-");
-}
-
-
-// --- Global Cache with TTL Management ---
-declare global {
-  var _searchResultsCache: Record<string, SearchCacheEntry>;
-  var _agentResponseCache: Record<string, AgentCacheEntry>;
-}
-global._searchResultsCache = global._searchResultsCache || {};
-global._agentResponseCache = global._agentResponseCache || {};
-
-/**
- * Periodically cleans up expired entries from the search results cache.
- */
-const cleanupCache = async () => {
-  const maxRetries = 3;
-  const baseDelay = 1000; // 1 second
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  if (client && channel && user) {
     try {
-      const now = Date.now();
-      let cleanedCount = 0;
-
-      // Clean search cache
-      for (const key in global._searchResultsCache) {
-        if (now - global._searchResultsCache[key].timestamp > CACHE_TTL) {
-          delete global._searchResultsCache[key];
-          cleanedCount++;
-        }
-      }
-
-      // Clean agent cache
-      for (const key in global._agentResponseCache) {
-        if (now - global._agentResponseCache[key].timestamp > CACHE_TTL) {
-          delete global._agentResponseCache[key];
-          cleanedCount++;
-        }
-      }
-
-      if (cleanedCount > 0) {
-        Logger.info(`Cleaned up ${cleanedCount} expired cache entries.`);
-      }
-
-      // Success - exit retry loop
-      return;
-    } catch (error) {
-      const isLastAttempt = attempt === maxRetries - 1;
-
-      if (isLastAttempt) {
-        Logger.error(
-          error,
-          `Cache cleanup failed after ${maxRetries} attempts`
-        );
-        return;
-      }
-
-      // Calculate exponential backoff delay
-      const delay = baseDelay * Math.pow(2, attempt);
-      Logger.warn(
-        error,
-        `Cache cleanup failed on attempt ${attempt + 1}, retrying in ${delay}ms`
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        thread_ts: threadTs,
+        text: "An unexpected error occurred.",
+        blocks: createErrorBlocks(
+          error.message || "An internal error occurred. Please try again later.",
+          errorId,
+          `Error during: ${action}`
+        ),
+      });
+    } catch (postError: any) {
+      Logger.error(
+        {
+          errorId,
+          originalError: truncateObjectForLog(error.message),
+          postError: truncateObjectForLog(postError.message),
+        },
+        "Failed to post error message to Slack"
       );
-
-      // Wait before retry
-      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 };
 
-// Use setInterval with async function wrapper
-setInterval(() => {
-  cleanupCache().catch((error) => {
-    Logger.error(error, "Unexpected error in cache cleanup interval");
-  });
-}, 5 * 60 * 1000);
-
-
-// --- Event Handlers ---
-
-app.event("app_mention", async ({ event, client }) => {
-  Logger.info(`Received app_mention event: ${JSON.stringify(event.text)}`);
-
-  const { user, text, channel, ts, thread_ts } = event;
-
+const getOrCreateChat = async (
+  chatExternalId: string,
+  dbUser: DbUser,
+) => {
   try {
-    await client.conversations.join({ channel });
-
-    if (!user) {
-      Logger.warn("No user ID found in app_mention event");
-      return;
-    }
-
-    const userInfo = await client.users.info({ user });
-    if (!userInfo.ok || !userInfo.user?.profile?.email) {
-      Logger.warn(`Could not retrieve email for user ${user}.`);
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+    const chat = await getChatByExternalId(db, chatExternalId);
+    return chat;
+  } catch (error) {
+    // Chat not found, create a new one
+    try {
+      const newChat = await insertChat(db, {
+        workspaceId: dbUser.workspaceId,
+        userId: dbUser.id,
+        title: "Slack Chat",
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        attachments: [],
+        platform: Platform.Slack,
       });
-      return;
-    }
-    const userEmail = userInfo.user.profile.email;
-
-    const dbUser = await getUserByEmail(db, userEmail);
-    if (!dbUser?.length) {
-      Logger.warn(`User with email ${userEmail} not found in the database.`);
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "It seems you're not registered in our system. Please contact support.",
-      });
-      return;
-    }
-
-    const processedText = text.replace(/<@.*?>\s*/, "").trim();
-
-    if (processedText.toLowerCase().startsWith("/agents")) {
-      await handleAgentsCommand(client, channel, user, dbUser[0]);
-    } else if (processedText.toLowerCase().startsWith("/search ")) {
-      const query = processedText.substring(8).trim();
-      await handleSearchQuery(
-        client,
-        channel,
-        user,
-        query,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else if (processedText.startsWith("/")) {
-      await handleAgentSearchCommand(
-        client,
-        channel,
-        user,
-        processedText,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else {
-      await handleHelpCommand(client, channel, user);
-    }
-  } catch (error: any) {
-    Logger.error(error, "Error processing app_mention event");
-    if (user) {
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `An unexpected error occurred: ${error.message}. Please try again.`,
-      });
+      return newChat;
+    } catch (insertError) {
+      Logger.error(insertError, `Failed to insert chat for externalId: ${chatExternalId}`);
+      throw insertError; // Re-throw the error to be handled by the caller
     }
   }
-});
+};
+
+// Check if Slack environment variables are available
+const hasSlackConfig = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
+
+if (!hasSlackConfig) {
+  Logger.warn("Slack BOT_TOKEN and/or SLACK_APP_TOKEN not set. Slack integration will be disabled.");
+  Logger.info("To enable Slack integration, set SLACK_BOT_TOKEN and SLACK_APP_TOKEN environment variables.");
+}
+
+let webClient: WebClient | null = null;
+let socketModeClient: SocketModeClient | null = null;
+let isSocketModeConnected = false;
+
+// Event deduplication with timestamp-based expiry
+const processedEvents = new Map<string, number>();
+
+// Clean up expired events periodically
+const cleanupExpiredEvents = () => {
+  const now = Date.now();
+  const expiredEvents: string[] = [];
+  
+  for (const [eventId, timestamp] of processedEvents.entries()) {
+    if (now - timestamp > EVENT_CACHE_TTL) {
+      expiredEvents.push(eventId);
+    }
+  }
+  
+  for (const eventId of expiredEvents) {
+    processedEvents.delete(eventId);
+  }
+  
+  if (expiredEvents.length > 0) {
+    Logger.debug(`Cleaned up ${expiredEvents.length} expired event entries`);
+  }
+};
+
+setInterval(cleanupExpiredEvents, EVENT_CACHE_TTL / 2); // Run cleanup twice as often as TTL
+
+
+// Socket Mode implementation using official Slack SDK
+const connectSocketMode = async (): Promise<void> => {
+  if (!webClient || !process.env.SLACK_APP_TOKEN) {
+    Logger.error("Cannot connect to Socket Mode: missing WebClient or APP_TOKEN");
+    return;
+  }
+
+  try {
+    Logger.info("Attempting to connect to Slack Socket Mode...");
+    
+    // Create Socket Mode client
+    socketModeClient = new SocketModeClient({
+      appToken: process.env.SLACK_APP_TOKEN,
+      logLevel: 'warn' as LogLevel, // Reduce log noise
+    });
+
+    // Set up event handlers
+    socketModeClient.on('connected', () => {
+      Logger.info("Socket Mode WebSocket connected successfully");
+      isSocketModeConnected = true;
+    });
+
+    socketModeClient.on('disconnected', () => {
+      Logger.warn("Socket Mode WebSocket disconnected");
+      isSocketModeConnected = false;
+    });
+
+    socketModeClient.on('error', (error) => {
+      Logger.error(error, "Socket Mode WebSocket error");
+    });
+
+    // Handle app_mention events
+    socketModeClient.on('app_mention', async ({ event, ack }) => {
+      const { user, channel, thread_ts } = event;
+      try {
+        await ack();
+        
+        // Create unique event ID for deduplication
+        const eventId = `${event.type}_${event.ts}_${event.user}_${event.channel}`;
+        const now = Date.now();
+        
+        // Check if event was already processed recently
+        const lastProcessedTime = processedEvents.get(eventId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate event: ${eventId} (last processed ${now - lastProcessedTime}ms ago)`);
+          return;
+        }
+        
+        processedEvents.set(eventId, now);
+        Logger.info({ event: truncateObjectForLog(event) }, `Received Socket Mode event: ${event.type}`);
+        await processSlackEvent(event);
+      } catch (error: any) {
+        await handleError(error, {
+          client: webClient!,
+          channel,
+          user,
+          threadTs: thread_ts,
+          action: "app_mention",
+          payload: event,
+        });
+      }
+    });
+
+    // Handle interactive components (buttons, modals, etc.)
+    socketModeClient.on('interactive', async (args) => {
+      const payload = args.payload || args.body || args;
+      const user = payload?.user?.id;
+      const channel = payload?.channel?.id || payload?.container?.channel_id;
+      const threadTs = payload?.container?.thread_ts;
+
+      try {
+        // Log the full args structure to understand what we're receiving
+        Logger.info({ payload: truncateObjectForLog(args) }, `Received interactive event`);
+        
+        await args.ack();
+        
+        if (!payload) {
+          Logger.warn({ args: truncateObjectForLog(args) }, "Received interactive event with undefined payload");
+          return;
+        }
+        
+        // Create unique interaction ID for deduplication
+        const interactionId = `interactive_${payload.trigger_id || 'unknown'}_${payload.user?.id || 'unknown'}`;
+        const now = Date.now();
+        
+        // Check if interaction was already processed recently
+        const lastProcessedTime = processedEvents.get(interactionId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate interaction: ${interactionId} (last processed ${now - lastProcessedTime}ms ago)`);
+          return;
+        }
+        
+        processedEvents.set(interactionId, now);
+        Logger.info({ payload: truncateObjectForLog(payload) }, "Processing Socket Mode interactive component");
+        await processSlackInteraction(payload);
+      } catch (error: any) {
+        await handleError(error, {
+          client: webClient!,
+          channel,
+          user,
+          threadTs,
+          action: "interactive_event",
+          payload: args,
+        });
+      }
+    });
+
+    // Start the Socket Mode connection
+    await socketModeClient.start();
+    Logger.info("Socket Mode client started successfully");
+
+  } catch (error) {
+    Logger.error(error, "Failed to connect to Socket Mode");
+    socketModeClient = null;
+    throw error;
+  }
+};
+
+// Only initialize Slack client if environment variables are present
+try {
+  if (hasSlackConfig) {
+    // Validate token formats
+    if (!process.env.SLACK_BOT_TOKEN!.startsWith("xoxb-")) {
+      Logger.error(
+        "SLACK_BOT_TOKEN does not start with xoxb-. Slack integration disabled."
+      );
+    } else if (!process.env.SLACK_APP_TOKEN!.startsWith("xapp-")) {
+      Logger.error(
+        "SLACK_APP_TOKEN does not start with xapp-. Slack integration disabled."
+      );
+    } else {
+      webClient = new WebClient(process.env.SLACK_BOT_TOKEN);
+      Logger.info("Slack Web API client initialized");
+
+      // Note: Socket Mode connection will be started via startSocketMode() from server.ts
+    }
+  }
+} catch (error) {
+  Logger.error(
+    error,
+    "Failed to initialize Slack Web API client. Slack integration disabled."
+  );
+  webClient = null;
+}
 
 // --- Command Logic ---
-
 const handleAgentsCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   dbUser: DbUser
@@ -250,7 +359,7 @@ const handleAgentsCommand = async (
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId, // Remove the fallback "|| 1"
+      dbUser.workspaceId,
       20,
       0
     );
@@ -280,7 +389,7 @@ const handleAgentsCommand = async (
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${index + 1}. /${agent.name}*${
+          text: `*${index + 1}. /${agent.name.replace(/\s+/g, "-")}*${
             agent.isPublic ? " 🌐" : ""
           }\n${agent.description || "No description available"}\n_Model: ${
             agent.model
@@ -309,17 +418,18 @@ const handleAgentsCommand = async (
       blocks: agentBlocks,
     });
   } catch (error: any) {
-    Logger.error(error, "Error fetching agents");
-    await client.chat.postEphemeral({
+    await handleError(error, {
+      client,
       channel,
       user,
-      text: "I couldn't fetch the list of agents. Please try again later.",
+      action: "handleAgentsCommand",
+      payload: { dbUser },
     });
   }
 };
 
 const handleAgentSearchCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   agentCommand: string,
@@ -334,11 +444,11 @@ const handleAgentSearchCommand = async (
 
   // Parse the command: /agent_name query - trim any leading/trailing whitespace
   const trimmedCommand = agentCommand.trim();
-  const match = trimmedCommand.match(/^\/([a-zA-Z0-9_-]+)\s+(.+)$/);
+  const match = trimmedCommand.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
 
   Logger.info(
     `Trimmed command: "${trimmedCommand}", Match result: ${
-      match ? `[${match[0]}, ${match[1]}, ${match[2]}]` : "null"
+      match ? `[${match[0]}, ${match[1]}, ${match[2] || ""}]` : "null"
     }`
   );
 
@@ -353,13 +463,17 @@ const handleAgentSearchCommand = async (
 
   const [, agentName, query] = match;
   Logger.info(
-    `Agent search - Agent: ${agentName}, Query: "${query}" by user ${dbUser.email}`
+    `Agent search - Agent: ${agentName}, Query: "${query ? query : ''}" by user ${
+      dbUser.email
+    }`
   );
 
   try {
     // Validate workspaceId before proceeding
     if (!dbUser.workspaceId || dbUser.workspaceId <= 0) {
-      Logger.error(`Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`);
+      Logger.error(
+        `Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`
+      );
       await client.chat.postEphemeral({
         channel,
         user,
@@ -368,24 +482,67 @@ const handleAgentSearchCommand = async (
       return;
     }
 
-    // Get accessible agents and find the requested one
+    // Get accessible agents
     const agents = await getUserAccessibleAgents(
       db,
       dbUser.id,
-      dbUser.workspaceId, // Remove the fallback "|| 1"
+      dbUser.workspaceId,
       100,
       0
     );
-    const selectedAgent = agents.find(
-      (agent: any) => agent.name.toLowerCase() === agentName.toLowerCase()
+
+    const lowerCaseAgentName = agentName.toLowerCase();
+    let selectedAgent: any = null;
+
+    // 1. Exact match (case-insensitive)
+    selectedAgent = agents.find(
+      (agent: any) =>
+        agent.name.replace(/\s+/g, "-").toLowerCase() === lowerCaseAgentName
     );
 
+    // 2. Partial match if no exact match is found
     if (!selectedAgent) {
-      const availableAgents = agents.map((a: any) => `/${a.name}`).join(", ");
+      const partialMatches = agents.filter((agent: any) =>
+        agent.name
+          .replace(/\s+/g, "-")
+          .toLowerCase()
+          .startsWith(lowerCaseAgentName)
+      );
+
+      if (partialMatches.length === 1) {
+        selectedAgent = partialMatches[0];
+      } else if (partialMatches.length > 1) {
+        const matchingAgentNames = partialMatches
+          .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
+          .join("\n• ");
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
+        });
+        return;
+      }
+    }
+
+    if (!selectedAgent) {
+      const availableAgents = agents
+        .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
+        .join(", ");
       await client.chat.postEphemeral({
         channel,
         user,
         text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
+      });
+      return;
+    }
+    
+    const agentDisplayName = selectedAgent.name.replace(/\s+/g, "-");
+
+    if (!query || query.trim() === "") {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``,
       });
       return;
     }
@@ -396,16 +553,14 @@ const handleAgentSearchCommand = async (
       `Starting agent chat with ${selectedAgent.name} for query: "${query}"`
     );
 
-    // Show initial message to user
     await client.chat.postEphemeral({
       channel,
       user,
-      text: `Querying the agent "/${agentName}"...`,
+      text: `Querying the agent "/${agentDisplayName}"...`,
       ...(isThreadMessage && { thread_ts: threadTs }),
     });
 
     try {
-      // Validate workspaceExternalId before using it
       if (!dbUser.workspaceExternalId) {
         Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`);
         await client.chat.postEphemeral({
@@ -416,7 +571,6 @@ const handleAgentSearchCommand = async (
         });
         return;
       }
-      // Get user and workspace data using the proper function
       const userAndWorkspace = await getUserAndWorkspaceByEmail(
         db,
         dbUser.workspaceExternalId,
@@ -424,7 +578,6 @@ const handleAgentSearchCommand = async (
       );
       const ctx = userContext(userAndWorkspace);
 
-      // Get the full agent configuration with permission check
       const agentConfig = await getAgentByExternalIdWithPermissionCheck(
         db,
         selectedAgent.externalId,
@@ -433,8 +586,7 @@ const handleAgentSearchCommand = async (
       );
 
       if (!agentConfig) {
-  
-        let errorMessage = `❌ You don't have permission to use agent "/${agentName}".`;
+        let errorMessage = `❌ You don't have permission to use agent "/${agentDisplayName}".`;
 
         if (selectedAgent.isPublic) {
           errorMessage += `\n\n🌐 This is a **public agent**, but you may need additional permissions or there might be a workspace configuration issue.`;
@@ -455,11 +607,8 @@ const handleAgentSearchCommand = async (
       }
 
       const agentPrompt = JSON.stringify(agentConfig);
+      const limitedMessages: any[] = [];
 
-      // First, let's check if we need to classify the query or if the agent can answer directly
-      const limitedMessages: any[] = []; // Empty for new conversation in Slack
-
-      // Use the same classification logic as AgentMessageApi
       const searchOrAnswerIterator =
         generateSearchQueryOrAnswerFromConversation(query, ctx, {
           modelId: config.defaultBestModel,
@@ -487,30 +636,25 @@ const handleAgentSearchCommand = async (
         },
       };
 
-      // Process the classification/answer response
       for await (const chunk of searchOrAnswerIterator) {
         if (chunk.text) {
           buffer += chunk.text;
           
-          // Only attempt to parse if buffer has content and looks like JSON
           if (buffer.trim() && (buffer.trim().startsWith('{') || buffer.trim().startsWith('['))) {
             try {
               parsed = JSON.parse(buffer) || {};
             } catch (err) {
-              // Continue if we can't parse yet (incomplete JSON)
               continue;
             }
           }
         }
       }
 
-      // Final validation: ensure we have a valid parsed object after streaming completes
       if (buffer.trim() && !parsed) {
         try {
           parsed = JSON.parse(buffer) || {};
         } catch (err) {
           Logger.warn(err, `Failed to parse final buffer content: ${buffer.substring(0, 100)}...`);
-          // Set default values if parsing fails completely
           parsed = {
             answer: "",
             queryRewrite: "",
@@ -533,16 +677,12 @@ const handleAgentSearchCommand = async (
       let citations: any[] = [];
 
       if (parsed.answer && parsed.answer.trim()) {
-        // Agent provided direct answer from conversation context
         finalResponse = parsed.answer;
         Logger.info(
           `Agent provided direct answer: ${finalResponse.substring(0, 100)}...`
         );
       } else {
-        // Need to do RAG - use the rewritten query if available
         const searchQuery = parsed.queryRewrite || query;
-
-        // Build classification object for RAG
         const classification = {
           direction: parsed.temporalDirection,
           type: (parsed.type as QueryType) || QueryType.SearchWithoutFilters,
@@ -559,24 +699,21 @@ const handleAgentSearchCommand = async (
 
         Logger.info(`Running RAG for agent with query: "${searchQuery}"`);
 
-        // Create a tracer span for the RAG operation
         const tracer = getTracer("slack-agent");
         const span = tracer.startSpan("slack_agent_rag");
 
-        // Call the core RAG function directly
         const iterator = UnderstandMessageAndAnswer(
           dbUser.email,
           ctx,
           searchQuery,
           classification as any,
           limitedMessages,
-          0.5, // threshold
-          false, // reasoning enabled
+          0.5,
+          false,
           span,
           agentPrompt
         );
 
-        // Process the streaming response
         let response = "";
         const ragCitations: any[] = [];
 
@@ -602,34 +739,50 @@ const handleAgentSearchCommand = async (
         await client.chat.postEphemeral({
           channel,
           user,
-          text: `Agent "/${agentName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+          text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
           ...(isThreadMessage && { thread_ts: threadTs }),
         });
         return;
       }
 
-      // Cache the agent response
-      const interactionId = `agent_${user}_${messageTs}_${Date.now()}`;
-      global._agentResponseCache[interactionId] = {
-        query,
-        agentName,
-        response: finalResponse,
-        citations,
-        isFromThread: isThreadMessage,
-        timestamp: Date.now(),
-      };
+      const chat = await getOrCreateChat(threadTs || channel, dbUser);
+      const finalModelId = selectedAgent.model === 'Auto' ? 'gpt-4o-mini' : selectedAgent.model;
+      await insertMessage(db, {
+        message: query,
+        messageRole: MessageRole.User,
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        chatExternalId: chat.externalId,
+        modelId: finalModelId,
+        sources: [],
+        fileIds: [],
+        userId: dbUser.id,
+        chatId: chat.id,
+      });
 
-      // Show button to view the agent response instead of full response
+      const newMessage = await insertMessage(db, {
+        message: finalResponse,
+        messageRole: MessageRole.Assistant,
+        email: dbUser.email,
+        workspaceExternalId: dbUser.workspaceExternalId,
+        chatExternalId: chat.externalId,
+        modelId: finalModelId,
+        sources: citations,
+        fileIds: [],
+        userId: dbUser.id,
+        chatId: chat.id,
+      });
+
       await client.chat.postEphemeral({
         channel,
         user,
-        text: `Agent "/${agentName}" response is ready.`,
+        text: `Agent "/${agentDisplayName}" response is ready.`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `Agent */${agentName}* has responded to your query: "_${query}_"\n${
+              text: `Agent */${agentDisplayName}* has responded to your query: "_${query}_"\n${
                 citations.length > 0
                   ? `Found ${citations.length} relevant sources`
                   : "Direct response from agent"
@@ -648,7 +801,7 @@ const handleAgentSearchCommand = async (
                   emoji: true,
                 },
                 action_id: ACTION_IDS.VIEW_AGENT_MODAL,
-                value: interactionId,
+                value: newMessage.externalId,
               },
             ],
           },
@@ -657,19 +810,25 @@ const handleAgentSearchCommand = async (
       });
     } catch (agentError: any) {
       Logger.error(agentError, "Error in direct agent processing");
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `❌ I encountered an error while processing your request with agent "/${agentName}". Please try again later.`,
-        ...(isThreadMessage && { thread_ts: threadTs }),
-      });
+      if(client) {
+        await handleError(agentError, {
+          client,
+          channel,
+          user,
+          threadTs,
+          action: "agent_processing",
+          payload: { agentName: agentDisplayName, query },
+        });
+      }
     }
   } catch (error: any) {
-    Logger.error(error, "Error in agent search command");
-    await client.chat.postEphemeral({
+    await handleError(error, {
+      client,
       channel,
       user,
-      text: `An error occurred while searching with agent "/${agentName}". Please try again.`,
+      threadTs,
+      action: "handleAgentSearchCommand",
+      payload: { agentName, query },
     });
   }
 };
@@ -732,14 +891,59 @@ const executeSearch = async (
 
     const searchApiResponse = await SearchApi(searchContext as any);
     return (searchApiResponse as any)?.results || [];
-  } catch (error) {
-    Logger.error(error, "Error in executeSearch function");
+  } catch (error: any) {
+    Logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        userEmail,
+        workspaceExternalId,
+        query,
+        options,
+      },
+      "Error in executeSearch function"
+    );
     throw error;
   }
 };
 
+const formatSearchResultsForDisplay = (query: string, results: any[]): string => {
+  if (!results || results.length === 0) {
+    return `No results found for "${query}".`;
+  }
+
+  const summaryLines = results.slice(0, 5).map((result, index) => {
+    let title = result.subject || result.title || result.name || "Untitled";
+    title = title.replace(/\s+/g, " ").trim();
+    if (title.length > 100) {
+        title = title.substring(0, 100) + '...';
+    }
+
+    let snippet = "";
+    if (result.chunks_summary && result.chunks_summary.length > 0) {
+      snippet = result.chunks_summary[0]?.chunk || "";
+    } else if (result.snippet) {
+      snippet = result.snippet;
+    } else if (result.content) {
+      snippet = result.content;
+    }
+    snippet = snippet.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+    if (snippet.length > 150) {
+        snippet = snippet.substring(0, 150) + '...';
+    }
+
+    return `${index + 1}. *${title}*\n   ${snippet}`;
+  });
+
+  let message = `I found ${results.length} results for your query: "_${query}_"\n\n${summaryLines.join('\n\n')}`;
+  if (results.length > 5) {
+      message += `\n\n... and ${results.length - 5} more results.`
+  }
+  return message;
+};
+
 const handleSearchQuery = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string,
   query: string,
@@ -778,12 +982,14 @@ const handleSearchQuery = async (
     );
     
     Logger.info(`Found ${results.length} results from SearchApi.`);
-  } catch (apiError) {
-    Logger.error(apiError, "Error calling SearchApi");
-    await client.chat.postEphemeral({
+  } catch (apiError: any) {
+    await handleError(apiError, {
+      client,
       channel,
       user,
-      text: `I couldn't complete your search for "${query}". The search service might be down.`,
+      threadTs,
+      action: "handleSearchQuery",
+      payload: { query },
     });
     return;
   }
@@ -797,13 +1003,32 @@ const handleSearchQuery = async (
     return;
   }
 
-  const interactionId = `search_${user}_${messageTs}_${Date.now()}`;
-  global._searchResultsCache[interactionId] = {
-    query,
-    results,
-    isFromThread: isThreadMessage,
-    timestamp: Date.now(),
-  };
+  const chat = await getOrCreateChat(threadTs || channel, dbUser);
+  await insertMessage(db, {
+    message: query,
+    messageRole: MessageRole.User,
+    email: dbUser.email,
+    workspaceExternalId: dbUser.workspaceExternalId,
+    chatExternalId: chat.externalId,
+    modelId: "",
+    sources: [],
+    fileIds: [],
+    userId: dbUser.id,
+    chatId: chat.id,
+  });
+
+  const newMessage = await insertMessage(db, {
+    message: formatSearchResultsForDisplay(query, results),
+    messageRole: MessageRole.Assistant,
+    email: dbUser.email,
+    workspaceExternalId: dbUser.workspaceExternalId,
+    chatExternalId: chat.externalId,
+    modelId: "",
+    sources: results,
+    fileIds: [],
+    userId: dbUser.id,
+    chatId: chat.id,
+  });
 
   await client.chat.postEphemeral({
     channel,
@@ -825,7 +1050,7 @@ const handleSearchQuery = async (
             style: "primary",
             text: { type: "plain_text", text: "View Results", emoji: true },
             action_id: ACTION_IDS.VIEW_SEARCH_MODAL,
-            value: interactionId,
+            value: newMessage.externalId,
           },
         ],
       },
@@ -835,7 +1060,7 @@ const handleSearchQuery = async (
 };
 
 const handleHelpCommand = async (
-  client: any,
+  client: WebClient,
   channel: string,
   user: string
 ) => {
@@ -888,24 +1113,199 @@ const handleHelpCommand = async (
   });
 };
 
-// --- Action Handlers ---
-
-app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
-
-  const interactionId = action.value;
-  if (!interactionId) {
-    throw new Error("No interaction ID provided");
+// --- Event Processing Function (to be called by external webhook handler) ---
+export const processSlackEvent = async (event: any) => {
+  if (!webClient) {
+    Logger.warn("Slack client not initialized, ignoring event");
+    return;
   }
-  const cachedData = global._searchResultsCache[interactionId];
 
+  if (event.type === "app_mention") {
+    Logger.info(`Received app_mention event: ${truncateObjectForLog(event.text)}`);
+
+    const { user, text, channel, ts, thread_ts } = event;
+
+    try {
+      await webClient.conversations.join({ channel });
+
+      if (!user) {
+        Logger.warn("No user ID found in app_mention event");
+        return;
+      }
+
+      const userInfo = await webClient.users.info({ user });
+      if (!userInfo.ok || !userInfo.user?.profile?.email) {
+        Logger.warn(`Could not retrieve email for user ${user}.`);
+        await webClient.chat.postEphemeral({
+          channel,
+          user,
+          text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+        });
+        return;
+      }
+      const userEmail = userInfo.user.profile.email;
+
+      const dbUser = await getUserByEmail(db, userEmail);
+      if (!dbUser?.length) {
+        Logger.warn(`User with email ${userEmail} not found in the database.`);
+        await webClient.chat.postEphemeral({
+          channel,
+          user,
+          text: "It seems you're not registered in our system. Please contact support.",
+        });
+        return;
+      }
+
+      const processedText = text.replace(/<@.*?>\s*/, "").trim();
+
+      if (processedText.toLowerCase().startsWith("/agents")) {
+        await handleAgentsCommand(webClient, channel, user, dbUser[0]);
+      } else if (processedText.toLowerCase().startsWith("/search ")) {
+        const query = processedText.substring(8).trim();
+        await handleSearchQuery(
+          webClient,
+          channel,
+          user,
+          query,
+          dbUser[0],
+          ts,
+          thread_ts ?? ""
+        );
+      } else if (processedText.startsWith("/")) {
+        await handleAgentSearchCommand(
+          webClient,
+          channel,
+          user,
+          processedText,
+          dbUser[0],
+          ts,
+          thread_ts ?? ""
+        );
+      } else {
+        await handleHelpCommand(webClient, channel, user);
+      }
+    } catch (error: any) {
+      Logger.error(error, "Error processing app_mention event");
+      if (user && webClient) {
+        await handleError(error, {
+          client: webClient,
+          channel,
+          user,
+          threadTs: thread_ts,
+          action: "processSlackEvent",
+          payload: event,
+        });
+      }
+    }
+  }
+};
+
+// --- Interactive Component Handler (to be called by external webhook handler) ---
+export const processSlackInteraction = async (payload: any) => {
+  if (!webClient) {
+    Logger.warn("Slack client not initialized, ignoring interaction");
+    return;
+  }
+
+  // Add null checks and safer destructuring
+  if (!payload) {
+    Logger.warn("Received null/undefined payload in processSlackInteraction");
+    return;
+  }
+
+  const type = payload.type;
+  const actions = payload.actions;
+  const trigger_id = payload.trigger_id;
+  const view = payload.view;
+  const channel = payload.channel;
+  const user = payload.user;
+  const container = payload.container;
+
+  if (type === "block_actions" && actions?.[0]) {
+    const action = actions[0];
+    const actionId = action.action_id;
+    
+    try {
+      Logger.info({ action: truncateObjectForLog(action), trigger_id }, `Processing action: ${actionId}`);
+      
+      switch (actionId) {
+        case ACTION_IDS.VIEW_SEARCH_MODAL:
+          await handleViewSearchModal(action, trigger_id, channel, user, container);
+          break;
+        case ACTION_IDS.VIEW_AGENT_MODAL:
+          await handleViewAgentModal(action, trigger_id, channel, user, container);
+          break;
+        case ACTION_IDS.SHARE_FROM_MODAL:
+          await handleShareFromModal(action, view, false);
+          break;
+        case ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL:
+          await handleShareFromModal(action, view, true);
+          break;
+        case ACTION_IDS.SHARE_AGENT_FROM_MODAL:
+          await handleShareAgentFromModal(action, view, false);
+          break;
+        case ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL:
+          await handleShareAgentFromModal(action, view, true);
+          break;
+        case ACTION_IDS.NEXT_SOURCE_PAGE:
+        case ACTION_IDS.PREVIOUS_SOURCE_PAGE:
+          await handleSourcePagination(action, view);
+          break;
+        default:
+          Logger.warn({ actionId }, `Unknown action_id`);
+      }
+    } catch (error: any) {
+      await handleError(error, {
+        client: webClient!,
+        channel: channel?.id,
+        user: user?.id,
+        threadTs: container?.thread_ts,
+        action: `block_action: ${actionId}`,
+        payload,
+      });
+    }
+  }
+};
+
+// --- Individual Action Handlers ---
+const handleViewSearchModal = async (
+  action: any,
+  trigger_id: string,
+  channel: any,
+  user: any,
+  container: any
+) => {
   try {
-    if (!cachedData)
-      throw new Error(`No cached search results found. They may have expired.`);
+    // Validate required parameters
+    if (!trigger_id) {
+      throw new Error("Missing trigger_id for modal");
+    }
+    
+    if (!user?.id) {
+      throw new Error("Missing user information for modal");
+    }
 
-    const { query, results, isFromThread } = cachedData;
+    const messageId = action?.value;
+    if (!messageId) {
+      throw new Error("No message ID provided");
+    }
+
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(`No search results found for this message. They may have been deleted.`);
+    }
+
+    const results = (message.sources as any[]) || [];
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
+    const isFromThread = !!container?.thread_ts;
     const modal = createSearchResultsModal(query, results);
 
     if (isFromThread) {
@@ -918,58 +1318,205 @@ app.action(ACTION_IDS.VIEW_SEARCH_MODAL, async ({ ack, body, client }) => {
             type: "button",
             text: { type: "plain_text", text: "Share in Thread", emoji: true },
             action_id: ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL,
-            value: (block.elements[0] as ButtonAction).value,
+            value: (block.elements[0] as any).value,
           });
         }
         return block;
       });
     }
 
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
+    Logger.info(`Attempting to open search modal with trigger_id: ${trigger_id}`);
+
+    await webClient!.views.open({
+      trigger_id: trigger_id,
       view: {
         ...modal,
         callback_id: `search_results_modal`,
         private_metadata: JSON.stringify({
-          channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts || undefined,
-          user_id: (body as BlockAction).user.id,
+          channel_id: channel?.id,
+          thread_ts: container?.thread_ts || undefined,
+          user_id: user.id,
         }),
       },
     });
-    Logger.info(`Opened search results modal for user ${body.user.id}`);
+    
+    Logger.info(`Successfully opened search results modal for user ${user.id}`);
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening search modal for interaction ${interactionId}`
-    );
-    
-    // Add proper null checks before accessing properties
-    const channel = (body as BlockAction).channel;
-    const user = (body as BlockAction).user;
-    
-    if (channel?.id && user?.id) {
-      await client.chat.postEphemeral({
-        channel: channel.id,
-        user: user.id,
-        text: `Sorry, I couldn't open the results. ${error.message}. Please try again.`,
-      });
-    } else {
-      Logger.warn("Could not send error message - missing channel or user information");
-    }
+    await handleError(error, {
+      client: webClient!,
+      channel: channel?.id,
+      user: user?.id,
+      threadTs: container?.thread_ts,
+      action: "handleViewSearchModal",
+      payload: { action, trigger_id },
+    });
   }
-});
+};
 
-/**
- * Handles sharing a result from the modal to the main channel.
- */
-const handleShareAction = async (
-  args: any,
+const handleViewAgentModal = async (
+  action: any,
+  trigger_id: string,
+  channel: any,
+  user: any,
+  container: any
+) => {
+  try {
+    // Validate required parameters
+    if (!trigger_id) {
+      throw new Error("Missing trigger_id for modal");
+    }
+    
+    if (!user?.id) {
+      throw new Error("Missing user information for modal");
+    }
+
+    const messageId = action?.value;
+    if (messageId === "no_interaction_id" || !messageId) {
+      throw new Error("Cannot open modal: No message ID available");
+    }
+
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(`No agent response found for this message. It may have been deleted.`);
+    }
+
+    const {
+      message: response,
+      sources: citations,
+    } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
+    const isFromThread = !!container?.thread_ts;
+
+    const modal = createAgentResponseModal(
+      query,
+      response,
+      (citations as any) || [],
+      messageId,
+      isFromThread || false
+    );
+
+    if (isFromThread) {
+      modal.blocks = modal.blocks.map((block: any) => {
+        if (block.type === "actions" && (block as any).elements) {
+          return {
+            ...block,
+            elements: (block as any).elements.map((element: any) => ({
+              ...element,
+              action_id:
+                element.action_id === ACTION_IDS.SHARE_FROM_MODAL
+                  ? ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL
+                  : element.action_id,
+            })),
+          };
+        }
+        return block;
+      });
+    }
+
+    Logger.info(`Attempting to open agent modal with trigger_id: ${trigger_id}`);
+
+    await webClient!.views.open({
+      trigger_id: trigger_id,
+      view: {
+        ...modal,
+        callback_id: `agent_response_modal`,
+        private_metadata: JSON.stringify({
+          channel_id: channel?.id,
+          thread_ts: container?.thread_ts,
+          user_id: user.id,
+          message_id: messageId,
+        }),
+      },
+    });
+    
+    Logger.info(`Successfully opened agent response modal for user ${user.id}`);
+  } catch (error: any) {
+    await handleError(error, {
+      client: webClient!,
+      channel: channel?.id,
+      user: user?.id,
+      threadTs: container?.thread_ts,
+      action: "handleViewAgentModal",
+      payload: { action, trigger_id },
+    });
+  }
+};
+
+const handleSourcePagination = async (action: any, view: any) => {
+  try {
+    if (!view || !view.private_metadata) {
+      throw new Error("Cannot access required modal metadata for pagination.");
+    }
+
+    const { message_id } = JSON.parse(view.private_metadata);
+    if (!message_id) {
+      throw new Error("Message ID not found in modal metadata.");
+    }
+
+    const { page } = JSON.parse(action.value);
+    const message = await getMessageByExternalId(db, message_id);
+
+    if (!message) {
+      throw new Error("Agent response not found for pagination.");
+    }
+
+    const {
+      message: response,
+      sources: citations,
+    } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
+    const isFromThread = !!view.thread_ts;
+
+    const newModal = createAgentResponseModal(
+      query,
+      response,
+      (citations as any) || [],
+      message_id,
+      isFromThread,
+      page
+    );
+
+    newModal.private_metadata = view.private_metadata;
+
+    await webClient!.views.update({
+      view_id: view.id,
+      hash: view.hash,
+      view: newModal,
+    });
+  } catch (error: any) {
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleSourcePagination",
+      payload: { action, view },
+    });
+  }
+};
+
+const handleShareFromModal = async (
+  action: any,
+  view: any,
   isThreadShare: boolean
 ) => {
-  const { ack, body, client, action } = args;
-  await ack();
-  const view = body.view;
   try {
     if (!view || !view.private_metadata) {
       throw new Error("Cannot access required modal metadata.");
@@ -986,7 +1533,7 @@ const handleShareAction = async (
     if (isThreadShare && !thread_ts)
       throw new Error("Thread timestamp not found for a thread share action.");
 
-    await client.chat.postMessage({
+    await webClient!.chat.postMessage({
       channel: channel_id,
       thread_ts: isThreadShare ? thread_ts : undefined,
       text: `${title} - Shared by <@${user_id}>`,
@@ -1027,424 +1574,140 @@ const handleShareAction = async (
       updatedView.close = view.close;
     }
 
-    await client.views.update({
+    await webClient!.views.update({
       view_id: view.id,
       hash: view.hash,
       view: updatedView,
     });
   } catch (error: any) {
-    Logger.error(
-      error,
-      `Error sharing result to ${
-        isThreadShare ? "thread" : "channel"
-      } from modal`
-    );
-    
-    if (view?.private_metadata) {
-      try {
-        const metadata = JSON.parse(view.private_metadata);
-        const channelId = metadata?.channel_id;
-        const userId = metadata?.user_id;
-        
-        if (channelId && userId) {
-          await client.chat.postEphemeral({
-            channel: channelId,
-            user: userId,
-            text: `Sorry, I couldn't share the result. ${error.message}. Please try again.`,
-          });
-        }
-      } catch (parseError) {
-        Logger.warn("Could not parse modal metadata for error message");
-      }
-    }
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleShareFromModal",
+      payload: { action, view, isThreadShare },
+    });
   }
 };
 
-app.action(ACTION_IDS.SHARE_FROM_MODAL, async (args) => {
-  await handleShareAction(args, false);
-});
-
-app.action(ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL, async (args) => {
-  await handleShareAction(args, true);
-});
-
-/**
- * Handles opening the agent response modal.
- */
-app.action(ACTION_IDS.VIEW_AGENT_MODAL, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
-  const interactionId = action.value;
-
+const handleShareAgentFromModal = async (
+  action: any,
+  view: any,
+  isThreadShare: boolean
+) => {
   try {
-    // Check for the special "no_interaction_id" case
-    if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot open modal: No interaction ID available");
+    if (!view || !view.private_metadata)
+      throw new Error("Cannot access required modal metadata.");
+
+    const messageId = action.value;
+
+    if (messageId === "no_interaction_id" || !messageId) {
+      throw new Error("Cannot share: No message ID available");
     }
 
-    const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached agent response found. It may have expired.`);
-    }
-
-    // Add proper null checks before accessing cachedData properties
-    const { query, agentName, response, citations, isFromThread } = cachedData;
-    
-    if (!query || !agentName || !response) {
-      throw new Error("Invalid cached data - missing required fields");
-    }
-
-    const modal = createAgentResponseModal(
-      query,
-      agentName,
-      response,
-      citations || [],
-      interactionId,
-      isFromThread || false
-    );
-
-    if (isFromThread) {
-      // Modify buttons for thread sharing if needed
-      modal.blocks = modal.blocks.map((block: any) => {
-        if (block.type === "actions" && (block as any).elements) {
-          return {
-            ...block,
-            elements: (block as any).elements.map((element: any) => ({
-              ...element,
-              action_id:
-                element.action_id === ACTION_IDS.SHARE_FROM_MODAL
-                  ? ACTION_IDS.SHARE_IN_THREAD_FROM_MODAL
-                  : element.action_id,
-            })),
-          };
-        }
-        return block;
-      });
-    }
-
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
-      view: {
-        ...modal,
-        callback_id: `agent_response_modal`,
-        private_metadata: JSON.stringify({
-          channel_id: (body as BlockAction).channel?.id,
-          thread_ts: (body as BlockAction).container?.thread_ts,
-          user_id: (body as BlockAction).user.id,
-        }),
-      },
-    });
-    Logger.info(
-      `Opened agent response modal for user ${(body as BlockAction).user.id}`
-    );
-  } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening agent modal for interaction ${interactionId}`
-    );
-    
-    // Add proper null checks before accessing properties
-    const channel = (body as BlockAction).channel;
-    const user = (body as BlockAction).user;
-    
-    if (channel?.id && user?.id) {
-      await client.chat.postEphemeral({
-        channel: channel.id,
-        user: user.id,
-        text: `Sorry, I couldn't open the agent response. ${error.message}. Please try again.`,
-      });
-    } else {
-      Logger.warn("Could not send error message - missing channel or user information");
-    }
-  }
-});
-
-/**
- * Handles sharing an agent response from the modal to the main channel.
- */
-app.action(
-  ACTION_IDS.SHARE_AGENT_FROM_MODAL,
-  async ({ ack, body, client, action }) => {
-    await ack();
-    const view = (body as BlockAction).view;
-    try {
-      if (!view || !view.private_metadata)
-        throw new Error("Cannot access required modal metadata.");
-
-      const interactionId = (action as ButtonAction).value;
-
-      // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id" || !interactionId) {
-        throw new Error("Cannot share: No interaction ID available");
-      }
-
-      // Get agent response from cache
-      const agentResponseData = global._agentResponseCache[interactionId];
-      if (!agentResponseData) {
-        throw new Error(
-          "Agent response data not found in cache. The response may have expired."
-        );
-      }
-
-      const { agentName, query, response, citations } = agentResponseData;
-      const { channel_id, user_id } = JSON.parse(view.private_metadata);
-
-      if (!channel_id)
-        throw new Error("Channel ID not found in modal metadata.");
-
-      await client.chat.postMessage({
-        channel: channel_id,
-        text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
-        blocks: createSharedAgentResponseBlocks(
-          user_id,
-          agentName,
-          query,
-          response,
-          citations || []
-        ),
-      });
-
-      const newBlocks = view.blocks.map((b: any) =>
-        b.block_id === (action as ButtonAction).block_id
-          ? {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "✅ *Agent response shared in channel successfully!*",
-                },
-              ],
-            }
-          : b
+    const message = await getMessageByExternalId(db, messageId);
+    if (!message) {
+      throw new Error(
+        "Agent response data not found. The response may have been deleted."
       );
-
-      const updatedView: View = {
-        type: "modal",
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
-      };
-      if (view.close) {
-        updatedView.close = view.close;
-      }
-
-      await client.views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: updatedView,
-      });
-    } catch (error: any) {
-      Logger.error(error, "Error sharing agent response to channel from modal");
-    }
-  }
-);
-
-/**
- * Handles sharing an agent response from the modal to a thread.
- */
-app.action(
-  ACTION_IDS.SHARE_AGENT_IN_THREAD_FROM_MODAL,
-  async ({ ack, body, client, action }) => {
-    await ack();
-    const view = (body as BlockAction).view;
-    try {
-      if (!view || !view.private_metadata)
-        throw new Error("Cannot access required modal metadata.");
-
-      const interactionId = (action as ButtonAction).value;
-
-      // Check for the special "no_interaction_id" case
-      if (interactionId === "no_interaction_id" || !interactionId) {
-        throw new Error("Cannot share: No interaction ID available");
-      }
-
-      // Get agent response from cache
-      const agentResponseData = global._agentResponseCache[interactionId];
-      if (!agentResponseData) {
-        throw new Error(
-          "Agent response data not found in cache. The response may have expired."
-        );
-      }
-
-      const { agentName, query, response, citations } = agentResponseData;
-      const { channel_id, thread_ts, user_id } = JSON.parse(
-        view.private_metadata
-      );
-
-      if (!channel_id)
-        throw new Error("Channel ID not found in modal metadata.");
-      if (!thread_ts)
-        throw new Error(
-          "Thread timestamp not found for a thread share action."
-        );
-
-      await client.chat.postMessage({
-        channel: channel_id,
-        thread_ts: thread_ts,
-        text: `Agent response from /${agentName} - Shared by <@${user_id}>`,
-        blocks: createSharedAgentResponseBlocks(
-          user_id,
-          agentName,
-          query,
-          response,
-          citations || []
-        ),
-      });
-
-      const newBlocks = view.blocks.map((b: any) =>
-        b.block_id === (action as ButtonAction).block_id
-          ? {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "✅ *Agent response shared in thread successfully!*",
-                },
-              ],
-            }
-          : b
-      );
-
-      const updatedView: View = {
-        type: "modal",
-        title: view.title,
-        blocks: newBlocks,
-        private_metadata: view.private_metadata,
-        callback_id: view.callback_id,
-      };
-      if (view.close) {
-        updatedView.close = view.close;
-      }
-
-      await client.views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: updatedView,
-      });
-    } catch (error: any) {
-      Logger.error(error, "Error sharing agent response to thread from modal");
-    }
-  }
-);
-
-/**
- * Handles opening a modal to view all sources/citations.
- */
-app.action(ACTION_IDS.VIEW_ALL_SOURCES, async ({ ack, body, client }) => {
-  await ack();
-  const action = (body as BlockAction).actions[0];
-  if (action.type !== "button") return;
-  const interactionId = action.value;
-
-  try {
-    // Check for the special "no_interaction_id" case
-    if (interactionId === "no_interaction_id" || !interactionId) {
-      throw new Error("Cannot open sources: No interaction ID available");
     }
 
-    const cachedData = global._agentResponseCache[interactionId];
-    if (!cachedData) {
-      throw new Error(`No cached agent response found. It may have expired.`);
-    }
+    const {
+      message: response,
+      sources: citations,
+    } = message;
+    const previousMessages = await getChatMessagesBefore(
+      db,
+      message.chatId,
+      message.createdAt,
+    );
+    const userQueryMessage = previousMessages.length
+      ? previousMessages[previousMessages.length - 1]
+      : null;
+    const query = userQueryMessage?.message ?? "";
+    const { channel_id, thread_ts, user_id } = JSON.parse(view.private_metadata);
 
-    // Add proper null checks before accessing cachedData properties
-    const { query, agentName, citations } = cachedData;
-    
-    if (!query || !agentName) {
-      throw new Error("Invalid cached data - missing required fields");
-    }
+    if (!channel_id)
+      throw new Error("Channel ID not found in modal metadata.");
+    if (isThreadShare && !thread_ts)
+      throw new Error("Thread timestamp not found for a thread share action.");
 
-    if (!citations || citations.length === 0) {
-      throw new Error("No sources available for this response.");
-    }
-
-    const modal = createAllSourcesModal(agentName, query, citations);
-
-    await client.views.open({
-      trigger_id: (body as BlockAction).trigger_id,
-      view: modal,
+    await webClient!.chat.postMessage({
+      channel: channel_id,
+      thread_ts: isThreadShare ? thread_ts : undefined,
+      text: `Agent response - Shared by <@${user_id}>`,
+      blocks: createSharedAgentResponseBlocks(
+        user_id,
+        query,
+        response,
+        (citations as any) || []
+      ),
     });
 
-    Logger.info(
-      `Opened all sources modal for user ${(body as BlockAction).user.id}`
-    );
-  } catch (error: any) {
-    Logger.error(
-      error,
-      `Error opening sources modal for interaction ${interactionId}`
-    );
-
-    // Try to show an error modal instead of ephemeral message since we're in a modal context
-    try {
-      const errorDetails = error.message.includes('No interaction ID') 
-        ? 'The response data has expired or is no longer available.'
-        : error.message.includes('No cached agent response')
-        ? 'The response data has expired. Please run your query again.'
-        : error.message.includes('No sources available')
-        ? 'This response was generated without source citations.'
-        : `Unexpected error: ${error.message}`;
-
-      const troubleshootingTips = error.message.includes('expired') || error.message.includes('No cached')
-        ? '\n\n**What to do:**\n• Run your agent query again\n• The system keeps responses for 10 minutes only'
-        : error.message.includes('No sources')
-        ? '\n\n**Note:** This response was generated from the agent\'s training data without citing external sources.'
-        : '\n\n**Troubleshooting:**\n• Try refreshing and running the query again\n• Contact support if the issue persists';
-
-      await client.views.open({
-        trigger_id: (body as BlockAction).trigger_id,
-        view: {
-          type: "modal",
-          title: {
-            type: "plain_text",
-            text: "Unable to Open Sources",
-            emoji: true,
-          },
-          close: {
-            type: "plain_text",
-            text: "Close",
-            emoji: true,
-          },
-          blocks: [
-            {
-              type: "section",
-              text: {
+    const newBlocks = view.blocks.map((b: any) =>
+      b.block_id === action.block_id
+        ? {
+            type: "context",
+            elements: [
+              {
                 type: "mrkdwn",
-                text: `❌ *Could not display sources*\n\n${errorDetails}${troubleshootingTips}`,
+                text: `✅ *Agent response shared in ${
+                  isThreadShare ? "thread" : "channel"
+                } successfully!*`,
               },
-            },
-          ],
-        },
-      });
-    } catch (modalError) {
-      Logger.error(modalError, "Failed to show error modal");
-      // If we can't show a modal, try to get channel info from the current modal
-      const view = (body as BlockAction).view;
-      let channelId;
-      try {
-        // Add proper null checks before accessing view properties
-        if (view?.private_metadata) {
-          const metadata = JSON.parse(view.private_metadata);
-          channelId = metadata?.channel_id;
-        }
-      } catch (parseError) {
-        Logger.warn("Could not parse modal private_metadata for error message");
-      }
+            ],
+          }
+        : b
+    );
 
-      // Add proper null checks before accessing user properties
-      const user = (body as BlockAction).user;
-      if (channelId && user?.id) {
-        await client.chat.postEphemeral({
-          channel: channelId,
-          user: user.id,
-          text: `Sorry, I couldn't open the sources. ${error.message}. Please try again.`,
-        });
-      } else {
-        Logger.warn("Could not send fallback error message - missing channel or user information");
-      }
+    const updatedView: View = {
+      type: "modal",
+      title: view.title,
+      blocks: newBlocks,
+      private_metadata: view.private_metadata,
+      callback_id: view.callback_id,
+    };
+    if (view.close) {
+      updatedView.close = view.close;
+    }
+
+    await webClient!.views.update({
+      view_id: view.id,
+      hash: view.hash,
+      view: updatedView,
+    });
+  } catch (error: any) {
+    const metadata = view ? JSON.parse(view.private_metadata || "{}") : {};
+    await handleError(error, {
+      client: webClient!,
+      channel: metadata.channel_id,
+      user: metadata.user_id,
+      threadTs: metadata.thread_ts,
+      action: "handleShareAgentFromModal",
+      payload: { action, view, isThreadShare },
+    });
+  }
+};
+
+
+// Export Socket Mode status and control functions
+export const getSocketModeStatus = () => isSocketModeConnected;
+export const startSocketMode = async () => {
+  if (hasSlackConfig && webClient && !isSocketModeConnected && !socketModeClient) {
+    try {
+      await connectSocketMode();
+      return true;
+    } catch (error) {
+      Logger.error(error, "Failed to start Socket Mode connection");
+      return false;
     }
   }
-});
+  Logger.info("Socket Mode already connected or configuration missing");
+  return false;
+};
 
-export default app;
+// Export the client and utility functions
+export const getSlackClient = () => webClient;
+export const isSlackEnabled = () => webClient !== null;

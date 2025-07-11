@@ -8,11 +8,20 @@ import {
   jsonb,
   boolean,
   index,
+  pgEnum
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
+import { Platform } from "@/types"
+
+
+const platform = "platform"
+export const platformEnum = pgEnum(
+  platform,
+  Object.values(Platform) as [string, ...string[]],
+)
 
 export const chats = pgTable(
   "chats",
@@ -40,6 +49,7 @@ export const chats = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    platform: platformEnum(platform).notNull().default(Platform.Web),
   },
   (table) => ({
     isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),

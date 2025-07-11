@@ -402,6 +402,12 @@ export enum MessageRole {
   Assistant = "assistant",
 }
 
+export enum Platform {
+  Web = "web",
+  Mobile = "mobile",
+  Slack = "slack",
+}
+
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),

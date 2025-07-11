@@ -160,4 +160,5 @@ export default {
     .split(",")
     .map((email) => email.trim())
     .filter((email) => email.length > 0),
+  llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
 }

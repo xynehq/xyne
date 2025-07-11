@@ -112,14 +112,57 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+        // Create new content array with combined text and images
+        const newContent = [
+          { text: combinedText },
+          ...otherBlocks,
+          ...imageParts,
+        ]
+        return {
+          ...message,
+          content: newContent,
+        }
+      }
+      return message
+    })
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
         {
-          text: modelParams.systemPrompt!,
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
         },
       ],
-      messages,
+      messages: transformedMessages,
       inferenceConfig: {
         maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
@@ -200,19 +243,47 @@ export class BedrockProvider extends BaseProvider {
     // Transform messages to include images only in the last user message
     const transformedMessages = messages.map((message, index) => {
       if (index === lastUserMessageIndex && imageParts.length > 0) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+        const combinedText =
+          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
+          userText
+        // Create new content array with combined text and images
+        const newContent = [
+          { text: combinedText },
+          ...otherBlocks,
+          ...imageParts,
+        ]
         return {
           ...message,
-          content: [...message.content!, ...imageParts],
+          content: newContent,
         }
       }
       return message
     })
 
+    console.log("transformedMessages", transformedMessages)
+    console.log("imageFileNames", params.imageFileNames)
+    console.log("modelId", modelParams.modelId)
+
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [{ text: modelParams.systemPrompt! }],
+      system: [
+        {
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+        },
+      ],
       messages: transformedMessages,
       inferenceConfig,
     })

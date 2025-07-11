@@ -169,6 +169,7 @@ export const startStream = async (
   onTitleUpdate?: (title: string) => void,
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
+  fileIds?: string[],
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -216,6 +217,11 @@ export const startStream = async (
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
     url.searchParams.append("toolsList", JSON.stringify(toolsList))
+  }
+
+  // Add fileIds parameter if provided
+  if (fileIds && fileIds.length > 0) {
+    url.searchParams.append("attachmentFileIds", fileIds.join(","))
   }
 
   const agentIdToUse = agentIdFromChatParams
@@ -312,6 +318,11 @@ export const startStream = async (
     streamState.isStreaming = false
     streamState.es.close()
 
+    // Clear failed messages from cache for new chats
+    if (!chatId && queryClient) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+
     toast({
       title: "Error",
       description: event.data,
@@ -324,6 +335,11 @@ export const startStream = async (
     console.error(`EventSource error:`, error)
     streamState.isStreaming = false
     streamState.es.close()
+
+    // Clear failed messages from cache for new chats
+    if (!chatId && queryClient) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
 
     toast({
       title: "Error",
@@ -491,6 +507,7 @@ export const useChatStream = (
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
+      fileIds?: string[],
     ) => {
       const streamKey = currentStreamKey
 
@@ -505,6 +522,7 @@ export const useChatStream = (
         onTitleUpdate,
         agentIdFromChatParams,
         toolsList,
+        fileIds,
       )
 
       setStreamInfo(getStreamState(streamKey))
