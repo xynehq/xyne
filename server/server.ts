@@ -131,6 +131,19 @@ import metricRegister from "@/metrics/sharedRegistry"
 import { handleFileUpload } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+import {
+  CreateKnowledgeBaseApi,
+  ListKnowledgeBasesApi,
+  GetKnowledgeBaseApi,
+  UpdateKnowledgeBaseApi,
+  DeleteKnowledgeBaseApi,
+  ListKbItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+} from "@/api/knowledgeBase"
 
 import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
 
@@ -494,6 +507,20 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  // Knowledge Base Routes
+  .post("/kb", CreateKnowledgeBaseApi)
+  .get("/kb", ListKnowledgeBasesApi)
+  .get("/kb/:kbId", GetKnowledgeBaseApi)
+  .put("/kb/:kbId", UpdateKnowledgeBaseApi)
+  .delete("/kb/:kbId", DeleteKnowledgeBaseApi)
+  .get("/kb/:kbId/items", ListKbItemsApi)
+  .post("/kb/:kbId/items/folder", CreateFolderApi)
+  .post("/kb/:kbId/items/upload", UploadFilesApi)
+  .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/kb/:kbId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
+  .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -837,6 +864,8 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/knowledge-base", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/kb-test", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()

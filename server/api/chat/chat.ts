@@ -110,6 +110,7 @@ import {
   CalendarEntity,
   chatMessageSchema,
   dataSourceFileSchema,
+  kbFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -264,8 +265,8 @@ const checkAndYieldCitations = function* (
       const item = results[citationIndex - baseIndex]
       if (item) {
         // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === dataSourceFileSchema) {
-          // Removed transcriptSchema check
+        if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbFileSchema) {
+          // Skip datasource and KB files from citations
           continue
         }
         yield {
@@ -607,6 +608,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificKbIds: string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -634,6 +636,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
+          } else if (
+            lowerIntegration.startsWith("kb-") ||
+            lowerIntegration.startsWith("kb_")
+          ) {
+            // kb- is the prefix for knowledge base externalId
+            // Remove the prefix before storing
+            const kbId = integration.replace(/^kb[-_]/, '')
+            agentSpecificKbIds.push(kbId)
           } else {
             // Handle generic app names
             switch (lowerIntegration) {
@@ -775,6 +785,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         timestampRange,
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        kbIds: agentSpecificKbIds,
       },
     )
   }
@@ -831,6 +842,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
           },
         )
       }
@@ -891,6 +903,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              kbIds: agentSpecificKbIds,
             }))
 
         // Expand email threads in the results
@@ -931,21 +944,22 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-          results = await searchVespaAgent(
-            query,
-            email,
-            null,
-            null,
-            agentAppEnums,
-            {
-              limit: pageSize,
-              alpha: userAlpha,
-              excludedIds: latestResults
-                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-                ?.filter((v) => !!v),
-              dataSourceIds: agentSpecificDataSourceIds,
-            },
-          )
+        results = await searchVespaAgent(
+          query,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+            dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
+          }
+        )
         }
 
         // Expand email threads in the results
@@ -1052,6 +1066,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
           },
         )
       }
@@ -1103,6 +1118,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
           },
         )
       }
