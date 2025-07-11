@@ -222,7 +222,7 @@ export const extractImageFileNames = (
     if (imageContent) {
       const docId = imageContent.split("_")[0]
       const docIndex =
-        results?.findIndex((c) => (c.fields as any).docId === docId) || 0
+        results?.findIndex((c) => (c.fields as any).docId === docId) || -1
 
       if (docIndex === -1) {
         console.warn(
