@@ -40,6 +40,7 @@ export const createAgentSchema = z.object({
   isPublic: z.boolean().optional().default(false),
   appIntegrations: z.array(z.string()).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
+  isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
 })
@@ -133,6 +134,7 @@ export const CreateAgentApi = async (c: Context) => {
       isPublic: validatedBody.isPublic,
       appIntegrations: validatedBody.appIntegrations,
       allowWebSearch: validatedBody.allowWebSearch,
+      isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
     }
 

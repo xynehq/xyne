@@ -74,6 +74,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -522,6 +523,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     try {
       jsonVal = parse(text.trim())
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
+        
         let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
@@ -1113,6 +1115,49 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+  messages: Message[],
+  attachmentFileIds?: string[],
+): AsyncIterableIterator<ConverseResponse> => {
+  if (attachmentFileIds && attachmentFileIds.length > 0) {
+    params.imageFileNames = attachmentFileIds.map((id) => `${id}_0`)
+  }
+
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    indexToCitation(retrievedCtx),
+    parseAgentPrompt(agentPrompt),
+  )
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
 }
 
 export const temporalPromptJsonStream = (
