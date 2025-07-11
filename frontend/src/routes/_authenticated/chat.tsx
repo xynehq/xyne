@@ -93,7 +93,12 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import {
+  fetchChats,
+  pageSize,
+  renameChat,
+  bookmarkChat,
+} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
@@ -109,6 +114,7 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
+import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
@@ -564,6 +570,16 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
+    if (
+      currentChat &&
+      typeof currentChat.isBookmarked === "boolean" &&
+      currentChat.isBookmarked !== bookmark
+    ) {
+      setBookmark(currentChat.isBookmarked)
+    }
+  }, [currentChat, bookmark])
+
+  useEffect(() => {
     if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
@@ -580,6 +596,15 @@ export const ChatPage = ({
       setDots("")
     }
   }, [isStreaming, retryIsStreaming])
+
+  // Cleanup effect to clear failed messages from cache when chatId changes
+  useEffect(() => {
+    // Clear any cached data for null chatId when we have a real chatId
+    // This prevents old failed messages from appearing in new chats
+    if (chatId && chatId !== null) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+  }, [chatId, queryClient])
 
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
@@ -641,6 +666,7 @@ export const ChatPage = ({
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
+        chatParams.fileIds,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -652,6 +678,7 @@ export const ChatPage = ({
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
+          fileIds: undefined, // Clear fileIds from URL after processing
         }),
         replace: true,
       })
@@ -662,6 +689,7 @@ export const ChatPage = ({
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
+    chatParams.fileIds,
     router,
   ])
 
@@ -670,6 +698,7 @@ export const ChatPage = ({
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
+    fileIds?: string[],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -694,14 +723,41 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(
-      messageToSend,
-      selectedSources,
-      isReasoningActive,
-      isAgenticMode,
-      agentIdToUse,
-      toolsList,
-    )
+
+    try {
+      await startStream(
+        messageToSend,
+        selectedSources,
+        isReasoningActive,
+        isAgenticMode,
+        agentIdToUse,
+        toolsList,
+        fileIds,
+      )
+    } catch (error) {
+      // If there's an error, clear the optimistically added message from cache
+      // This prevents failed messages from persisting when creating new chats
+      queryClient.setQueryData<any>(
+        ["chatHistory", queryKey],
+        (oldData: any) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            messages:
+              oldData.messages?.filter(
+                (msg: any) => msg.message !== messageToSend,
+              ) || [],
+          }
+        },
+      )
+
+      // Also clear any cached data for null chatId to prevent old failed messages from appearing
+      if (!chatId) {
+        queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+      }
+
+      throw error // Re-throw the error so it can be handled by the calling code
+    }
   }
 
   const handleFeedback = async (
@@ -753,15 +809,51 @@ export const ChatPage = ({
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
+  const bookmarkChatMutation = useMutation<
+    { chatId: string; isBookmarked: boolean },
+    Error,
+    { chatId: string; isBookmarked: boolean }
+  >({
+    mutationFn: async ({ chatId, isBookmarked }) => {
+      return await bookmarkChat(chatId, isBookmarked)
+    },
+    onMutate: async ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((chat) =>
+                chat.externalId === chatId
+                  ? { ...chat, isBookmarked: isBookmarked }
+                  : chat,
+              ),
+            ),
+          }
+        },
+      )
+    },
+    onSuccess: ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+      queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+      queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
+    },
+    onError: (error: Error, variables, context) => {
+      setBookmark(!variables.isBookmarked)
+      console.error("Failed to bookmark chat:", error)
+    },
+  })
+
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
+      bookmarkChatMutation.mutate({
+        chatId: chatId,
+        isBookmarked: !bookmark,
       })
-      setBookmark(!bookmark)
     }
   }
 
@@ -937,20 +1029,6 @@ export const ChatPage = ({
                     onClick={handleChatRename}
                   />
                 )}
-                <Bookmark
-                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-                  fill={
-                    bookmark
-                      ? theme === "dark"
-                        ? "#A0AEC0"
-                        : "#4A4F59"
-                      : "none"
-                  }
-                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
-                  onClick={handleBookmark}
-                  size={18}
-                />
                 {chatId && (
                   <Share2
                     stroke="#4A4F59"
@@ -959,13 +1037,23 @@ export const ChatPage = ({
                     onClick={() => handleShare()}
                   />
                 )}
-                <Ellipsis
-                  stroke="#4A4F59"
-                  className="dark:stroke-gray-400 ml-[20px]"
-                  size={18}
-                />
               </>
             )}
+            <Bookmark
+              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+              className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
+              onClick={handleBookmark}
+              size={18}
+            />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -1200,10 +1288,7 @@ const MessageCitationList = ({
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
-                      <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
+                      <span className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] font-mono">
                         {index + 1}
                       </span>
                     </div>
@@ -1250,8 +1335,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
-                style={{ fontFamily: "JetBrains Mono" }}
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px] font-mono"
               >
                 {index + 1}
               </a>
@@ -1286,10 +1370,7 @@ const Sources = ({
   return showSources ? (
     <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
       <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
-        <span
-          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
-          style={{ fontFamily: "JetBrains Mono" }}
-        >
+        <span className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em] font-mono">
           SOURCES
         </span>
         <X
@@ -1721,9 +1802,8 @@ const Code = ({
   if (!isActuallyInline) {
     return (
       <pre
-        className="text-sm block w-full my-2"
+        className="text-sm block w-full my-2 font-mono"
         style={{
-          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
           whiteSpace: "pre-wrap",
           overflowWrap: "break-word",
           wordBreak: "break-word",
@@ -2013,10 +2093,7 @@ export const ChatMessage = ({
                 {!!citationUrls.length && (
                   <div className="ml-auto flex">
                     <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
+                      <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
                         SOURCES
                       </span>
                       <ChevronDown
@@ -2104,6 +2181,7 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
+  fileIds: z.array(z.string()).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>

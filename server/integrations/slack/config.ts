@@ -31,11 +31,20 @@ export const ACTION_IDS = {
   SHARE_IN_THREAD_FROM_MODAL: "share_in_thread_from_modal", // For sharing to a thread
   SHARE_AGENT_FROM_MODAL: "share_agent_from_modal", // For sharing agent responses
   SHARE_AGENT_IN_THREAD_FROM_MODAL: "share_agent_in_thread_from_modal", // For sharing agent responses to a thread
+
   VIEW_ALL_SOURCES: "view_all_sources", // For viewing all sources in a modal
+  NEXT_SOURCE_PAGE: "next_source_page",
+  PREVIOUS_SOURCE_PAGE: "previous_source_page",
 }
 
-// Constants from client.ts
-export const EVENT_CACHE_TTL = 30000 // 30 seconds
+
 
 // Constants for slack Ingestion
-export const periodicSaveState = 4000
+export const periodicSaveState = 4000 // 4 seconds
+
+  
+
+
+// Constants from client.ts
+export const EVENT_CACHE_TTL = 30000; // 30 seconds
+
