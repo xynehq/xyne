@@ -50,6 +50,7 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  GetUserSyncJobs,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -553,6 +554,7 @@ export const AppRoutes = app
     AddStdioMCPConnector,
   )
   .get("/connectors/all", GetConnectors)
+  .get("/user/syncJob", GetUserSyncJobs)
   .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
   .post(
     "/connector/update_status",

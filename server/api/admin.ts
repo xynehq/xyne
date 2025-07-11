@@ -63,7 +63,7 @@ import {
   type ClearUserDataOptions,
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
-import { clearUserSyncJob } from "@/db/syncJob"
+import { clearUserSyncJob, getAppSyncJobsByEmail } from "@/db/syncJob"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1139,6 +1139,35 @@ export const IngestMoreChannelApi = async (c: Context) => {
     return c.json({
       success: false,
       message: getErrorMessage(error),
+    })
+  }
+}
+
+export const GetUserSyncJobs = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  try {
+    const res = await getAppSyncJobsByEmail(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    if (res.length) {
+      return c.json({
+        success: true,
+        message: `user ${email} has ${Apps.Slack} syncJobs`,
+      })
+    } else {
+      return c.json({
+        success: false,
+        message: `user ${email} has no ${Apps.Slack} syncJobs `,
+      })
+    }
+  } catch (error) {
+    return c.json({
+      success: false,
+      message: `Failed to fetch ${email} ${Apps.Slack} syncJobs Error ${getErrorMessage(error)}`,
     })
   }
 }
