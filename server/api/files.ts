@@ -375,7 +375,7 @@ export const handleThumbnailServe = async (c: Context) => {
     const legacyThumbnailPath = path.join(
       legacyBaseDir,
       fileId,
-      `${fileId}_thumbnail.jpg`,
+      `${fileId}_thumbnail.jpeg`,
     )
 
     let thumbnailPath = legacyThumbnailPath
