@@ -1,31 +1,30 @@
 {
-  "name": "xyne",
-  "module": "server/server.ts",
-  "type": "module",
-  "version": "0.3.0",
-  "devDependencies": {
-    "@biomejs/biome": "1.9.4",
-    "@faker-js/faker": "^9.3.0",
-    "@types/bun": "latest",
-    "@types/uuid": "^10.0.0",
-    "drizzle-kit": "^0.24.2",
-    "husky": "^9.1.7",
-    "p-queue": "^8.0.1"
+  "name": "ai-providers",
+  "version": "1.0.0",
+  "main": "dist/cjs/provider/index.js",
+  "module": "dist/esm/provider/index.js",
+  "types": "dist/esm/provider/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": ["dist/esm/provider/index.d.ts"]
+    }
   },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/provider/index.d.ts",
+        "default": "./dist/esm/provider/index.js"
+      },
+      "require": {
+        "types": "./dist/esm/provider/index.d.ts",
+        "default": "./dist/cjs/provider/index.js"
+      }
+    }
   },
   "scripts": {
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "migrate:trace": "bun run migrations/migrate_tracejson_to_bytea.ts",
-    "dev": "bun run --watch server.ts",
-    "build": "bunx --bun vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "build": "rm -rf dist && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json"
   },
+
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
@@ -33,6 +32,7 @@
     "@hono/event-emitter": "^2.0.0",
     "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.2.2",
+    "@anthropic-ai/vertex-sdk": "^0.11.4",
     "@jrmdayn/googleapis-batcher": "^0.8.0",
     "@langchain/community": "^0.3.22",
     "@langchain/core": "^0.3.27",
@@ -63,7 +63,6 @@
     "llama3-tokenizer-js": "^1.2.0",
     "nanoid": "^5.1.5",
     "ollama": "^0.5.11",
-    "openai": "^5.3.0",
     "ora": "^8.1.1",
     "p-limit": "^6.2.0",
     "partial-json": "^0.1.7",
@@ -81,5 +80,20 @@
     "uuid": "^11.0.0",
     "xlsx": "^0.18.5",
     "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "openai": "^4.77.0 || ^5.0.0",
+    "@google/generative-ai": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "@google/generative-ai": {
+      "optional": true
+    }
   }
 }

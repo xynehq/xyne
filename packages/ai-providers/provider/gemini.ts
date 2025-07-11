@@ -1,12 +1,12 @@
 import { GoogleGenerativeAI, type Content } from "@google/generative-ai"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider from "./base"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import { type ModelParams, type ConverseResponse, AIProviders } from "../types"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { getLogger } from "../logger"
+import { Subsystem } from "../server-types"
 import path from "path"
 import fs from "fs"
-import { findImageByName } from "@/ai/provider/base"
+import { findImageByName } from "./base"
+import { AIProviders, ConverseResponse, ModelParams } from "types"
 
 const Logger = getLogger(Subsystem.AI)
 

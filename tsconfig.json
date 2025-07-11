@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "ai-providers/*": ["./packages/ai-providers/*"],
+      "server/*": ["./server/*"]
+    }
+  },
+  "references": [
+    {
+      "path": "packages/ai-providers"
+    },
+    {
+      "path": "server"
+    }
+  ],
+  "include": [],
+  "exclude": ["**/dist", "**/node_modules"]
+}

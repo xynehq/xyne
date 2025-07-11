@@ -1,9 +1,9 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
-import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import type { ConverseResponse, ModelParams } from "../types"
+import { AIProviders } from "../types"
+import BaseProvider from "./base"
+import { getLogger } from "../logger"
+import { Subsystem } from "../server-types"
 const Logger = getLogger(Subsystem.AI)
 
 import type { ChatMessage, Fireworks, MessageRole } from "./fireworksClient"

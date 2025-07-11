@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { Apps, entitySchema } from "../search/types"
+import { Apps, entitySchema } from "./search-types"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 
 export enum AIProviders {
