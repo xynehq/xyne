@@ -200,6 +200,7 @@ export const GetSharedChatApi = async (c: Context) => {
         createdAt: msg.createdAt,
         errorMessage: msg.errorMessage,
         feedback: msg.feedback,
+        attachments: msg.attachments,
       })),
       sharedAt: sharedChat.sharedChat.createdAt,
     })

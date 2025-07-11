@@ -790,7 +790,9 @@ export async function extractTextAndImagesWithChunksFromPptx(
 
                 const imageExtension = path.extname(imagePath).toLowerCase()
                 if (
-                  !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(imageExtension)
+                  !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
+                    `image/${imageExtension.slice(1)}`,
+                  )
                 ) {
                   Logger.warn(
                     `Unsupported image format: ${imageExtension}. Skipping image: ${imagePath}`,

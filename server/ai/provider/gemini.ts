@@ -215,8 +215,6 @@ export class GeminiAIProvider extends BaseProvider {
         },
         ...imageParts,
       ])
-      console.log("imageParts", imageParts)
-      console.log("latestMessage", latestMessage)
 
       for await (const chunk of streamResponse.stream) {
         const text = chunk.text()
