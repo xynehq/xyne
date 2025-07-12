@@ -191,11 +191,13 @@ const KbFileUpload = ({
         onDrop={handleDrop}
       >
         <div
-          className={`border-2 border-dashed rounded-lg p-8 w-full mx-auto h-72 min-h-72 flex flex-col items-center justify-center transition-colors relative ${
+          className={`border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-72 min-h-72 flex flex-col items-center justify-center transition-colors relative bg-gray-50 dark:bg-slate-800 ${
             isDragging
               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
-              : "border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-slate-800 hover:border-gray-400 dark:hover:border-gray-500"
-          } ${isUploading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              : isUploading
+              ? "cursor-not-allowed"
+              : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
+          }`}
           onClick={!isUploading ? handleFileClick : undefined}
         >
           {selectedFiles.length > 0 && (

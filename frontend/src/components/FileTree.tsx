@@ -60,10 +60,12 @@ const FileNodeComponent = ({ node, level = 0, path = '', onAddFiles, onDelete, o
         <div className="col-span-2 flex items-center gap-2">
           {node.updatedBy && (
             <>
-              <div className="w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold">
+              <div className="w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
                 {node.updatedBy.charAt(0).toUpperCase()}
               </div>
-              <span>{node.updatedBy}</span>
+              <div className="flex flex-col min-w-0">
+                <span className="break-all">{node.updatedBy}</span>
+              </div>
             </>
           )}
         </div>

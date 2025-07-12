@@ -403,8 +403,8 @@ function RouteComponent() {
       />
       <div className="flex-1 flex flex-col h-full md:ml-[60px]">
         <div className="p-4 md:py-4 md:px-8">
-          <div className="w-full max-w-5xl mx-auto">
-            <div className={`flex justify-between items-center mt-6 ${showNewCollection ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="w-full max-w-7xl mx-auto">
+            <div className="flex justify-between items-center mt-6">
               <h1 className="text-[26px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
                 KNOWLEDGE MANAGEMENT
               </h1>
@@ -422,52 +422,7 @@ function RouteComponent() {
                 </Button>
               </div>
             </div>
-            {showNewCollection && (
-              <div className="mt-8">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="w-1/3">
-                    <label
-                      htmlFor="collectionName"
-                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                    >
-                      {addingToCollection ? "Adding to collection" : "Collection name"}
-                    </label>
-                    <Input
-                      id="collectionName"
-                      type="text"
-                      placeholder="Frontend documentation"
-                      value={collectionName}
-                      onChange={(e) => setCollectionName(e.target.value)}
-                      className="w-full bg-transparent border-0 border-b border-gray-300 dark:border-gray-600 rounded-none px-0 py-2 ring-0 outline-0 shadow-none focus:ring-0 focus:outline-0 focus:border-b-2 transition-colors duration-200"
-                      disabled={isUploading || !!addingToCollection}
-                    />
-                    {collections.some((c) => c.name.toLowerCase() === collectionName.trim().toLowerCase() && !addingToCollection) && (
-                      <p className="text-sm text-red-500 mt-1">Collection name already exists.</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    onClick={handleCloseModal}
-                    className="flex items-center gap-2 text-gray-500 dark:text-gray-400"
-                  >
-                    <X size={16} />
-                    DISCARD CHANGES
-                  </Button>
-                </div>
-                <KbFileUpload
-                  onFilesSelect={handleFilesSelect}
-                  onRemoveFile={handleRemoveFile}
-                  onRemoveAllFiles={handleRemoveAllFiles}
-                  selectedFiles={selectedFiles}
-                  onUpload={addingToCollection ? handleAddFilesToCollection : handleUpload}
-                  isUploading={isUploading}
-                  collectionName={collectionName}
-                />
-              </div>
-            )}
-            <div
-              className={`mt-12 ${showNewCollection ? "opacity-50 pointer-events-none" : ""}`}
-            >
+            <div className="mt-12">
               {collections.map((collection, index) => (
                 <div key={index} className="mb-8">
                   <div className="flex justify-between items-center mb-4 cursor-pointer" onClick={async () => {
@@ -654,18 +609,134 @@ function RouteComponent() {
         />
       )}
       {editingCollection && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg">
-            <h2 className="text-lg font-semibold mb-4">Edit Collection Name</h2>
-            <Input
-              type="text"
-              value={collectionName}
-              onChange={(e) => setCollectionName(e.target.value)}
-              className="w-full"
-            />
-            <div className="flex justify-end gap-4 mt-4">
-              <Button variant="ghost" onClick={() => setEditingCollection(null)}>Cancel</Button>
-              <Button onClick={handleUpdateCollection}>Update</Button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl w-[90%] max-w-md max-h-[90vh] overflow-hidden flex flex-col p-2">
+            <div className="pb-1">
+              <div className="flex justify-between items-center">
+                <h2 className="pl-2 font-medium text-gray-400 dark:text-gray-200 font-mono">
+                  EDIT COLLECTION NAME
+                </h2>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEditingCollection(null);
+                    setCollectionName("");
+                  }}
+                  className="p-1"
+                >
+                  <X className="h-5 w-5 text-gray-400" />
+                </Button>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-800">
+                <div className="mb-6">
+                  <label
+                    htmlFor="editCollectionName"
+                    className="block text-sm text-gray-700 dark:text-gray-300 mb-2"
+                  >
+                    Collection title
+                  </label>
+                  <Input
+                    id="editCollectionName"
+                    type="text"
+                    placeholder="Enter collection name"
+                    value={collectionName}
+                    onChange={(e) => setCollectionName(e.target.value)}
+                    className="w-full text-xl placeholder:text-gray-400 placeholder:opacity-60 dark:placeholder:text-gray-500 dark:placeholder:opacity-50 !outline-none !focus:outline-none !focus:ring-0 !focus:shadow-none !bg-transparent !px-0 !shadow-none !ring-0 border-0 border-b border-gray-300 dark:border-gray-600 focus:border-b focus:border-gray-400 dark:focus:border-gray-500 !rounded-none"
+                    autoComplete="off"
+                  />
+                  <div className="h-2 mt-1">
+                    {collections.some((c) => c.name.toLowerCase() === collectionName.trim().toLowerCase() && c.id !== editingCollection?.id) && (
+                      <p className="text-sm text-gray-500">Collection name already exists</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-4 mt-4">
+                  <Button variant="ghost" onClick={() => {
+                    setEditingCollection(null);
+                    setCollectionName("");
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleUpdateCollection}
+                    disabled={!collectionName.trim() || collections.some((c) => c.name.toLowerCase() === collectionName.trim().toLowerCase() && c.id !== editingCollection?.id)}
+                  >
+                    Update
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {(showNewCollection || addingToCollection) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl w-[90%] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-2">
+            <div className="pb-1">
+              <div className="flex justify-between items-center">
+                <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
+                  {addingToCollection ? `Add files to ${addingToCollection.name}` : "CREATE NEW COLLECTION"}
+                </h2>
+                <Button
+                  variant="ghost"
+                  onClick={handleCloseModal}
+                  className="p-1"
+                >
+                  <X className="h-5 w-5 text-gray-400" />
+                </Button>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-800">
+                <div className="mb-6">
+                  <label
+                    htmlFor="collectionName"
+                    className="block text-sm text-gray-700 dark:text-gray-300 mb-2"
+                  >
+                    {addingToCollection ? "Adding to collection" : "Collection title"}
+                  </label>
+                  <Input
+                    id="collectionName"
+                    type="text"
+                    placeholder="Frontend documentation"
+                    value={collectionName}
+                    onChange={(e) => setCollectionName(e.target.value)}
+                    className="w-full text-xl placeholder:text-gray-400 placeholder:opacity-60 dark:placeholder:text-gray-500 dark:placeholder:opacity-50 !outline-none !focus:outline-none !focus:ring-0 !focus:shadow-none !bg-transparent !px-0 !shadow-none !ring-0 border-0 border-b border-gray-300 dark:border-gray-600 focus:border-b focus:border-gray-400 dark:focus:border-gray-500 !rounded-none"
+                    disabled={isUploading || !!addingToCollection}
+                    autoComplete="off"
+                  />
+                  <div className="h-2 mt-1">
+                    {collections.some((c) => c.name.toLowerCase() === collectionName.trim().toLowerCase() && !addingToCollection) && (
+                      <p className="text-sm text-gray-500">Collection name already exists</p>
+                    )}
+                  </div>
+                </div>
+                <KbFileUpload
+                  onFilesSelect={handleFilesSelect}
+                  onRemoveFile={handleRemoveFile}
+                  onRemoveAllFiles={handleRemoveAllFiles}
+                  selectedFiles={selectedFiles}
+                  onUpload={addingToCollection ? handleAddFilesToCollection : handleUpload}
+                  isUploading={isUploading}
+                  collectionName={collectionName}
+                />
+              </div>
+              {isUploading && batchProgress.total > 0 && (
+                <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Uploading: {batchProgress.current} / {batchProgress.total} files
+                    {batchProgress.totalBatches > 1 && ` (Batch ${batchProgress.batch} of ${batchProgress.totalBatches})`}
+                  </p>
+                  <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mt-2">
+                    <div 
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
