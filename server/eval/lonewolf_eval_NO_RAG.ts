@@ -11,7 +11,7 @@ import { isCuid } from "@paralleldrive/cuid2"
 import { HTTPException } from "hono/http-exception"
 import config from "@/config"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
-import { Apps, ChatSSEvents } from "@/shared/types"
+import { ChatSSEvents } from "@/shared/types"
 import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 
 import {
@@ -19,17 +19,10 @@ import {
   generateSearchQueryOrAnswerFromConversation,
   jsonParseLLMOutput,
 } from "@/ai/provider"
-import { processMessage } from "@/api/chat/utils"
-import type {
-  TemporalClassifier,
-  QueryRouterResponse,
-  QueryType,
-} from "@/ai/types"
-import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
 
 const { defaultBestModel } = config
-const myEmail = "oindrila.banerjee@juspay.in"
-const workspaceId = "i3acjjlykgjyamw51qbwhhiu" // This is the externalId of workspace
+const myEmail = "email@domain.in"
+const workspaceId = "i3ac.........." // This is the externalId of workspace
 const agentId = "kekosrqyf78w1tlt90psfa4vc" // This is the externalId of the agent
 const modelId = defaultBestModel
 const Logger = getLogger(Subsystem.Eval)
@@ -318,7 +311,6 @@ async function simulateAgentMessageFlow(
 
     const message = decodeURIComponent(evalItem.input)
     let answer = ""
-    let thinking = ""
 
     // Mock message context (simulating a single user message with no prior conversation)
     const messages = [
@@ -364,8 +356,6 @@ async function simulateAgentMessageFlow(
               ? event.data
               : JSON.stringify(event.data)
           answer += data
-        } else if (event.event === ChatSSEvents.Reasoning) {
-          thinking += event.data
         }
       },
       close: () => {},
@@ -407,7 +397,7 @@ async function simulateAgentMessageFlow(
       },
     }
 
-    // Process LLM output from generateSearchQueryOrAnswerFromConversation
+    // Process LLM output
     let buffer = ""
     for await (const chunk of searchOrAnswerIterator) {
       if (mockStream.closed) {
@@ -449,59 +439,7 @@ async function simulateAgentMessageFlow(
       }
     }
 
-    // If no answer was found, use UnderstandMessageAndAnswer
-    if (!parsed.answer) {
-      Logger.info(
-        "No answer found in conversation, applying UnderstandMessageAndAnswer",
-      )
-      const classification: TemporalClassifier & QueryRouterResponse = {
-        direction: parsed.temporalDirection,
-        type: parsed.type as QueryType,
-        filterQuery: parsed.filter_query,
-        filters: {
-          ...(parsed?.filters ?? {}),
-          app: parsed.filters?.app as Apps,
-          entity: parsed.filters?.entity as any,
-          intent: parsed.intent || {},
-        },
-      }
-
-      const iterator = UnderstandMessageAndAnswer(
-        myEmail,
-        userCtx,
-        parsed.queryRewrite || message,
-        classification,
-        limitedMessages,
-        0.5,
-        false, // Simplified: no reasoning for evaluation
-        undefined, // No explicit span for simulation
-        agentPromptForLLM,
-      )
-
-      buffer = ""
-      answer = ""
-      thinking = ""
-
-      for await (const chunk of iterator) {
-        if (mockStream.closed) {
-          Logger.info(
-            "[simulateAgentMessageFlow] Stream closed during UnderstandMessageAndAnswer loop. Breaking.",
-          )
-          break
-        }
-        if (chunk.text) {
-          answer += chunk.text
-          mockStream.writeSSE({
-            event: ChatSSEvents.ResponseUpdate,
-            data: chunk.text,
-          })
-        }
-      }
-
-      Logger.info("Answer from UnderstandMessageAndAnswer:", answer)
-    }
-
-    result.output = answer || parsed.answer || "No answer generated"
+    result.output = parsed.answer || "No answer generated"
 
     console.log("Final answer:", result.output)
   } catch (error) {
@@ -512,6 +450,7 @@ async function simulateAgentMessageFlow(
   result.processingTime = Date.now() - startTime
   return result
 }
+
 async function runEvaluation(userCtx: string) {
   const results: EvalResult[] = []
 
