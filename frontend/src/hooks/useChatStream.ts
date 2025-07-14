@@ -2,7 +2,13 @@ import { useRef, useState, useEffect, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "@tanstack/react-router"
 import { api } from "@/api"
-import { ChatSSEvents, Citation } from "shared/types"
+import {
+  AttachmentMetadata,
+  ChatSSEvents,
+  Citation,
+  SelectPublicMessage,
+  ImageCitation,
+} from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 
@@ -12,6 +18,7 @@ interface StreamState {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -24,6 +31,7 @@ interface StreamInfo {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -169,7 +177,7 @@ export const startStream = async (
   onTitleUpdate?: (title: string) => void,
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
-  fileIds?: string[],
+  metadata?: AttachmentMetadata[],
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -219,9 +227,9 @@ export const startStream = async (
     url.searchParams.append("toolsList", JSON.stringify(toolsList))
   }
 
-  // Add fileIds parameter if provided
-  if (fileIds && fileIds.length > 0) {
-    url.searchParams.append("attachmentFileIds", fileIds.join(","))
+  // Add metadata parameter if provided
+  if (metadata && metadata.length > 0) {
+    url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
   }
 
   const agentIdToUse = agentIdFromChatParams
@@ -238,6 +246,7 @@ export const startStream = async (
     partial: "",
     thinking: "",
     sources: [],
+    imageCitations: [],
     citationMap: {},
     messageId: undefined,
     chatId: chatId || undefined,
@@ -262,6 +271,39 @@ export const startStream = async (
     const { contextChunks, citationMap } = JSON.parse(event.data)
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
+    notifySubscribers(streamKey)
+  })
+
+  streamState.es.addEventListener(ChatSSEvents.AttachmentUpdate, (event) => {
+    const { attachments } = JSON.parse(event.data)
+    // Update the last user message in the query cache with attachment data
+    if (queryClient && streamState.chatId) {
+      queryClient.setQueryData(
+        ["chatHistory", streamState.chatId],
+        (old: { messages: SelectPublicMessage[] } | undefined) => {
+          if (!old?.messages || old.messages.length === 0) return old
+          const updatedMessages = [...old.messages]
+          for (let i = updatedMessages.length - 1; i >= 0; i--) {
+            if (updatedMessages[i].messageRole === "user") {
+              updatedMessages[i] = {
+                ...updatedMessages[i],
+                attachments,
+              }
+              break
+            }
+          }
+          return {
+            ...old,
+            messages: updatedMessages,
+          }
+        },
+      )
+    }
+
+  streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
+    const imageCitation: ImageCitation = JSON.parse(event.data)
+    streamState.imageCitations = imageCitation
+
     notifySubscribers(streamKey)
   })
 
@@ -404,6 +446,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       partial: "",
       thinking: "",
       sources: [],
+      imageCitations: [],
       citationMap: {},
       messageId: undefined,
       chatId: undefined,
@@ -415,6 +458,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     partial: stream.partial,
     thinking: stream.thinking,
     sources: stream.sources,
+    imageCitations: stream.imageCitations,
     citationMap: stream.citationMap,
     messageId: stream.messageId,
     chatId: stream.chatId,
@@ -507,7 +551,7 @@ export const useChatStream = (
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
-      fileIds?: string[],
+      metadata?: AttachmentMetadata[],
     ) => {
       const streamKey = currentStreamKey
 
@@ -522,7 +566,7 @@ export const useChatStream = (
         onTitleUpdate,
         agentIdFromChatParams,
         toolsList,
-        fileIds,
+        metadata,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -547,6 +591,7 @@ export const useChatStream = (
       messageId: string,
       isReasoningActive: boolean = false,
       isAgenticMode: boolean = false,
+      attachmentFileIds?: string[],
     ) => {
       if (!messageId) return
 
@@ -648,6 +693,12 @@ export const useChatStream = (
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
       }
+      if (attachmentFileIds) {
+        url.searchParams.append(
+          "attachmentFileIds",
+          attachmentFileIds.join(","),
+        )
+      }
 
       const eventSource = new EventSource(url.toString(), {
         withCredentials: true,
@@ -664,6 +715,7 @@ export const useChatStream = (
         partial: "",
         thinking: "",
         sources: [],
+        imageCitations: [],
         citationMap: {},
         messageId: undefined,
         chatId: chatId || undefined,
@@ -743,6 +795,43 @@ export const useChatStream = (
         streamState.sources = contextChunks
         streamState.citationMap = citationMap
       })
+
+      eventSource.addEventListener(ChatSSEvents.AttachmentUpdate, (event) => {
+        const { attachments } = JSON.parse(event.data)
+        // Update the last user message in the query cache with attachment data
+        if (queryClient && streamState.chatId) {
+          queryClient.setQueryData(
+            ["chatHistory", streamState.chatId],
+            (old: any) => {
+              if (!old?.messages || old.messages.length === 0) return old
+              const updatedMessages = [...old.messages]
+              for (let i = updatedMessages.length - 1; i >= 0; i--) {
+                if (updatedMessages[i].messageRole === "user") {
+                  updatedMessages[i] = {
+                    ...updatedMessages[i],
+                    attachments,
+                  }
+                  break
+                }
+              }
+              return {
+                ...old,
+                messages: updatedMessages,
+              }
+            },
+          )
+        }
+        notifySubscribers(retryStreamKey)
+      })
+
+      eventSource.addEventListener(
+        ChatSSEvents.ImageCitationUpdate,
+        (event) => {
+          const imageCitation: ImageCitation = JSON.parse(event.data)
+          streamState.imageCitations = imageCitation
+        },
+      )
+
 
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId } = JSON.parse(event.data)

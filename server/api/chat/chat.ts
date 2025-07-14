@@ -156,7 +156,12 @@ import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
 import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
-import { ragPipelineConfig, RagPipelineStages, type Citation } from "./types"
+import {
+  ragPipelineConfig,
+  RagPipelineStages,
+  type Citation,
+  type ImageCitation,
+} from "./types"
 import { activeStreams } from "./stream"
 import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
 import {
@@ -168,9 +173,19 @@ import {
   extractThreadIdsFromResults,
   mergeThreadResults,
   expandEmailThreadsInResults,
+  getCitationToImage,
+  mimeTypeMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
-import { cleanupAttachmentFiles } from "@/api/files"
+import {
+  getAttachmentsByMessageId,
+  storeAttachmentMetadata,
+} from "@/db/attachment"
+import type { AttachmentMetadata } from "@/shared/types"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
+import { isImageFile } from "@/utils/image"
+import { promises as fs } from "node:fs"
+import path from "node:path"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -231,7 +246,7 @@ export const GetChatTraceApi = async (c: Context) => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -251,38 +266,98 @@ export const processMessage = (
 
 // the Set is passed by reference so that singular object will get updated
 // but need to be kept in mind
-const checkAndYieldCitations = function* (
+const checkAndYieldCitations = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
   email: string,
+  yieldedImageCitations: Set<number>,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
-  while ((match = textToCitationIndex.exec(text)) !== null) {
-    const citationIndex = parseInt(match[1], 10)
-    if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex - baseIndex]
-      if (item) {
-        // TODO: fix this properly, empty citations making streaming broke
+  let imgMatch
+  while (
+    (match = textToCitationIndex.exec(text)) !== null ||
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+  ) {
+    if (match) {
+      const citationIndex = parseInt(match[1], 10)
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - baseIndex]
+        if (item) {
+          // TODO: fix this properly, empty citations making streaming broke
         if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbFileSchema) {
           // Skip datasource and KB files from citations
           continue
         }
         yield {
-          citation: {
-            index: citationIndex,
-            item: searchToCitation(item as VespaSearchResults),
-          },
+            citation: {
+              index: citationIndex,
+              item: searchToCitation(item as VespaSearchResults),
+            },
+          }
+          yieldedCitations.add(citationIndex)
+        } else {
+          loggerWithChild({ email: email }).error(
+            "Found a citation index but could not find it in the search result ",
+            citationIndex,
+            results.length,
+          )
         }
-        yieldedCitations.add(citationIndex)
-      } else {
-        loggerWithChild({ email: email }).error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
-        )
+      }
+    } else if (imgMatch) {
+      const parts = imgMatch[1].split("_")
+      if (parts.length >= 2) {
+        const docIndex = parseInt(parts[0], 10)
+        const imageIndex = parseInt(parts[1], 10)
+        const citationIndex = docIndex + baseIndex
+        if (!yieldedImageCitations.has(citationIndex)) {
+          const item = results[docIndex]
+          if (item) {
+            try {
+              const imageData = await getCitationToImage(
+                imgMatch[1],
+                item,
+                email,
+              )
+              if (imageData) {
+                if (!imageData.imagePath || !imageData.imageBuffer) {
+                  loggerWithChild({ email: email }).error(
+                    "Invalid imageData structure returned",
+                    { citationKey: imgMatch[1], imageData },
+                  )
+                  continue
+                }
+                yield {
+                  imageCitation: {
+                    citationKey: imgMatch[1],
+                    imagePath: imageData.imagePath,
+                    imageData: imageData.imageBuffer.toString("base64"),
+                    ...(imageData.extension
+                      ? { mimeType: mimeTypeMap[imageData.extension] }
+                      : {}),
+                    item: searchToCitation(item as VespaSearchResults),
+                  },
+                }
+              }
+            } catch (error) {
+              loggerWithChild({ email: email }).error(
+                error,
+                "Error processing image citation",
+                { citationKey: imgMatch[1], error: getErrorMessage(error) },
+              )
+            }
+            yieldedImageCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              "Found a citation index but could not find it in the search result ",
+              citationIndex,
+              results.length,
+            )
+            continue
+          }
+        }
       }
     }
   }
@@ -301,7 +376,10 @@ async function* processIterator(
   userRequestsReasoning?: boolean,
   email?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   let buffer = ""
   let currentAnswer = ""
@@ -309,6 +387,7 @@ async function* processIterator(
   let thinking = ""
   let reasoning = config.isReasoning && userRequestsReasoning
   let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
 
@@ -323,6 +402,7 @@ async function* processIterator(
             results,
             previousResultsLength,
             email!,
+            yieldedImageCitations,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -347,6 +427,7 @@ async function* processIterator(
               results,
               previousResultsLength,
               email!,
+              yieldedImageCitations,
             )
             yield { text: token, reasoning }
           }
@@ -383,6 +464,7 @@ async function* processIterator(
               results,
               previousResultsLength,
               email!,
+              yieldedImageCitations,
             )
             currentAnswer = parsed.answer
           }
@@ -462,6 +544,101 @@ export const ChatDeleteApi = async (c: Context) => {
       if (!chat) {
         throw new HTTPException(404, { message: "Chat not found" })
       }
+
+      // Get all messages for the chat to find attachments
+      const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
+
+      // Collect all attachment file IDs that need to be deleted
+      const imageAttachmentFileIds: string[] = []
+      const nonImageAttachmentFileIds: string[] = []
+
+      for (const message of messagesToDelete) {
+        if (message.attachments && Array.isArray(message.attachments)) {
+          const attachments =
+            message.attachments as unknown as AttachmentMetadata[]
+          for (const attachment of attachments) {
+            if (attachment && typeof attachment === "object") {
+              if (attachment.fileId) {
+                // Check if this is an image attachment using both isImage field and fileType
+                const isImageAttachment =
+                  attachment.isImage ||
+                  (attachment.fileType && isImageFile(attachment.fileType))
+
+                if (isImageAttachment) {
+                  imageAttachmentFileIds.push(attachment.fileId)
+                } else {
+                  // TODO: Handle non-image attachments in future implementation
+                  nonImageAttachmentFileIds.push(attachment.fileId)
+                  loggerWithChild({ email: email }).info(
+                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Delete image attachments and their thumbnails from disk
+      if (imageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
+        )
+
+        for (const fileId of imageAttachmentFileIds) {
+          try {
+            // Validate fileId to prevent path traversal
+            if (
+              fileId.includes("..") ||
+              fileId.includes("/") ||
+              fileId.includes("\\")
+            ) {
+              loggerWithChild({ email: email }).error(
+                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
+              )
+              continue
+            }
+            const imageBaseDir = path.resolve(
+              process.env.IMAGE_DIR || "downloads/xyne_images_db",
+            )
+
+            const imageDir = path.join(imageBaseDir, fileId)
+            try {
+              await fs.access(imageDir)
+              await fs.rm(imageDir, { recursive: true, force: true })
+              loggerWithChild({ email: email }).info(
+                `Deleted image attachment directory: ${imageDir}`,
+              )
+            } catch (attachmentError) {
+              loggerWithChild({ email: email }).warn(
+                `Image attachment file ${fileId} not found in either directory during chat deletion`,
+              )
+            }
+          } catch (error) {
+            loggerWithChild({ email: email }).error(
+              error,
+              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+
+      // TODO: Implement deletion logic for non-image attachments
+      if (nonImageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+        )
+        // TODO: Add specific deletion logic for different types of non-image attachments
+        // This could include:
+        // - PDFs: Delete from document storage directories
+        // - Documents (DOCX, DOC): Delete from document storage directories
+        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
+        // - Presentations (PPTX, PPT): Delete from document storage directories
+        // - Text files: Delete from text storage directories
+        // - Other file types: Implement based on file type and storage location
+        // For now, we just log that we found them but don't delete them to avoid data loss
+      }
+
       // Delete shared chats associated with this chat
       await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
 
@@ -592,7 +769,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   queryRagSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   // we are not going to do time expansion
   // we are going to do 4 months answer
@@ -988,7 +1168,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const contextSpan = querySpan?.startSpan("build_context")
         const initialContext = buildContext(totalResults, maxSummaryCount)
 
-        const { imageFileNames } = extractImageFileNames(initialContext)
+        const { imageFileNames } = extractImageFileNames(
+          initialContext,
+          totalResults,
+        )
 
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
@@ -1166,7 +1349,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      results?.root?.children,
+    )
 
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
@@ -1236,7 +1422,10 @@ async function* generateAnswerFromGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const message = input
   let userAlpha = alpha
@@ -1353,7 +1542,10 @@ async function* generateAnswerFromGivenContext(
       ?.join("\n"),
   )
 
-  const { imageFileNames } = extractImageFileNames(initialContext)
+  const { imageFileNames } = extractImageFileNames(
+    initialContext,
+    results?.root?.children,
+  )
 
   const finalImageFileNames = imageFileNames || []
 
@@ -1449,7 +1641,10 @@ async function* generateAnswerFromGivenContext(
       }`,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      results?.root?.children,
+    )
 
     searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
     searchVespaSpan?.setAttribute("context", initialContext || "")
@@ -1618,7 +1813,10 @@ async function* generatePointQueryTimeExpansion(
   eventRagSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
   loggerWithChild({ email: email }).debug(
@@ -1950,7 +2148,10 @@ async function* generatePointQueryTimeExpansion(
       startIndex,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      combinedResults?.root?.children,
+    )
 
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
@@ -2073,7 +2274,7 @@ async function* processResultsForMetadata(
     `full_context maxed to ${chunksCount}`,
   )
   const context = buildContext(items, chunksCount)
-  const { imageFileNames } = extractImageFileNames(context)
+  const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
     modelId: defaultBestModel,
@@ -2113,7 +2314,10 @@ async function* generateMetadataQueryAnswer(
   agentPrompt?: string,
   maxIterations = 5,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const { app, entity, startTime, endTime, sortDirection } =
     classification.filters
@@ -2694,7 +2898,10 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
@@ -2818,7 +3025,10 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   attachmentFileIds?: string[],
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
@@ -2971,13 +3181,10 @@ export const MessageApi = async (c: Context) => {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -3033,6 +3240,7 @@ export const MessageApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
 
     let title = ""
+    let attachmentStorageError: Error | null = null
     if (!chatId) {
       loggerWithChild({ email: email }).info(
         `MessageApi before the span.. ${chatId}`,
@@ -3085,6 +3293,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [chat, insertedMsg]
         },
       )
@@ -3119,6 +3346,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -3160,12 +3406,66 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
+
             loggerWithChild({ email: email }).info(
               "User has selected some context with query, answering only based on that given context",
-            )
+            )          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
+
+          if (
+            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
+
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -3208,10 +3508,6 @@ export const MessageApi = async (c: Context) => {
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
-                // Clean up attachment files when stream is closed prematurely
-                if (attachmentFileIds && attachmentFileIds.length > 0) {
-                  await cleanupAttachmentFiles(attachmentFileIds, email)
-                }
                 break
               }
               if (chunk.text) {
@@ -3277,6 +3573,17 @@ export const MessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                imageCitations.push(chunk.imageCitation)
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -3298,11 +3605,6 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
 
-            // Clean up attachment files after response processing is complete
-            if (attachmentFileIds && attachmentFileIds.length > 0) {
-              await cleanupAttachmentFiles(attachmentFileIds, email)
-            }
-
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
               // to one of the citations what do we do?
@@ -3316,6 +3618,7 @@ export const MessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
@@ -3434,6 +3737,7 @@ export const MessageApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
               app: "",
@@ -3604,6 +3908,7 @@ export const MessageApi = async (c: Context) => {
                 | AsyncIterableIterator<
                     ConverseResponse & {
                       citation?: { index: number; item: any }
+                      imageCitation?: ImageCitation
                     }
                   >
                 | undefined = undefined
@@ -3661,6 +3966,7 @@ export const MessageApi = async (c: Context) => {
               thinking = ""
               reasoning = isReasoning && userRequestsReasoning
               citations = []
+              let imageCitations: any[] = []
               citationMap = {}
               let citationValues: Record<number, string> = {}
               if (iterator === undefined) {
@@ -3740,6 +4046,19 @@ export const MessageApi = async (c: Context) => {
                   })
                   citationValues[index] = item
                 }
+                if (chunk.imageCitation) {
+                  // Collect image citation for database persistence
+                  imageCitations.push(chunk.imageCitation)
+                  console.log("Found image citation, sending it")
+                  loggerWithChild({ email: email }).info(
+                    `Found image citation, sending it`,
+                    { citationKey: chunk.imageCitation.citationKey },
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.ImageCitationUpdate,
+                    data: JSON.stringify(chunk.imageCitation),
+                  })
+                }
               }
               understandSpan.setAttribute("citation_count", citations.length)
               understandSpan.setAttribute(
@@ -3816,6 +4135,7 @@ export const MessageApi = async (c: Context) => {
                 queryRouterClassification: JSON.stringify(classification),
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
@@ -4097,6 +4417,27 @@ export const MessageRetryApi = async (c: Context) => {
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
+
+    // Get the original message first to determine if it's a user or assistant message
+    const originalMessage = await getMessageByExternalId(db, messageId)
+    if (!originalMessage) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    const isUserMessage = originalMessage.messageRole === "user"
+
+    // If it's an assistant message, we need to get attachments from the previous user message
+    let attachmentMetadata: AttachmentMetadata[] = []
+    let attachmentFileIds: string[] = []
+
+    if (isUserMessage) {
+      // If retrying a user message, get attachments from that message
+      attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
+      attachmentFileIds = attachmentMetadata.map(
+        (m: AttachmentMetadata) => m.fileId,
+      )
+    }
+
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
@@ -4104,7 +4445,6 @@ export const MessageRetryApi = async (c: Context) => {
     const costArr: number[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
-    const originalMessage = await getMessageByExternalId(db, messageId)
     if (!originalMessage) {
       const errorSpan = fetchMessageSpan.startSpan("message_not_found")
       errorSpan.addEvent("error", { message: "Message not found" })
@@ -4112,7 +4452,6 @@ export const MessageRetryApi = async (c: Context) => {
       fetchMessageSpan.end()
       throw new HTTPException(404, { message: "Message not found" })
     }
-    const isUserMessage = originalMessage.messageRole === "user"
     fetchMessageSpan.setAttribute("isUserMessage", isUserMessage)
     fetchMessageSpan.end()
 
@@ -4139,6 +4478,21 @@ export const MessageRetryApi = async (c: Context) => {
     }
     conversationSpan.setAttribute("conversationLength", conversation.length)
     conversationSpan.end()
+
+    // If retrying an assistant message, get attachments from the previous user message
+    if (!isUserMessage && conversation && conversation.length > 0) {
+      const prevUserMessage = conversation[conversation.length - 1]
+      if (prevUserMessage.messageRole === "user") {
+        attachmentMetadata = await getAttachmentsByMessageId(
+          db,
+          prevUserMessage.externalId,
+          email,
+        )
+        attachmentFileIds = attachmentMetadata.map(
+          (m: AttachmentMetadata) => m.fileId,
+        )
+      }
+    }
 
     // Use the same modelId
     const modelId = originalMessage.modelId as Models
@@ -4212,13 +4566,17 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          if (fileIds && fileIds?.length > 0) {
+          if (
+            (fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
 
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -4241,6 +4599,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              attachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4251,6 +4610,7 @@ export const MessageRetryApi = async (c: Context) => {
             thinking = ""
             reasoning = isReasoning && userRequestsReasoning
             citations = []
+            imageCitations = []
             citationMap = {}
             let count = 0
             let citationValues: Record<number, string> = {}
@@ -4309,6 +4669,17 @@ export const MessageRetryApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                imageCitations.push(chunk.imageCitation)
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -4347,6 +4718,7 @@ export const MessageRetryApi = async (c: Context) => {
                     messageRole: MessageRole.Assistant,
                     email: user.email,
                     sources: citations,
+                    imageCitations: imageCitations,
                     message: processMessage(answer, citationMap, email),
                     thinking,
                     modelId:
@@ -4364,6 +4736,7 @@ export const MessageRetryApi = async (c: Context) => {
                   message: processMessage(answer, citationMap, email),
                   updatedAt: new Date(),
                   sources: citations,
+                  imageCitations: imageCitations,
                   thinking,
                   errorMessage: null,
                 })
