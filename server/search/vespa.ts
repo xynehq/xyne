@@ -1533,7 +1533,6 @@ export const searchVespaAgent = async (
 }
 
 export const GetDocument = async (schema: VespaSchema, docId: string) => {
-  console.log(docId, schema)
   const opts = { namespace: NAMESPACE, docId, schema }
   return vespa
     .getDocument(opts)
