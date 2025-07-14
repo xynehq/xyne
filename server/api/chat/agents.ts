@@ -323,6 +323,14 @@ async function* getToolContinuationIterator(
         }) as any,
     ),
   )
+  const finalImageFileNames = imageFileNames || []
+
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
+  }
+
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -332,7 +340,7 @@ async function* getToolContinuationIterator(
       json: true,
       reasoning: false,
       messages,
-      imageFileNames,
+      imageFileNames: finalImageFileNames,
     },
     toolsPrompt,
     context ?? "",
@@ -453,7 +461,9 @@ async function performSynthesis(
         json: true,
         reasoning: false,
         messages: messagesWithNoErrResponse,
-        imageFileNames: attachmentFileIds?.map((id) => `${id}_0`),
+        imageFileNames: attachmentFileIds?.map(
+          (fileId, index) => `${index}_${fileId}_${0}`,
+        ),
       },
     )
 
@@ -2402,9 +2412,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(email, [
           Apps.DataSource,
         ])
-        
+
         let docIds: string[] = []
-        if (allDataSources && allDataSources.root && allDataSources.root.children) {
+        if (
+          allDataSources &&
+          allDataSources.root &&
+          allDataSources.root.children
+        ) {
           docIds = [
             ...new Set(
               allDataSources.root.children
