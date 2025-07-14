@@ -26,6 +26,7 @@ import {
   deleteItem,
 } from "@/utils/fileUtils"
 import type { KnowledgeBase, KbItem } from "@/types/knowledgeBase"
+import { api } from "@/api"
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -174,7 +175,7 @@ function RouteComponent() {
         
         // Check if the collection exists and has files
         try {
-          const response = await fetch("/api/v1/kb");
+          const response = await api.kb.$get();
           if (response.ok) {
             const data = await response.json();
             const existingCollection = data.find((kb: KnowledgeBase) => 
@@ -218,7 +219,7 @@ function RouteComponent() {
 
     const checkUploadProgress = async () => {
       try {
-        const response = await fetch("/api/v1/kb");
+        const response = await api.kb.$get();
         if (response.ok) {
           const data = await response.json();
           const existingCollection = data.find((kb: KnowledgeBase) => 
@@ -274,7 +275,7 @@ function RouteComponent() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
-        const response = await fetch("/api/v1/kb");
+        const response = await api.kb.$get();
         if (response.ok) {
           const data = await response.json();
           setCollections(data.map((kb: KnowledgeBase) => ({
@@ -349,7 +350,7 @@ function RouteComponent() {
       }
 
       // Fetch the updated KB data from the backend
-      const kbResponse = await fetch(`/api/v1/kb/${kb.id}`);
+      const kbResponse = await api.kb[':id'].$get({ param: { id: kb.id } });
       const updatedKb = await kbResponse.json();
       
       const newCollection: Collection = {
@@ -441,10 +442,10 @@ function RouteComponent() {
       }
 
       // Refresh the collection by fetching updated data from backend
-      const kbResponse = await fetch(`/api/v1/kb/${addingToCollection.id}`);
+      const kbResponse = await api.kb[':id'].$get({ param: { id: addingToCollection.id } });
       const updatedKb = await kbResponse.json();
       
-      const itemsResponse = await fetch(`/api/v1/kb/${addingToCollection.id}/items`);
+      const itemsResponse = await api.kb[':id'].items.$get({ param: { id: addingToCollection.id } });
       const items = await itemsResponse.json();
       
       setCollections(prev => prev.map(c => {
@@ -501,10 +502,10 @@ function RouteComponent() {
       }
 
       // Refresh the collection data from backend
-      const kbResponse = await fetch(`/api/v1/kb/${deletingItem.collection.id}`);
+      const kbResponse = await api.kb[':id'].$get({ param: { id: deletingItem.collection.id } });
       const updatedKb = await kbResponse.json();
       
-      const itemsResponse = await fetch(`/api/v1/kb/${deletingItem.collection.id}/items`);
+      const itemsResponse = await api.kb[':id'].items.$get({ param: { id: deletingItem.collection.id } });
       const items = await itemsResponse.json();
       
       setCollections(prev => prev.map(c => {
@@ -551,10 +552,9 @@ function RouteComponent() {
     if (!editingCollection || !collectionName.trim()) return;
 
     try {
-      const response = await fetch(`/api/v1/kb/${editingCollection.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: collectionName.trim() }),
+      const response = await api.kb[':id'].$put({ 
+        param: { id: editingCollection.id },
+        json: { name: collectionName.trim() }
       });
 
       if (response.ok) {
@@ -666,7 +666,7 @@ function RouteComponent() {
                       if (coll) {
                         coll.isOpen = !coll.isOpen;
                         if (coll.isOpen) {
-                          const response = await fetch(`/api/v1/kb/${collection.id}/items`);
+                          const response = await api.kb[':id'].items.$get({ param: { id: collection.id } });
                           const data = await response.json();
                           coll.items = buildFileTree(data.map((item: KbItem) => ({
                             name: item.name,
@@ -772,7 +772,10 @@ function RouteComponent() {
                                   if (n.isOpen && n.id) {
                                     try {
                                       console.log(`Fetching contents for folder ${n.name} with id ${n.id}`);
-                                      const response = await fetch(`/api/v1/kb/${collection.id}/items?parentId=${n.id}`);
+                                      const response = await api.kb[':id'].items.$get({ 
+                                        param: { id: collection.id },
+                                        query: { parentId: n.id }
+                                      });
                                       if (response.ok) {
                                         const items = await response.json();
                                         console.log(`Fetched ${items.length} items for folder ${n.name}`);

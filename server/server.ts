@@ -138,6 +138,7 @@ import {
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
+
 import {
   CreateKnowledgeBaseApi,
   ListKnowledgeBasesApi,
@@ -912,7 +913,6 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/knowledge-base", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/knowledgeManagement", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/kb-test", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
