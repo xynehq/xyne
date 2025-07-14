@@ -2128,76 +2128,9 @@ export const ChatMessage = ({
                     />
                     <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
                       <MarkdownPreview
+                        source={thinking}
                         wrapperElement={{
                           "data-color-mode": theme,
-                  </div>
-                </>
-              )}
-              {message === "" && (!responseDone || isRetrying) ? (
-                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                  {`${THINKING_PLACEHOLDER}${dots}`}
-                </div>
-              ) : message !== "" ? (
-                <MarkdownPreview
-                  source={processMessage(message)}
-                  wrapperElement={{
-                    "data-color-mode": theme,
-                  }}
-                  style={{
-                    padding: 0,
-                    backgroundColor: "transparent",
-                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                    maxWidth: "100%",
-                    overflowWrap: "break-word",
-                    wordBreak: "break-word",
-                    minWidth: 0,
-                  }}
-                  components={{
-                    a: renderMarkdownLink,
-                    code: Code,
-                    img: ({ src, alt, ...props }: any) => {
-                      if (src?.startsWith("image-citation:")) {
-                        const citationKey = src.replace("image-citation:", "")
-                        return (
-                          <ImageCitationComponent
-                            citationKey={citationKey}
-                            imageCitations={imageCitations}
-                            className="flex justify-center"
-                          />
-                        )
-                      }
-                      // Regular image handling
-                      return <img src={src} alt={alt} {...props} />
-                    },
-                    ...createTableComponents(), // Use extracted table components
-                    h1: ({ node, ...props }) => (
-                      <h1
-                        style={{ fontSize: "1.6em" }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h2: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.2em" }} {...props} />
-                    ),
-                    h3: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1em" }} {...props} />
-                    ),
-                    h4: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.8em" }} {...props} />
-                    ),
-                    h5: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.7em" }} {...props} />
-                    ),
-                    h6: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.68em" }} {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul
-                        style={{
-                          listStyleType: "disc",
-                          paddingLeft: "1.5rem",
-                          marginBottom: "1rem",
                         }}
                         style={{
                           padding: 0,
@@ -2239,6 +2172,20 @@ export const ChatMessage = ({
                     components={{
                       a: renderMarkdownLink,
                       code: Code,
+                      img: ({ src, alt, ...props }: any) => {
+                        if (src?.startsWith("image-citation:")) {
+                          const citationKey = src.replace("image-citation:", "")
+                          return (
+                            <ImageCitationComponent
+                              citationKey={citationKey}
+                              imageCitations={imageCitations}
+                              className="flex justify-center"
+                            />
+                          )
+                        }
+                        // Regular image handling
+                        return <img src={src} alt={alt} {...props} />
+                      },
                       ...createTableComponents(), // Use extracted table components
                       h1: ({ node, ...props }) => (
                         <h1
