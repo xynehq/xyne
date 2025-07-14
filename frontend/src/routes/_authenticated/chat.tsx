@@ -1400,7 +1400,6 @@ const Sources = ({
   ) : null
 }
 
-// Image Citation Component
 interface ImageCitationComponentProps {
   citationKey: string
   imageCitations: ImageCitation[]
@@ -1423,6 +1422,7 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
     )
   }
 
+  // TODO: Fetch image data from API instead of using base64
   const imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
 
   const ImageModal = () => {
@@ -1430,7 +1430,6 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
       setIsModalOpen(false)
     }
 
-    // Handle escape key
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
@@ -2073,7 +2072,6 @@ export const ChatMessage = ({
     text = splitGroupedCitationsWithSpaces(text)
 
     text = text.replace(textToImageCitationIndex, (match, citationKey) => {
-      console.log("Found image citation:", match, "key:", citationKey)
       return `![image-citation:${citationKey}](image-citation:${citationKey})`
     })
 
