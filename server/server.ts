@@ -154,6 +154,15 @@ import {
   vespaGetItemsProxy,
   vespaChatContainerByChannelProxy,
   vespaChatUserByEmailProxy,
+  vespaGetDocumentProxy,
+  vespaGetDocumentsByIdsProxy,
+  vespaGetUsersByNamesAndEmailsProxy,
+  vespaGetDocumentsByThreadIdProxy,
+  vespaGetEmailsByThreadIdsProxy,
+  vespaGetDocumentsWithFieldProxy,
+  vespaGetRandomDocumentProxy,
+  searchVespaProxy,
+  groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
@@ -602,6 +611,31 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
+  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
+  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
+  .post(
+    "/get-users-by-names-and-emails",
+    validateApiKey,
+    vespaGetUsersByNamesAndEmailsProxy,
+  )
+  .post(
+    "/get-documents-by-thread-id",
+    validateApiKey,
+    vespaGetDocumentsByThreadIdProxy,
+  )
+  .post(
+    "/get-emails-by-thread-ids",
+    validateApiKey,
+    vespaGetEmailsByThreadIdsProxy,
+  )
+  .post(
+    "/get-documents-with-field",
+    validateApiKey,
+    vespaGetDocumentsWithFieldProxy,
+  )
+  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
+  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
+  .post("/search-vespa", validateApiKey, searchVespaProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
