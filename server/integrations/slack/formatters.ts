@@ -1,4 +1,3 @@
-// Define types for Slack blocks to avoid import issues
 import type {
   SectionBlock,
   HeaderBlock,
@@ -26,6 +25,7 @@ import {
   MAX_CITATIONS_IN_MODAL,
   MAX_CITATIONS_IN_SHARED,
   MAX_SOURCES_IN_MODAL,
+  FRONTEND_BASE_URL
 } from "./config";
 import {
   type SearchResult,
@@ -37,9 +37,6 @@ import {
   validateAgents,
   validateConversationHistory,
 } from "./types";
-
-// Add frontend URL constant
-const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || "http://localhost:5173";
 
 /**
  * Helper function to parse and format result data
@@ -839,6 +836,8 @@ export const createAgentResponseBlocks = (
  */
 export function cleanAgentResponse(response: string): string {
   return response
+    .replace(/<[^>]*>[\s\S]*?<\/[^>]*>/g, "") // Remove content between matching XML-like tags (e.g., <analysis_and_planning>...</analysis_and_planning>)
+    .replace(/<[^>]*>/g, "") // Remove any standalone tags that might remain
     .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
     .replace(/\[\d+\]/g, "") // Remove citation numbers
     .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
