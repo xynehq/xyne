@@ -55,7 +55,7 @@ import { z } from "zod"
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore
-export type { Citation } from "@/api/chat"
+export type { Citation, ImageCitation } from "@/api/chat"
 export type {
   SelectPublicMessage,
   PublicUser,
@@ -341,6 +341,7 @@ export enum ChatSSEvents {
   End = "e",
   ChatTitleUpdate = "ct",
   CitationsUpdate = "cu",
+  ImageCitationUpdate = "icu",
   Reasoning = "rz",
   Error = "er",
 }
