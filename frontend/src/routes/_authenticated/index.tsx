@@ -10,6 +10,7 @@ import {
   AutocompleteResultsSchema,
   Autocomplete,
   SelectPublicAgent,
+  AttachmentMetadata,
 } from "shared/types"
 import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
@@ -170,10 +171,10 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    fileIds?: string[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -183,7 +184,7 @@ const Index = () => {
         agentId?: string
         toolsList?: ToolsListItem[]
         agentic?: boolean
-        fileIds?: string[]
+        metadata?: AttachmentMetadata[]
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -203,8 +204,8 @@ const Index = () => {
         searchParams.agentic = true
       }
 
-      if (fileIds && fileIds.length > 0) {
-        searchParams.fileIds = fileIds
+      if (metadata && metadata.length > 0) {
+        searchParams.metadata = metadata
       }
 
       // Use toolsList as array instead of JSON string

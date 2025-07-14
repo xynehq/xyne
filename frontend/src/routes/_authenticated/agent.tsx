@@ -26,6 +26,7 @@ import {
   Citation,
   SelectPublicAgent,
   DriveEntity,
+  AttachmentMetadata,
 } from "shared/types"
 import {
   ChevronDown,
@@ -66,6 +67,7 @@ import { ChatBox } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
+import { AttachmentGallery } from "@/components/AttachmentGallery"
 
 type CurrentResp = {
   resp: string
@@ -963,7 +965,10 @@ function AgentComponent() {
     }
   }, [isStreaming])
 
-  const handleSend = async (messageToSend: string, fileIds?: string[]) => {
+  const handleSend = async (
+    messageToSend: string,
+    metadata?: AttachmentMetadata[],
+  ) => {
     if (!messageToSend || isStreaming) return
 
     setUserHasScrolled(false)
@@ -1031,8 +1036,8 @@ function AgentComponent() {
     }
     url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
 
-    if (fileIds && fileIds.length > 0) {
-      url.searchParams.append("attachmentFileIds", fileIds.join(","))
+    if (metadata && metadata.length > 0) {
+      url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1095,6 +1100,56 @@ function AgentComponent() {
           }
         }
         if (!stopMsg) setStopMsg(true)
+      },
+    )
+
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.AttachmentUpdate,
+      (event) => {
+        try {
+          const { messageId, attachments } = JSON.parse(event.data)
+
+          // Validate required fields
+          if (!messageId) {
+            console.error(
+              "AttachmentUpdate: Missing messageId in event data",
+              event.data,
+            )
+            return
+          }
+
+          if (!attachments || !Array.isArray(attachments)) {
+            console.error(
+              "AttachmentUpdate: Invalid attachments data",
+              event.data,
+            )
+            return
+          }
+
+          // Store attachment metadata for the specific message using messageId
+          setMessages((prevMessages) => {
+            const messageIndex = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (messageIndex === -1) {
+              console.warn(
+                `AttachmentUpdate: Message with ID ${messageId} not found`,
+              )
+              return prevMessages
+            }
+
+            return prevMessages.map((msg, index) =>
+              index === messageIndex ? { ...msg, attachments } : msg,
+            )
+          })
+        } catch (error) {
+          console.error("AttachmentUpdate: Failed to parse event data", {
+            error,
+            eventData: event.data,
+          })
+          // Don't crash the application, just log the error
+        }
       },
     )
 
@@ -1224,8 +1279,9 @@ function AgentComponent() {
     if (assistantMessageIndex > 0) {
       const userMessageToResend = messages[assistantMessageIndex - 1]
       if (userMessageToResend && userMessageToResend.messageRole === "user") {
+        const userMessageAttachments = userMessageToResend.attachments
         setMessages((prev) => prev.slice(0, assistantMessageIndex - 1))
-        await handleSend(userMessageToResend.message)
+        await handleSend(userMessageToResend.message, userMessageAttachments)
       } else {
         toast({
           title: "Retry Error",
@@ -2012,6 +2068,7 @@ function AgentComponent() {
                   messageId={message.externalId}
                   handleRetry={handleRetry}
                   citationMap={message.citationMap}
+                  attachments={message.attachments || []}
                   dots={
                     isStreaming &&
                     index === messages.length - 1 &&
@@ -2036,6 +2093,7 @@ function AgentComponent() {
                   dots={dots}
                   messageId={currentResp.messageId}
                   citationMap={currentResp.citationMap}
+                  attachments={[]}
                   isStreaming={isStreaming}
                 />
               )}
@@ -2216,6 +2274,7 @@ const AgentChatMessage = ({
   dots = "",
   citationMap,
   isStreaming = false,
+  attachments = [],
 }: {
   message: string
   thinking?: string
@@ -2227,6 +2286,7 @@ const AgentChatMessage = ({
   handleRetry: (messageId: string) => void
   citationMap?: Record<number, number>
   isStreaming?: boolean
+  attachments?: AttachmentMetadata[]
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
@@ -2260,198 +2320,194 @@ const AgentChatMessage = ({
   }
 
   return (
-    <div
-      className={`rounded-[16px] max-w-full ${
-        /* Added max-w-full for consistency */
-        isUser
-          ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words"
-          : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full" /* Added w-full for assistant */
-      }`}
-    >
-      {isUser ? (
-        <div
-          className="break-words overflow-wrap-anywhere"
-          dangerouslySetInnerHTML={{ __html: message }}
-        />
-      ) : (
-        <div
-          className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
-        >
-          <div className="flex flex-row w-full">
-            {" "}
-            {/* Added w-full */}
-            <img
-              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={AssistantLogo}
-              alt="Agent"
-            />
-            <div className="mt-[4px] markdown-content w-full">
-              {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+    <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
+      {/* Render attachments above the message box for user messages */}
+      {isUser && attachments && attachments.length > 0 && (
+        <div className="w-full max-w-full">
+          <AttachmentGallery attachments={attachments} />
+        </div>
+      )}
+
+      <div
+        className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
+      >
+        {isUser ? (
+          <div
+            className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
+            dangerouslySetInnerHTML={{ __html: message }}
+          />
+        ) : (
+          <div
+            className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
+          >
+            <div className="flex flex-row w-full">
+              {" "}
+              {/* Added w-full */}
+              <img
+                className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
+                src={AssistantLogo}
+                alt="Agent"
+              />
+              <div className="mt-[4px] markdown-content w-full">
+                {thinking && (
+                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+                    <MarkdownPreview
+                      source={processMessage(thinking)}
+                      wrapperElement={{
+                        "data-color-mode": theme,
+                      }}
+                      style={{
+                        padding: 0,
+                        backgroundColor: "transparent",
+                        color: theme === "dark" ? "#A0AEC0" : "#627384",
+                        fontSize: "15px",
+                        maxWidth: "100%",
+                        overflowWrap: "break-word",
+                      }}
+                      components={{
+                        a: renderMarkdownLink,
+                      }}
+                    />
+                  </div>
+                )}
+                {message === "" && !thinking && isStreaming ? (
+                  <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                    {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  </div>
+                ) : (
                   <MarkdownPreview
-                    source={processMessage(thinking)}
+                    source={processMessage(message)}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === "dark" ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                       fontSize: "15px",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
-                    }}
-                  />
-                </div>
-              )}
-              {message === "" && !thinking && isStreaming ? (
-                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
-                </div>
-              ) : (
-                <MarkdownPreview
-                  source={processMessage(message)}
-                  wrapperElement={{
-                    "data-color-mode": theme,
-                  }}
-                  style={{
-                    padding: 0,
-                    backgroundColor: "transparent",
-                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                    fontSize: "15px",
-                    maxWidth: "100%",
-                    overflowWrap: "break-word",
-                  }}
-                  components={{
-                    a: renderMarkdownLink,
-                    table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-full my-2">
-                        <table
+                      table: ({ node, ...props }) => (
+                        <div className="overflow-x-auto w-full my-2">
+                          <table
+                            style={{
+                              borderCollapse: "collapse",
+                              borderStyle: "hidden",
+                              tableLayout: "auto",
+                              width: "100%",
+                            }}
+                            className="min-w-full dark:bg-slate-800"
+                            {...props}
+                          />
+                        </div>
+                      ),
+                      th: ({ node, ...props }) => (
+                        <th
                           style={{
-                            borderCollapse: "collapse",
-                            borderStyle: "hidden",
-                            tableLayout: "auto",
-                            width: "100%",
+                            border: "none",
+                            padding: "4px 8px",
+                            textAlign: "left",
+                            overflowWrap: "break-word",
                           }}
-                          className="min-w-full dark:bg-slate-800"
+                          className="dark:text-gray-200"
                           {...props}
                         />
-                      </div>
-                    ),
-                    th: ({ node, ...props }) => (
-                      <th
-                        style={{
-                          border: "none",
-                          padding: "4px 8px",
-                          textAlign: "left",
-                          overflowWrap: "break-word",
-                        }}
-                        className="dark:text-gray-200"
-                        {...props}
-                      />
-                    ),
-                    td: ({ node, ...props }) => (
-                      <td
-                        style={{
-                          border: "none",
-                          borderTop: "1px solid #e5e7eb",
-                          padding: "4px 8px",
-                          overflowWrap: "break-word",
-                        }}
-                        className="dark:border-gray-700 dark:text-gray-300"
-                        {...props}
-                      />
-                    ),
-                    tr: ({ node, ...props }) => (
-                      <tr
-                        style={{ backgroundColor: "#ffffff", border: "none" }}
-                        className="dark:bg-slate-800"
-                        {...props}
-                      />
-                    ),
-                    h1: ({ node, ...props }) => (
-                      <h1
-                        style={{
-                          fontSize: "1.6em",
-                          fontWeight: "600",
-                          margin: "0.67em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h2: ({ node, ...props }) => (
-                      <h2
-                        style={{
-                          fontSize: "1.3em",
-                          fontWeight: "600",
-                          margin: "0.83em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h3: ({ node, ...props }) => (
-                      <h3
-                        style={{
-                          fontSize: "1.1em",
-                          fontWeight: "600",
-                          margin: "1em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                  }}
-                />
-              )}
-            </div>
-          </div>
-          {!isStreaming && messageId && (
-            <div className="flex flex-col">
-              <div className="flex ml-[52px] mt-[12px] items-center">
-                <Copy
-                  size={16}
-                  stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
-                  className={`cursor-pointer`}
-                  onMouseDown={() => setIsCopied(true)}
-                  onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}
-                  onClick={() => {
-                    navigator.clipboard.writeText(rawTextForCopy(message))
-                    toast({
-                      description: "Copied to clipboard!",
-                      duration: 1500,
-                    })
-                  }}
-                />
-                <img
-                  className={`ml-[18px] ${isStreaming ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  src={RetryAsset}
-                  onClick={() => !isStreaming && handleRetry(messageId!)}
-                  alt="Retry"
-                />
+                      ),
+                      td: ({ node, ...props }) => (
+                        <td
+                          style={{
+                            border: "none",
+                            borderTop: "1px solid #e5e7eb",
+                            padding: "4px 8px",
+                            overflowWrap: "break-word",
+                          }}
+                          className="dark:border-gray-700 dark:text-gray-300"
+                          {...props}
+                        />
+                      ),
+                      tr: ({ node, ...props }) => (
+                        <tr
+                          style={{ backgroundColor: "#ffffff", border: "none" }}
+                          className="dark:bg-slate-800"
+                          {...props}
+                        />
+                      ),
+                      h1: ({ node, ...props }) => (
+                        <h1
+                          style={{
+                            fontSize: "1.6em",
+                            fontWeight: "600",
+                            margin: "0.67em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h2: ({ node, ...props }) => (
+                        <h2
+                          style={{
+                            fontSize: "1.3em",
+                            fontWeight: "600",
+                            margin: "0.83em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h3: ({ node, ...props }) => (
+                        <h3
+                          style={{
+                            fontSize: "1.1em",
+                            fontWeight: "600",
+                            margin: "1em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                    }}
+                  />
+                )}
               </div>
+            </div>
+            {!isStreaming && messageId && (
+              <div className="flex flex-col">
+                <div className="flex ml-[52px] mt-[12px] items-center">
+                  <Copy
+                    size={16}
+                    stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
+                    className={`cursor-pointer`}
+                    onMouseDown={() => setIsCopied(true)}
+                    onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(rawTextForCopy(message))
+                      toast({
+                        description: "Copied to clipboard!",
+                        duration: 1500,
+                      })
+                    }}
+                  />
+                  <img
+                    className={`ml-[18px] ${isStreaming ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    src={RetryAsset}
+                    onClick={() => !isStreaming && handleRetry(messageId!)}
+                    alt="Retry"
+                  />
+                </div>
 
-              {citations && citations.length > 0 && (
-                <div className="flex flex-row ml-[52px]">
-                  <TooltipProvider>
-                    <ul className={`flex flex-row mt-[24px]`}>
-                      {citations
-                        .slice(0, 3)
-                        .map((citation: Citation, index: number) => (
-                          <li
-                            key={index}
-                            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
-                          >
-                            <a
-                              href={citation.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title={citation.title}
-                              className="block hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors duration-150"
+                {citations && citations.length > 0 && (
+                  <div className="flex flex-row ml-[52px]">
+                    <TooltipProvider>
+                      <ul className={`flex flex-row mt-[24px]`}>
+                        {citations
+                          .slice(0, 3)
+                          .map((citation: Citation, index: number) => (
+                            <li
+                              key={index}
+                              className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
                             >
                               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                                 <div className="flex flex-col w-full">
@@ -2478,17 +2534,17 @@ const AgentChatMessage = ({
                                   </div>
                                 </div>
                               </div>
-                            </a>
-                          </li>
-                        ))}
-                    </ul>
-                  </TooltipProvider>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+                            </li>
+                          ))}
+                      </ul>
+                    </TooltipProvider>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

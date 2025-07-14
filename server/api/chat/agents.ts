@@ -135,14 +135,15 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
-
+import type { AttachmentMetadata } from "@/shared/types"
+import { storeAttachmentMetadata } from "@/db/attachment"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
-import { cleanupAttachmentFiles } from "@/api/files"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
@@ -546,15 +547,13 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
+    let attachmentStorageError: Error | null = null
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
@@ -646,6 +645,23 @@ export const MessageWithToolsApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [chat, insertedMsg]
         },
       )
@@ -680,6 +696,23 @@ export const MessageWithToolsApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -736,6 +769,31 @@ export const MessageWithToolsApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
 
           let messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
@@ -2005,11 +2063,6 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
 
-          // Clean up attachment files after response is complete
-          if (attachmentFileIds && attachmentFileIds.length > 0) {
-            await cleanupAttachmentFiles(attachmentFileIds, email)
-          }
-
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -2071,10 +2124,6 @@ export const MessageWithToolsApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
-        // Clean up attachment files in error callback
-        if (attachmentFileIds && attachmentFileIds.length > 0) {
-          await cleanupAttachmentFiles(attachmentFileIds, email)
-        }
 
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
@@ -2543,13 +2592,11 @@ export const AgentMessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
+    let attachmentStorageError: Error | null = null
     let {
       message,
       chatId,
@@ -2655,6 +2702,23 @@ export const AgentMessageApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [chat, insertedMsg]
         },
       )
@@ -2689,10 +2753,29 @@ export const AgentMessageApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      Logger.info("Existing conversation, fetched previous messages")
+      loggerWithChild({ email: sub }).info(
+        "Existing conversation, fetched previous messages",
+      )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
       chatCreationSpan.end()
@@ -2724,6 +2807,31 @@ export const AgentMessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
 
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
@@ -3382,11 +3490,6 @@ export const AgentMessageApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
-          // Clean up attachment files after response is complete
-          if (attachmentFileIds && attachmentFileIds.length > 0) {
-            await cleanupAttachmentFiles(attachmentFileIds, email)
-          }
-
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -3446,12 +3549,6 @@ export const AgentMessageApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
-
-        // Clean up attachment files in error callback
-        if (attachmentFileIds && attachmentFileIds.length > 0) {
-          await cleanupAttachmentFiles(attachmentFileIds, email)
-        }
-
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
