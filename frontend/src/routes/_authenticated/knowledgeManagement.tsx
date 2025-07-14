@@ -131,7 +131,6 @@ function RouteComponent() {
 
     // If upload state has been active for more than 10 minutes, clear it
     const timeout = setTimeout(() => {
-      console.log('Upload state has been active too long, clearing it')
       setIsUploading(false)
       setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
       setUploadingCollectionName("")
@@ -171,7 +170,7 @@ function RouteComponent() {
       const savedState = loadUploadState()
       if (savedState.isUploading && savedState.uploadingCollectionName) {
         // If there's an ongoing upload, check if it's actually complete
-        console.log('Detected ongoing upload from previous session:', savedState)
+
         
         // Check if the collection exists and has files
         try {
@@ -184,7 +183,6 @@ function RouteComponent() {
             
             if (existingCollection && existingCollection.totalCount >= savedState.batchProgress.total) {
               // Upload appears to be complete, clear the state
-              console.log('Upload appears to be complete, clearing state')
               setIsUploading(false)
               setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
               setUploadingCollectionName("")
@@ -228,7 +226,6 @@ function RouteComponent() {
           
           if (existingCollection && existingCollection.totalCount >= batchProgress.total) {
             // Upload is complete, clear the state
-            console.log('Upload completed, clearing state')
             setIsUploading(false)
             setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
             setUploadingCollectionName("")
@@ -343,9 +340,7 @@ function RouteComponent() {
       for (let i = 0; i < batches.length; i++) {
         setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
         const batchFiles = batches[i].map(f => f.file);
-        console.log(`Uploading batch ${i + 1}/${batches.length} with ${batchFiles.length} files to KB ${kb.id}`);
         const uploadResult = await uploadFileBatch(batchFiles, kb.id);
-        console.log('Upload batch result:', uploadResult);
         setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
@@ -435,9 +430,7 @@ function RouteComponent() {
       for (let i = 0; i < batches.length; i++) {
         setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
         const batchFiles = batches[i].map(f => f.file);
-        console.log(`Uploading batch ${i + 1}/${batches.length} with ${batchFiles.length} files to KB ${addingToCollection.id}`);
         const uploadResult = await uploadFileBatch(batchFiles, addingToCollection.id);
-        console.log('Upload batch result:', uploadResult);
         setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
@@ -771,14 +764,12 @@ function RouteComponent() {
                                   // If opening the folder and it has an ID, fetch its contents
                                   if (n.isOpen && n.id) {
                                     try {
-                                      console.log(`Fetching contents for folder ${n.name} with id ${n.id}`);
                                       const response = await api.kb[':id'].items.$get({ 
                                         param: { id: collection.id },
                                         query: { parentId: n.id }
                                       });
                                       if (response.ok) {
                                         const items = await response.json();
-                                        console.log(`Fetched ${items.length} items for folder ${n.name}`);
                                         
                                         // Build the children structure
                                         n.children = items.map((item: KbItem) => ({
