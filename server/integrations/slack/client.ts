@@ -1126,7 +1126,14 @@ export const processSlackEvent = async (event: any) => {
     const { user, text, channel, ts, thread_ts } = event;
 
     try {
-      await webClient.conversations.join({ channel });
+      try {
+        const channelInfo = await webClient.conversations.info({ channel });
+        if (channelInfo.ok && channelInfo.channel?.is_channel && !channelInfo.channel?.is_private) {
+          await webClient.conversations.join({ channel });
+        }
+      } catch (joinError: any) {
+        Logger.debug(`Could not join channel ${channel}: ${joinError.message}`);
+      }
 
       if (!user) {
         Logger.warn("No user ID found in app_mention event");
