@@ -210,6 +210,7 @@ function AgentComponent() {
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
   const [isPublic, setIsPublic] = useState(false)
+  const [isRagOn, setIsRagOn] = useState(true)
 
   // Prompt generation states
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
@@ -270,6 +271,7 @@ function AgentComponent() {
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
   const [listSearchQuery, setListSearchQuery] = useState("")
+  const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<
     "all" | "shared-to-me" | "made-by-me"
   >("all")
@@ -466,6 +468,9 @@ function AgentComponent() {
   useEffect(() => {
     if (viewMode === "list") {
       fetchAllAgentData()
+    } else {
+      // When switching to create/edit view, also fetch all agents for the dropdown
+      fetchAgents("all")
     }
   }, [viewMode])
 
@@ -689,6 +694,7 @@ function AgentComponent() {
     setAgentDescription("")
     setAgentPrompt("")
     setIsPublic(false)
+    setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
     setEditingAgent(null)
@@ -721,8 +727,25 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
+    if (!isRagOn) {
+      return dynamicDataSources
+    }
     return [...availableIntegrationsList, ...dynamicDataSources]
-  }, [fetchedDataSources])
+  }, [fetchedDataSources, isRagOn])
+
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
+      const currentAgentIsRagOn =
+        editingAgent.isRagOn === false ? false : true
+      setIsRagOn(currentAgentIsRagOn)
+      setTestAgentIsRagOn(currentAgentIsRagOn)
+      setAgentName(editingAgent.name)
+      setAgentDescription(editingAgent.description || "")
+      setAgentPrompt(editingAgent.prompt || "")
+      setIsPublic(editingAgent.isPublic || false)
+      setSelectedModel(editingAgent.model)
+    }
+  }, [editingAgent, viewMode])
 
   useEffect(() => {
     if (
@@ -730,19 +753,17 @@ function AgentComponent() {
       (viewMode === "create" || viewMode === "edit") &&
       allAvailableIntegrations.length > 0
     ) {
-      setAgentName(editingAgent.name)
-      setAgentDescription(editingAgent.description || "")
-      setAgentPrompt(editingAgent.prompt || "")
-      setIsPublic(editingAgent.isPublic || false)
-      setSelectedModel(editingAgent.model)
-
       const currentIntegrations: Record<string, boolean> = {}
       allAvailableIntegrations.forEach((int) => {
         currentIntegrations[int.id] =
           editingAgent.appIntegrations?.includes(int.id) || false
       })
       setSelectedIntegrations(currentIntegrations)
+    }
+  }, [editingAgent, viewMode, allAvailableIntegrations])
 
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
       // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
@@ -769,7 +790,7 @@ function AgentComponent() {
         setSelectedUsers([]) // Clear users for public agents
       }
     }
-  }, [editingAgent, viewMode, allAvailableIntegrations, users])
+  }, [editingAgent, viewMode, users])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
     setConfirmModalTitle("Delete Agent")
@@ -825,6 +846,7 @@ function AgentComponent() {
       prompt: agentPrompt,
       model: selectedModel,
       isPublic: isPublic,
+      isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
@@ -908,6 +930,23 @@ function AgentComponent() {
       (integration) => selectedIntegrations[integration.id],
     )
   }, [selectedIntegrations, allAvailableIntegrations])
+
+  useEffect(() => {
+    if (!isRagOn) {
+      setSelectedIntegrations((prev) => {
+        const newSelections = { ...prev }
+        availableIntegrationsList.forEach((int) => {
+          newSelections[int.id] = false
+        })
+        return newSelections
+      })
+    }
+    // Also update the test agent's RAG status when the form's RAG changes,
+    // but only if we are testing the current form config.
+    if (selectedChatAgentExternalId === null) {
+      setTestAgentIsRagOn(isRagOn)
+    }
+  }, [isRagOn, selectedChatAgentExternalId])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -1706,6 +1745,46 @@ function AgentComponent() {
                   </div>
                 </div>
 
+                <div className="w-full">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    RAG
+                  </Label>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOn"
+                        name="rag"
+                        checked={isRagOn}
+                        onChange={() => setIsRagOn(true)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOn"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        On
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOff"
+                        name="rag"
+                        checked={!isRagOn}
+                        onChange={() => setIsRagOn(false)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOff"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        Off
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     App Integrations
@@ -1942,7 +2021,10 @@ function AgentComponent() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuItem
-                      onSelect={() => setSelectedChatAgentExternalId(null)}
+                      onSelect={() => {
+                        setSelectedChatAgentExternalId(null)
+                        setTestAgentIsRagOn(isRagOn) // When switching to form, use form's RAG
+                      }}
                     >
                       Test Current Form Config
                     </DropdownMenuItem>
@@ -1953,9 +2035,10 @@ function AgentComponent() {
                     {allAgentsList.map((agent) => (
                       <DropdownMenuItem
                         key={agent.externalId}
-                        onSelect={() =>
+                        onSelect={() => {
                           setSelectedChatAgentExternalId(agent.externalId)
-                        }
+                          setTestAgentIsRagOn(agent.isRagOn) // Use selected agent's RAG
+                        }}
                       >
                         {agent.name}
                       </DropdownMenuItem>
@@ -2030,6 +2113,7 @@ function AgentComponent() {
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
                 setIsReasoningActive={setIsReasoningActive}
+                overrideIsRagOn={testAgentIsRagOn}
               />
             </div>
           </div>

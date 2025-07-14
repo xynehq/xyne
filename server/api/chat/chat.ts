@@ -155,7 +155,12 @@ import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
 import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
-import { ragPipelineConfig, RagPipelineStages, type Citation } from "./types"
+import {
+  ragPipelineConfig,
+  RagPipelineStages,
+  type Citation,
+  type ImageCitation,
+} from "./types"
 import { activeStreams } from "./stream"
 import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
 import {
@@ -167,6 +172,8 @@ import {
   extractThreadIdsFromResults,
   mergeThreadResults,
   expandEmailThreadsInResults,
+  getCitationToImage,
+  mimeTypeMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -238,7 +245,7 @@ export const GetChatTraceApi = async (c: Context) => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -258,33 +265,93 @@ export const processMessage = (
 
 // the Set is passed by reference so that singular object will get updated
 // but need to be kept in mind
-const checkAndYieldCitations = function* (
+const checkAndYieldCitations = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
   email: string,
+  yieldedImageCitations: Set<number>,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
-  while ((match = textToCitationIndex.exec(text)) !== null) {
-    const citationIndex = parseInt(match[1], 10)
-    if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex - baseIndex]
-      if (item) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: searchToCitation(item as VespaSearchResults),
-          },
+  let imgMatch
+  while (
+    (match = textToCitationIndex.exec(text)) !== null ||
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+  ) {
+    if (match) {
+      const citationIndex = parseInt(match[1], 10)
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - baseIndex]
+        if (item) {
+          yield {
+            citation: {
+              index: citationIndex,
+              item: searchToCitation(item as VespaSearchResults),
+            },
+          }
+          yieldedCitations.add(citationIndex)
+        } else {
+          loggerWithChild({ email: email }).error(
+            "Found a citation index but could not find it in the search result ",
+            citationIndex,
+            results.length,
+          )
         }
-        yieldedCitations.add(citationIndex)
-      } else {
-        loggerWithChild({ email: email }).error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
-        )
+      }
+    } else if (imgMatch) {
+      const parts = imgMatch[1].split("_")
+      if (parts.length >= 2) {
+        const docIndex = parseInt(parts[0], 10)
+        const imageIndex = parseInt(parts[1], 10)
+        const citationIndex = docIndex + baseIndex
+        if (!yieldedImageCitations.has(citationIndex)) {
+          const item = results[docIndex]
+          if (item) {
+            try {
+              const imageData = await getCitationToImage(
+                imgMatch[1],
+                item,
+                email,
+              )
+              if (imageData) {
+                if (!imageData.imagePath || !imageData.imageBuffer) {
+                  loggerWithChild({ email: email }).error(
+                    "Invalid imageData structure returned",
+                    { citationKey: imgMatch[1], imageData },
+                  )
+                  continue
+                }
+                yield {
+                  imageCitation: {
+                    citationKey: imgMatch[1],
+                    imagePath: imageData.imagePath,
+                    imageData: imageData.imageBuffer.toString("base64"),
+                    ...(imageData.extension
+                      ? { mimeType: mimeTypeMap[imageData.extension] }
+                      : {}),
+                    item: searchToCitation(item as VespaSearchResults),
+                  },
+                }
+              }
+            } catch (error) {
+              loggerWithChild({ email: email }).error(
+                error,
+                "Error processing image citation",
+                { citationKey: imgMatch[1], error: getErrorMessage(error) },
+              )
+            }
+            yieldedImageCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              "Found a citation index but could not find it in the search result ",
+              citationIndex,
+              results.length,
+            )
+            continue
+          }
+        }
       }
     }
   }
@@ -303,7 +370,10 @@ async function* processIterator(
   userRequestsReasoning?: boolean,
   email?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   let buffer = ""
   let currentAnswer = ""
@@ -311,6 +381,7 @@ async function* processIterator(
   let thinking = ""
   let reasoning = config.isReasoning && userRequestsReasoning
   let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
 
@@ -325,6 +396,7 @@ async function* processIterator(
             results,
             previousResultsLength,
             email!,
+            yieldedImageCitations,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -349,6 +421,7 @@ async function* processIterator(
               results,
               previousResultsLength,
               email!,
+              yieldedImageCitations,
             )
             yield { text: token, reasoning }
           }
@@ -385,6 +458,7 @@ async function* processIterator(
               results,
               previousResultsLength,
               email!,
+              yieldedImageCitations,
             )
             currentAnswer = parsed.answer
           }
@@ -689,7 +763,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   queryRagSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   // we are not going to do time expansion
   // we are going to do 4 months answer
@@ -1072,7 +1149,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const contextSpan = querySpan?.startSpan("build_context")
         const initialContext = buildContext(totalResults, maxSummaryCount)
 
-        const { imageFileNames } = extractImageFileNames(initialContext)
+        const { imageFileNames } = extractImageFileNames(
+          initialContext,
+          totalResults,
+        )
 
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
@@ -1248,7 +1328,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      results?.root?.children,
+    )
 
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
@@ -1318,7 +1401,10 @@ async function* generateAnswerFromGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const message = input
   let userAlpha = alpha
@@ -1438,7 +1524,10 @@ async function* generateAnswerFromGivenContext(
       ?.join("\n"),
   )
 
-  const { imageFileNames } = extractImageFileNames(initialContext)
+  const { imageFileNames } = extractImageFileNames(
+    initialContext,
+    results?.root?.children,
+  )
 
   const finalImageFileNames = imageFileNames || []
 
@@ -1537,7 +1626,10 @@ async function* generateAnswerFromGivenContext(
       }`,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      results?.root?.children,
+    )
 
     searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
     searchVespaSpan?.setAttribute("context", initialContext || "")
@@ -1711,7 +1803,10 @@ async function* generatePointQueryTimeExpansion(
   eventRagSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
   loggerWithChild({ email: email }).debug(
@@ -2043,7 +2138,10 @@ async function* generatePointQueryTimeExpansion(
       startIndex,
     )
 
-    const { imageFileNames } = extractImageFileNames(initialContext)
+    const { imageFileNames } = extractImageFileNames(
+      initialContext,
+      combinedResults?.root?.children,
+    )
 
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
@@ -2166,7 +2264,7 @@ async function* processResultsForMetadata(
     `full_context maxed to ${chunksCount}`,
   )
   const context = buildContext(items, chunksCount)
-  const { imageFileNames } = extractImageFileNames(context)
+  const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
     modelId: defaultBestModel,
@@ -2206,7 +2304,10 @@ async function* generateMetadataQueryAnswer(
   agentPrompt?: string,
   maxIterations = 5,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const { app, entity, startTime, endTime, sortDirection } =
     classification.filters
@@ -2787,7 +2888,10 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
@@ -2911,7 +3015,10 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   attachmentFileIds?: string[],
   agentPrompt?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
@@ -3323,6 +3430,7 @@ export const MessageApi = async (c: Context) => {
             )
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -3430,6 +3538,17 @@ export const MessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                imageCitations.push(chunk.imageCitation)
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -3464,6 +3583,7 @@ export const MessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
@@ -3582,6 +3702,7 @@ export const MessageApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
               app: "",
@@ -3752,6 +3873,7 @@ export const MessageApi = async (c: Context) => {
                 | AsyncIterableIterator<
                     ConverseResponse & {
                       citation?: { index: number; item: any }
+                      imageCitation?: ImageCitation
                     }
                   >
                 | undefined = undefined
@@ -3809,6 +3931,7 @@ export const MessageApi = async (c: Context) => {
               thinking = ""
               reasoning = isReasoning && userRequestsReasoning
               citations = []
+              let imageCitations: any[] = []
               citationMap = {}
               let citationValues: Record<number, string> = {}
               if (iterator === undefined) {
@@ -3888,6 +4011,19 @@ export const MessageApi = async (c: Context) => {
                   })
                   citationValues[index] = item
                 }
+                if (chunk.imageCitation) {
+                  // Collect image citation for database persistence
+                  imageCitations.push(chunk.imageCitation)
+                  console.log("Found image citation, sending it")
+                  loggerWithChild({ email: email }).info(
+                    `Found image citation, sending it`,
+                    { citationKey: chunk.imageCitation.citationKey },
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.ImageCitationUpdate,
+                    data: JSON.stringify(chunk.imageCitation),
+                  })
+                }
               }
               understandSpan.setAttribute("citation_count", citations.length)
               understandSpan.setAttribute(
@@ -3964,6 +4100,7 @@ export const MessageApi = async (c: Context) => {
                 queryRouterClassification: JSON.stringify(classification),
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
@@ -4404,6 +4541,7 @@ export const MessageRetryApi = async (c: Context) => {
 
             let answer = ""
             let citations = []
+            let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -4437,6 +4575,7 @@ export const MessageRetryApi = async (c: Context) => {
             thinking = ""
             reasoning = isReasoning && userRequestsReasoning
             citations = []
+            imageCitations = []
             citationMap = {}
             let count = 0
             let citationValues: Record<number, string> = {}
@@ -4495,6 +4634,17 @@ export const MessageRetryApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                imageCitations.push(chunk.imageCitation)
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -4533,6 +4683,7 @@ export const MessageRetryApi = async (c: Context) => {
                     messageRole: MessageRole.Assistant,
                     email: user.email,
                     sources: citations,
+                    imageCitations: imageCitations,
                     message: processMessage(answer, citationMap, email),
                     thinking,
                     modelId:
@@ -4550,6 +4701,7 @@ export const MessageRetryApi = async (c: Context) => {
                   message: processMessage(answer, citationMap, email),
                   updatedAt: new Date(),
                   sources: citations,
+                  imageCitations: imageCitations,
                   thinking,
                   errorMessage: null,
                 })

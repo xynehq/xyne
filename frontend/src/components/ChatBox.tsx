@@ -139,6 +139,7 @@ interface ChatBoxProps {
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
   user: PublicUser // Added user prop
+  overrideIsRagOn?: boolean
 }
 
 const availableSources: SourceItem[] = [
@@ -262,6 +263,7 @@ export const ChatBox = ({
   user, // Destructure user prop
   setIsAgenticMode,
   isAgenticMode = false,
+  overrideIsRagOn,
 }: ChatBoxProps) => {
   // Interface for fetched tools
   interface FetchedTool {
@@ -324,6 +326,9 @@ export const ChatBox = ({
   const [showSourcesButton, _] = useState(false) // Added this line
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
   const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
     new Set(),
@@ -346,6 +351,8 @@ export const ChatBox = ({
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+  const showAdvancedOptions =
+    overrideIsRagOn ?? (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
 
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -561,22 +568,27 @@ export const ChatBox = ({
             )
             if (currentAgent) {
               setDisplayAgentName(currentAgent.name)
+              setSelectedAgent(currentAgent)
             } else {
               console.error(
                 `Agent with ID ${persistedAgentId} not found for display.`,
               )
               setDisplayAgentName(null)
+              setSelectedAgent(null)
             }
           } else {
             console.error("Failed to load agents for display.")
             setDisplayAgentName(null)
+            setSelectedAgent(null)
           }
         } catch (error) {
           console.error("Error fetching agent details for display:", error)
           setDisplayAgentName(null)
+          setSelectedAgent(null)
         }
       } else {
         setDisplayAgentName(null) // Clear display name if no persistedAgentId
+        setSelectedAgent(null)
       }
     }
 
@@ -2239,63 +2251,69 @@ export const ChatBox = ({
                 : "Attach files"
             }
           />
-          <Globe
-            size={16}
-            className="text-[#464D53] dark:text-gray-400 cursor-pointer"
-          />
-          <AtSign
-            size={16}
-            className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-            onClick={() => {
-              const input = inputRef.current
-              if (!input) return
+          {showAdvancedOptions && (
+            <>
+              <Globe
+                size={16}
+                className="text-[#464D53] dark:text-gray-400 cursor-pointer"
+              />
+              <AtSign
+                size={16}
+                className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                onClick={() => {
+                  const input = inputRef.current
+                  if (!input) return
 
-              const textContentBeforeAt = input.textContent || ""
+                  const textContentBeforeAt = input.textContent || ""
 
-              const textToAppend =
-                textContentBeforeAt.length === 0 ||
-                textContentBeforeAt.endsWith(" ") ||
-                textContentBeforeAt.endsWith("\n") ||
-                textContentBeforeAt.endsWith("\u00A0")
-                  ? "@"
-                  : " @"
+                  const textToAppend =
+                    textContentBeforeAt.length === 0 ||
+                    textContentBeforeAt.endsWith(" ") ||
+                    textContentBeforeAt.endsWith("\n") ||
+                    textContentBeforeAt.endsWith("\u00A0")
+                      ? "@"
+                      : " @"
 
-              const atTextNode = document.createTextNode(textToAppend)
+                  const atTextNode = document.createTextNode(textToAppend)
 
-              input.appendChild(atTextNode)
+                  input.appendChild(atTextNode)
 
-              const newTextContent = input.textContent || ""
-              setQuery(newTextContent)
-              setIsPlaceholderVisible(newTextContent.length === 0)
+                  const newTextContent = input.textContent || ""
+                  setQuery(newTextContent)
+                  setIsPlaceholderVisible(newTextContent.length === 0)
 
-              const newAtSymbolIndex =
-                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
-              setCaretPosition(input, newTextContent.length)
+                  const newAtSymbolIndex =
+                    textContentBeforeAt.length +
+                    (textToAppend === " @" ? 1 : 0)
+                  setCaretPosition(input, newTextContent.length)
 
-              setActiveAtMentionIndex(newAtSymbolIndex)
-              setReferenceSearchTerm("")
-              setShowReferenceBox(true)
-              updateReferenceBoxPosition(newAtSymbolIndex)
-              setSearchMode("citations")
-              setGlobalResults([])
-              setGlobalError(null)
-              setPage(1)
-              setTotalCount(0)
-              setSelectedRefIndex(-1)
+                  setActiveAtMentionIndex(newAtSymbolIndex)
+                  setReferenceSearchTerm("")
+                  setShowReferenceBox(true)
+                  updateReferenceBoxPosition(newAtSymbolIndex)
+                  setSearchMode("citations")
+                  setGlobalResults([])
+                  setGlobalError(null)
+                  setPage(1)
+                  setTotalCount(0)
+                  setSelectedRefIndex(-1)
 
-              input.focus()
-            }}
-          />
+                  input.focus()
+                }}
+              />
+            </>
+          )}
           {/* Dropdown for All Connectors */}
-          {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
-            <DropdownMenu
-              open={isConnectorsMenuOpen && isAgenticMode}
-              onOpenChange={(open) => {
-                if (isAgenticMode) {
-                  setIsConnectorsMenuOpen(open)
-                }
-              }}
-            >
+          {showAdvancedOptions &&
+            (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+              <DropdownMenu
+                open={isConnectorsMenuOpen && isAgenticMode}
+                onOpenChange={(open) => {
+                  if (isAgenticMode) {
+                    setIsConnectorsMenuOpen(open)
+                  }
+                }}
+              >
               <DropdownMenuTrigger asChild>
                 <button
                   ref={connectorsDropdownTriggerRef}
@@ -2636,7 +2654,8 @@ export const ChatBox = ({
           )}
 
           {/* Tool Selection Modal / Popover */}
-          {isToolSelectionModalOpen &&
+          {showAdvancedOptions &&
+            isToolSelectionModalOpen &&
             activeToolConnectorId &&
             toolModalPosition &&
             allConnectors.find((c) => c.id === activeToolConnectorId)?.type ===
@@ -2903,13 +2922,15 @@ export const ChatBox = ({
               </span>
             </button>
           </div>
-          <div
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsAgenticMode(!isAgenticMode)
-            }}
-            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
-          >
+          {showAdvancedOptions && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsAgenticMode(!isAgenticMode)
+              }}
+              disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+              className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
             <Infinity
               size={14}
               strokeWidth={2.4}
@@ -2920,7 +2941,8 @@ export const ChatBox = ({
             >
               Agent
             </span>
-          </div>
+          </button>
+          )}
           {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}

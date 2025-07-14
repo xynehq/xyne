@@ -75,6 +75,7 @@ mermaid.initialize({
 import {
   SelectPublicMessage,
   Citation,
+  ImageCitation,
   MessageFeedback,
   AttachmentMetadata,
   attachmentMetadataSchema,
@@ -357,6 +358,7 @@ export const ChatPage = ({
     partial,
     thinking,
     sources,
+    imageCitations,
     citationMap,
     isStreaming,
     messageId: streamInfoMessageId,
@@ -386,6 +388,7 @@ export const ChatPage = ({
         resp: partial,
         thinking,
         sources,
+        imageCitations,
         citationMap,
         messageId: streamInfoMessageId,
         chatId,
@@ -1086,6 +1089,7 @@ export const ChatPage = ({
                       responseDone={true}
                       thinking={message.thinking}
                       citations={message.sources}
+                      imageCitations={message.imageCitations || []}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
@@ -1127,6 +1131,7 @@ export const ChatPage = ({
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
+                        imageCitations={message.imageCitation || []}
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
@@ -1166,6 +1171,7 @@ export const ChatPage = ({
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
+                  imageCitations={currentResp.imageCitations}
                   thinking={currentResp.thinking || ""}
                   isUser={false}
                   responseDone={false}
@@ -1393,7 +1399,177 @@ const Sources = ({
   ) : null
 }
 
+interface ImageCitationComponentProps {
+  citationKey: string
+  imageCitations: ImageCitation[]
+  className?: string
+}
+
+const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+  citationKey,
+  imageCitations,
+  className = "",
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const imageCitation = imageCitations.find(
+    (ic) => ic.citationKey === citationKey,
+  )
+
+  if (!imageCitation) {
+    return (
+      <span className="text-blue-600 dark:text-blue-400">[{citationKey}]</span>
+    )
+  }
+
+  // TODO: Fetch image data from API instead of using base64
+  const imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+
+  const ImageModal = () => {
+    const handleCloseModal = () => {
+      setIsModalOpen(false)
+    }
+
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          handleCloseModal()
+        }
+      }
+
+      if (isModalOpen) {
+        document.addEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "hidden"
+      }
+
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "unset"
+      }
+    }, [isModalOpen])
+
+    if (!isModalOpen) return null
+
+    const Controls = () => {
+      const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+
+      const buttonBaseClass =
+        "bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200"
+
+      const handleResetAndCenter = () => {
+        resetTransform()
+        setTimeout(() => {
+          centerView()
+        }, 10)
+      }
+
+      return (
+        <div className="absolute top-4 left-4 flex space-x-2 z-20">
+          <button
+            onClick={() => zoomIn()}
+            className={buttonBaseClass}
+            title="Zoom In"
+          >
+            <ZoomIn size={20} />
+          </button>
+          <button
+            onClick={() => zoomOut()}
+            className={buttonBaseClass}
+            title="Zoom Out"
+          >
+            <ZoomOut size={20} />
+          </button>
+          <button
+            onClick={handleResetAndCenter}
+            className={buttonBaseClass}
+            title="Reset View"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center"
+        onClick={handleCloseModal}
+      >
+        <div
+          className="relative w-full h-full flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            onClick={handleCloseModal}
+            className="absolute top-4 right-4 bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200 z-20"
+            title="Close (ESC)"
+          >
+            <X size={20} />
+          </button>
+          <TransformWrapper
+            initialScale={1}
+            minScale={0.1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            centerZoomedOut={false}
+            doubleClick={{ disabled: false, step: 2 }}
+            wheel={{ step: 0.1 }}
+            panning={{ velocityDisabled: true }}
+          >
+            <Controls />
+            <TransformComponent
+              wrapperStyle={{
+                width: "100%",
+                height: "100%",
+                cursor: "grab",
+              }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt={`Image from document - ${citationKey}`}
+                className="max-w-none max-h-none object-contain"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  width: "auto",
+                  height: "auto",
+                }}
+                draggable={false}
+              />
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className={`block ${className}`}>
+        <img
+          src={imageSrc}
+          alt={`Image from document - ${citationKey}`}
+          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
+          style={{ maxHeight: "400px" }}
+          onClick={() => setIsModalOpen(true)}
+        />
+      </div>
+
+      {isModalOpen && <ImageModal />}
+    </>
+  )
+}
+
 export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 const renderMarkdownLink = ({
   node,
@@ -1851,6 +2027,7 @@ export const ChatMessage = ({
   responseDone,
   isRetrying,
   citations = [],
+  imageCitations = [],
   messageId,
   handleRetry,
   dots = "",
@@ -1872,6 +2049,7 @@ export const ChatMessage = ({
   responseDone: boolean
   isRetrying?: boolean
   citations?: Citation[]
+  imageCitations?: ImageCitation[]
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
@@ -1892,6 +2070,10 @@ export const ChatMessage = ({
   const citationUrls = citations?.map((c: Citation) => c.url)
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
+
+    text = text.replace(textToImageCitationIndex, (match, citationKey) => {
+      return `![image-citation:${citationKey}](image-citation:${citationKey})`
+    })
 
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
@@ -1948,6 +2130,74 @@ export const ChatMessage = ({
                       <MarkdownPreview
                         wrapperElement={{
                           "data-color-mode": theme,
+                  </div>
+                </>
+              )}
+              {message === "" && (!responseDone || isRetrying) ? (
+                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                  {`${THINKING_PLACEHOLDER}${dots}`}
+                </div>
+              ) : message !== "" ? (
+                <MarkdownPreview
+                  source={processMessage(message)}
+                  wrapperElement={{
+                    "data-color-mode": theme,
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
+                  }}
+                  components={{
+                    a: renderMarkdownLink,
+                    code: Code,
+                    img: ({ src, alt, ...props }: any) => {
+                      if (src?.startsWith("image-citation:")) {
+                        const citationKey = src.replace("image-citation:", "")
+                        return (
+                          <ImageCitationComponent
+                            citationKey={citationKey}
+                            imageCitations={imageCitations}
+                            className="flex justify-center"
+                          />
+                        )
+                      }
+                      // Regular image handling
+                      return <img src={src} alt={alt} {...props} />
+                    },
+                    ...createTableComponents(), // Use extracted table components
+                    h1: ({ node, ...props }) => (
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
+                    ),
+                    h2: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "1.2em" }} {...props} />
+                    ),
+                    h3: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "1em" }} {...props} />
+                    ),
+                    h4: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.8em" }} {...props} />
+                    ),
+                    h5: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.7em" }} {...props} />
+                    ),
+                    h6: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.68em" }} {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        style={{
+                          listStyleType: "disc",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
                         }}
                         style={{
                           padding: 0,

@@ -19,6 +19,39 @@ const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
 import { findImageByName } from "@/ai/provider/base"
+const createLabeledImageContent = (
+  userText: string,
+  otherBlocks: ContentBlock[],
+  imageParts: ContentBlock[],
+  imageFileNames: string[],
+): ContentBlock[] => {
+  const newContent: ContentBlock[] = [
+    {
+      text:
+        "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question. When referring to images in your response, please use the labels provided [docIndex_imageNumber] (e.g., [0_12], [7_2], etc.).\n\n" +
+        userText,
+    },
+    ...otherBlocks,
+  ]
+
+  imageParts.forEach((imagePart, index) => {
+    const imageFileName = imageFileNames[index]
+    // format: docIndex_docId_imageNumber
+    const match = imageFileName.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    if (match) {
+      const docIndex = match[1]
+      const docId = match[2]
+      const imageNum = match[3]
+
+      newContent.push({
+        text: `\n--- imageNumber: ${imageNum}, docIndex: ${docIndex}) ---`,
+      })
+    }
+    newContent.push(imagePart)
+  })
+
+  return newContent
+}
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (
@@ -29,22 +62,26 @@ const buildBedrockImageParts = async (
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    //  format: docIndex_docId_imageNumber
+    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
     if (!match) {
-      Logger.error(`Invalid image path: ${imgPath}`)
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
-    // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
+    const absolutePath = findImageByName(imageDir, imageNumber)
     const extension = path.extname(absolutePath).toLowerCase()
 
     // Map file extensions to Bedrock format values
@@ -136,15 +173,13 @@ export class BedrockProvider extends BaseProvider {
           (c) => !(typeof c === "object" && "text" in c),
         )
         const userText = textBlocks.map((tb) => tb.text).join("\n")
-        const combinedText =
-          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-          userText
-        // Create new content array with combined text and images
-        const newContent = [
-          { text: combinedText },
-          ...otherBlocks,
-          ...imageParts,
-        ]
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
         return {
           ...message,
           content: newContent,
@@ -159,7 +194,7 @@ export class BedrockProvider extends BaseProvider {
           text:
             modelParams.systemPrompt! +
             "\n\n" +
-            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
         },
       ],
       messages: transformedMessages,
@@ -252,15 +287,13 @@ export class BedrockProvider extends BaseProvider {
           (c) => !(typeof c === "object" && "text" in c),
         )
         const userText = textBlocks.map((tb) => tb.text).join("\n")
-        const combinedText =
-          "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-          userText
-        // Create new content array with combined text and images
-        const newContent = [
-          { text: combinedText },
-          ...otherBlocks,
-          ...imageParts,
-        ]
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
         return {
           ...message,
           content: newContent,
@@ -277,7 +310,7 @@ export class BedrockProvider extends BaseProvider {
           text:
             modelParams.systemPrompt! +
             "\n\n" +
-            "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
         },
       ],
       messages: transformedMessages,

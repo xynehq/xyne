@@ -7,6 +7,7 @@ import {
   ChatSSEvents,
   Citation,
   SelectPublicMessage,
+  ImageCitation,
 } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
@@ -17,6 +18,7 @@ interface StreamState {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -29,6 +31,7 @@ interface StreamInfo {
   partial: string
   thinking: string
   sources: Citation[]
+  imageCitations: ImageCitation[]
   citationMap: Record<number, number>
   messageId?: string
   chatId?: string
@@ -243,6 +246,7 @@ export const startStream = async (
     partial: "",
     thinking: "",
     sources: [],
+    imageCitations: [],
     citationMap: {},
     messageId: undefined,
     chatId: chatId || undefined,
@@ -295,6 +299,11 @@ export const startStream = async (
         },
       )
     }
+
+  streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
+    const imageCitation: ImageCitation = JSON.parse(event.data)
+    streamState.imageCitations = imageCitation
+
     notifySubscribers(streamKey)
   })
 
@@ -437,6 +446,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       partial: "",
       thinking: "",
       sources: [],
+      imageCitations: [],
       citationMap: {},
       messageId: undefined,
       chatId: undefined,
@@ -448,6 +458,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     partial: stream.partial,
     thinking: stream.thinking,
     sources: stream.sources,
+    imageCitations: stream.imageCitations,
     citationMap: stream.citationMap,
     messageId: stream.messageId,
     chatId: stream.chatId,
@@ -704,6 +715,7 @@ export const useChatStream = (
         partial: "",
         thinking: "",
         sources: [],
+        imageCitations: [],
         citationMap: {},
         messageId: undefined,
         chatId: chatId || undefined,
@@ -811,6 +823,15 @@ export const useChatStream = (
         }
         notifySubscribers(retryStreamKey)
       })
+
+      eventSource.addEventListener(
+        ChatSSEvents.ImageCitationUpdate,
+        (event) => {
+          const imageCitation: ImageCitation = JSON.parse(event.data)
+          streamState.imageCitations = imageCitation
+        },
+      )
+
 
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId } = JSON.parse(event.data)
