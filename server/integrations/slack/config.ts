@@ -18,9 +18,11 @@ export const MAX_CITATIONS_IN_MODAL = 2
 export const MAX_CITATIONS_IN_SHARED = 5
 export const MAX_SOURCES_IN_MODAL = 20
 
-export const FRONTEND_BASE_URL = process.env.NODE_ENV === "production"
-  ? process.env.HOST || "https://xyne.juspay.net"
-  : "http://localhost:5173"
+export const FRONTEND_BASE_URL = process.env.FRONTEND_URL || (
+  process.env.NODE_ENV === "production"
+    ? process.env.HOST || "http://localhost:3000"
+    : "http://localhost:5173"
+)
 
 // Constants from client.ts
 export const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
