@@ -37,14 +37,8 @@ export const ACTION_IDS = {
   PREVIOUS_SOURCE_PAGE: "previous_source_page",
 }
 
-
-
 // Constants for slack Ingestion
 export const periodicSaveState = 4000 // 4 seconds
 
-  
-
-
 // Constants from client.ts
-export const EVENT_CACHE_TTL = 30000; // 30 seconds
-
+export const EVENT_CACHE_TTL = 30000 // 30 seconds
