@@ -38,6 +38,9 @@ import {
   validateConversationHistory,
 } from "./types";
 
+// Add frontend URL constant
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || "http://localhost:5173";
+
 /**
  * Helper function to parse and format result data
  * @param result The search result object
@@ -923,6 +926,11 @@ export function createAgentResponseModal(
       let url = citation.url || "";
       let title = rawTitle;
 
+      // Check if URL is an internal document path and convert to frontend URL
+      if (url && url.startsWith('/dataSource/')) {
+        url = `${FRONTEND_BASE_URL}${url}`;
+      }
+
       // Check for and parse Slack's <url|text> format
       const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
       if (slackLinkMatch) {
@@ -1117,6 +1125,11 @@ export function createSharedAgentResponseBlocks(
       const rawTitle = citation?.title || citation?.name || "Untitled";
       let url = citation?.url || "";
       let title = rawTitle;
+
+      // Check if URL is an internal document path and convert to frontend URL
+      if (url && url.startsWith('/dataSource/')) {
+        url = `${FRONTEND_BASE_URL}${url}`;
+      }
 
       const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
       if (slackLinkMatch) {
