@@ -299,6 +299,8 @@ export const startStream = async (
         },
       )
     }
+    notifySubscribers(streamKey)
+  })
 
   streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
     const imageCitation: ImageCitation = JSON.parse(event.data)
@@ -831,7 +833,6 @@ export const useChatStream = (
           streamState.imageCitations = imageCitation
         },
       )
-
 
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId } = JSON.parse(event.data)
