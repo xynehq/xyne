@@ -344,6 +344,7 @@ export enum ChatSSEvents {
   ImageCitationUpdate = "icu",
   Reasoning = "rz",
   Error = "er",
+  AttachmentUpdate = "au",
 }
 
 const messageMetadataSchema = z.object({
@@ -497,3 +498,22 @@ export enum IngestionType {
   fullIngestion = "full_ingestion",
   partialIngestion = "partial_ingestion",
 }
+
+// Attachment metadata types for enhanced attachment handling
+export const attachmentMetadataSchema = z.object({
+  fileId: z.string(),
+  fileName: z.string(),
+  fileType: z.string(),
+  fileSize: z.number(),
+  isImage: z.boolean(),
+  thumbnailPath: z.string().optional(),
+  createdAt: z.union([z.string(), z.date()]).transform((val) => {
+    if (typeof val === "string") {
+      return new Date(val)
+    }
+    return val
+  }),
+  url: z.string().optional(),
+})
+
+export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>

@@ -40,6 +40,7 @@ import {
   ConnectorStatus,
   UserRole,
   DataSourceEntity,
+  AttachmentMetadata,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -76,7 +77,7 @@ import {
 interface SelectedFile {
   file: File
   id: string
-  docId?: string // Document ID from server after upload
+  metadata?: AttachmentMetadata
   uploading?: boolean
   uploadError?: string
   preview?: string // URL for image preview
@@ -122,10 +123,10 @@ interface ChatBoxProps {
   isAgenticMode: boolean
   handleSend: (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    fileIds?: string[],
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -420,7 +421,7 @@ export const ChatBox = ({
       if (files.length === 0) return []
 
       setIsUploadingFiles(true)
-      const uploadedFileIds: string[] = []
+      const uploadedMetadata: AttachmentMetadata[] = []
 
       // Set all files to uploading state
       setSelectedFiles((prev) =>
@@ -448,17 +449,17 @@ export const ChatBox = ({
           }
 
           const result = await response.json()
-          const docId = result.storedFileIds?.[0]
+          const metadata = result.attachments?.[0]
 
-          if (docId) {
+          if (metadata) {
             setSelectedFiles((prev) =>
               prev.map((f) =>
                 f.id === selectedFile.id
-                  ? { ...f, uploading: false, docId }
+                  ? { ...f, uploading: false, metadata }
                   : f,
               ),
             )
-            return docId
+            return metadata
           } else {
             throw new Error("No document ID returned from upload")
           }
@@ -482,10 +483,14 @@ export const ChatBox = ({
       })
 
       const results = await Promise.all(uploadPromises)
-      uploadedFileIds.push(...results.filter((id): id is string => id !== null))
+      uploadedMetadata.push(
+        ...results.filter(
+          (metadata): metadata is AttachmentMetadata => metadata !== null,
+        ),
+      )
 
       setIsUploadingFiles(false)
-      return uploadedFileIds
+      return uploadedMetadata
     },
     [showToast],
   )
@@ -1444,19 +1449,24 @@ export const ChatBox = ({
       }
     }
 
-    // Handle file uploads
-    let fileIds: string[] = []
+    // Handle Attachments Metadata
+    let attachmentsMetadata: AttachmentMetadata[] = []
     if (selectedFiles.length > 0) {
       const filesToUpload = selectedFiles.filter(
-        (f) => !f.docId && !f.uploading,
+        (f) => !f.metadata && !f.uploading,
       )
-      const alreadyUploadedFiles = selectedFiles.filter((f) => f.docId)
+      const alreadyUploadedMetadata = selectedFiles
+        .map((f) => f.metadata)
+        .filter((m): m is AttachmentMetadata => !!m)
 
       if (filesToUpload.length > 0) {
-        const uploadedIds = await uploadFiles(filesToUpload)
-        fileIds = [...alreadyUploadedFiles.map((f) => f.docId!), ...uploadedIds]
+        const newUploadedMetadata = await uploadFiles(filesToUpload)
+        attachmentsMetadata = [
+          ...alreadyUploadedMetadata,
+          ...newUploadedMetadata,
+        ]
       } else {
-        fileIds = alreadyUploadedFiles.map((f) => f.docId!).filter(Boolean)
+        attachmentsMetadata = alreadyUploadedMetadata
       }
     }
 
@@ -1505,10 +1515,10 @@ export const ChatBox = ({
 
     handleSend(
       htmlMessage,
+      attachmentsMetadata,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
       toolsListToSend,
-      fileIds,
     )
 
     // Clear the input and attached files after sending
@@ -2133,7 +2143,7 @@ export const ChatBox = ({
                             <span className="text-white text-xs">⚠</span>
                           </div>
                         )}
-                        {selectedFile.docId && (
+                        {selectedFile.metadata?.fileId && (
                           <div className="bg-green-500 bg-opacity-80 rounded-full p-1">
                             <Check size={10} className="text-white" />
                           </div>
@@ -2192,7 +2202,7 @@ export const ChatBox = ({
                             ⚠️
                           </span>
                         )}
-                        {selectedFile.docId && (
+                        {selectedFile.metadata?.fileId && (
                           <Check size={12} className="text-green-500" />
                         )}
                         <button

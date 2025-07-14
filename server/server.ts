@@ -130,7 +130,12 @@ import {
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
-import { handleAttachmentUpload, handleFileUpload } from "@/api/files"
+import {
+  handleAttachmentUpload,
+  handleFileUpload,
+  handleAttachmentServe,
+  handleThumbnailServe,
+} from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
@@ -407,6 +412,8 @@ export const AppRoutes = app
   )
   .post("files/upload", handleFileUpload)
   .post("/files/upload-attachment", handleAttachmentUpload)
+  .get("/attachments/:fileId", handleAttachmentServe)
+  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",

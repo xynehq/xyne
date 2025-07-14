@@ -229,10 +229,6 @@ export class OpenAIProvider extends BaseProvider {
       }
     })
 
-    console.log("transformedMessages", transformedMessages)
-    console.log("imageFileNames", params.imageFileNames)
-    console.log("modelId", modelParams.modelId)
-
     const chatCompletion = await (
       this.client as OpenAI
     ).chat.completions.create({

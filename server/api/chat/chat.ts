@@ -176,7 +176,15 @@ import {
   mimeTypeMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
-import { cleanupAttachmentFiles } from "@/api/files"
+import {
+  getAttachmentsByMessageId,
+  storeAttachmentMetadata,
+} from "@/db/attachment"
+import type { AttachmentMetadata } from "@/shared/types"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
+import { isImageFile } from "@/utils/image"
+import { promises as fs } from "node:fs"
+import path from "node:path"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -530,6 +538,101 @@ export const ChatDeleteApi = async (c: Context) => {
       if (!chat) {
         throw new HTTPException(404, { message: "Chat not found" })
       }
+
+      // Get all messages for the chat to find attachments
+      const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
+
+      // Collect all attachment file IDs that need to be deleted
+      const imageAttachmentFileIds: string[] = []
+      const nonImageAttachmentFileIds: string[] = []
+
+      for (const message of messagesToDelete) {
+        if (message.attachments && Array.isArray(message.attachments)) {
+          const attachments =
+            message.attachments as unknown as AttachmentMetadata[]
+          for (const attachment of attachments) {
+            if (attachment && typeof attachment === "object") {
+              if (attachment.fileId) {
+                // Check if this is an image attachment using both isImage field and fileType
+                const isImageAttachment =
+                  attachment.isImage ||
+                  (attachment.fileType && isImageFile(attachment.fileType))
+
+                if (isImageAttachment) {
+                  imageAttachmentFileIds.push(attachment.fileId)
+                } else {
+                  // TODO: Handle non-image attachments in future implementation
+                  nonImageAttachmentFileIds.push(attachment.fileId)
+                  loggerWithChild({ email: email }).info(
+                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Delete image attachments and their thumbnails from disk
+      if (imageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
+        )
+
+        for (const fileId of imageAttachmentFileIds) {
+          try {
+            // Validate fileId to prevent path traversal
+            if (
+              fileId.includes("..") ||
+              fileId.includes("/") ||
+              fileId.includes("\\")
+            ) {
+              loggerWithChild({ email: email }).error(
+                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
+              )
+              continue
+            }
+            const imageBaseDir = path.resolve(
+              process.env.IMAGE_DIR || "downloads/xyne_images_db",
+            )
+
+            const imageDir = path.join(imageBaseDir, fileId)
+            try {
+              await fs.access(imageDir)
+              await fs.rm(imageDir, { recursive: true, force: true })
+              loggerWithChild({ email: email }).info(
+                `Deleted image attachment directory: ${imageDir}`,
+              )
+            } catch (attachmentError) {
+              loggerWithChild({ email: email }).warn(
+                `Image attachment file ${fileId} not found in either directory during chat deletion`,
+              )
+            }
+          } catch (error) {
+            loggerWithChild({ email: email }).error(
+              error,
+              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+
+      // TODO: Implement deletion logic for non-image attachments
+      if (nonImageAttachmentFileIds.length > 0) {
+        loggerWithChild({ email: email }).info(
+          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+        )
+        // TODO: Add specific deletion logic for different types of non-image attachments
+        // This could include:
+        // - PDFs: Delete from document storage directories
+        // - Documents (DOCX, DOC): Delete from document storage directories
+        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
+        // - Presentations (PPTX, PPT): Delete from document storage directories
+        // - Text files: Delete from text storage directories
+        // - Other file types: Implement based on file type and storage location
+        // For now, we just log that we found them but don't delete them to avoid data loss
+      }
+
       // Delete shared chats associated with this chat
       await tx.delete(sharedChats).where(eq(sharedChats.chatId, chat.id))
 
@@ -3068,13 +3171,10 @@ export const MessageApi = async (c: Context) => {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -3130,6 +3230,7 @@ export const MessageApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
 
     let title = ""
+    let attachmentStorageError: Error | null = null
     if (!chatId) {
       loggerWithChild({ email: email }).info(
         `MessageApi before the span.. ${chatId}`,
@@ -3182,6 +3283,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [chat, insertedMsg]
         },
       )
@@ -3216,6 +3336,25 @@ export const MessageApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -3256,6 +3395,31 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
 
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
@@ -3309,10 +3473,6 @@ export const MessageApi = async (c: Context) => {
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
-                // Clean up attachment files when stream is closed prematurely
-                if (attachmentFileIds && attachmentFileIds.length > 0) {
-                  await cleanupAttachmentFiles(attachmentFileIds, email)
-                }
                 break
               }
               if (chunk.text) {
@@ -3409,11 +3569,6 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-
-            // Clean up attachment files after response processing is complete
-            if (attachmentFileIds && attachmentFileIds.length > 0) {
-              await cleanupAttachmentFiles(attachmentFileIds, email)
-            }
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
@@ -4227,6 +4382,27 @@ export const MessageRetryApi = async (c: Context) => {
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
+
+    // Get the original message first to determine if it's a user or assistant message
+    const originalMessage = await getMessageByExternalId(db, messageId)
+    if (!originalMessage) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    const isUserMessage = originalMessage.messageRole === "user"
+
+    // If it's an assistant message, we need to get attachments from the previous user message
+    let attachmentMetadata: AttachmentMetadata[] = []
+    let attachmentFileIds: string[] = []
+
+    if (isUserMessage) {
+      // If retrying a user message, get attachments from that message
+      attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
+      attachmentFileIds = attachmentMetadata.map(
+        (m: AttachmentMetadata) => m.fileId,
+      )
+    }
+
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
@@ -4234,7 +4410,6 @@ export const MessageRetryApi = async (c: Context) => {
     const costArr: number[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
-    const originalMessage = await getMessageByExternalId(db, messageId)
     if (!originalMessage) {
       const errorSpan = fetchMessageSpan.startSpan("message_not_found")
       errorSpan.addEvent("error", { message: "Message not found" })
@@ -4242,7 +4417,6 @@ export const MessageRetryApi = async (c: Context) => {
       fetchMessageSpan.end()
       throw new HTTPException(404, { message: "Message not found" })
     }
-    const isUserMessage = originalMessage.messageRole === "user"
     fetchMessageSpan.setAttribute("isUserMessage", isUserMessage)
     fetchMessageSpan.end()
 
@@ -4269,6 +4443,21 @@ export const MessageRetryApi = async (c: Context) => {
     }
     conversationSpan.setAttribute("conversationLength", conversation.length)
     conversationSpan.end()
+
+    // If retrying an assistant message, get attachments from the previous user message
+    if (!isUserMessage && conversation && conversation.length > 0) {
+      const prevUserMessage = conversation[conversation.length - 1]
+      if (prevUserMessage.messageRole === "user") {
+        attachmentMetadata = await getAttachmentsByMessageId(
+          db,
+          prevUserMessage.externalId,
+          email,
+        )
+        attachmentFileIds = attachmentMetadata.map(
+          (m: AttachmentMetadata) => m.fileId,
+        )
+      }
+    }
 
     // Use the same modelId
     const modelId = originalMessage.modelId as Models
@@ -4342,7 +4531,10 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          if (fileIds && fileIds?.length > 0) {
+          if (
+            (fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
@@ -4372,6 +4564,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              attachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
