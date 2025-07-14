@@ -3417,7 +3417,6 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           // Notify client if attachment storage failed
           if (attachmentStorageError) {
             await stream.writeSSE({
@@ -3430,34 +3429,6 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
-            loggerWithChild({ email: email }).info(
-              "User has selected some context with query, answering only based on that given context",
-            )          // Send attachment metadata immediately if attachments exist
-          if (attachmentMetadata && attachmentMetadata.length > 0) {
-            const userMessage = messages[messages.length - 1]
-            await stream.writeSSE({
-              event: ChatSSEvents.AttachmentUpdate,
-              data: JSON.stringify({
-                messageId: userMessage.externalId,
-                attachments: attachmentMetadata,
-              }),
-            })
-          }
-
-          // Notify client if attachment storage failed
-          if (attachmentStorageError) {
-            await stream.writeSSE({
-              event: ChatSSEvents.Error,
-              data: JSON.stringify({
-                error: "attachment_storage_failed",
-                message:
-                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
-                details: attachmentStorageError.message,
-              }),
-            })
-          }
-
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)

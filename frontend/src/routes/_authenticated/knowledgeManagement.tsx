@@ -967,16 +967,7 @@ function RouteComponent() {
   )
 }
 
-function getAllFileNames(node: FileNode, path = ''): {name: string}[] {
-  const currentPath = path ? `${path}/${node.name}` : node.name;
-  if (node.type === 'file') {
-    return [{ name: currentPath }];
-  }
-  if (node.children) {
-    return node.children.flatMap(child => getAllFileNames(child, currentPath));
-  }
-  return [];
-}
+
 
 function findNode(root: FileNode, target: FileNode): boolean {
   if (root === target) {
@@ -990,38 +981,6 @@ function findNode(root: FileNode, target: FileNode): boolean {
     }
   }
   return false;
-}
-
-function removeItemByPath(items: FileNode[], path: string): FileNode[] {
-  const pathParts = path.split('/');
-  const itemNameToRemove = pathParts[pathParts.length - 1];
-
-  const removeItem = (nodes: FileNode[], currentPath: string): FileNode[] => {
-    return nodes.filter(node => {
-      const newPath = currentPath ? `${currentPath}/${node.name}` : node.name;
-      if (newPath === path) {
-        return false;
-      }
-      if (node.children) {
-        node.children = removeItem(node.children, newPath);
-      }
-      return true;
-    });
-  };
-
-  return removeItem(items, '');
-}
-
-function countFilesInTree(nodes: FileNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.type === 'file') {
-      count++;
-    } else if (node.children) {
-      count += countFilesInTree(node.children);
-    }
-  }
-  return count;
 }
 
 function findItemByPath(items: FileNode[], targetPath: string): any | null {

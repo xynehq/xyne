@@ -569,7 +569,6 @@ export const HybridDefaultProfileForAgent = (
   dataSourceIds: string[] = [],
   kbIds: string[] = [],
 ): YqlProfile => {
-  console.log('inside HybridDefaultProfileForAgent', kbIds)
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -779,12 +778,10 @@ export const HybridDefaultProfileForAgent = (
           }
           break
         case Apps.KnowledgeBase:
-          console.log(kbIds, "kbIds in HybridDefaultProfileForAgent")
           // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
           // The actual filtering by specific kbIds happens in buildKbFileYQL.
           if (kbIds && kbIds.length > 0) {
             const kbQuery = buildKbFileYQL()
-            console.log("kbQuery", kbQuery)
             if (kbQuery) {
               appQueries.push(kbQuery)
               if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
@@ -837,7 +834,6 @@ export const HybridDefaultProfileForAgent = (
 
   // Combine all queries
   const combinedQuery = appQueries.join("\n    or\n    ")
-  console.log("combinedQuery", combinedQuery)
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
