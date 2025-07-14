@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, ChangeEvent } from "react"
 import { Upload, Folder, File as FileIcon, X, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import FileUploadSkeleton from "@/components/FileUploadSkeleton"
 
 export interface SelectedFile {
   file: File
@@ -9,13 +10,19 @@ export interface SelectedFile {
 }
 
 interface KbFileUploadProps {
-  onFilesSelect: (files: File[]) => void;
-  onRemoveFile: (id: string) => void;
-  onRemoveAllFiles: () => void;
-  selectedFiles: SelectedFile[];
-  onUpload: () => void;
-  isUploading?: boolean;
-  collectionName: string;
+  onFilesSelect: (files: File[]) => void
+  onRemoveFile: (id: string) => void
+  onRemoveAllFiles: () => void
+  selectedFiles: SelectedFile[]
+  onUpload: () => void
+  isUploading?: boolean
+  collectionName: string
+  batchProgress?: {
+    total: number
+    current: number
+    batch: number
+    totalBatches: number
+  }
 }
 
 const KbFileUpload = ({
@@ -26,6 +33,7 @@ const KbFileUpload = ({
   onUpload,
   isUploading = false,
   collectionName,
+  batchProgress,
 }: KbFileUploadProps) => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -145,7 +153,7 @@ const KbFileUpload = ({
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (isUploading) return
-    
+
     if (e.target.files) {
       const filteredFiles = Array.from(e.target.files).filter(
         (file) => !file.name.startsWith("."),
@@ -158,7 +166,7 @@ const KbFileUpload = ({
 
   const handleFolderChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (isUploading) return
-    
+
     if (e.target.files) {
       const filteredFiles = Array.from(e.target.files).filter(
         (file: File) => !file.name.startsWith("."),
@@ -181,6 +189,20 @@ const KbFileUpload = ({
     }
   }
 
+  // Show skeleton loader when uploading
+  if (isUploading && batchProgress && batchProgress.total > 0) {
+    return (
+      <div className="w-full">
+        <FileUploadSkeleton
+          totalFiles={batchProgress.total}
+          processedFiles={batchProgress.current}
+          currentBatch={batchProgress.batch}
+          totalBatches={batchProgress.totalBatches}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="w-full">
       <div
@@ -195,8 +217,8 @@ const KbFileUpload = ({
             isDragging
               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
               : isUploading
-              ? "cursor-not-allowed"
-              : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
+                ? "cursor-not-allowed"
+                : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
           }`}
           onClick={!isUploading ? handleFileClick : undefined}
         >

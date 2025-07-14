@@ -1,12 +1,13 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
-import { Search, Plus, X, MoreHorizontal, Edit, Trash2 } from "lucide-react"
+import { Plus, X, MoreHorizontal, Edit, Trash2 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import KbFileUpload, {
   SelectedFile as FileUploadSelectedFile,
 } from "@/components/KbFileUpload"
+import FileUploadSkeleton from "@/components/FileUploadSkeleton"
 import { useToast } from "@/hooks/use-toast"
 import FileTree from "@/components/FileTree"
 import {
@@ -23,7 +24,6 @@ import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   deleteItem,
-  addFilesToExistingKnowledgeBase,
 } from "@/utils/fileUtils"
 import type { KnowledgeBase, KbItem } from "@/types/knowledgeBase"
 
@@ -47,6 +47,45 @@ interface Collection {
 
 
 
+// Helper functions for localStorage
+const UPLOAD_STATE_KEY = 'knowledgeManagement_uploadState'
+
+const saveUploadState = (state: {
+  isUploading: boolean
+  batchProgress: { total: number, current: number, batch: number, totalBatches: number }
+  uploadingCollectionName: string
+}) => {
+  try {
+    localStorage.setItem(UPLOAD_STATE_KEY, JSON.stringify(state))
+  } catch (error) {
+    console.error('Failed to save upload state:', error)
+  }
+}
+
+const loadUploadState = () => {
+  try {
+    const saved = localStorage.getItem(UPLOAD_STATE_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (error) {
+    console.error('Failed to load upload state:', error)
+  }
+  return {
+    isUploading: false,
+    batchProgress: { total: 0, current: 0, batch: 0, totalBatches: 0 },
+    uploadingCollectionName: ""
+  }
+}
+
+const clearUploadState = () => {
+  try {
+    localStorage.removeItem(UPLOAD_STATE_KEY)
+  } catch (error) {
+    console.error('Failed to clear upload state:', error)
+  }
+}
+
 function RouteComponent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
@@ -59,8 +98,178 @@ function RouteComponent() {
   const [deletingItem, setDeletingItem] = useState<{ collection: Collection, node: FileNode, path: string } | null>(null);
   const [addingToCollection, setAddingToCollection] = useState<Collection | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileUploadSelectedFile[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const [batchProgress, setBatchProgress] = useState({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+  
+  // Load upload state from localStorage on mount
+  const savedState = loadUploadState()
+  const [isUploading, setIsUploading] = useState(savedState.isUploading)
+  const [batchProgress, setBatchProgress] = useState(savedState.batchProgress)
+  const [uploadingCollectionName, setUploadingCollectionName] = useState(savedState.uploadingCollectionName)
+
+  // Save upload state to localStorage whenever it changes
+  useEffect(() => {
+    saveUploadState({
+      isUploading,
+      batchProgress,
+      uploadingCollectionName
+    })
+  }, [isUploading, batchProgress, uploadingCollectionName])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      // Only clear if upload is not active
+      if (!isUploading) {
+        clearUploadState()
+      }
+    }
+  }, [isUploading])
+
+  // Fallback: Clear upload state if it's been "uploading" for too long
+  useEffect(() => {
+    if (!isUploading) return
+
+    // If upload state has been active for more than 10 minutes, clear it
+    const timeout = setTimeout(() => {
+      console.log('Upload state has been active too long, clearing it')
+      setIsUploading(false)
+      setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+      setUploadingCollectionName("")
+      clearUploadState()
+    }, 10 * 60 * 1000) // 10 minutes
+
+    return () => clearTimeout(timeout)
+  }, [isUploading])
+
+  const showToast = useCallback(
+    (title: string, description: string, isError = false) => {
+      const { dismiss } = toast({
+        title,
+        description,
+        variant: isError ? "destructive" : "default",
+        duration: 2000,
+        action: (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.preventDefault()
+              dismiss()
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ),
+      })
+    },
+    [toast],
+  )
+
+  // Check for ongoing uploads on component mount
+  useEffect(() => {
+    const checkForOngoingUploads = async () => {
+      const savedState = loadUploadState()
+      if (savedState.isUploading && savedState.uploadingCollectionName) {
+        // If there's an ongoing upload, check if it's actually complete
+        console.log('Detected ongoing upload from previous session:', savedState)
+        
+        // Check if the collection exists and has files
+        try {
+          const response = await fetch("/api/v1/kb");
+          if (response.ok) {
+            const data = await response.json();
+            const existingCollection = data.find((kb: KnowledgeBase) => 
+              kb.name.toLowerCase() === savedState.uploadingCollectionName.toLowerCase()
+            );
+            
+            if (existingCollection && existingCollection.totalCount >= savedState.batchProgress.total) {
+              // Upload appears to be complete, clear the state
+              console.log('Upload appears to be complete, clearing state')
+              setIsUploading(false)
+              setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+              setUploadingCollectionName("")
+              clearUploadState()
+              
+              // Show completion toast
+              showToast(
+                "Upload Complete",
+                `Upload of ${savedState.batchProgress.total} files to "${savedState.uploadingCollectionName}" completed while you were away.`
+              )
+            }
+          }
+        } catch (error) {
+          console.error('Error checking upload status:', error)
+          // If we can't check, clear the state after a timeout to avoid infinite skeleton
+          setTimeout(() => {
+            setIsUploading(false)
+            setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+            setUploadingCollectionName("")
+            clearUploadState()
+          }, 5000)
+        }
+      }
+    }
+
+    checkForOngoingUploads()
+  }, [showToast])
+
+  // Periodic check for upload completion while on the page
+  useEffect(() => {
+    if (!isUploading || !uploadingCollectionName) return
+
+    const checkUploadProgress = async () => {
+      try {
+        const response = await fetch("/api/v1/kb");
+        if (response.ok) {
+          const data = await response.json();
+          const existingCollection = data.find((kb: KnowledgeBase) => 
+            kb.name.toLowerCase() === uploadingCollectionName.toLowerCase()
+          );
+          
+          if (existingCollection && existingCollection.totalCount >= batchProgress.total) {
+            // Upload is complete, clear the state
+            console.log('Upload completed, clearing state')
+            setIsUploading(false)
+            setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+            setUploadingCollectionName("")
+            clearUploadState()
+            
+            // Refresh collections to show the new one
+            const updatedCollections = data.map((kb: KnowledgeBase) => ({
+              id: kb.id,
+              name: kb.name,
+              description: kb.description,
+              files: kb.totalCount || 0,
+              items: [],
+              isOpen: false,
+              lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+              updatedBy: kb.lastUpdatedByEmail || "Unknown",
+              totalCount: kb.totalCount,
+              isPrivate: kb.isPrivate,
+            }))
+            setCollections(updatedCollections)
+            
+            showToast(
+              "Upload Complete",
+              `Successfully uploaded ${batchProgress.total} files to "${uploadingCollectionName}".`
+            )
+          }
+        }
+      } catch (error) {
+        console.error('Error checking upload progress:', error)
+      }
+    }
+
+    // Check every 3 seconds while upload is active
+    const interval = setInterval(checkUploadProgress, 3000)
+    
+    return () => clearInterval(interval)
+  }, [isUploading, uploadingCollectionName, batchProgress.total, showToast])
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -85,7 +294,7 @@ function RouteComponent() {
             updatedBy: kb.lastUpdatedByEmail || "Unknown",
             totalCount: kb.totalCount,
             isPrivate: kb.isPrivate,
-          })));
+          })))
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true);
         }
@@ -95,31 +304,7 @@ function RouteComponent() {
     };
 
     fetchCollections();
-  }, []);
-
-  const showToast = useCallback(
-    (title: string, description: string, isError = false) => {
-      const { dismiss } = toast({
-        title,
-        description,
-        variant: isError ? "destructive" : "default",
-        duration: 2000,
-        action: (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              dismiss()
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ),
-      })
-    },
-    [toast],
-  )
+  }, [showToast]);
 
   const handleCloseModal = () => {
     setShowNewCollection(false);
@@ -140,7 +325,11 @@ function RouteComponent() {
     }
 
     setIsUploading(true)
+    setUploadingCollectionName(collectionName.trim())
     setBatchProgress({ total: selectedFiles.length, current: 0, batch: 0, totalBatches: 0 })
+    
+    // Close the modal immediately after starting upload
+    handleCloseModal()
 
     try {
       // First create the knowledge base
@@ -148,15 +337,15 @@ function RouteComponent() {
       
       // Then upload files in batches
       const batches = createBatches(selectedFiles, collectionName.trim());
-      setBatchProgress(prev => ({ ...prev, totalBatches: batches.length }))
+      setBatchProgress((prev: typeof batchProgress) => ({ ...prev, totalBatches: batches.length }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress(prev => ({ ...prev, batch: i + 1 }))
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
         const batchFiles = batches[i].map(f => f.file);
         console.log(`Uploading batch ${i + 1}/${batches.length} with ${batchFiles.length} files to KB ${kb.id}`);
         const uploadResult = await uploadFileBatch(batchFiles, kb.id);
         console.log('Upload batch result:', uploadResult);
-        setBatchProgress(prev => ({ ...prev, current: prev.current + batchFiles.length }))
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
       // Fetch the updated KB data from the backend
@@ -182,7 +371,7 @@ function RouteComponent() {
         isPrivate: updatedKb.isPrivate,
       }
 
-      setCollections((prev) => [...prev, newCollection])
+      setCollections((prev) => [newCollection, ...prev])
       handleCloseModal()
       showToast(
         "Knowledge Base Created",
@@ -194,6 +383,8 @@ function RouteComponent() {
     } finally {
       setIsUploading(false)
       setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+      setUploadingCollectionName("")
+      clearUploadState()
     }
   }
 
@@ -229,9 +420,25 @@ function RouteComponent() {
     }
 
     setIsUploading(true);
+    setUploadingCollectionName(addingToCollection.name)
+    setBatchProgress({ total: selectedFiles.length, current: 0, batch: 0, totalBatches: 0 })
+    
+    // Close the modal immediately after starting upload
+    handleCloseModal()
 
     try {
-      await addFilesToExistingKnowledgeBase(selectedFiles, addingToCollection.id);
+      // Upload files in batches
+      const batches = createBatches(selectedFiles, addingToCollection.name);
+      setBatchProgress((prev: typeof batchProgress) => ({ ...prev, totalBatches: batches.length }))
+
+      for (let i = 0; i < batches.length; i++) {
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
+        const batchFiles = batches[i].map(f => f.file);
+        console.log(`Uploading batch ${i + 1}/${batches.length} with ${batchFiles.length} files to KB ${addingToCollection.id}`);
+        const uploadResult = await uploadFileBatch(batchFiles, addingToCollection.id);
+        console.log('Upload batch result:', uploadResult);
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
+      }
 
       // Refresh the collection by fetching updated data from backend
       const kbResponse = await fetch(`/api/v1/kb/${addingToCollection.id}`);
@@ -276,6 +483,9 @@ function RouteComponent() {
       showToast("Add Files Failed", "Failed to add files to collection. Please try again.", true);
     } finally {
       setIsUploading(false);
+      setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
+      setUploadingCollectionName("")
+      clearUploadState()
     }
   };
 
@@ -409,7 +619,7 @@ function RouteComponent() {
                 KNOWLEDGE MANAGEMENT
               </h1>
               <div className="flex items-center gap-4">
-                <Search className="text-gray-400 h-6 w-6" />
+                {/* <Search className="text-gray-400 h-6 w-6" /> */}
                 <Button
                   onClick={() => setShowNewCollection(true)}
                   disabled={isUploading}
@@ -423,6 +633,31 @@ function RouteComponent() {
               </div>
             </div>
             <div className="mt-12">
+              {/* Show skeleton loader when uploading */}
+              {isUploading && batchProgress.total > 0 && (
+                <div className="mb-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                        {uploadingCollectionName}
+                      </h2>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        uploading files...
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {batchProgress.current} / {batchProgress.total} files processed
+                    </div>
+                  </div>
+                  <FileUploadSkeleton
+                    totalFiles={batchProgress.total}
+                    processedFiles={batchProgress.current}
+                    currentBatch={batchProgress.batch}
+                    totalBatches={batchProgress.totalBatches}
+                  />
+                </div>
+              )}
+              
               {collections.map((collection, index) => (
                 <div key={index} className="mb-8">
                   <div className="flex justify-between items-center mb-4 cursor-pointer" onClick={async () => {
@@ -721,22 +956,9 @@ function RouteComponent() {
                   onUpload={addingToCollection ? handleAddFilesToCollection : handleUpload}
                   isUploading={isUploading}
                   collectionName={collectionName}
+                  batchProgress={batchProgress}
                 />
               </div>
-              {isUploading && batchProgress.total > 0 && (
-                <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Uploading: {batchProgress.current} / {batchProgress.total} files
-                    {batchProgress.totalBatches > 1 && ` (Batch ${batchProgress.batch} of ${batchProgress.totalBatches})`}
-                  </p>
-                  <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mt-2">
-                    <div 
-                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
