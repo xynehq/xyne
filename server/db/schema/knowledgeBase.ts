@@ -45,12 +45,10 @@ export const kbItems = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => ({
-    // Ensure unique names at the same level
-    uniqueParentName: uniqueIndex("unique_parent_name").on(
-      table.workspaceId,
-      table.parentId,
-      table.name
-    ),
+    // Ensure unique names at the same level (excluding soft-deleted items)
+    uniqueParentName: uniqueIndex("unique_parent_name_not_deleted")
+      .on(table.workspaceId, table.parentId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
     // Index for finding root knowledge bases
     idxRootItems: index("idx_root_items").on(
       table.workspaceId,
