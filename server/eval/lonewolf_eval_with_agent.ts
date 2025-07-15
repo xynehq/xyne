@@ -291,49 +291,50 @@ async function simulateAgentMessageFlow(
   evalItem: EvalData,
   userCtx: string,
 ): Promise<EvalResult> {
-  const startTime = Date.now()
+  const startTime = Date.now();
   const result: EvalResult = {
     input: evalItem.input,
     expected: evalItem.expected,
     output: "",
     score: 0,
     processingTime: 0,
-  }
+  };
 
-  Logger.info(
-    `Simulating agent message flow for input: "${JSON.stringify(result)}"`,
-  )
+  Logger.info(`Simulating agent message flow for input: "${JSON.stringify(result)}"`);
 
   try {
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
       myEmail,
-    )
-    const { user, workspace } = userAndWorkspace
+    );
+    const { user, workspace } = userAndWorkspace;
 
-    Logger.info(
-      `Simulating agent message flow for user: ${user.id}, workspace: ${workspace.id}`,
-    )
+    Logger.info(`Simulating agent message flow for user: ${user.id}, workspace: ${workspace.id}`);
 
     if (agentId && isCuid(agentId)) {
-      // Use the numeric workspace.id for the database query with permission check
       const agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
         agentId,
         workspace.id,
         user.id,
-      )
+      );
       if (!agentForDb) {
         throw new HTTPException(403, {
           message: "Access denied: You don't have permission to use this agent",
-        })
+        });
       }
-      agentPromptForLLM = JSON.stringify(agentForDb)
+      agentPromptForLLM = JSON.stringify(agentForDb);
     }
-    const message = decodeURIComponent(evalItem.input)
-    let answer = ""
-    let thinking = ""
+
+    // Deduplicate input if it contains multiple identical JSON objects
+    const uniqueInput = Array.isArray(evalItem.input)
+      ? [...new Set(evalItem.input.map(JSON.stringify))].map(JSON.parse)
+      : [evalItem.input];
+    const message = decodeURIComponent(uniqueInput[0]?.answer || evalItem.input);
+
+    let answer = "";
+    let thinking = "";
 
     // Mock message context (simulating a single user message with no prior conversation)
     const messages = [
@@ -342,69 +343,57 @@ async function simulateAgentMessageFlow(
         message: message,
         fileIds: [],
       },
-    ]
+    ];
 
     // Process messages to filter out errors and empty assistant messages
     const messagesWithNoErrResponse = messages
       .filter((msg) => !msg?.errorMessage)
-      .filter(
-        (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message),
-      )
+      .filter((msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message))
       .map((msg) => {
-        const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
-        let processedMessage = msg.message
-        if (
-          msg.messageRole === MessageRole.User &&
-          fileIds &&
-          fileIds.length > 0
-        ) {
-          // Simplified: assume no context selection for evaluation
-          processedMessage = msg.message
+        const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []));
+        let processedMessage = msg.message;
+        if (msg.messageRole === MessageRole.User && fileIds && fileIds.length > 0) {
+          processedMessage = msg.message; // Simplified: assume no context selection
         }
         return {
           role: msg.messageRole as ConversationRole,
           content: [{ text: processedMessage }],
-        }
-      })
+        };
+      });
 
     // Limit messages to last 8 (in this case, just the input message)
-    const limitedMessages = messagesWithNoErrResponse.slice(-8)
+    const limitedMessages = messagesWithNoErrResponse.slice(-8);
 
     // Mock stream for SSE events
     const mockStream: any = {
       writeSSE: (event: { event: string; data: any }) => {
         if (event.event === ChatSSEvents.ResponseUpdate) {
-          const data =
-            typeof event.data === "string"
-              ? event.data
-              : JSON.stringify(event.data)
-          answer += data
+          const data = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
+          answer += data;
         } else if (event.event === ChatSSEvents.Reasoning) {
-          thinking += event.data
+          thinking += event.data;
         }
       },
       close: () => {},
       closed: false,
-    }
+    };
 
-    // Call LLM to generate answer
-    Logger.info(
-      "Checking if answer is in the conversation or a mandatory query rewrite is needed",
-    )
+    Logger.info("Checking if answer is in the conversation or a mandatory query rewrite is needed");
+
     const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
       message,
       userCtx,
       {
-        modelId: modelId, // Placeholder; replace with actual model ID if needed
+        modelId: modelId,
         stream: true,
         json: true,
-        reasoning: false, // Simplified for evaluation
+        reasoning: false,
         messages: limitedMessages,
         agentPrompt: agentPromptForLLM,
       },
-    )
+    );
 
-    let currentAnswer = ""
+    let currentAnswer = "";
     let parsed = {
       answer: "",
       queryRewrite: "",
@@ -420,55 +409,41 @@ async function simulateAgentMessageFlow(
         count: 0,
         sortDirection: "",
       },
-    }
+    };
 
     // Process LLM output from generateSearchQueryOrAnswerFromConversation
-    let buffer = ""
+    let buffer = "";
     for await (const chunk of searchOrAnswerIterator) {
       if (mockStream.closed) {
-        Logger.info(
-          "[simulateAgentMessageFlow] Stream closed during conversation search loop. Breaking.",
-        )
-        break
+        Logger.info("[simulateAgentMessageFlow] Stream closed during conversation search loop. Breaking.");
+        break;
       }
       if (chunk.text) {
-        buffer += chunk.text
+        buffer += chunk.text;
         try {
-          parsed = jsonParseLLMOutput(buffer) || {}
+          parsed = jsonParseLLMOutput(buffer) || {};
           if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              Logger.info("Found answer in conversation, sending full response")
+            const newText = parsed.answer.slice(currentAnswer.length);
+            if (newText) {
               mockStream.writeSSE({
-                event: ChatSSEvents.Start,
-                data: "",
-              })
-              mockStream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: parsed.answer,
-              })
-            } else {
-              const newText = parsed.answer.slice(currentAnswer.length)
-              mockStream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
+                event: currentAnswer === "" ? ChatSSEvents.Start : ChatSSEvents.ResponseUpdate,
                 data: newText,
-              })
+              });
+              currentAnswer = parsed.answer;
+              Logger.info("Current answer updated:", currentAnswer);
             }
-            currentAnswer = parsed.answer
-            Logger.info("Current answer updated:", currentAnswer)
           }
         } catch (err) {
-          const errMessage = (err as Error).message
-          Logger.error(`Error while parsing LLM output: ${errMessage}`)
-          continue
+          const errMessage = (err as Error).message;
+          Logger.error(`Error while parsing LLM output: ${errMessage}`);
+          continue;
         }
       }
     }
 
     // If no answer was found, use UnderstandMessageAndAnswer
     if (!parsed.answer) {
-      Logger.info(
-        "No answer found in conversation, applying UnderstandMessageAndAnswer",
-      )
+      Logger.info("No answer found in conversation, applying UnderstandMessageAndAnswer");
       const classification: TemporalClassifier & QueryRouterResponse = {
         direction: parsed.temporalDirection,
         type: parsed.type as QueryType,
@@ -479,7 +454,7 @@ async function simulateAgentMessageFlow(
           entity: parsed.filters?.entity as any,
           intent: parsed.intent || {},
         },
-      }
+      };
 
       const iterator = UnderstandMessageAndAnswer(
         myEmail,
@@ -488,44 +463,50 @@ async function simulateAgentMessageFlow(
         classification,
         limitedMessages,
         0.5,
-        false, // Simplified: no reasoning for evaluation
-        undefined, // No explicit span for simulation
+        false,
+        undefined,
         agentPromptForLLM,
-      )
+      );
 
-      buffer = ""
-      answer = ""
-      thinking = ""
+      buffer = ""; // Reset buffer
+      answer = ""; // Reset answer
+      thinking = ""; // Reset thinking
 
       for await (const chunk of iterator) {
         if (mockStream.closed) {
-          Logger.info(
-            "[simulateAgentMessageFlow] Stream closed during UnderstandMessageAndAnswer loop. Breaking.",
-          )
-          break
+          Logger.info("[simulateAgentMessageFlow] Stream closed during UnderstandMessageAndAnswer loop. Breaking.");
+          break;
         }
         if (chunk.text) {
-          answer += chunk.text
+          answer += chunk.text;
           mockStream.writeSSE({
             event: ChatSSEvents.ResponseUpdate,
             data: chunk.text,
-          })
+          });
         }
       }
 
-      Logger.info("Answer from UnderstandMessageAndAnswer:", answer)
+      Logger.info("Answer from UnderstandMessageAndAnswer:", answer);
     }
 
-    result.output = answer || parsed.answer || "No answer generated"
+    // Normalize output to remove duplicates and fix formatting
+    result.output = (answer || parsed.answer || "No answer generated")
+      .split(" ")
+      .filter((word, i, arr) => word !== arr[i - 1]) // Remove consecutive duplicate words
+      .join(" ")
+      .replace(/([A-Za-z])\1/g, "$1") // Fix doubled letters (e.g., "TheThe" -> "The")
+      .replace(/\(\s*\(/g, "(") // Fix doubled parentheses
+      .replace(/\s+/g, " ") // Normalize spaces
+      .trim();
 
-    console.log("Final answer:", result.output)
+    console.log("Final answer:", result.output);
   } catch (error) {
-    Logger.error(`Error in agent message flow: ${error}`)
-    result.output = `Error: ${(error as Error).message}`
+    Logger.error(`Error in agent message flow: ${error}`);
+    result.output = `Error: ${(error as Error).message}`;
   }
 
-  result.processingTime = Date.now() - startTime
-  return result
+  result.processingTime = Date.now() - startTime;
+  return result;
 }
 async function runEvaluation(userCtx: string) {
   const results: EvalResult[] = []
