@@ -218,7 +218,7 @@ export const extractImageFileNames = (
 
   let imageFileNames: string[] = []
   for (const match of matches) {
-    const imageContent = match[1].trim()
+    let imageContent = match[1].trim()
     try {
       if (imageContent) {
         const docId = imageContent.split("_")[0]
