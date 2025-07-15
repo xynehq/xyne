@@ -74,6 +74,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1113,6 +1114,51 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+  messages: Message[],
+  attachmentFileIds?: string[],
+): AsyncIterableIterator<ConverseResponse> => {
+  if (attachmentFileIds && attachmentFileIds.length > 0) {
+    params.imageFileNames = attachmentFileIds.map(
+      (fileId, index) => `${index}_${fileId}_${0}`,
+    )
+  }
+
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    indexToCitation(retrievedCtx),
+    parseAgentPrompt(agentPrompt),
+  )
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
 }
 
 export const temporalPromptJsonStream = (

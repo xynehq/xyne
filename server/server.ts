@@ -130,7 +130,12 @@ import {
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
-import { handleAttachmentUpload, handleFileUpload } from "@/api/files"
+import {
+  handleAttachmentUpload,
+  handleFileUpload,
+  handleAttachmentServe,
+  handleThumbnailServe,
+} from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
@@ -149,6 +154,15 @@ import {
   vespaGetItemsProxy,
   vespaChatContainerByChannelProxy,
   vespaChatUserByEmailProxy,
+  vespaGetDocumentProxy,
+  vespaGetDocumentsByIdsProxy,
+  vespaGetUsersByNamesAndEmailsProxy,
+  vespaGetDocumentsByThreadIdProxy,
+  vespaGetEmailsByThreadIdsProxy,
+  vespaGetDocumentsWithFieldProxy,
+  vespaGetRandomDocumentProxy,
+  searchVespaProxy,
+  groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
@@ -407,6 +421,8 @@ export const AppRoutes = app
   )
   .post("files/upload", handleFileUpload)
   .post("/files/upload-attachment", handleAttachmentUpload)
+  .get("/attachments/:fileId", handleAttachmentServe)
+  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -595,6 +611,31 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
+  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
+  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
+  .post(
+    "/get-users-by-names-and-emails",
+    validateApiKey,
+    vespaGetUsersByNamesAndEmailsProxy,
+  )
+  .post(
+    "/get-documents-by-thread-id",
+    validateApiKey,
+    vespaGetDocumentsByThreadIdProxy,
+  )
+  .post(
+    "/get-emails-by-thread-ids",
+    validateApiKey,
+    vespaGetEmailsByThreadIdsProxy,
+  )
+  .post(
+    "/get-documents-with-field",
+    validateApiKey,
+    vespaGetDocumentsWithFieldProxy,
+  )
+  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
+  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
+  .post("/search-vespa", validateApiKey, searchVespaProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

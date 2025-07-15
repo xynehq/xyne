@@ -34,6 +34,7 @@ export const agents = pgTable(
     isPublic: boolean("is_public").default(false).notNull(),
     appIntegrations: jsonb("app_integrations").default(sql`'[]'::jsonb`), // Array of integration IDs/names
     allowWebSearch: boolean("allow_web_search").default(false),
+    isRagOn: boolean("is_rag_on").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),

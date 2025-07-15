@@ -40,6 +40,7 @@ import {
   ConnectorStatus,
   UserRole,
   DataSourceEntity,
+  AttachmentMetadata,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -76,7 +77,7 @@ import {
 interface SelectedFile {
   file: File
   id: string
-  docId?: string // Document ID from server after upload
+  metadata?: AttachmentMetadata
   uploading?: boolean
   uploadError?: string
   preview?: string // URL for image preview
@@ -122,10 +123,10 @@ interface ChatBoxProps {
   isAgenticMode: boolean
   handleSend: (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    fileIds?: string[],
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -138,6 +139,7 @@ interface ChatBoxProps {
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
   user: PublicUser // Added user prop
+  overrideIsRagOn?: boolean
 }
 
 const availableSources: SourceItem[] = [
@@ -261,6 +263,7 @@ export const ChatBox = ({
   user, // Destructure user prop
   setIsAgenticMode,
   isAgenticMode = false,
+  overrideIsRagOn,
 }: ChatBoxProps) => {
   // Interface for fetched tools
   interface FetchedTool {
@@ -323,6 +326,9 @@ export const ChatBox = ({
   const [showSourcesButton, _] = useState(false) // Added this line
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
   const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
     new Set(),
@@ -345,6 +351,8 @@ export const ChatBox = ({
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+  const showAdvancedOptions =
+    overrideIsRagOn ?? (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
 
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -413,7 +421,7 @@ export const ChatBox = ({
       if (files.length === 0) return []
 
       setIsUploadingFiles(true)
-      const uploadedFileIds: string[] = []
+      const uploadedMetadata: AttachmentMetadata[] = []
 
       // Set all files to uploading state
       setSelectedFiles((prev) =>
@@ -441,17 +449,17 @@ export const ChatBox = ({
           }
 
           const result = await response.json()
-          const docId = result.storedFileIds?.[0]
+          const metadata = result.attachments?.[0]
 
-          if (docId) {
+          if (metadata) {
             setSelectedFiles((prev) =>
               prev.map((f) =>
                 f.id === selectedFile.id
-                  ? { ...f, uploading: false, docId }
+                  ? { ...f, uploading: false, metadata }
                   : f,
               ),
             )
-            return docId
+            return metadata
           } else {
             throw new Error("No document ID returned from upload")
           }
@@ -475,10 +483,14 @@ export const ChatBox = ({
       })
 
       const results = await Promise.all(uploadPromises)
-      uploadedFileIds.push(...results.filter((id): id is string => id !== null))
+      uploadedMetadata.push(
+        ...results.filter(
+          (metadata): metadata is AttachmentMetadata => metadata !== null,
+        ),
+      )
 
       setIsUploadingFiles(false)
-      return uploadedFileIds
+      return uploadedMetadata
     },
     [showToast],
   )
@@ -556,22 +568,27 @@ export const ChatBox = ({
             )
             if (currentAgent) {
               setDisplayAgentName(currentAgent.name)
+              setSelectedAgent(currentAgent)
             } else {
               console.error(
                 `Agent with ID ${persistedAgentId} not found for display.`,
               )
               setDisplayAgentName(null)
+              setSelectedAgent(null)
             }
           } else {
             console.error("Failed to load agents for display.")
             setDisplayAgentName(null)
+            setSelectedAgent(null)
           }
         } catch (error) {
           console.error("Error fetching agent details for display:", error)
           setDisplayAgentName(null)
+          setSelectedAgent(null)
         }
       } else {
         setDisplayAgentName(null) // Clear display name if no persistedAgentId
+        setSelectedAgent(null)
       }
     }
 
@@ -1432,19 +1449,24 @@ export const ChatBox = ({
       }
     }
 
-    // Handle file uploads
-    let fileIds: string[] = []
+    // Handle Attachments Metadata
+    let attachmentsMetadata: AttachmentMetadata[] = []
     if (selectedFiles.length > 0) {
       const filesToUpload = selectedFiles.filter(
-        (f) => !f.docId && !f.uploading,
+        (f) => !f.metadata && !f.uploading,
       )
-      const alreadyUploadedFiles = selectedFiles.filter((f) => f.docId)
+      const alreadyUploadedMetadata = selectedFiles
+        .map((f) => f.metadata)
+        .filter((m): m is AttachmentMetadata => !!m)
 
       if (filesToUpload.length > 0) {
-        const uploadedIds = await uploadFiles(filesToUpload)
-        fileIds = [...alreadyUploadedFiles.map((f) => f.docId!), ...uploadedIds]
+        const newUploadedMetadata = await uploadFiles(filesToUpload)
+        attachmentsMetadata = [
+          ...alreadyUploadedMetadata,
+          ...newUploadedMetadata,
+        ]
       } else {
-        fileIds = alreadyUploadedFiles.map((f) => f.docId!).filter(Boolean)
+        attachmentsMetadata = alreadyUploadedMetadata
       }
     }
 
@@ -1493,10 +1515,10 @@ export const ChatBox = ({
 
     handleSend(
       htmlMessage,
+      attachmentsMetadata,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
       toolsListToSend,
-      fileIds,
     )
 
     // Clear the input and attached files after sending
@@ -2121,7 +2143,7 @@ export const ChatBox = ({
                             <span className="text-white text-xs">⚠</span>
                           </div>
                         )}
-                        {selectedFile.docId && (
+                        {selectedFile.metadata?.fileId && (
                           <div className="bg-green-500 bg-opacity-80 rounded-full p-1">
                             <Check size={10} className="text-white" />
                           </div>
@@ -2180,7 +2202,7 @@ export const ChatBox = ({
                             ⚠️
                           </span>
                         )}
-                        {selectedFile.docId && (
+                        {selectedFile.metadata?.fileId && (
                           <Check size={12} className="text-green-500" />
                         )}
                         <button
@@ -2229,63 +2251,69 @@ export const ChatBox = ({
                 : "Attach files"
             }
           />
-          <Globe
-            size={16}
-            className="text-[#464D53] dark:text-gray-400 cursor-pointer"
-          />
-          <AtSign
-            size={16}
-            className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-            onClick={() => {
-              const input = inputRef.current
-              if (!input) return
+          {showAdvancedOptions && (
+            <>
+              <Globe
+                size={16}
+                className="text-[#464D53] dark:text-gray-400 cursor-pointer"
+              />
+              <AtSign
+                size={16}
+                className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                onClick={() => {
+                  const input = inputRef.current
+                  if (!input) return
 
-              const textContentBeforeAt = input.textContent || ""
+                  const textContentBeforeAt = input.textContent || ""
 
-              const textToAppend =
-                textContentBeforeAt.length === 0 ||
-                textContentBeforeAt.endsWith(" ") ||
-                textContentBeforeAt.endsWith("\n") ||
-                textContentBeforeAt.endsWith("\u00A0")
-                  ? "@"
-                  : " @"
+                  const textToAppend =
+                    textContentBeforeAt.length === 0 ||
+                    textContentBeforeAt.endsWith(" ") ||
+                    textContentBeforeAt.endsWith("\n") ||
+                    textContentBeforeAt.endsWith("\u00A0")
+                      ? "@"
+                      : " @"
 
-              const atTextNode = document.createTextNode(textToAppend)
+                  const atTextNode = document.createTextNode(textToAppend)
 
-              input.appendChild(atTextNode)
+                  input.appendChild(atTextNode)
 
-              const newTextContent = input.textContent || ""
-              setQuery(newTextContent)
-              setIsPlaceholderVisible(newTextContent.length === 0)
+                  const newTextContent = input.textContent || ""
+                  setQuery(newTextContent)
+                  setIsPlaceholderVisible(newTextContent.length === 0)
 
-              const newAtSymbolIndex =
-                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
-              setCaretPosition(input, newTextContent.length)
+                  const newAtSymbolIndex =
+                    textContentBeforeAt.length +
+                    (textToAppend === " @" ? 1 : 0)
+                  setCaretPosition(input, newTextContent.length)
 
-              setActiveAtMentionIndex(newAtSymbolIndex)
-              setReferenceSearchTerm("")
-              setShowReferenceBox(true)
-              updateReferenceBoxPosition(newAtSymbolIndex)
-              setSearchMode("citations")
-              setGlobalResults([])
-              setGlobalError(null)
-              setPage(1)
-              setTotalCount(0)
-              setSelectedRefIndex(-1)
+                  setActiveAtMentionIndex(newAtSymbolIndex)
+                  setReferenceSearchTerm("")
+                  setShowReferenceBox(true)
+                  updateReferenceBoxPosition(newAtSymbolIndex)
+                  setSearchMode("citations")
+                  setGlobalResults([])
+                  setGlobalError(null)
+                  setPage(1)
+                  setTotalCount(0)
+                  setSelectedRefIndex(-1)
 
-              input.focus()
-            }}
-          />
+                  input.focus()
+                }}
+              />
+            </>
+          )}
           {/* Dropdown for All Connectors */}
-          {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
-            <DropdownMenu
-              open={isConnectorsMenuOpen && isAgenticMode}
-              onOpenChange={(open) => {
-                if (isAgenticMode) {
-                  setIsConnectorsMenuOpen(open)
-                }
-              }}
-            >
+          {showAdvancedOptions &&
+            (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+              <DropdownMenu
+                open={isConnectorsMenuOpen && isAgenticMode}
+                onOpenChange={(open) => {
+                  if (isAgenticMode) {
+                    setIsConnectorsMenuOpen(open)
+                  }
+                }}
+              >
               <DropdownMenuTrigger asChild>
                 <button
                   ref={connectorsDropdownTriggerRef}
@@ -2626,7 +2654,8 @@ export const ChatBox = ({
           )}
 
           {/* Tool Selection Modal / Popover */}
-          {isToolSelectionModalOpen &&
+          {showAdvancedOptions &&
+            isToolSelectionModalOpen &&
             activeToolConnectorId &&
             toolModalPosition &&
             allConnectors.find((c) => c.id === activeToolConnectorId)?.type ===
@@ -2893,13 +2922,15 @@ export const ChatBox = ({
               </span>
             </button>
           </div>
-          <div
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsAgenticMode(!isAgenticMode)
-            }}
-            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
-          >
+          {showAdvancedOptions && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsAgenticMode(!isAgenticMode)
+              }}
+              disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+              className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
             <Infinity
               size={14}
               strokeWidth={2.4}
@@ -2910,7 +2941,8 @@ export const ChatBox = ({
             >
               Agent
             </span>
-          </div>
+          </button>
+          )}
           {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}

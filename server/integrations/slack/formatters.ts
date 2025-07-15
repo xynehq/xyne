@@ -1,4 +1,3 @@
-// Define types for Slack blocks to avoid import issues
 import type {
   SectionBlock,
   HeaderBlock,
@@ -26,6 +25,7 @@ import {
   MAX_CITATIONS_IN_MODAL,
   MAX_CITATIONS_IN_SHARED,
   MAX_SOURCES_IN_MODAL,
+  FRONTEND_BASE_URL
 } from "./config";
 import {
   type SearchResult,
@@ -836,6 +836,8 @@ export const createAgentResponseBlocks = (
  */
 export function cleanAgentResponse(response: string): string {
   return response
+    .replace(/<[^>]*>[\s\S]*?<\/[^>]*>/g, "") // Remove content between matching XML-like tags (e.g., <analysis_and_planning>...</analysis_and_planning>)
+    .replace(/<[^>]*>/g, "") // Remove any standalone tags that might remain
     .replace(/:\w+:/g, "") // Remove emoji codes like :robot_face:, :books:
     .replace(/\[\d+\]/g, "") // Remove citation numbers
     .replace(/\*\*(.*?)\*\*/g, "*$1*") // Convert **bold** to *bold*
@@ -922,6 +924,11 @@ export function createAgentResponseModal(
       const rawTitle = citation.title || citation.name || "Untitled";
       let url = citation.url || "";
       let title = rawTitle;
+
+      // Check if URL is an internal document path and convert to frontend URL
+      if (url && url.startsWith('/dataSource/')) {
+        url = `${FRONTEND_BASE_URL}${url}`;
+      }
 
       // Check for and parse Slack's <url|text> format
       const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
@@ -1117,6 +1124,11 @@ export function createSharedAgentResponseBlocks(
       const rawTitle = citation?.title || citation?.name || "Untitled";
       let url = citation?.url || "";
       let title = rawTitle;
+
+      // Check if URL is an internal document path and convert to frontend URL
+      if (url && url.startsWith('/dataSource/')) {
+        url = `${FRONTEND_BASE_URL}${url}`;
+      }
 
       const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
       if (slackLinkMatch) {
