@@ -89,13 +89,7 @@ export class VertexAiProvider extends BaseProvider {
       .map((c: any) => c.text)
       .join("")
     const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-    const cost = calculateCost(
-      {
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-      },
-      modelDetailsMap[modelId].cost.onDemand,
-    )
+    const cost = 0
 
     return { text, cost }
   }
@@ -147,10 +141,7 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = calculateCost(
-          usage,
-          modelDetailsMap[modelId].cost.onDemand,
-        )
+        const cost = 0
         yield {
           text: "",
           cost,
