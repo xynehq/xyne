@@ -199,8 +199,8 @@ const checkAndYieldCitationsForAgent = async function* (
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
   baseIndex: number = 0,
-  yieldedImageCitations: Set<number>,
-  email: string,
+  yieldedImageCitations?: Set<number>,
+  email: string = "",
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
@@ -229,7 +229,7 @@ const checkAndYieldCitationsForAgent = async function* (
         }
         yieldedCitations.add(citationIndex)
       }
-    } else if (imgMatch) {
+    } else if (imgMatch && yieldedImageCitations) {
       const parts = imgMatch[1].split("_")
       if (parts.length >= 2) {
         const docIndex = parseInt(parts[0], 10)
@@ -291,7 +291,6 @@ const checkAndYieldCitationsForAgent = async function* (
     }
   }
 }
-
 
 const vespaResultToMinimalAgentFragment = (
   child: VespaSearchResult,
@@ -2233,7 +2232,116 @@ export const MessageWithToolsApi = async (c: Context) => {
     rootSpan.end()
   }
 }
-// END OF AgentMessageApi
+async function* nonRagIterator(
+  message: string,
+  userCtx: string,
+  context: string,
+  results: MinimalAgentFragment[],
+  agentPrompt?: string,
+  messages: Message[] = [],
+  imageFileNames: string[] = [],
+  attachmentFileIds?: string[],
+  email?: string,
+  isReasoning = true,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
+> {
+  const ragOffIterator = baselineRAGOffJsonStream(
+    message,
+    userCtx,
+    context,
+    {
+      modelId: defaultBestModel,
+      stream: true,
+      json: false,
+      reasoning: isReasoning,
+      imageFileNames,
+    },
+    agentPrompt ?? "",
+    messages,
+  )
+
+  const previousResultsLength = 0
+  let buffer = ""
+  let thinking = ""
+  let reasoning = isReasoning
+  let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
+
+  for await (const chunk of ragOffIterator) {
+    try {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitationsForAgent(
+              thinking,
+              yieldedCitations,
+              results,
+              previousResultsLength,
+              undefined,
+              email!,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+              yield* checkAndYieldCitationsForAgent(
+                thinking,
+                yieldedCitations,
+                results,
+                previousResultsLength,
+                undefined,
+                email!,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+        if (!reasoning) {
+          buffer += chunk.text
+          yield { text: chunk.text }
+
+          yield* checkAndYieldCitationsForAgent(
+            buffer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+            yieldedImageCitations,
+            email ?? "",
+          )
+        }
+      }
+
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    } catch (e) {
+      Logger.error(`Error processing chunk: ${e}`)
+      continue
+    }
+  }
+}
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -2270,7 +2378,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
-
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
     if (agentId && isCuid(agentId)) {
@@ -2359,8 +2466,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             fileIds: fileIds,
           })
 
-
-
           if (attachmentMetadata && attachmentMetadata.length > 0) {
             try {
               await storeAttachmentMetadata(
@@ -2427,6 +2532,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       let wasStreamClosedPrematurely = false
       const streamSpan = rootSpan.startSpan("stream_response")
       streamSpan.setAttribute("chatId", chat.externalId)
+      const messagesWithNoErrResponse = messages
+        .slice(0, messages.length - 1)
+        .filter((msg) => !msg?.errorMessage)
+        .map((m) => ({
+          role: m.messageRole as ConversationRole,
+          content: [{ text: m.message }],
+        }))
       try {
         if (!chatId) {
           const titleUpdateSpan = streamSpan.startSpan("send_title_update")
@@ -2476,6 +2588,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
         let context = ""
         let finalImageFileNames: string[] = []
+        let fragments: MinimalAgentFragment[] = []
         if (docIds.length > 0) {
           let previousResultsLength = 0
           const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
@@ -2484,7 +2597,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           chunksSpan.end()
           if (allChunks?.root?.children) {
             const startIndex = 0
-            const fragments = allChunks.root.children.map((child, idx) =>
+            fragments = allChunks.root.children.map((child, idx) =>
               vespaResultToMinimalAgentFragment(child, idx),
             )
             context = answerContextMapFromFragments(
@@ -2518,36 +2631,25 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           )
         }
 
-        const messagesWithNoErrResponse = messages
-          .slice(0, messages.length - 1)
-          .filter((msg) => !msg?.errorMessage)
-          .map((m) => ({
-            role: m.messageRole as ConversationRole,
-            content: [{ text: m.message }],
-          }))
-        loggerWithChild({ email: sub }).info("Before baselineRAGOffJsonStream")
-        const ragOffSpan = streamSpan.startSpan("baseline_rag_off_json_stream")
-        const ragOffIterator = baselineRAGOffJsonStream(
+        const ragOffIterator = nonRagIterator(
           message,
           ctx,
           context,
-          {
-            modelId: defaultBestModel,
-            stream: true,
-            json: false,
-            reasoning: false,
-            messages: messagesWithNoErrResponse,
-            imageFileNames:finalImageFileNames
-          },
-          agentPromptForLLM ?? "",
-          messages.map((m) => ({
-            role: m.messageRole as ConversationRole,
-            content: [{ text: m.message }],
-          })),
+          fragments,
+          agentPromptForLLM,
+          messagesWithNoErrResponse,
+          finalImageFileNames,
+          attachmentFileIds,
+          email,
+          isReasoningEnabled,
         )
-        ragOffSpan.end()
-        loggerWithChild({ email: sub }).info("After baselineRAGOffJsonStream")
         let answer = ""
+        let citations: any[] = []
+        let imageCitations: any[] = []
+        let citationMap: Record<number, number> = {}
+        let citationValues: Record<number, any> = {}
+        let thinking = ""
+        let reasoning = isReasoningEnabled
         for await (const chunk of ragOffIterator) {
           if (stream.closed) {
             Logger.info("[AgentMessageApiRagOff] Stream closed. Breaking.")
@@ -2555,13 +2657,52 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             break
           }
           if (chunk.text) {
-            answer += chunk.text
+            if (reasoning && chunk.reasoning) {
+              thinking += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: chunk.text,
+              })
+              // reasoningSpan.end()
+            }
+            if (!chunk.reasoning) {
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+          }
+
+          if (chunk.citation) {
+            const { index, item } = chunk.citation
+            citations.push(item)
+            citationMap[index] = citations.length - 1
+            loggerWithChild({ email: sub }).info(
+              `Found citations and sending it, current count: ${citations.length}`,
+            )
             stream.writeSSE({
-              event: ChatSSEvents.ResponseUpdate,
-              data: chunk.text,
+              event: ChatSSEvents.CitationsUpdate,
+              data: JSON.stringify({
+                contextChunks: citations,
+                citationMap,
+              }),
+            })
+            citationValues[index] = item
+          }
+
+          if (chunk.imageCitation) {
+            loggerWithChild({ email: email }).info(
+              `Found image citation, sending it`,
+              { citationKey: chunk.imageCitation.citationKey },
+            )
+            imageCitations.push(chunk.imageCitation)
+            stream.writeSSE({
+              event: ChatSSEvents.ImageCitationUpdate,
+              data: JSON.stringify(chunk.imageCitation),
             })
           }
-          
+
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }
@@ -2575,9 +2716,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chatExternalId: chat.externalId,
             messageRole: MessageRole.Assistant,
             email: user.email,
-            sources: [],
-            message: answer,
-            thinking: "",
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(answer, citationMap),
+            thinking: thinking,
             modelId: defaultBestModel,
           })
           assistantMessageId = msg.externalId
@@ -2597,9 +2739,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chatExternalId: chat.externalId,
             messageRole: MessageRole.Assistant,
             email: user.email,
-            sources: [],
-            message: answer,
-            thinking: "",
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(answer, citationMap),
+            thinking: thinking,
             modelId: defaultBestModel,
           })
           assistantMessageId = msg.externalId
@@ -2613,9 +2756,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chatExternalId: chat.externalId,
             messageRole: MessageRole.Assistant,
             email: user.email,
-            sources: [],
-            message: errorMessage,
-            thinking: "",
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(errorMessage, citationMap),
+            thinking: thinking,
             modelId: defaultBestModel,
           })
           assistantMessageId = msg.externalId

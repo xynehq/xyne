@@ -1125,15 +1125,13 @@ export const baselineRAGOffJsonStream = (
   messages: Message[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<ConverseResponse> => {
-  
-
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
 
   params.systemPrompt = ragOffPromptJson(
     userCtx,
-    indexToCitation(retrievedCtx),
+    retrievedCtx,
     parseAgentPrompt(agentPrompt),
   )
   params.json = true
