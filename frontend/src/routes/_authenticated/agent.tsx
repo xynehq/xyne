@@ -221,6 +221,9 @@ function AgentComponent() {
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
   >([])
+  const [fetchedKnowledgeBases, setFetchedKnowledgeBases] = useState<
+    Array<{ id: string; name: string; description?: string }>
+  >([])
   const [selectedIntegrations, setSelectedIntegrations] = useState<
     Record<string, boolean>
   >({})
@@ -478,9 +481,14 @@ function AgentComponent() {
     const fetchDataSourcesAsync = async () => {
       if (viewMode === "create" || viewMode === "edit") {
         try {
-          const response = await api.datasources.$get()
-          if (response.ok) {
-            const data = await response.json()
+          // Fetch both data sources and knowledge bases in parallel
+          const [dsResponse, kbResponse] = await Promise.all([
+            api.datasources.$get(),
+            api.kb.$get()
+          ])
+          
+          if (dsResponse.ok) {
+            const data = await dsResponse.json()
             setFetchedDataSources(data as FetchedDataSource[])
           } else {
             showToast({
@@ -490,6 +498,18 @@ function AgentComponent() {
             })
             setFetchedDataSources([])
           }
+          
+          if (kbResponse.ok) {
+            const kbData = await kbResponse.json()
+            setFetchedKnowledgeBases(kbData)
+          } else {
+            showToast({
+              title: "Error",
+              description: "Failed to fetch knowledge bases.",
+              variant: "destructive",
+            })
+            setFetchedKnowledgeBases([])
+          }
         } catch (error) {
           showToast({
             title: "Error",
@@ -498,9 +518,11 @@ function AgentComponent() {
           })
           console.error("Fetch data sources error:", error)
           setFetchedDataSources([])
+          setFetchedKnowledgeBases([])
         }
       } else {
         setFetchedDataSources([])
+        setFetchedKnowledgeBases([])
       }
     }
     fetchDataSourcesAsync()
@@ -730,8 +752,25 @@ function AgentComponent() {
     if (!isRagOn) {
       return dynamicDataSources
     }
-    return [...availableIntegrationsList, ...dynamicDataSources]
-  }, [fetchedDataSources, isRagOn])
+    
+    const knowledgeBaseSources: IntegrationSource[] = fetchedKnowledgeBases.map(
+      (kb) => ({
+        id: `kb_${kb.id}`,
+        name: `KB: ${kb.name}`,
+        app: "knowledgebase",
+        entity: "kb",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            <path d="M12 6v8"></path>
+            <path d="M8 10h8"></path>
+          </svg>
+        ),
+      }),
+    )
+    return [...availableIntegrationsList, ...dynamicDataSources, ...knowledgeBaseSources]
+  }, [fetchedDataSources, isRagOn, fetchedKnowledgeBases])
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
@@ -1863,6 +1902,9 @@ function AgentComponent() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Knowledge bases are prefixed with "KB:" to distinguish them from other data sources.
+                  </p>
                 </div>
 
                 {!isPublic && (
