@@ -5,6 +5,6 @@
   },
   {
     "input": "What are dpip platforms?",
-    "expected": "user@gmail.com"
+    "expected": "DPIP Platforms are the platforms that are used to run the DPIP (Data Platform Integration Pipeline) processes. These platforms include various data processing and integration tools that facilitate the movement and transformation of data across different systems."
   }
 ]
