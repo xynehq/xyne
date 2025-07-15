@@ -219,12 +219,13 @@ export const extractImageFileNames = (
   let imageFileNames: string[] = []
   for (const match of matches) {
     const imageContent = match[1].trim()
-    if (imageContent) {
-      const docId = imageContent.split("_")[0]
-      // const docIndex =
-      //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
-      const docIndex =
-        results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+    try {
+      if (imageContent) {
+        const docId = imageContent.split("_")[0]
+        // const docIndex =
+        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+        const docIndex =
+          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
 
         if (docIndex === -1) {
           console.warn(
