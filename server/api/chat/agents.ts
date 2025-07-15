@@ -227,63 +227,63 @@ const checkAndYieldCitationsForAgent = async function* (
           },
         }
         yieldedCitations.add(citationIndex)
-      } else if (imgMatch) {
-        const parts = imgMatch[1].split("_")
-        if (parts.length >= 2) {
-          const docIndex = parseInt(parts[0], 10)
-          const imageIndex = parseInt(parts[1], 10)
-          const citationIndex = docIndex + baseIndex
-          if (!yieldedImageCitations.has(citationIndex)) {
-            const item = results[docIndex]
-            if (item) {
-              try {
-                const imageData = await getCitationToImage(
-                  imgMatch[1],
-                  {
-                    id: item.id,
-                    relevance: item.confidence,
-                    fields: {
-                      docId: item.source.docId,
-                    } as any,
-                  } as VespaSearchResult,
-                  email,
-                )
-                if (imageData) {
-                  if (!imageData.imagePath || !imageData.imageBuffer) {
-                    loggerWithChild({ email: email }).error(
-                      "Invalid imageData structure returned",
-                      { citationKey: imgMatch[1], imageData },
-                    )
-                    continue
-                  }
-                  yield {
-                    imageCitation: {
-                      citationKey: imgMatch[1],
-                      imagePath: imageData.imagePath,
-                      imageData: imageData.imageBuffer.toString("base64"),
-                      ...(imageData.extension
-                        ? { mimeType: mimeTypeMap[imageData.extension] }
-                        : {}),
-                      item: item.source,
-                    },
-                  }
-                }
-              } catch (error) {
-                loggerWithChild({ email: email }).error(
-                  error,
-                  "Error processing image citation",
-                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
-                )
-              }
-              yieldedImageCitations.add(citationIndex)
-            } else {
-              loggerWithChild({ email: email }).error(
-                "Found a citation index but could not find it in the search result ",
-                citationIndex,
-                results.length,
+      }
+    } else if (imgMatch) {
+      const parts = imgMatch[1].split("_")
+      if (parts.length >= 2) {
+        const docIndex = parseInt(parts[0], 10)
+        const imageIndex = parseInt(parts[1], 10)
+        const citationIndex = docIndex + baseIndex
+        if (!yieldedImageCitations.has(citationIndex)) {
+          const item = results[docIndex]
+          if (item) {
+            try {
+              const imageData = await getCitationToImage(
+                imgMatch[1],
+                {
+                  id: item.id,
+                  relevance: item.confidence,
+                  fields: {
+                    docId: item.source.docId,
+                  } as any,
+                } as VespaSearchResult,
+                email,
               )
-              continue
+              if (imageData) {
+                if (!imageData.imagePath || !imageData.imageBuffer) {
+                  loggerWithChild({ email: email }).error(
+                    "Invalid imageData structure returned",
+                    { citationKey: imgMatch[1], imageData },
+                  )
+                  continue
+                }
+                yield {
+                  imageCitation: {
+                    citationKey: imgMatch[1],
+                    imagePath: imageData.imagePath,
+                    imageData: imageData.imageBuffer.toString("base64"),
+                    ...(imageData.extension
+                      ? { mimeType: mimeTypeMap[imageData.extension] }
+                      : {}),
+                    item: item.source,
+                  },
+                }
+              }
+            } catch (error) {
+              loggerWithChild({ email: email }).error(
+                error,
+                "Error processing image citation",
+                { citationKey: imgMatch[1], error: getErrorMessage(error) },
+              )
             }
+            yieldedImageCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              "Found a citation index but could not find it in the search result ",
+              citationIndex,
+              results.length,
+            )
+            continue
           }
         }
       }
@@ -2353,9 +2353,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(email, [
           Apps.DataSource,
         ])
-        
+
         let docIds: string[] = []
-        if (allDataSources && allDataSources.root && allDataSources.root.children) {
+        if (
+          allDataSources &&
+          allDataSources.root &&
+          allDataSources.root.children
+        ) {
           docIds = [
             ...new Set(
               allDataSources.root.children
