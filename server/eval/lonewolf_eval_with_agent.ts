@@ -12,20 +12,25 @@ import { HTTPException } from "hono/http-exception"
 import config from "@/config"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { Apps, ChatSSEvents } from "@/shared/types"
-import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
+import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 
 import {
-  // baselineRAGIterationJsonStream,
   generateSearchQueryOrAnswerFromConversation,
+  getProviderByModel,
   jsonParseLLMOutput,
 } from "@/ai/provider"
 import { processMessage } from "@/api/chat/utils"
-import type {
-  TemporalClassifier,
-  QueryRouterResponse,
-  QueryType,
+import {
+  type TemporalClassifier,
+  type QueryRouterResponse,
+  type QueryType,
+  Models,
+  type ModelParams,
+  type LLMProvider,
 } from "@/ai/types"
 import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
+import { OpenAIProvider } from "@/ai/provider/openai"
+import OpenAI from "openai"
 
 const { defaultBestModel } = config
 const myEmail = "oindrila.banerjee@juspay.in"
@@ -138,6 +143,80 @@ Please proceed with your response to the given question.`,
 if (!myEmail) throw new Error("Please set the email")
 if (!workspaceId) throw new Error("Please add the workspaceId")
 
+const evaluateSystemPrompt = (
+  input: string,
+  expected: string,
+  output: string,
+) =>
+  `You are comparing a submitted answer to an expert answer on a given question. Here is the data:
+  [BEGIN DATA]
+  ************
+  [Question]: ${input}
+  ************
+  [Expert]: ${expected}
+  ************
+  [Submission]: ${output}
+  ************
+  [END DATA]
+  
+  Compare the factual content of the submitted answer with the expert answer, ignoring differences in style, grammar, or punctuation. The submitted answer may be a subset, superset, or identical to the expert answer, or it may conflict with it. Consider the following:
+  - A **subset** includes some but not all key facts from the expert answer, with no contradictions.
+  - A **superset** includes all key facts from the expert answer plus additional consistent details.
+  - **Identical** means the answers contain the same key facts.
+  - A **disagreement** occurs only if the submitted answer contains facts that directly contradict the expert answer.
+  - **Non-factual differences** include stylistic or irrelevant details that don’t affect accuracy.
+  
+  Select one of the following options:
+  (A) The submitted answer is a subset of the expert answer and is fully consistent with it.
+  (B) The submitted answer is a superset of the expert answer, including all its key facts plus additional consistent details.
+  (C) The submitted answer contains all the same key facts as the expert answer.
+  (D) There is a factual disagreement between the submitted answer and the expert answer.
+  (E) The answers differ, but these differences don’t matter from the perspective of factuality.
+  
+  RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`
+  
+const FactualityScorer = async (
+  params: ModelParams,
+  args: { input: string; expected: string; output: string },
+) => {
+  const openAiKey = process.env.OPENAI_API_KEY
+  let provider: LLMProvider | null = null
+
+  if (!openAiKey) {
+    if (!params.modelId) params.modelId = modelId
+    provider = getProviderByModel(params.modelId)
+    Logger.info(
+      "OpenAI key not found for evaluation, going with bedrock models",
+    )
+  } else {
+    provider = new OpenAIProvider(new OpenAI({ apiKey: openAiKey }))
+    Logger.info("Evaluating with openai")
+    params.modelId = Models.Gpt_4o_mini
+  }
+
+  params.systemPrompt = evaluateSystemPrompt(
+    args.input,
+    args.expected,
+    args.output,
+  )
+  Logger.info("System prompt sent to LLM:", params.systemPrompt); // Add logging
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: "now evaluate the system prompt, just respond with the letters",
+      },
+    ],
+  }
+
+  const { text, cost } = await provider.converse([baseMessage], params)
+
+  Logger.info("LLM response received:", text); // Add logging
+  return { text, cost }
+}
+
+  
 type EvalData = {
   input: string
   expected: string
@@ -216,58 +295,81 @@ const loadTestData = (): EvalData[] => {
 const data = loadTestData()
 if (!data.length) throw new Error("Data is not set for the evals")
 
-function evaluateResponse(result: EvalResult): number {
-  const { output, expected } = result
+async function evaluateResponse(result: EvalResult): Promise<number> {
+  const { input, output, expected } = result;
 
-  console.log("####### EVALUATING AGENT MESSAGE RESPONSE ########")
-  console.log("Generated answer:", output)
-  console.log("Expected answer:", expected)
+  console.log("\n=== CUSTOM LLM FACTUALITY EVALUATION ===");
+  console.log("Input:", input);
+  console.log("Generated answer:", output);
+  console.log("Expected answer:", expected);
 
-  // Normalize strings for comparison
-  const normalizedOutput = output.trim().toLowerCase()
-  const normalizedExpected = expected.trim().toLowerCase()
+  try {
+    // Call hypothetical LLM-based FactualityScorer
+    const response = await FactualityScorer(
+      { modelId: modelId, stream: false },
+      { input, output, expected }
+    );
 
-  // Calculate similarity score
-  const similarity = calculateSimilarity(normalizedOutput, normalizedExpected) * 100
-  
-  // Log the similarity score
-  console.log(`Similarity score: ${(similarity).toFixed(1)}%`)
-  
-  // Return the similarity score directly
-  console.log(pc.green(`Score: ${(similarity).toFixed(1)}%`))
-  return similarity
+    console.log("Raw LLM response:", response);
+
+    // Extract the choice from the response
+    const content = (response.text && response.text.trim()) || "";
+    
+    // Map the choice to a score (in percentage)
+    const choiceScores: Record<string, number> = {
+      A: 40,  // Mostly incorrect
+      B: 60,  // Partially correct
+      C: 100, // Fully correct
+      D: 0,   // Completely incorrect
+      E: 100, // Fully correct with additional detail
+    };
+
+    let score = 50; // Default score (0.5 * 100)
+    if (content in choiceScores) {
+      score = choiceScores[content];
+    } else {
+      console.log("Invalid choice received, using default score 50%");
+    }
+
+    console.log(`Final factuality score: ${score.toFixed(1)}%`);
+    return score;
+  } catch (error: any) {
+    console.error("Factuality Scorer API error:", error.message);
+    console.log("Using default score 0% due to error");
+    return 0;
+  }
 }
 
 function saveEvalResults(
   evaluation: { averageScore: number; results: EvalResult[] },
   name: string,
 ) {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const fileName = `${name}-${timestamp}.json`
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const fileName = `${name}-${timestamp}.json`;
   const filePath = path.join(
     process.cwd(),
     "eval-results",
     "agent-message",
     fileName,
-  )
+  );
 
   const evalResultsDir = path.join(
     process.cwd(),
     "eval-results",
     "agent-message",
-  )
+  );
   if (!fs.existsSync(evalResultsDir)) {
-    fs.mkdirSync(evalResultsDir, { recursive: true })
-    Logger.info(`Created directory: ${evalResultsDir}`)
+    fs.mkdirSync(evalResultsDir, { recursive: true });
+    Logger.info(`Created directory: ${evalResultsDir}`);
   }
 
   try {
-    fs.writeFileSync(filePath, JSON.stringify(evaluation, null, 2))
-    Logger.info(`Evaluation results saved to: ${filePath}`)
-    return fileName
+    fs.writeFileSync(filePath, JSON.stringify(evaluation, null, 2));
+    Logger.info(`Evaluation results saved to: ${filePath}`);
+    return fileName;
   } catch (error) {
-    Logger.error(`Failed to save evaluation results to ${filePath}: ${error}`)
-    throw error
+    Logger.error(`Failed to save evaluation results to ${filePath}: ${error}`);
+    throw error;
   }
 }
 
@@ -623,15 +725,15 @@ async function simulateAgentMessageFlow(
     // Set the final output - ensure it's clean
     result.output = finalAnswer || "No answer generated"
 
-    // Calculate similarity score
+    // Calculate factuality score
     if (result.output && result.expected) {
-      result.score = calculateSimilarityScore(result.expected, result.output)
+      result.score = await evaluateResponse(result)
     }
 
     Logger.info(`Evaluation completed. Score: ${result.score}`)
     console.log("Final answer:", result.output)
     console.log("Expected:", result.expected)
-    console.log("Similarity Score:", result.score)
+    console.log("Factuality Score:", result.score)
 
   } catch (error) {
     Logger.error(`Error in agent message flow: ${error}`)
@@ -668,7 +770,7 @@ async function evaluateAgentPerformance(
   const averageScore = totalScore / results.length
   const averageProcessingTime = results.reduce((sum, r) => sum + r.processingTime, 0) / results.length
   
-  const passed = results.filter(r => r.score > 0.7).length // Threshold for "passing"
+  const passed = results.filter(r => r.score > 70).length // Threshold for "passing" adjusted to percentage
   const failed = results.length - passed
   
   return {
@@ -682,9 +784,6 @@ async function evaluateAgentPerformance(
     },
   }
 }
-
-
-
 
 async function runEvaluation(userCtx: string) {
   const results: EvalResult[] = []
@@ -701,7 +800,7 @@ async function runEvaluation(userCtx: string) {
     Logger.info(`- Answer: ${result.output}`)
     Logger.info(`- Processing time: ${result.processingTime}ms`)
 
-    result.score = evaluateResponse(result)
+    result.score = await evaluateResponse(result)
     results.push(result)
 
     console.log("---")
@@ -712,7 +811,7 @@ async function runEvaluation(userCtx: string) {
     results.reduce((sum, r) => sum + r.processingTime, 0) / results.length
 
   console.log(pc.green(`\n=== FINAL RESULTS ===`))
-  console.log(`Average Score: ${(avgScore * 100).toFixed(1)}%`)
+  console.log(`Average Score: ${(avgScore).toFixed(1)}%`)
   console.log(`Average Processing Time: ${avgProcessingTime.toFixed(0)}ms`)
 
   const savedFileName = saveEvalResults(
