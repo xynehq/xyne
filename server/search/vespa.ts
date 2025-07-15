@@ -2487,7 +2487,7 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
 export const getDataSourceFilesByName = async (
   dataSourceName: string,
   userEmail: string,
-  limit: number = 400,
+  limit: number = 3000,
 ): Promise<VespaSearchResponse> => {
   const yql = `
     select * 
