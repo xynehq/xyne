@@ -1401,7 +1401,7 @@ const Sources = ({
 
 interface ImageCitationComponentProps {
   citationKey: string
-  imageCitations: ImageCitation[]
+  imageCitations?: ImageCitation[] | ImageCitation
   className?: string
 }
 
@@ -1411,18 +1411,33 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   className = "",
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const imageCitation = imageCitations.find(
-    (ic) => ic.citationKey === citationKey,
-  )
+  let imageCitation: ImageCitation | undefined
+  let imageSrc = ""
 
-  if (!imageCitation) {
-    return (
-      <span className="text-blue-600 dark:text-blue-400">[{citationKey}]</span>
-    )
+  try {
+    if (Array.isArray(imageCitations)) {
+      imageCitation = imageCitations.find(
+        (ic) => ic.citationKey === citationKey,
+      )
+    } else if (
+      imageCitations &&
+      typeof imageCitations === "object" &&
+      "citationKey" in imageCitations
+    ) {
+      if ((imageCitations as ImageCitation).citationKey === citationKey) {
+        imageCitation = imageCitations as ImageCitation
+      }
+    }
+    if (!imageCitation) {
+      return null
+    }
+
+    // TODO: Fetch image data from API instead of using base64
+    imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+  } catch (error) {
+    console.error("Error fetching image data:", error)
+    return null
   }
-
-  // TODO: Fetch image data from API instead of using base64
-  const imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
 
   const ImageModal = () => {
     const handleCloseModal = () => {

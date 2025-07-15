@@ -219,28 +219,38 @@ export const extractImageFileNames = (
   let imageFileNames: string[] = []
   for (const match of matches) {
     let imageContent = match[1].trim()
-    if (imageContent) {
-      const docId = imageContent.split("_")[0]
-      const docIndex =
-        results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+    try {
+      if (imageContent) {
+        const docId = imageContent.split("_")[0]
+        const docIndex =
+          results?.findIndex((c) => (c.fields as any).docId === docId) || -1
 
-      if (docIndex === -1) {
-        console.warn(
-          `No matching document found for docId: ${docId} in results for image content extraction.`,
-        )
-        continue
+        if (docIndex === -1) {
+          console.warn(
+            `No matching document found for docId: ${docId} in results for image content extraction.`,
+          )
+          continue
+        }
+
+        // Split by newlines and filter out empty strings
+        const fileNames = imageContent
+          .split("\n")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0)
+          // Additional safety: split by spaces and filter out empty strings
+          // in case multiple filenames are on the same line
+          .flatMap((name) =>
+            name.split(/\s+/).filter((part) => part.length > 0),
+          )
+          .map((name) => `${docIndex}_${name}`)
+        imageFileNames.push(...fileNames)
       }
-
-      // Split by newlines and filter out empty strings
-      const fileNames = imageContent
-        .split("\n")
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0)
-        // Additional safety: split by spaces and filter out empty strings
-        // in case multiple filenames are on the same line
-        .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
-        .map((name) => `${docIndex}_${name}`)
-      imageFileNames.push(...fileNames)
+    } catch (error) {
+      console.error(
+        `Error processing image content: ${getErrorMessage(error)}`,
+        { imageContent },
+      )
+      continue
     }
   }
   return { imageFileNames }
@@ -565,7 +575,7 @@ export const getCitationToImage = async (
 
       if (imageFile) {
         imagePath = path.join(imagePathProcess, imageFile)
-        ext = path.parse(imageFile).ext.slice(1) // Remove the dot
+        ext = path.parse(imageFile).ext
       }
     } catch (dirError) {
       loggerWithChild({ email: email }).error("Error reading image directory", {
