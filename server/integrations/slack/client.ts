@@ -1167,15 +1167,18 @@ export const processSlackEvent = async (event: any) => {
       let processedText = ""
 
       if (botMentionMatch) {
-        // Get the index where the bot mention ends
         const mentionEndIndex =
           botMentionMatch.index! + botMentionMatch[0].length
-        // Extract everything after the bot mention
         processedText = text.substring(mentionEndIndex).trim()
       } else {
-        // Fallback: use the original logic if no bot mention is found
         processedText = text.replace(/<@.*?>\s*/, "").trim()
       }
+
+      processedText = processedText
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/_([^_]+)_/g, '$1') 
+        .replace(/`([^`]+)`/g, '$1')
+        .trim()
 
       if (processedText.toLowerCase().startsWith("/agents")) {
         await handleAgentsCommand(webClient, channel, user, dbUser[0]);
