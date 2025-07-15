@@ -227,31 +227,15 @@ function evaluateResponse(result: EvalResult): number {
   const normalizedOutput = output.trim().toLowerCase()
   const normalizedExpected = expected.trim().toLowerCase()
 
-  // Exact match check
-  const isExactMatch = normalizedOutput === normalizedExpected
-
-  // Partial match check using similarity score
-  const similarityThreshold = 0.7 // 70% similarity for partial match
-  const similarity = calculateSimilarity(normalizedOutput, normalizedExpected)
-  const isPartialMatch = similarity >= similarityThreshold
-
-  // Scoring: 1 for exact match, 0.5 for partial match, 0 for no match
-  let score = 0
-  if (isExactMatch) {
-    score = 1
-    console.log(pc.green("✅ Exact match"))
-  } else if (isPartialMatch) {
-    score = 0.5
-    console.log(pc.yellow("⚠️ Partial match"))
-    console.log(`Similarity score: ${(similarity * 100).toFixed(1)}%`)
-  } else {
-    console.log(pc.red("❌ No match"))
-    console.log(`Similarity score: ${(similarity * 100).toFixed(1)}%`)
-  }
-
-  console.log(pc.green(`Score: ${(score * 100).toFixed(1)}%`))
-
-  return score
+  // Calculate similarity score
+  const similarity = calculateSimilarity(normalizedOutput, normalizedExpected) * 100
+  
+  // Log the similarity score
+  console.log(`Similarity score: ${(similarity).toFixed(1)}%`)
+  
+  // Return the similarity score directly
+  console.log(pc.green(`Score: ${(similarity).toFixed(1)}%`))
+  return similarity
 }
 
 function saveEvalResults(
@@ -287,6 +271,141 @@ function saveEvalResults(
   }
 }
 
+// Add evaluation scoring function
+function calculateSimilarityScore(expected: string, actual: string): number {
+  // Normalize strings - remove extra whitespace, convert to lowercase
+  const normalizeText = (text: string): string => {
+    return text.trim().toLowerCase().replace(/\s+/g, ' ');
+  };
+  
+  const normalizedExpected = normalizeText(expected);
+  const normalizedActual = normalizeText(actual);
+  
+  // Exact match
+  if (normalizedExpected === normalizedActual) {
+    return 1.0;
+  }
+  
+  // Jaccard similarity for word-based comparison
+  const getWords = (text: string): Set<string> => new Set(text.split(' '));
+  const expectedWords = getWords(normalizedExpected);
+  const actualWords = getWords(normalizedActual);
+  
+  const intersection = new Set([...expectedWords].filter(x => actualWords.has(x)));
+  const union = new Set([...expectedWords, ...actualWords]);
+  
+  const jaccardScore = intersection.size / union.size;
+  
+  // Substring containment bonus
+  const containsExpected = normalizedActual.includes(normalizedExpected);
+  const containsActual = normalizedExpected.includes(normalizedActual);
+  
+  if (containsExpected || containsActual) {
+    return Math.max(jaccardScore, 0.8);
+  }
+  
+  return jaccardScore;
+}
+
+// Improved deduplication function
+function deduplicateText(text: string): string {
+  // Remove consecutive duplicate sentences/phrases
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+  const uniqueSentences = [];
+  const seen = new Set();
+  
+  for (const sentence of sentences) {
+    const normalized = sentence.trim().toLowerCase();
+    if (!seen.has(normalized) && normalized.length > 0) {
+      seen.add(normalized);
+      uniqueSentences.push(sentence.trim());
+    }
+  }
+  
+  return uniqueSentences.join('. ').trim();
+}
+
+// Enhanced chunk processing
+function processStreamChunks(chunks: string[]): string {
+  // Join all chunks
+  let fullText = chunks.join('');
+  
+  // Remove duplicate consecutive characters/words
+  fullText = fullText.replace(/(.)\1{2,}/g, '$1'); // Remove 3+ consecutive chars
+  
+  // Deduplicate text
+  fullText = deduplicateText(fullText);
+  
+  // Clean up formatting
+  fullText = fullText
+    .replace(/\s+/g, ' ') // Multiple spaces to single space
+    .replace(/\n+/g, '\n') // Multiple newlines to single newline
+    .trim();
+  
+  return fullText;
+}
+
+// Helper function to extract answer from various response formats
+function extractAnswerFromResponse(response: string): string {
+  // Remove analysis and planning tags first
+  let cleanedResponse = response;
+  cleanedResponse = cleanedResponse.replace(/<analysis_and_planning>[\s\S]*?<\/analysis_and_planning>/g, '');
+  cleanedResponse = cleanedResponse.replace(/<question_analysis>[\s\S]*?<\/question_analysis>/g, '');
+  
+  // Try to extract JSON from markdown code blocks
+  const jsonCodeBlockMatch = cleanedResponse.match(/```json\s*([\s\S]*?)```/);
+  if (jsonCodeBlockMatch && jsonCodeBlockMatch[1]) {
+    try {
+      const jsonStr = jsonCodeBlockMatch[1].trim();
+      const parsed = JSON.parse(jsonStr);
+      
+      // Extract answer field if it exists
+      if (parsed.answer) {
+        return parsed.answer;
+      }
+    } catch (err) {
+      // Not valid JSON, continue
+    }
+  }
+  
+  // Try to parse as plain JSON
+  try {
+    // Check if the response contains JSON
+    const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[0];
+      const parsed = JSON.parse(jsonStr);
+      
+      // Extract answer field if it exists
+      if (parsed.answer) {
+        return parsed.answer;
+      }
+    }
+  } catch (err) {
+    // Not valid JSON, continue with other extraction methods
+  }
+
+  // Try to extract content between <answer> tags
+  const answerTagMatch = cleanedResponse.match(/<answer>([\s\S]*?)<\/answer>/);
+  if (answerTagMatch && answerTagMatch[1]) {
+    return answerTagMatch[1].trim();
+  }
+
+  // Try to extract content after "Final answer:" or similar patterns
+  const finalAnswerMatch = cleanedResponse.match(/Final answer:\s*([\s\S]*?)(?:Expected:|Similarity Score:|$)/i);
+  if (finalAnswerMatch && finalAnswerMatch[1]) {
+    return finalAnswerMatch[1].trim();
+  }
+  
+  // If the response starts with markdown headers or formatting, return as is
+  if (cleanedResponse.match(/^#{1,6}\s/m) || cleanedResponse.includes('##')) {
+    return cleanedResponse.trim();
+  }
+  
+  // If no specific format found, return the cleaned response
+  return cleanedResponse.trim();
+}
+
 async function simulateAgentMessageFlow(
   evalItem: EvalData,
   userCtx: string,
@@ -307,7 +426,7 @@ async function simulateAgentMessageFlow(
   try {
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
-      workspaceId, // This workspaceId is the externalId from JWT
+      workspaceId,
       myEmail,
     )
     const { user, workspace } = userAndWorkspace
@@ -317,7 +436,6 @@ async function simulateAgentMessageFlow(
     )
 
     if (agentId && isCuid(agentId)) {
-      // Use the numeric workspace.id for the database query with permission check
       const agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
         agentId,
@@ -331,11 +449,12 @@ async function simulateAgentMessageFlow(
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
+
     const message = decodeURIComponent(evalItem.input)
     let finalAnswer = ""
     let thinking = ""
 
-    // Mock message context (simulating a single user message with no prior conversation)
+    // Create message context
     const messages = [
       {
         messageRole: MessageRole.User,
@@ -344,9 +463,9 @@ async function simulateAgentMessageFlow(
       },
     ]
 
-    // Process messages to filter out errors and empty assistant messages
+    // Process messages
     const messagesWithNoErrResponse = messages
-      .filter((msg) => !msg?.errorMessage)
+      .filter((msg: any) => !msg?.errorMessage)
       .filter(
         (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message),
       )
@@ -358,7 +477,6 @@ async function simulateAgentMessageFlow(
           fileIds &&
           fileIds.length > 0
         ) {
-          // Simplified: assume no context selection for evaluation
           processedMessage = msg.message
         }
         return {
@@ -367,13 +485,11 @@ async function simulateAgentMessageFlow(
         }
       })
 
-    // Limit messages to last 8 (in this case, just the input message)
     const limitedMessages = messagesWithNoErrResponse.slice(-8)
 
-    // Mock stream for SSE events - simplified to just collect the answer
+    // Enhanced mock stream with better chunk handling
     const mockStream: any = {
       writeSSE: (event: { event: string; data: any }) => {
-        // We'll handle answer accumulation manually below
         if (event.event === ChatSSEvents.Reasoning) {
           thinking += event.data
         }
@@ -382,18 +498,18 @@ async function simulateAgentMessageFlow(
       closed: false,
     }
 
-    // Call LLM to generate answer
     Logger.info(
       "Checking if answer is in the conversation or a mandatory query rewrite is needed",
     )
+    
     const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
       message,
       userCtx,
       {
-        modelId: modelId, // Placeholder; replace with actual model ID if needed
+        modelId: modelId,
         stream: true,
         json: true,
-        reasoning: false, // Simplified for evaluation
+        reasoning: false,
         messages: limitedMessages,
         agentPrompt: agentPromptForLLM,
       },
@@ -416,8 +532,10 @@ async function simulateAgentMessageFlow(
       },
     }
 
-    // Process LLM output from generateSearchQueryOrAnswerFromConversation
+    // Process LLM output with better error handling
     let buffer = ""
+    const answerChunks: string[] = []
+    
     for await (const chunk of searchOrAnswerIterator) {
       if (mockStream.closed) {
         Logger.info(
@@ -425,10 +543,16 @@ async function simulateAgentMessageFlow(
         )
         break
       }
+      
       if (chunk.text) {
         buffer += chunk.text
+        answerChunks.push(chunk.text)
+        
         try {
-          parsed = jsonParseLLMOutput(buffer) || {}
+          // Only parse if buffer looks like complete JSON
+          if (buffer.trim().startsWith('{') && buffer.trim().endsWith('}')) {
+            parsed = jsonParseLLMOutput(buffer) || parsed
+          }
         } catch (err) {
           const errMessage = (err as Error).message
           Logger.error(`Error while parsing LLM output: ${errMessage}`)
@@ -437,15 +561,20 @@ async function simulateAgentMessageFlow(
       }
     }
 
+    // Process the collected chunks - use the full buffer instead
+    const processedChunks = buffer
+
     // If answer was found in conversation, use it directly
     if (parsed.answer) {
-      finalAnswer = parsed.answer
+      // Extract clean answer from parsed response
+      finalAnswer = extractAnswerFromResponse(parsed.answer)
       Logger.info("Found answer in conversation:", finalAnswer)
     } else {
       // If no answer was found, use UnderstandMessageAndAnswer
       Logger.info(
         "No answer found in conversation, applying UnderstandMessageAndAnswer",
       )
+      
       const classification: TemporalClassifier & QueryRouterResponse = {
         direction: parsed.temporalDirection,
         type: parsed.type as QueryType,
@@ -465,12 +594,12 @@ async function simulateAgentMessageFlow(
         classification,
         limitedMessages,
         0.5,
-        false, // Simplified: no reasoning for evaluation
-        undefined, // No explicit span for simulation
+        false,
+        undefined,
         agentPromptForLLM,
       )
 
-      let answerChunks: string[] = []
+      let understandAnswerChunks: string[] = []
 
       for await (const chunk of iterator) {
         if (mockStream.closed) {
@@ -480,25 +609,83 @@ async function simulateAgentMessageFlow(
           break
         }
         if (chunk.text) {
-          answerChunks.push(chunk.text)
+          understandAnswerChunks.push(chunk.text)
         }
       }
 
-      finalAnswer = answerChunks.join("")
+      // Process the understand answer chunks
+      const rawAnswer = processStreamChunks(understandAnswerChunks)
+      // Extract clean answer from the response
+      finalAnswer = extractAnswerFromResponse(rawAnswer)
       Logger.info("Answer from UnderstandMessageAndAnswer:", finalAnswer)
     }
 
+    // Set the final output - ensure it's clean
     result.output = finalAnswer || "No answer generated"
 
+    // Calculate similarity score
+    if (result.output && result.expected) {
+      result.score = calculateSimilarityScore(result.expected, result.output)
+    }
+
+    Logger.info(`Evaluation completed. Score: ${result.score}`)
     console.log("Final answer:", result.output)
+    console.log("Expected:", result.expected)
+    console.log("Similarity Score:", result.score)
+
   } catch (error) {
     Logger.error(`Error in agent message flow: ${error}`)
     result.output = `Error: ${(error as Error).message}`
+    result.score = 0
   }
 
   result.processingTime = Date.now() - startTime
   return result
 }
+
+// Additional helper function for batch evaluation
+async function evaluateAgentPerformance(
+  evalItems: EvalData[],
+  userCtx: string,
+): Promise<{
+  averageScore: number;
+  results: EvalResult[];
+  summary: {
+    totalTests: number;
+    passed: number;
+    failed: number;
+    averageProcessingTime: number;
+  };
+}> {
+  const results: EvalResult[] = []
+  
+  for (const item of evalItems) {
+    const result = await simulateAgentMessageFlow(item, userCtx)
+    results.push(result)
+  }
+  
+  const totalScore = results.reduce((sum, r) => sum + r.score, 0)
+  const averageScore = totalScore / results.length
+  const averageProcessingTime = results.reduce((sum, r) => sum + r.processingTime, 0) / results.length
+  
+  const passed = results.filter(r => r.score > 0.7).length // Threshold for "passing"
+  const failed = results.length - passed
+  
+  return {
+    averageScore,
+    results,
+    summary: {
+      totalTests: results.length,
+      passed,
+      failed,
+      averageProcessingTime,
+    },
+  }
+}
+
+
+
+
 async function runEvaluation(userCtx: string) {
   const results: EvalResult[] = []
 
