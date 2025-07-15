@@ -324,11 +324,11 @@ async function evaluateResponse(result: EvalResult): Promise<number> {
       E: 100, // Fully correct with additional detail
     };
 
-    let score = 50; // Default score (0.5 * 100)
+    let score = 0; // Default score (0.5 * 100)
     if (content in choiceScores) {
       score = choiceScores[content];
     } else {
-      console.log("Invalid choice received, using default score 50%");
+      console.log("Invalid choice received, using default score 0%");
     }
 
     console.log(`Final factuality score: ${score.toFixed(1)}%`);
