@@ -61,6 +61,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
 } else if (process.env["OLLAMA_MODEL"]) {
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
+    }
+  }
   OllamaModel = process.env["OLLAMA_MODEL"]
   defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
