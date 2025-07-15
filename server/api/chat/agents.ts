@@ -2537,13 +2537,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             json: false,
             reasoning: false,
             messages: messagesWithNoErrResponse,
+            imageFileNames:finalImageFileNames
           },
           agentPromptForLLM ?? "",
           messages.map((m) => ({
             role: m.messageRole as ConversationRole,
             content: [{ text: m.message }],
           })),
-          finalImageFileNames,
         )
         ragOffSpan.end()
         loggerWithChild({ email: sub }).info("After baselineRAGOffJsonStream")
@@ -2561,6 +2561,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               data: chunk.text,
             })
           }
+          
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }
