@@ -102,6 +102,7 @@ import {
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
 import type { ToolDefinition } from "@/api/chat/mapper"
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -209,6 +210,10 @@ const initializeProviders = (): void => {
     }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 30000,
+        socketTimeout: 30000,
+      }),
       retryMode: "adaptive",
       maxAttempts: 5,
       credentials: {
@@ -1125,11 +1130,7 @@ export const baselineRAGOffJsonStream = (
   messages: Message[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<ConverseResponse> => {
-  if (attachmentFileIds && attachmentFileIds.length > 0) {
-    params.imageFileNames = attachmentFileIds.map(
-      (fileId, index) => `${index}_${fileId}_${0}`,
-    )
-  }
+  
 
   if (!params.modelId) {
     params.modelId = defaultFastModel
