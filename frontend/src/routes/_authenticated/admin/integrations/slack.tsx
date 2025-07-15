@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Pencil, ArrowLeft } from "lucide-react"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType, IngestionType } from "shared/types"
+import { Apps, AuthType, IngestionType, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
@@ -41,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { wsClient } from "@/api" // ensure wsClient is imported
+import { useQuery as useReactQuery } from "@tanstack/react-query"
 
 export const updateConnectorStatus = async (
   connectorId: string,
@@ -509,6 +510,19 @@ const SlackOAuthTab = ({
       ? "Connect Slack Global OAuth"
       : "Connect Slack OAuth"
 
+  // Fetch sync jobs for the current user
+  const { data: syncJobStatus, isLoading: _ } = useReactQuery({
+    queryKey: ["user-sync-jobs"],
+    queryFn: async () => {
+      const res = await api.admin.user.syncJob.$get()
+      if (!res.ok) return { success: false }
+      return res.json()
+    },
+  })
+
+  // Check if user has a Slack sync job
+  const hasSlackSyncJob = !!syncJobStatus?.success
+
   return (
     <TabsContent value="oauth">
       <Card>
@@ -533,9 +547,18 @@ const SlackOAuthTab = ({
           ) : (
             <CardTitle>Slack OAuth</CardTitle>
           )}
-          <CardDescription>
-            Connect with slack to start ingestion
-          </CardDescription>
+          {/* Only show if no sync job and not connecting/connected */}
+          {!(
+            hasSlackSyncJob ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting
+          ) ? (
+            <CardDescription>
+              Connect with slack to start ingestion
+            </CardDescription>
+          ) : (
+            <CardDescription />
+          )}
         </CardHeader>
         <CardContent>
           {isPending ? (
@@ -657,13 +680,24 @@ const SlackOAuthTab = ({
               OAuthIntegrationStatus.OAuthConnected ||
             oauthIntegrationStatus ===
               OAuthIntegrationStatus.OAuthConnecting ? (
-            // If connected or connecting, show the Start Ingestion button
-            <Button
-              onClick={handleRegularIngestion}
-              disabled={isRegularIngestionActive}
-            >
-              {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
-            </Button>
+            <div className="flex items-center py-2">
+              {hasSlackSyncJob ? (
+                <span className="text-600">Connected</span>
+              ) : userRole === UserRole.User ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Your request has been sent to admin. Processing will take a
+                  few hours, depending on the size of your data.
+                </p>
+              ) : (
+                <Button
+                  onClick={handleRegularIngestion}
+                  disabled={isRegularIngestionActive}
+                  className="text-sm px-4 py-2"
+                >
+                  {isRegularIngestionActive ? "Starting..." : "Start Ingestion"}
+                </Button>
+              )}
+            </div>
           ) : null}
         </CardContent>
       </Card>
