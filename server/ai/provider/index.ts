@@ -1125,11 +1125,7 @@ export const baselineRAGOffJsonStream = (
   messages: Message[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<ConverseResponse> => {
-  if (attachmentFileIds && attachmentFileIds.length > 0) {
-    params.imageFileNames = attachmentFileIds.map(
-      (fileId, index) => `${index}_${fileId}_${0}`,
-    )
-  }
+  
 
   if (!params.modelId) {
     params.modelId = defaultFastModel

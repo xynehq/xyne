@@ -292,6 +292,21 @@ const checkAndYieldCitationsForAgent = async function* (
   }
 }
 
+
+const vespaResultToMinimalAgentFragment = (
+  child: VespaSearchResult,
+  idx: number,
+): MinimalAgentFragment => ({
+  id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
+  content: answerContextMap(
+    child as z.infer<typeof VespaSearchResultsSchema>,
+    0,
+    true,
+  ),
+  source: searchToCitation(child as z.infer<typeof VespaSearchResultsSchema>),
+  confidence: 1.0,
+})
+
 async function* getToolContinuationIterator(
   message: string,
   userCtx: string,
@@ -548,7 +563,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    const isAgentic = c.req.query("agentic") === "true"
+    let isAgentic = c.req.query("agentic") === "true"
     let {
       message,
       chatId,
@@ -610,6 +625,9 @@ export const MessageWithToolsApi = async (c: Context) => {
         throw new HTTPException(403, {
           message: "Access denied: You don't have permission to use this agent",
         })
+      }
+      if (agentForDb.isRagOn === false) {
+        isAgentic = false
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
@@ -2229,18 +2247,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
+    loggerWithChild({ email: email }).info("AgentMessageApiRagOff..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     // @ts-ignore
     const body = c.req.valid("query")
-    const attachmentFileIds = c.req.query("attachmentFileIds")
-      ? c.req
-          .query("attachmentFileIds")
-          ?.split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : []
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
     let {
       message,
       chatId,
@@ -2309,6 +2325,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         stream: false,
       })
       title = titleResp.title
+      let attachmentStorageError: Error | null = null
       const cost = titleResp.cost
       if (cost) {
         costArr.push(cost)
@@ -2341,6 +2358,26 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+
+
+
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
           return [chat, insertedMsg]
         },
       )
@@ -2409,9 +2446,15 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           }),
         })
 
-        const allDataSources = await getAllDocumentsForAgent(email, [
-          Apps.DataSource,
-        ])
+        const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
+        const allDataSources = await getAllDocumentsForAgent(
+          [Apps.DataSource],
+          agentForDb?.appIntegrations as string[],
+        )
+        dataSourceSpan.end()
+        loggerWithChild({ email: sub }).info(
+          `Found ${allDataSources?.root?.children?.length} data sources for agent`,
+        )
 
         let docIds: string[] = []
         if (
@@ -2432,25 +2475,47 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         }
 
         let context = ""
+        let finalImageFileNames: string[] = []
         if (docIds.length > 0) {
-          const allChunks = await GetDocumentsByDocIds(docIds, rootSpan)
+          let previousResultsLength = 0
+          const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
+          const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
+          // const allChunksCopy
+          chunksSpan.end()
           if (allChunks?.root?.children) {
+            const startIndex = 0
+            const fragments = allChunks.root.children.map((child, idx) =>
+              vespaResultToMinimalAgentFragment(child, idx),
+            )
             context = answerContextMapFromFragments(
-              allChunks.root.children.map((child: VespaSearchResult) => ({
-                id: `${(child.fields as any)?.docId || "Frangment_id_"}`,
-                content: answerContextMap(
-                  child as z.infer<typeof VespaSearchResultsSchema>,
-                  0,
-                  true,
-                ),
-                source: searchToCitation(
-                  child as z.infer<typeof VespaSearchResultsSchema>,
-                ),
-                confidence: 1.0,
-              })),
+              fragments,
               maxDefaultSummary,
             )
+
+            const { imageFileNames } = extractImageFileNames(
+              context,
+              fragments.map(
+                (v) =>
+                  ({
+                    fields: {
+                      docId: v.source.docId,
+                      title: v.source.title,
+                      url: v.source.url,
+                    },
+                  }) as any,
+              ),
+            )
+            Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
+            finalImageFileNames = imageFileNames || []
+            // context = initialContext;
           }
+        }
+        if (attachmentFileIds?.length) {
+          finalImageFileNames.push(
+            ...attachmentFileIds.map(
+              (fileid, index) => `${index}_${fileid}_${0}`,
+            ),
+          )
         }
 
         const messagesWithNoErrResponse = messages
@@ -2460,7 +2525,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             role: m.messageRole as ConversationRole,
             content: [{ text: m.message }],
           }))
-        Logger.info("Before baselineRAGOffJsonStream")
+        loggerWithChild({ email: sub }).info("Before baselineRAGOffJsonStream")
+        const ragOffSpan = streamSpan.startSpan("baseline_rag_off_json_stream")
         const ragOffIterator = baselineRAGOffJsonStream(
           message,
           ctx,
@@ -2471,15 +2537,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             json: false,
             reasoning: false,
             messages: messagesWithNoErrResponse,
+            imageFileNames:finalImageFileNames
           },
           agentPromptForLLM ?? "",
           messages.map((m) => ({
             role: m.messageRole as ConversationRole,
             content: [{ text: m.message }],
           })),
-          attachmentFileIds,
         )
-        Logger.info("After baselineRAGOffJsonStream")
+        ragOffSpan.end()
+        loggerWithChild({ email: sub }).info("After baselineRAGOffJsonStream")
         let answer = ""
         for await (const chunk of ragOffIterator) {
           if (stream.closed) {
@@ -2494,6 +2561,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               data: chunk.text,
             })
           }
+          
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }

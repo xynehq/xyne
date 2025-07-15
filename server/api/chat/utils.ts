@@ -211,9 +211,9 @@ export const extractImageFileNames = (
   context: string,
   results?: VespaSearchResult[],
 ): { imageFileNames: string[] } => {
-  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
+  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score:"
   const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score|$)/g
+    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
   const matches = [...context.matchAll(imageContentRegex)]
 
   let imageFileNames: string[] = []
@@ -222,8 +222,10 @@ export const extractImageFileNames = (
     try {
       if (imageContent) {
         const docId = imageContent.split("_")[0]
+        // const docIndex =
+        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
         const docIndex =
-          results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
 
         if (docIndex === -1) {
           console.warn(

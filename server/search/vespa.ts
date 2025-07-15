@@ -1003,26 +1003,10 @@ const HybridDefaultProfileAppEntityCounts = (
 }
 
 export const getAllDocumentsForAgent = async (
-  email: string,
   AllowedApps: Apps[] | null,
   dataSourceIds: string[] = [],
   limit: number = 400,
 ): Promise<VespaSearchResponse | null> => {
-  if (AllowedApps?.includes(Apps.DataSource) && dataSourceIds.length === 0) {
-    try {
-      const dataSourcesResponse = await getDataSourcesByCreator(email)
-      if (dataSourcesResponse.root.children) {
-        dataSourceIds = dataSourcesResponse.root.children.map(
-          (child) => (child.fields as VespaDataSource).docId,
-        )
-      }
-    } catch (error) {
-      Logger.error(error, "Failed to fetch data sources for agent")
-      if (AllowedApps.length === 1 && AllowedApps[0] === Apps.DataSource) {
-        return null
-      }
-    }
-  }
 
   const sources: string[] = []
   const conditions: string[] = []
@@ -1084,7 +1068,6 @@ export const getAllDocumentsForAgent = async (
   const payload = {
     yql,
     hits: limit,
-    email: email,
     timeout: "30s",
     "ranking.profile": "unranked",
   }
