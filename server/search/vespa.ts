@@ -2482,7 +2482,7 @@ export const fetchAllDataSourceFilesByName = async (
   userEmail: string,
   concurrency = 3,
   batchSize = 400,
-): Promise<VespaSearchResponse | null> => {
+): Promise<VespaSearchResult[] | null> => {
   const Logger = getLogger(Subsystem.Vespa).child({
     module: "fetchAllDataSourceFilesByName",
   })
@@ -2572,15 +2572,7 @@ export const fetchAllDataSourceFilesByName = async (
 
   const allChildren = results.flatMap((r) => r.root.children ?? [])
 
-  return {
-    root: {
-      id: "root",
-      relevance: 1.0,
-      fields: { totalCount },
-      children: allChildren,
-      coverage: results[0].root.coverage, // optional
-    },
-  }
+  return allChildren
 }
 
 export const SlackHybridProfile = (

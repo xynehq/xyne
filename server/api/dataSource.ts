@@ -335,10 +335,13 @@ export const DeleteDocumentApi = async (c: Context) => {
           dataSourceName,
           userEmail,
         )
-        const filesToDelete =
-          filesResponse.root.children?.map(
-            (child: VespaSearchResult) => child.fields as VespaDataSourceFile,
-          ) || []
+        if (!filesResponse) {
+          hasMore = false
+          break
+        }
+        const filesToDelete: VespaDataSourceFile[] = filesResponse.map(
+          (child: VespaSearchResult) => child.fields as VespaDataSourceFile,
+        )
 
         loggerWithChild({ email: userEmail }).info(
           `Found ${filesToDelete.length} files to delete for datasource ${dataSourceName}`,
@@ -348,7 +351,7 @@ export const DeleteDocumentApi = async (c: Context) => {
           break
         }
         await Promise.all(
-          filesToDelete.map((file) => {
+          filesToDelete.map((file: VespaDataSourceFile) => {
             if (file.docId) {
               loggerWithChild({ email: userEmail }).info(
                 `Queueing deletion for file: ${file.fileName} (${file.docId})`,
@@ -509,11 +512,14 @@ export const ListDataSourceFilesApi = async (c: Context) => {
   }
 
   try {
-    const vespaResponse = await fetchAllDataSourceFilesByName(dataSourceName, email)
-    const files =
-      vespaResponse.root.children?.map(
-        (child: VespaSearchResult) => child.fields,
-      ) || []
+    const vespaResponse = await fetchAllDataSourceFilesByName(
+      dataSourceName,
+      email,
+    )
+    if (!vespaResponse) {
+      return c.json([])
+    }
+    const files = vespaResponse.map((child: VespaSearchResult) => child.fields)
     return c.json(files)
   } catch (error) {
     loggerWithChild({ email: email }).error(
