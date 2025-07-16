@@ -1887,15 +1887,14 @@ const processSlackDM = async (event: any) => {
   } catch (error: any) {
     Logger.error(error, "Error processing DM event");
     if (user && webClient) {
-      // For errors in DMs, use postMessage instead of postEphemeral
-      await handleError(error, {
-        client: webClient,
-        channel,
-        user,
-        threadTs: thread_ts,
-        action: "processSlackDM",
-        payload: event,
-      });
+      try {
+        await webClient.chat.postMessage({
+          channel,
+          text: `An error occurred: ${error.message}`,
+        });
+      } catch (e) {
+        Logger.error(e, "Failed to post error message to DM");
+      }
     }
   }
 };
