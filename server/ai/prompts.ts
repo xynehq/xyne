@@ -2140,7 +2140,7 @@ ${retrievedContext}
 7. Technical Response Guidelines:
    - When responding to queries involving API details or payload structures, always enclose the content within properly formatted code blocks for clarity and accuracy.
    - All responses to code-related technical questions must include relevant code snippets or blocks, properly formatted using language-specific syntax highlighting to enhance readability and maintain correctness.
-8. For **any factual statement or information derived from context**, include a **citation** in [Index] format for citations, never group indices (e.g., [0] [1], not [0,1]) that corresponds to the source index.
+8. For **any factual statement or information derived from context**, include a **citation** in [index] format for citations, never group indices (e.g., [0] [1], not [0,1]) that corresponds to the source index.
 
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
