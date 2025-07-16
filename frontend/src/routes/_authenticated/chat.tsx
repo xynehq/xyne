@@ -2141,28 +2141,6 @@ export const ChatMessage = ({
                       citations={citations}
                       citationMap={citationMap}
                     />
-                    <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
-                      <MarkdownPreview
-                        source={thinking}
-                        wrapperElement={{
-                          "data-color-mode": theme,
-                        }}
-                        style={{
-                          padding: 0,
-                          backgroundColor: "transparent",
-                          color: theme === "dark" ? "#A0AEC0" : "#627384",
-                          maxWidth: "100%",
-                          overflowWrap: "break-word",
-                          wordBreak: "break-word",
-                          minWidth: 0,
-                        }}
-                        components={{
-                          a: renderMarkdownLink,
-                          code: Code,
-                          ...createTableComponents(), // Use extracted table components
-                        }}
-                      />
-                    </div>
                   </>
                 )}
                 {message === "" && (!responseDone || isRetrying) ? (
