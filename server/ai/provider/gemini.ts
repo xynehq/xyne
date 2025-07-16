@@ -1,4 +1,9 @@
-import { GoogleGenerativeAI, type Content } from "@google/generative-ai"
+import {
+  GoogleGenAI,
+  type Content,
+  type GenerateContentConfig,
+  type ThinkingConfig,
+} from "@google/genai"
 import BaseProvider from "@/ai/provider/base"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import { type ModelParams, type ConverseResponse, AIProviders } from "../types"
@@ -97,138 +102,164 @@ async function buildGeminiImageParts(
 }
 
 export class GeminiAIProvider extends BaseProvider {
-  constructor(client: GoogleGenerativeAI) {
+  constructor(client: GoogleGenAI) {
     super(client, AIProviders.GoogleAI)
   }
-
   async converse(
     messages: Message[],
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    try {
-      const geminiModel = await (
-        this.client as GoogleGenerativeAI
-      ).getGenerativeModel({
-        model: modelParams.modelId,
-      })
-      // Build image parts if they exist
-      const imageParts =
-        params.imageFileNames && params.imageFileNames.length > 0
-          ? await buildGeminiImageParts(params.imageFileNames)
-          : []
-      const chatComponent = await geminiModel.startChat({
-        history: messages.map((v) => {
-          const role = v.role! as "user" | "model" | "function" | "system" // Ensure role is typed correctly
-          const part = v.content ? v.content[0].text! : "" // Ensure safe access with a default fallback
+    console.log("hello inside converse of GenAI")
 
-          return {
-            role,
-            parts: [{ text: part }], // Wrap text in an array of objects, assuming Part has a text field
-          }
-        }),
-        systemInstruction: {
-          role: "system",
-          parts: [
-            {
-              text:
-                modelParams.systemPrompt +
-                "\n\n" +
-                "Important: In case you don't have the context, you can use the images in the context to answer questions.",
-            },
-          ],
-        },
-        generationConfig: {
+    try {
+      const ai = this.client as GoogleGenAI
+
+      // 1. Build any image parts (no change)
+      const imageParts = params.imageFileNames?.length
+        ? await buildGeminiImageParts(params.imageFileNames)
+        : []
+
+      // 2. Rehydrate your prior turns into the SDK's Content[] shape
+      const history = messages.map((v) => ({
+        role: v.role === "assistant" ? "model" : ("user" as const),
+        parts: [{ text: v.content?.[0]?.text || "" }],
+      }))
+
+      // 3. Create a chat session, enabling thinking and seeding system + history :contentReference[oaicite:0]{index=0}
+      const chat = ai.chats.create({
+        model: modelParams.modelId,
+        history,
+        config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
           responseMimeType: "application/json",
-        },
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget: -1, // dynamic chain-of-thought enabled :contentReference[oaicite:1]{index=1}
+          } satisfies ThinkingConfig,
+          systemInstruction: {
+            role: "system",
+            parts: [
+              {
+                text:
+                  modelParams.systemPrompt +
+                  "\n\n" +
+                  "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+              },
+            ],
+          },
+        } satisfies GenerateContentConfig,
       })
-      const latestMessage =
-        messages[messages.length - 1]?.content?.[0]?.text || ""
-      const response = await chatComponent.sendMessage([
+
+      // 4. Package your latest user turn + images
+      const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
+      const messageParts = [
         {
           text:
             "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-            latestMessage,
+            latestText,
         },
         ...imageParts,
-      ])
+      ]
+
+      // 5. Send a single, non-streaming request
+      const response = await chat.sendMessage({ message: messageParts })
+
+      // 6. Extract the generated text and token usage
+      const text = response.text
       const cost = 0
-      return {
-        text: response.response.text() || "",
-        cost: cost,
-      }
-    } catch (err) {
-      Logger.error("Converse Error : ", err)
-      throw new Error(`Failed to get response from Gemini ${err}`)
+
+      return { text, cost }
+    } catch (error) {
+      Logger.error("Converse Error:", error)
+      throw new Error(`Failed to get response from GenAI: ${error}`)
     }
   }
+
   async *converseStream(
     messages: Message[],
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    console.log("hello inside converseStream of GenAI")
+
     try {
-      const geminiModel = await (
-        this.client as GoogleGenerativeAI
-      ).getGenerativeModel({
+      const ai = this.client as GoogleGenAI
+
+      // 1. Prepare any image parts (unchanged)
+      const imageParts = params.imageFileNames?.length
+        ? await buildGeminiImageParts(params.imageFileNames)
+        : []
+
+      // 2. Map your prior turns into the SDK's Content[] shape
+      const history = messages.map((v) => ({
+        role: v.role === "assistant" ? "model" : ("user" as const),
+        parts: [{ text: v.content?.[0]?.text || "" }],
+      }))
+
+      // 3. Create a chat session, with default config + system instruction + thinking enabled
+      const chat = ai.chats.create({
         model: modelParams.modelId,
-      })
-
-      // Build image parts if they exist
-      const imageParts =
-        params.imageFileNames && params.imageFileNames.length > 0
-          ? await buildGeminiImageParts(params.imageFileNames)
-          : []
-
-      const chatComponent = geminiModel.startChat({
-        history: messages.map((v) => ({
-          role: v.role === "assistant" ? "model" : (v.role as "user" | "model"),
-          parts: [{ text: v.content ? v.content[0].text! : "" }],
-        })),
-        systemInstruction: {
-          role: "system",
-          parts: [
-            {
-              text:
-                modelParams.systemPrompt +
-                "\n\n" +
-                "Important: In case you don't have the context, you can use the images in the context to answer questions.",
-            },
-          ], // Wrap text in an array
-        },
-        generationConfig: {
+        history,
+        config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
           responseMimeType: "application/json",
-        },
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget: -1, // enable automatic chain-of-thought reasoning
+          } satisfies ThinkingConfig,
+          systemInstruction: {
+            role: "system",
+            parts: [
+              {
+                text:
+                  modelParams.systemPrompt +
+                  "\n\n" +
+                  "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+              },
+            ],
+          },
+        } satisfies GenerateContentConfig,
       })
 
-      const latestMessage =
-        messages[messages.length - 1]?.content?.[0]?.text || ""
-      const streamResponse = await chatComponent.sendMessageStream([
+      // 4. Pull in the latest user message + any image parts
+      const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
+      const parts = [
         {
           text:
             "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-            latestMessage,
+            latestText,
         },
         ...imageParts,
-      ])
+      ]
 
-      for await (const chunk of streamResponse.stream) {
-        const text = chunk.text()
+      // 5. Stream back chunks from Gemini
+      const stream = await chat.sendMessageStream({ message: parts })
 
-        if (text) {
+      let accumulatedThinking = ""
+      for await (const chunk of stream) {
+        // Check if this chunk contains thinking content
+        const thinkingPart = chunk.candidates?.[0]?.content?.parts?.find(
+          (part) => part.thought === true,
+        )
+
+        if (thinkingPart?.text) {
+          accumulatedThinking += thinkingPart.text
+        }
+
+        if (chunk.text) {
           yield {
-            text: text,
+            text: chunk.text,
+            thinking: accumulatedThinking,
             cost: 0,
           }
         }
       }
     } catch (error) {
-      Logger.error("Streaming Error : ", error)
-      throw new Error(`Failed to get response from Gemini: ${error}`)
+      Logger.error("Streaming Error:", error)
+      throw new Error(`Failed to get response from GenAI: ${error}`)
     }
   }
 }
