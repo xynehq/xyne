@@ -253,6 +253,51 @@ const connectSocketMode = async (): Promise<void> => {
       }
     });
 
+    // Add new handler for direct messages
+    socketModeClient.on('message', async ({ event, ack }) => {
+      const { user, channel, text, channel_type, thread_ts } = event;
+      
+      try {
+        await ack();
+        
+        // Only handle direct messages (channel_type === 'im')
+        if (channel_type !== 'im') {
+          return;
+        }
+
+        // Skip bot messages
+        if (event.subtype === 'bot_message' || event.bot_id) {
+          return;
+        }
+
+        // Create unique event ID for deduplication
+        const eventId = `dm_${event.ts}_${event.user}_${event.channel}`;
+        const now = Date.now();
+        
+        // Check if event was already processed recently
+        const lastProcessedTime = processedEvents.get(eventId);
+        if (lastProcessedTime && (now - lastProcessedTime) < EVENT_CACHE_TTL) {
+          Logger.info(`Skipping duplicate DM event: ${eventId} (last processed ${now - lastProcessedTime}ms ago)`);
+          return;
+        }
+        
+        processedEvents.set(eventId, now);
+        Logger.info({ event: truncateObjectForLog(event) }, `Received DM event: ${event.type}`);
+        
+        // Process the DM event
+        await processSlackDM(event);
+      } catch (error: any) {
+        await handleError(error, {
+          client: webClient!,
+          channel,
+          user,
+          threadTs: thread_ts,
+          action: "direct_message",
+          payload: event,
+        });
+      }
+    });
+
     // Handle interactive components (buttons, modals, etc.)
     socketModeClient.on('interactive', async (args) => {
       const payload = args.payload || args.body || args;
@@ -1065,9 +1110,19 @@ const handleHelpCommand = async (
   user: string
 ) => {
   const botUserId = (await client.auth.test()).user_id;
-  await client.chat.postEphemeral({
+  
+  // Check if this is a DM by trying to get channel info
+  let isDM = false;
+  try {
+    const channelInfo = await client.conversations.info({ channel });
+    isDM = channelInfo.ok && !!channelInfo.channel?.is_im;
+  } catch (error) {
+    // If we can't get channel info, assume it's not a DM
+    isDM = false;
+  }
+
+  const messageOptions: any = {
     channel,
-    user,
     text: "Help - Available Commands",
     blocks: [
       {
@@ -1105,12 +1160,23 @@ const handleHelpCommand = async (
         elements: [
           {
             type: "mrkdwn",
-            text: `💡 Tip: Mention me (<@${botUserId}>) with a command!`,
+            text: isDM 
+              ? "💡 Tip: You can send me commands directly in this DM!"
+              : `💡 Tip: Mention me (<@${botUserId}>) with a command!`,
           },
         ],
       },
     ],
-  });
+  };
+
+  // Use conditional logic to call the right method directly
+  if (isDM) {
+    await client.chat.postMessage(messageOptions);
+  } else {
+    // For channels, we need the user parameter
+    messageOptions.user = user;
+    await client.chat.postEphemeral(messageOptions);
+  }
 };
 
 // --- Event Processing Function (to be called by external webhook handler) ---
@@ -1713,6 +1779,106 @@ const handleShareAgentFromModal = async (
   }
 };
 
+// Add this function before or after the processSlackEvent function
+const processSlackDM = async (event: any) => {
+  if (!webClient) {
+    Logger.warn("Slack client not initialized, ignoring DM event");
+    return;
+  }
+
+  Logger.info(`Received DM event: ${truncateObjectForLog(event.text)}`);
+
+  const { user, text, channel, ts, thread_ts } = event;
+
+  try {
+    if (!user) {
+      Logger.warn("No user ID found in DM event");
+      return;
+    }
+
+    const userInfo = await webClient.users.info({ user });
+    if (!userInfo.ok || !userInfo.user?.profile?.email) {
+      Logger.warn(`Could not retrieve email for user ${user}.`);
+      await webClient.chat.postMessage({
+        channel,
+        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+      });
+      return;
+    }
+    const userEmail = userInfo.user.profile.email;
+
+    const dbUser = await getUserByEmail(db, userEmail);
+    if (!dbUser?.length) {
+      Logger.warn(`User with email ${userEmail} not found in the database.`);
+      await webClient.chat.postMessage({
+        channel,
+        text: "It seems you're not registered in our system. Please contact support.",
+      });
+      return;
+    }
+
+    // Process mentions the same way as in channels
+    const botMentionMatch = text.match(/<@.*?>/)
+    let processedText = ""
+
+    if (botMentionMatch) {
+      const mentionEndIndex = botMentionMatch.index! + botMentionMatch[0].length
+      processedText = text.substring(mentionEndIndex).trim()
+    } else {
+      processedText = text.replace(/<@.*?>\s*/, "").trim()
+    }
+
+    processedText = processedText
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/_([^_]+)_/g, '$1') 
+      .replace(/`([^`]+)`/g, '$1')
+      .trim()
+
+    // Use the same command logic as in processSlackEvent
+    if (processedText.toLowerCase().startsWith("/agents")) {
+      await handleAgentsCommand(webClient, channel, user, dbUser[0]);
+    } else if (processedText.toLowerCase().startsWith("/search ")) {
+      const query = processedText.substring(8).trim();
+      await handleSearchQuery(
+        webClient,
+        channel,
+        user,
+        query,
+        dbUser[0],
+        ts,
+        thread_ts ?? ""
+      );
+    } else if (processedText.startsWith("/")) {
+      await handleAgentSearchCommand(
+        webClient,
+        channel,
+        user,
+        processedText,
+        dbUser[0],
+        ts,
+        thread_ts ?? ""
+      );
+    } else if (processedText.toLowerCase() === "help") {
+      await handleHelpCommand(webClient, channel, user);
+    } else {
+      // Match the default behavior from channels - show help message
+      await handleHelpCommand(webClient, channel, user);
+    }
+  } catch (error: any) {
+    Logger.error(error, "Error processing DM event");
+    if (user && webClient) {
+      // For errors in DMs, use postMessage instead of postEphemeral
+      await handleError(error, {
+        client: webClient,
+        channel,
+        user,
+        threadTs: thread_ts,
+        action: "processSlackDM",
+        payload: event,
+      });
+    }
+  }
+};
 
 // Export Socket Mode status and control functions
 export const getSocketModeStatus = () => isSocketModeConnected;
