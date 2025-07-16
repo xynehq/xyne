@@ -7,7 +7,7 @@ import {
   insertDataSource,
   getDataSourceByNameAndCreator,
   NAMESPACE,
-  getDataSourceFilesByName,
+  fetchAllDataSourceFilesByName,
   getDataSourcesByCreator,
   GetDocument,
   getDocumentOrNull,
@@ -331,7 +331,7 @@ export const DeleteDocumentApi = async (c: Context) => {
       }
       let hasMore = true
       while (hasMore) {
-        const filesResponse = await getDataSourceFilesByName(
+        const filesResponse = await fetchAllDataSourceFilesByName(
           dataSourceName,
           userEmail,
         )
@@ -509,7 +509,7 @@ export const ListDataSourceFilesApi = async (c: Context) => {
   }
 
   try {
-    const vespaResponse = await getDataSourceFilesByName(dataSourceName, email)
+    const vespaResponse = await fetchAllDataSourceFilesByName(dataSourceName, email)
     const files =
       vespaResponse.root.children?.map(
         (child: VespaSearchResult) => child.fields,
