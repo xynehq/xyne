@@ -1007,7 +1007,6 @@ export const getAllDocumentsForAgent = async (
   dataSourceIds: string[] = [],
   limit: number = 400,
 ): Promise<VespaSearchResponse | null> => {
-
   const sources: string[] = []
   const conditions: string[] = []
 
@@ -1539,12 +1538,10 @@ export const IfMailDocExist = async (
   email: string,
   docId: string,
 ): Promise<boolean> => {
-  return fallbackVespa
-    .ifMailDocExist(email, docId)
-    .catch((error) => {
-      Logger.error(error, `Error checking if document docId: ${docId} exists`)
-      return false
-    })
+  return fallbackVespa.ifMailDocExist(email, docId).catch((error) => {
+    Logger.error(error, `Error checking if document docId: ${docId} exists`)
+    return false
+  })
 }
 
 export const GetDocumentsByDocIds = async (
@@ -1694,12 +1691,10 @@ export interface AppEntityCounts {
 export const ifDocumentsExist = async (
   docIds: string[],
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
-  return fallbackVespa
-    .ifDocumentsExist(docIds)
-    .catch((error) => {
-      Logger.error(error, `Error checking if documents exist: ${docIds}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.ifDocumentsExist(docIds).catch((error) => {
+    Logger.error(error, `Error checking if documents exist: ${docIds}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 export const ifMailDocumentsExist = async (
@@ -1715,12 +1710,10 @@ export const ifMailDocumentsExist = async (
     }
   >
 > => {
-  return fallbackVespa
-    .ifMailDocumentsExist(mailIds)
-    .catch((error) => {
-      Logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.ifMailDocumentsExist(mailIds).catch((error) => {
+    Logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 export const ifDocumentsExistInChatContainer = async (
@@ -2484,19 +2477,16 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
   }
 }
 
-//import pLimit from "p-limit"
-
 export const fetchAllDataSourceFilesByName = async (
   dataSourceName: string,
   userEmail: string,
   concurrency = 3,
   batchSize = 400,
-): Promise<VespaSearchResponse> => {
+): Promise<VespaSearchResponse | null> => {
   const Logger = getLogger(Subsystem.Vespa).child({
     module: "fetchAllDataSourceFilesByName",
   })
 
-  // 1. Get total count
   const countPayload = {
     yql: `
       select * 
@@ -2518,24 +2508,8 @@ export const fetchAllDataSourceFilesByName = async (
     totalCount = countResponse.root?.fields?.totalCount ?? 0
     Logger.info(`Found ${totalCount} total files`)
     if (totalCount === 0) {
-      return {
-        root: {
-          id: "root",
-          relevance: 1.0,
-          fields: { totalCount: 0 },
-          children: [],
-          coverage: {
-            coverage: 100,
-            documents: 0,
-            full: true,
-            nodes: 1,
-            results: 0,
-            resultsFull: 1,
-          },
-        },
-      }
+      return null
     }
-
   } catch (error) {
     Logger.error(error, "Failed to get total count of files")
     throw new ErrorPerformingSearch({
@@ -2545,7 +2519,6 @@ export const fetchAllDataSourceFilesByName = async (
     })
   }
 
-  // 2. Build all batch payloads
   const batchPayloads = []
   for (let offset = 0; offset < totalCount; offset += batchSize) {
     const payload = {
@@ -2562,8 +2535,8 @@ export const fetchAllDataSourceFilesByName = async (
       timeout: "30s",
       "ranking.profile": "unranked",
       "presentation.summary": "default",
-      maxHits: 1000000,         
-      maxOffset: 1000000,     
+      maxHits: 1000000,
+      maxOffset: 1000000,
     }
     batchPayloads.push(payload)
   }
@@ -2574,7 +2547,6 @@ export const fetchAllDataSourceFilesByName = async (
     `Fetching all batches (${batchPayloads.length}) with concurrency=${concurrency}`,
   )
 
-  // 3. Fetch batches in parallel with concurrency limit
   const limiter = pLimit(concurrency)
 
   const results = await Promise.all(
@@ -2598,7 +2570,6 @@ export const fetchAllDataSourceFilesByName = async (
     ),
   )
 
-  // 4. Merge all results into one VespaSearchResponse
   const allChildren = results.flatMap((r) => r.root.children ?? [])
 
   return {
@@ -2611,7 +2582,6 @@ export const fetchAllDataSourceFilesByName = async (
     },
   }
 }
-
 
 export const SlackHybridProfile = (
   hits: number,
