@@ -1179,6 +1179,133 @@ const handleHelpCommand = async (
   }
 };
 
+// --- Utility Functions for Slack Message Processing ---
+
+/**
+ * Processes raw text from Slack to remove mentions and Slack-specific markdown
+ */
+const processSlackText = (text: string): string => {
+  const botMentionMatch = text.match(/<@.*?>/)
+  let processedText = ""
+
+  if (botMentionMatch) {
+    const mentionEndIndex = botMentionMatch.index! + botMentionMatch[0].length
+    processedText = text.substring(mentionEndIndex).trim()
+  } else {
+    processedText = text.replace(/<@.*?>\s*/, "").trim()
+  }
+
+  // Remove Slack markdown formatting
+  return processedText
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1') 
+    .replace(/`([^`]+)`/g, '$1')
+    .trim()
+}
+
+/**
+ * Handles command dispatch based on the processed text
+ */
+const handleSlackCommand = async (
+  client: WebClient,
+  channel: string,
+  user: string,
+  processedText: string,
+  dbUser: DbUser,
+  ts: string,
+  thread_ts: string = ""
+): Promise<void> => {
+  if (processedText.toLowerCase().startsWith("/agents")) {
+    await handleAgentsCommand(client, channel, user, dbUser);
+  } else if (processedText.toLowerCase().startsWith("/search ")) {
+    const query = processedText.substring(8).trim();
+    await handleSearchQuery(
+      client,
+      channel,
+      user,
+      query,
+      dbUser,
+      ts,
+      thread_ts ?? ""
+    );
+  } else if (processedText.startsWith("/")) {
+    await handleAgentSearchCommand(
+      client,
+      channel,
+      user,
+      processedText,
+      dbUser,
+      ts,
+      thread_ts ?? ""
+    );
+  } else if (processedText.toLowerCase() === "help") {
+    await handleHelpCommand(client, channel, user);
+  } else {
+    // Default behavior - show help
+    await handleHelpCommand(client, channel, user);
+  }
+}
+
+/**
+ * Validates a user from Slack event and gets their DB record
+ * Returns null if validation fails
+ */
+const validateSlackUser = async (
+  client: WebClient,
+  user: string,
+  channel: string,
+  isDM: boolean = false
+): Promise<{userEmail: string, dbUser: DbUser[]} | null> => {
+  if (!user) {
+    Logger.warn("No user ID found in Slack event");
+    return null;
+  }
+
+  const userInfo = await client.users.info({ user });
+  if (!userInfo.ok || !userInfo.user?.profile?.email) {
+    Logger.warn(`Could not retrieve email for user ${user}.`);
+    
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible."
+      });
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible."
+      });
+    }
+    
+    return null;
+  }
+  
+  const userEmail = userInfo.user.profile.email;
+  const dbUser = await getUserByEmail(db, userEmail);
+  
+  if (!dbUser?.length) {
+    Logger.warn(`User with email ${userEmail} not found in the database.`);
+    
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: "It seems you're not registered in our system. Please contact support."
+      });
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "It seems you're not registered in our system. Please contact support."
+      });
+    }
+    
+    return null;
+  }
+  
+  return { userEmail, dbUser };
+}
+
 // --- Event Processing Function (to be called by external webhook handler) ---
 export const processSlackEvent = async (event: any) => {
   if (!webClient) {
@@ -1192,6 +1319,7 @@ export const processSlackEvent = async (event: any) => {
     const { user, text, channel, ts, thread_ts } = event;
 
     try {
+      // Try to join the channel if it's a public channel
       try {
         const channelInfo = await webClient.conversations.info({ channel });
         if (channelInfo.ok && channelInfo.channel?.is_channel && !channelInfo.channel?.is_private) {
@@ -1201,77 +1329,20 @@ export const processSlackEvent = async (event: any) => {
         Logger.debug(`Could not join channel ${channel}: ${joinError.message}`);
       }
 
-      if (!user) {
-        Logger.warn("No user ID found in app_mention event");
+      // Validate the user and get their DB record
+      const validatedUser = await validateSlackUser(webClient, user, channel);
+      if (!validatedUser) {
+        Logger.warn(`User validation failed for user ${user}`);
         return;
       }
 
-      const userInfo = await webClient.users.info({ user });
-      if (!userInfo.ok || !userInfo.user?.profile?.email) {
-        Logger.warn(`Could not retrieve email for user ${user}.`);
-        await webClient.chat.postEphemeral({
-          channel,
-          user,
-          text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
-        });
-        return;
-      }
-      const userEmail = userInfo.user.profile.email;
+      const { dbUser } = validatedUser;
 
-      const dbUser = await getUserByEmail(db, userEmail);
-      if (!dbUser?.length) {
-        Logger.warn(`User with email ${userEmail} not found in the database.`);
-        await webClient.chat.postEphemeral({
-          channel,
-          user,
-          text: "It seems you're not registered in our system. Please contact support.",
-        });
-        return;
-      }
-
-      const botMentionMatch = text.match(/<@.*?>/)
-      let processedText = ""
-
-      if (botMentionMatch) {
-        const mentionEndIndex =
-          botMentionMatch.index! + botMentionMatch[0].length
-        processedText = text.substring(mentionEndIndex).trim()
-      } else {
-        processedText = text.replace(/<@.*?>\s*/, "").trim()
-      }
-
-      processedText = processedText
-        .replace(/\*([^*]+)\*/g, '$1')
-        .replace(/_([^_]+)_/g, '$1') 
-        .replace(/`([^`]+)`/g, '$1')
-        .trim()
-
-      if (processedText.toLowerCase().startsWith("/agents")) {
-        await handleAgentsCommand(webClient, channel, user, dbUser[0]);
-      } else if (processedText.toLowerCase().startsWith("/search ")) {
-        const query = processedText.substring(8).trim();
-        await handleSearchQuery(
-          webClient,
-          channel,
-          user,
-          query,
-          dbUser[0],
-          ts,
-          thread_ts ?? ""
-        );
-      } else if (processedText.startsWith("/")) {
-        await handleAgentSearchCommand(
-          webClient,
-          channel,
-          user,
-          processedText,
-          dbUser[0],
-          ts,
-          thread_ts ?? ""
-        );
-      } else {
-        await handleHelpCommand(webClient, channel, user);
-      }
+      // Process the text message to extract the actual command
+      const processedText = processSlackText(text);
+      
+      // Handle the command with the shared command handler
+      await handleSlackCommand(webClient, channel, user, processedText, dbUser[0], ts, thread_ts ?? "");
     } catch (error: any) {
       Logger.error(error, "Error processing app_mention event");
       if (user && webClient) {
@@ -1779,7 +1850,7 @@ const handleShareAgentFromModal = async (
   }
 };
 
-// Add this function before or after the processSlackEvent function
+// Process direct messages to the bot
 const processSlackDM = async (event: any) => {
   if (!webClient) {
     Logger.warn("Slack client not initialized, ignoring DM event");
@@ -1791,79 +1862,28 @@ const processSlackDM = async (event: any) => {
   const { user, text, channel, ts, thread_ts } = event;
 
   try {
-    if (!user) {
-      Logger.warn("No user ID found in DM event");
+    // Validate the user and get their DB record (true flag indicates this is a DM)
+    const validatedUser = await validateSlackUser(webClient, user, channel, true);
+    if (!validatedUser) {
+      Logger.warn(`User validation failed for user ${user}`);
       return;
     }
 
-    const userInfo = await webClient.users.info({ user });
-    if (!userInfo.ok || !userInfo.user?.profile?.email) {
-      Logger.warn(`Could not retrieve email for user ${user}.`);
-      await webClient.chat.postMessage({
-        channel,
-        text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
-      });
-      return;
-    }
-    const userEmail = userInfo.user.profile.email;
+    const { dbUser } = validatedUser;
 
-    const dbUser = await getUserByEmail(db, userEmail);
-    if (!dbUser?.length) {
-      Logger.warn(`User with email ${userEmail} not found in the database.`);
-      await webClient.chat.postMessage({
-        channel,
-        text: "It seems you're not registered in our system. Please contact support.",
-      });
-      return;
-    }
+    // Process the text message to extract the actual command
+    const processedText = processSlackText(text);
 
-    // Process mentions the same way as in channels
-    const botMentionMatch = text.match(/<@.*?>/)
-    let processedText = ""
-
-    if (botMentionMatch) {
-      const mentionEndIndex = botMentionMatch.index! + botMentionMatch[0].length
-      processedText = text.substring(mentionEndIndex).trim()
-    } else {
-      processedText = text.replace(/<@.*?>\s*/, "").trim()
-    }
-
-    processedText = processedText
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/_([^_]+)_/g, '$1') 
-      .replace(/`([^`]+)`/g, '$1')
-      .trim()
-
-    // Use the same command logic as in processSlackEvent
-    if (processedText.toLowerCase().startsWith("/agents")) {
-      await handleAgentsCommand(webClient, channel, user, dbUser[0]);
-    } else if (processedText.toLowerCase().startsWith("/search ")) {
-      const query = processedText.substring(8).trim();
-      await handleSearchQuery(
-        webClient,
-        channel,
-        user,
-        query,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else if (processedText.startsWith("/")) {
-      await handleAgentSearchCommand(
-        webClient,
-        channel,
-        user,
-        processedText,
-        dbUser[0],
-        ts,
-        thread_ts ?? ""
-      );
-    } else if (processedText.toLowerCase() === "help") {
-      await handleHelpCommand(webClient, channel, user);
-    } else {
-      // Match the default behavior from channels - show help message
-      await handleHelpCommand(webClient, channel, user);
-    }
+    // Handle the command with the shared command handler
+    await handleSlackCommand(
+      webClient, 
+      channel, 
+      user, 
+      processedText, 
+      dbUser[0], 
+      ts, 
+      thread_ts ?? ""
+    );
   } catch (error: any) {
     Logger.error(error, "Error processing DM event");
     if (user && webClient) {
