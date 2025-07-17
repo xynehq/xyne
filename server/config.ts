@@ -90,8 +90,8 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = process.env["GEMINI_FAST_MODEL"]
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
-  // defaultBestModel = Models.Gemini_2_5_Flash
-  defaultBestModel = Models.Gemini_2_0_Flash_Thinking
+  defaultBestModel = Models.Gemini_2_5_Flash
+  // defaultBestModel = Models.Gemini_2_0_Flash_Thinking
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"

@@ -238,21 +238,42 @@ export class GeminiAIProvider extends BaseProvider {
       // 5. Stream back chunks from Gemini
       const stream = await chat.sendMessageStream({ message: parts })
 
-      let accumulatedThinking = ""
+      let isThinkingStarted = false
+      let wasThinkingInPreviousChunk = false
+
       for await (const chunk of stream) {
+        let chunkText = ""
+
         // Check if this chunk contains thinking content
         const thinkingPart = chunk.candidates?.[0]?.content?.parts?.find(
           (part) => part.thought === true,
         )
 
         if (thinkingPart?.text) {
-          accumulatedThinking += thinkingPart.text
+          // Start thinking tag only for the first thinking chunk
+          if (!isThinkingStarted) {
+            chunkText += "<think>"
+            isThinkingStarted = true
+          }
+
+          chunkText += thinkingPart.text
+          wasThinkingInPreviousChunk = true
+        } else {
+          // Close thinking tag if we were thinking in the previous chunk but not now
+          if (wasThinkingInPreviousChunk) {
+            chunkText += "</think>"
+            wasThinkingInPreviousChunk = false
+          }
         }
 
         if (chunk.text) {
+          chunkText += chunk.text
+        }
+
+        // Only yield if there's actual content
+        if (chunkText) {
           yield {
-            text: chunk.text,
-            thinking: accumulatedThinking,
+            text: chunkText,
             cost: 0,
           }
         }

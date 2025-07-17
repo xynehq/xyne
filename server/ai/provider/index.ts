@@ -85,7 +85,7 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import { GoogleGenAI} from "@google/genai"
+import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
@@ -260,7 +260,7 @@ const initializeProviders = (): void => {
   }
 
   if (GeminiApiKey) {
-    const gemini = new GoogleGenAI({apiKey: GeminiApiKey})
+    const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
