@@ -110,7 +110,6 @@ export class GeminiAIProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    console.log("hello inside converse of GenAI")
 
     try {
       const ai = this.client as GoogleGenAI
@@ -135,8 +134,8 @@ export class GeminiAIProvider extends BaseProvider {
           temperature: modelParams.temperature,
           responseMimeType: "application/json",
           thinkingConfig: {
-            includeThoughts: true,
-            thinkingBudget: -1, // dynamic chain-of-thought enabled :contentReference[oaicite:1]{index=1}
+            includeThoughts: params.reasoning,
+            thinkingBudget: params.reasoning ? -1 : 0, // dynamic chain-of-thought enabled :contentReference[oaicite:1]{index=1}
           } satisfies ThinkingConfig,
           systemInstruction: {
             role: "system",
@@ -182,7 +181,6 @@ export class GeminiAIProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    console.log("hello inside converseStream of GenAI")
 
     try {
       const ai = this.client as GoogleGenAI
@@ -207,8 +205,8 @@ export class GeminiAIProvider extends BaseProvider {
           temperature: modelParams.temperature,
           responseMimeType: "application/json",
           thinkingConfig: {
-            includeThoughts: true,
-            thinkingBudget: -1, // enable automatic chain-of-thought reasoning
+            includeThoughts: params.reasoning,
+            thinkingBudget: params.reasoning ? -1 : 0, // enable automatic chain-of-thought reasoning
           } satisfies ThinkingConfig,
           systemInstruction: {
             role: "system",

@@ -1098,7 +1098,7 @@ export const baselineRAGJsonStream = (
       )
     }
   }
-  // params.json = true
+  params.json = true
 
   const baseMessage = {
     role: ConversationRole.USER,
