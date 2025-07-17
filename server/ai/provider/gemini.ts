@@ -24,21 +24,22 @@ async function buildGeminiImageParts(
 
   const imagePromises = imagePaths.map(async (imgPath) => {
     // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
     if (!match) {
       Logger.error(`Invalid image path: ${imgPath}`)
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
     // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
+    const absolutePath = findImageByName(imageDir, imageNumber)
     const extension = path.extname(absolutePath).toLowerCase()
 
     // Map file extensions to MIME types for Gemini
