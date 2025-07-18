@@ -14,6 +14,7 @@ export const isValidFile = (file: File) => {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/markdown",
   ]
 
   // Allowed extensions (for fallback)
@@ -27,6 +28,7 @@ export const isValidFile = (file: File) => {
     ".xlsx",
     ".ppt",
     ".pptx",
+    ".md",
   ]
 
   const allowedImageTypes = [
