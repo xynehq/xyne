@@ -115,18 +115,16 @@ export class GeminiAIProvider extends BaseProvider {
     try {
       const ai = this.client as GoogleGenAI
 
-      // 1. Build any image parts (no change)
+      // 1. Build any image parts
       const imageParts = params.imageFileNames?.length
         ? await buildGeminiImageParts(params.imageFileNames)
         : []
 
-      // 2. Rehydrate your prior turns into the SDK's Content[] shape
       const history = messages.map((v) => ({
-        role: v.role === "assistant" ? "model" : ("user" as const),
+        role: v.role === "assistant" ? "model" : "user",
         parts: [{ text: v.content?.[0]?.text || "" }],
       }))
 
-      // 3. Create a chat session, enabling thinking and seeding system + history :contentReference[oaicite:0]{index=0}
       const chat = ai.chats.create({
         model: modelParams.modelId,
         history,
@@ -152,7 +150,6 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      // 4. Package your latest user turn + images
       const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
       const messageParts = [
         {
@@ -163,10 +160,8 @@ export class GeminiAIProvider extends BaseProvider {
         ...imageParts,
       ]
 
-      // 5. Send a single, non-streaming request
       const response = await chat.sendMessage({ message: messageParts })
 
-      // 6. Extract the generated text and token usage
       const text = response.text
       const cost = 0
 
@@ -186,18 +181,15 @@ export class GeminiAIProvider extends BaseProvider {
     try {
       const ai = this.client as GoogleGenAI
 
-      // 1. Prepare any image parts (unchanged)
       const imageParts = params.imageFileNames?.length
         ? await buildGeminiImageParts(params.imageFileNames)
         : []
 
-      // 2. Map your prior turns into the SDK's Content[] shape
       const history = messages.map((v) => ({
-        role: v.role === "assistant" ? "model" : ("user" as const),
+        role: v.role === "assistant" ? "model" : "user",
         parts: [{ text: v.content?.[0]?.text || "" }],
       }))
 
-      // 3. Create a chat session, with default config + system instruction + thinking enabled
       const chat = ai.chats.create({
         model: modelParams.modelId,
         history,
@@ -223,7 +215,6 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      // 4. Pull in the latest user message + any image parts
       const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
       const parts = [
         {
@@ -234,7 +225,6 @@ export class GeminiAIProvider extends BaseProvider {
         ...imageParts,
       ]
 
-      // 5. Stream back chunks from Gemini
       const stream = await chat.sendMessageStream({ message: parts })
 
       let isThinkingStarted = false

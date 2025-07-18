@@ -259,7 +259,7 @@ const initializeProviders = (): void => {
     fireworksProvider = new FireworksProvider(fireworks)
   }
 
-  if (GeminiApiKey) {
+  if (GeminiAIModel && GeminiApiKey) {
     const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
   }
@@ -330,7 +330,7 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
         ? AIProviders.Together
         : FireworksAIModel
           ? AIProviders.Fireworks
-          : GeminiApiKey
+          : GeminiAIModel
             ? AIProviders.GoogleAI
             : null
 

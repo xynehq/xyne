@@ -83,7 +83,6 @@ export interface ModelParams {
 
 export interface ConverseResponse {
   text?: string
-  thinking?: string
   metadata?: any
   cost?: number
   reasoning?: boolean
