@@ -102,7 +102,6 @@ import {
   MAX_GD_PDF_SIZE,
   MAX_GD_SHEET_ROWS,
   MAX_GD_SHEET_TEXT_LEN,
-  MAX_GD_SLIDES_TEXT_LEN,
   PDFProcessingConcurrency,
   ServiceAccountUserConcurrency,
 } from "@/integrations/google/config"
@@ -134,6 +133,9 @@ import {
   totalIngestedFiles,
 } from "@/metrics/google/google-drive-file-metrics"
 import { v4 as uuidv4 } from "uuid"
+import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
+import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 
 let isScriptRunning = false
 
@@ -1488,54 +1490,26 @@ export const getPresentationToBeIngested = async (
   client: GoogleClient,
   email: string,
 ) => {
-  const slides = google.slides({ version: "v1", auth: client })
+  const drive = google.drive({ version: "v3", auth: client })
+  const pptxFileName = `${hashPdfFilename(`${email}_${presentation.id}_${presentation.name}`)}.pptx`
+  let pptxPath = `${downloadDir}/${pptxFileName}`
+
   try {
-    const presentationData = await retryWithBackoff(
-      () =>
-        slides.presentations.get({
-          presentationId: presentation.id!,
-        }),
-      `Fetching presentation with id ${presentation.id}`,
-      Apps.GoogleDrive,
-      0,
+    loggerWithChild({ email: email }).debug(
+      `Downloading Google Slide as .pptx -> ${presentation.name}${pptxFileName}`,
+    )
+    await downloadGoogleSlide(
+      drive,
+      presentation.id as string,
+      pptxFileName,
       client,
     )
-    const slidesData = presentationData?.data?.slides!
-    let chunks: string[] = []
-    let totalTextLen = 0
 
-    slidesData?.forEach((slide) => {
-      let slideText = ""
-      slide?.pageElements!?.forEach((element) => {
-        if (
-          element.shape &&
-          element.shape.text &&
-          element.shape.text.textElements
-        ) {
-          element.shape.text.textElements.forEach((textElement) => {
-            if (textElement.textRun) {
-              const textContent = textElement.textRun.content!.trim()
-              slideText += textContent + " "
-              totalTextLen += textContent.length
-            }
-          })
-        }
-      })
-
-      if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
-        // Only chunk if the total text length is within the limit
-        const slideChunks = chunkDocument(slideText)
-        chunks.push(...slideChunks.map((c) => c.chunk))
-      }
-    })
-
-    // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
-    if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
-      loggerWithChild({ email: email }).error(
-        `Text Length exceeded for ${presentation.name}, indexing with empty content`,
-      )
-      chunks = []
-    }
+    const { text_chunks } = await extractTextAndImagesWithChunksFromPptx(
+      pptxPath,
+      presentation.id!,
+      false,
+    ) // Don't extract images for google drive ingestion
 
     const parentsForMetadata = []
     if (presentation?.parents) {
@@ -1545,6 +1519,9 @@ export const getPresentationToBeIngested = async (
         parentsForMetadata.push({ folderName, folderId: parentId })
       }
     }
+
+    // Cleanup immediately after processing
+    await deleteDocument(pptxPath)
 
     const presentationToBeIngested = {
       title: presentation.name!,
@@ -1561,7 +1538,7 @@ export const getPresentationToBeIngested = async (
         ? (presentation.owners[0]?.emailAddress ?? "")
         : "",
       entity: DriveEntity.Slides,
-      chunks,
+      chunks: text_chunks,
       permissions: presentation.permissions ?? [],
       mimeType: presentation.mimeType ?? "",
       metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -1573,8 +1550,16 @@ export const getPresentationToBeIngested = async (
   } catch (error) {
     loggerWithChild({ email: email }).error(
       error,
-      `Error in getting presentation data with id ${presentation?.id}`,
+      `Error getting Google Slide files: ${error} ${(error as Error).stack}`,
+      error,
     )
+    if (pptxPath && fs.existsSync(pptxPath)) {
+      try {
+        await deleteDocument(pptxPath)
+      } catch (deleteError) {
+        Logger.warn(`Could not delete PPTX file ${pptxPath}: ${deleteError}`)
+      }
+    }
     return null
   }
 }
@@ -2469,6 +2454,82 @@ export const downloadPDF = async (
   })
 }
 
+// Download Google Doc as .docx
+export const downloadGoogleDoc = async (
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+  client: GoogleClient,
+): Promise<void> => {
+  const filePath = path.join(downloadDir, fileName)
+  const file = Bun.file(filePath)
+  const writer = file.writer()
+  const res = await retryWithBackoff(
+    () =>
+      drive.files.export(
+        {
+          fileId,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        { responseType: "stream" },
+      ),
+    `Downloading Google Doc as .docx for fileId ${fileId}`,
+    Apps.GoogleDrive,
+    0,
+    client,
+  )
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => writer.write(chunk))
+    res.data.on("end", () => {
+      writer.end()
+      resolve()
+    })
+    res.data.on("error", (err) => {
+      writer.end()
+      reject(err)
+    })
+  })
+}
+
+// Download Google Slide as .pptx
+export const downloadGoogleSlide = async (
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+  client: GoogleClient,
+): Promise<void> => {
+  const filePath = path.join(downloadDir, fileName)
+  const file = Bun.file(filePath)
+  const writer = file.writer()
+  const res = await retryWithBackoff(
+    () =>
+      drive.files.export(
+        {
+          fileId,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        },
+        { responseType: "stream" },
+      ),
+    `Downloading Google Slide as .pptx for fileId ${fileId}`,
+    Apps.GoogleDrive,
+    0,
+    client,
+  )
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => writer.write(chunk))
+    res.data.on("end", () => {
+      writer.end()
+      resolve()
+    })
+    res.data.on("error", (err) => {
+      writer.end()
+      reject(err)
+    })
+  })
+}
+
 // Helper function for safer PDF loading
 export async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
   try {
@@ -2567,13 +2628,11 @@ export const googlePDFsVespa = async (
         })
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
-        const docs: Document[] = await safeLoadPDF(pdfPath)
-        if (!docs || docs.length === 0) {
-          await deleteDocument(pdfPath)
-          return null
-        }
-
-        const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+        const { text_chunks } = await extractTextAndImagesWithChunksFromPDF(
+          pdfPath,
+          pdf.id!,
+          false,
+        ) // Don't extract images for google drive ingestion
 
         const parentsForMetadata = []
         if (pdf?.parents) {
@@ -2605,7 +2664,7 @@ export const googlePDFsVespa = async (
           photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
           ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.PDF,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
           permissions: pdf.permissions ?? [],
           mimeType: pdf.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -3011,80 +3070,61 @@ export const googleDocsVespa = async (
   connectorId: string,
   userEmail?: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
+  const drive = google.drive({ version: "v3", auth: client })
   loggerWithChild({ email: userEmail! }).info(
-    `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
+    `Starting Google Docs processing for ${docsMetadata.length} files for user ${userEmail}`,
   )
   // sendWebsocketMessage(
   //   `Scanning ${docsMetadata.length} Google Docs`,
   //   connectorId,
   // )
-  const docs = google.docs({ version: "v1", auth: client })
-  const total = docsMetadata.length
-  let count = 0
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
       loggerWithChild({ email: userEmail! }).info(
-        `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
+        `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name} for user ${userEmail}`,
       )
-      const endDownloadDuration = extractionDuration.startTimer({
+      const endExtractionTimer = extractionDuration.startTimer({
         mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
         file_type: DriveEntity.Docs,
         email: userEmail,
       })
+      const docxFileName = `${hashPdfFilename(`${userEmail}_${doc.id}_${doc.name}`)}.docx`
+      let docxPath = `${downloadDir}/${docxFileName}`
       try {
-        const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-          await retryWithBackoff(
-            () =>
-              docs.documents.get({
-                documentId: doc.id as string,
-              }),
-            `Fetching document with documentId ${doc.id}`,
-            Apps.GoogleDrive,
-            0,
-            client,
-          )
-        if (!docResponse || !docResponse.data) {
-          throw new DocsParsingError(
-            `Could not get document content for file: ${doc.id}`,
-          )
-        }
-        const documentContent: docs_v1.Schema$Document = docResponse.data
-
-        const rawTextContent = documentContent?.body?.content
-          ?.map((e) => extractText(documentContent, e))
-          .join("")
-
-        const footnotes = extractFootnotes(documentContent)
-        const headerFooter = extractHeadersAndFooters(documentContent)
-
-        const cleanedTextContent = postProcessText(
-          rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+        loggerWithChild({ email: userEmail! }).debug(
+          `Downloading Google Doc as .docx -> ${doc.name}${docxFileName}`,
         )
+        await downloadGoogleDoc(drive, doc.id as string, docxFileName, client)
 
-        const sizeInBytes = Buffer.byteLength(cleanedTextContent, "utf8")
-        contentFileSize.observe(
-          {
-            mime_type: doc.mimeType ?? "",
-            file_type: DriveEntity.Docs,
-            email: userEmail,
-          },
-          sizeInBytes,
-        )
-        const chunks = chunkDocument(cleanedTextContent)
+        const { text_chunks } = await extractTextAndImagesWithChunksFromDocx(
+          docxPath,
+          doc.id!,
+          false,
+        ) // Don't extract images for google drive ingestion
 
         const parentsForMetadata = []
-        // Shared files cannot have parents
-        // There can be some files that user has access to may not have parents as they are shared
         if (doc?.parents) {
-          for (const parentId of doc?.parents!) {
+          for (const parentId of doc.parents!) {
             const parentData = await getFile(client, parentId)
             const folderName = parentData?.name!
             parentsForMetadata.push({ folderName, folderId: parentId })
           }
         }
 
-        const result: VespaFileWithDrivePermission = {
+        // Cleanup immediately after processing
+        await deleteDocument(docxPath)
+        endExtractionTimer()
+        totalExtractedFiles.inc(
+          {
+            mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
+            status: "SUCCESS",
+            email: userEmail,
+            file_type: DriveEntity.Docs,
+          },
+          1,
+        )
+        return {
           title: doc.name!,
           url: doc.webViewLink ?? "",
           app: Apps.GoogleDrive,
@@ -3093,48 +3133,41 @@ export const googleDocsVespa = async (
           photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
           ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.Docs,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
           permissions: doc.permissions ?? [],
           mimeType: doc.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
           createdAt: new Date(doc.createdTime!).getTime(),
           updatedAt: new Date(doc.modifiedTime!).getTime(),
         }
-        count += 1
-
-        // if (count % 5 === 0) {
-        //   sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-        // }
-        endDownloadDuration()
-        totalExtractedFiles.inc(
-          {
-            mime_type: doc.mimeType ?? "",
-            status: "SUCCESS",
-            email: userEmail,
-            file_type: DriveEntity.Docs,
-          },
-          1,
-        )
-        return result
       } catch (error) {
-        const errorMessage = getErrorMessage(error)
         loggerWithChild({ email: userEmail! }).error(
           error,
-          `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
+          `Error getting Google Doc files: ${error} ${(error as Error).stack}`,
+          error,
         )
+        if (docxPath && fs.existsSync(docxPath)) {
+          try {
+            await deleteDocument(docxPath)
+          } catch (deleteError) {
+            // Logger.warn(`Could not delete DOCX file ${docxPath}: ${deleteError}`)
+          }
+        }
         fileExtractionErrorsTotal.inc({
           error_type: "DOCUMENT_EXTRACTION_FAILED_ERROR",
-          mime_type: doc.mimeType ?? "",
+          mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
           file_type: DriveEntity.Docs,
           email: userEmail,
         })
+        // we cannot break the whole docs pipeline for one error
         return null
       }
     }),
   )
-  const docsList: (VespaFileWithDrivePermission | null)[] =
-    await Promise.all(docsPromises)
-  return docsList.filter((doc) => doc !== null)
+  const results = await Promise.all(docsPromises)
+  const filteredResults = results.filter((v) => !!v)
+
+  return filteredResults
 }
 
 export const driveFilesToDoc = async (
