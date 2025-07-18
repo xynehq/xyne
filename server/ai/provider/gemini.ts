@@ -131,7 +131,6 @@ export class GeminiAIProvider extends BaseProvider {
         config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
-          responseMimeType: "application/json",
           thinkingConfig: {
             includeThoughts: params.reasoning,
             thinkingBudget: params.reasoning ? -1 : 0, // dynamic chain-of-thought enabled :contentReference[oaicite:1]{index=1}
@@ -196,7 +195,6 @@ export class GeminiAIProvider extends BaseProvider {
         config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
-          responseMimeType: "application/json",
           thinkingConfig: {
             includeThoughts: params.reasoning,
             thinkingBudget: params.reasoning ? -1 : 0, // enable automatic chain-of-thought reasoning
