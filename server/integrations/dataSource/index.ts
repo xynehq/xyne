@@ -19,7 +19,6 @@ import {
   isDocxFile,
   isPptxFile,
   getSupportedFileTypes,
-  isMarkdownFile,
 } from "./config"
 import {
   FileProcessingError,
@@ -656,7 +655,7 @@ export const handleDataSourceFileUpload = async (
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
         processedFiles = await processSheetContent(tempFilePath, options)
-      } else if (isTextFile(mimeType) || isMarkdownFile(mimeType)) {
+      } else if (isTextFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
         const content = await file.text()
         const processedFile = await processTextContent(content, options)
