@@ -187,6 +187,8 @@ vespa-logs
 server/vespa-data
 server/xyne-data
 
+server/migrations/
+
 .env.production
 
 # models
