@@ -115,7 +115,6 @@ export class GeminiAIProvider extends BaseProvider {
     try {
       const ai = this.client as GoogleGenAI
 
-      // 1. Build any image parts
       const imageParts = params.imageFileNames?.length
         ? await buildGeminiImageParts(params.imageFileNames)
         : []
@@ -133,7 +132,7 @@ export class GeminiAIProvider extends BaseProvider {
           temperature: modelParams.temperature,
           thinkingConfig: {
             includeThoughts: params.reasoning,
-            thinkingBudget: params.reasoning ? -1 : 0, // dynamic chain-of-thought enabled :contentReference[oaicite:1]{index=1}
+            thinkingBudget: params.reasoning ? -1 : 0,
           } satisfies ThinkingConfig,
           systemInstruction: {
             role: "system",
@@ -197,7 +196,7 @@ export class GeminiAIProvider extends BaseProvider {
           temperature: modelParams.temperature,
           thinkingConfig: {
             includeThoughts: params.reasoning,
-            thinkingBudget: params.reasoning ? -1 : 0, // enable automatic chain-of-thought reasoning
+            thinkingBudget: params.reasoning ? -1 : 0,
           } satisfies ThinkingConfig,
           systemInstruction: {
             role: "system",
