@@ -19,6 +19,7 @@ import {
   isDocxFile,
   isPptxFile,
   getSupportedFileTypes,
+  isMarkdownFile,
 } from "./config"
 import {
   FileProcessingError,
@@ -57,7 +58,6 @@ interface FileMetadata {
   uploadedBy: string
   chunksCount: number
   processingMethod: string
-  convertedFrom?: string
 }
 
 interface ProcessingOptions {
@@ -138,14 +138,12 @@ const createFileMetadata = (
   userEmail: string,
   chunksCount: number,
   processingMethod: string,
-  convertedFrom?: string,
 ): string => {
   const metadata: FileMetadata = {
     originalFileName: fileName,
     uploadedBy: userEmail,
     chunksCount,
     processingMethod,
-    ...(convertedFrom && { convertedFrom }),
   }
   return JSON.stringify(metadata)
 }
@@ -158,7 +156,6 @@ const createVespaDataSourceFile = (
   image_chunks?: string[],
   text_chunk_pos?: number[],
   image_chunk_pos?: number[],
-  convertedFrom?: string,
   docId?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
@@ -184,7 +181,6 @@ const createVespaDataSourceFile = (
       options.userEmail,
       text_chunks.length,
       processingMethod,
-      convertedFrom,
     ),
   }
 }
@@ -216,7 +212,6 @@ const processTextContent = async (
 const processImageContent = async (
   imageBuffer: Buffer,
   options: ProcessingOptions,
-  convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
     return withTempDirectory(
@@ -229,11 +224,10 @@ const processImageContent = async (
         return createVespaDataSourceFile(
           [],
           options,
-          convertedFrom ? "image_conversion" : "image_processing",
+          "image_processing",
           [image_chunk],
           [],
           [0],
-          convertedFrom,
         )
       },
     )
@@ -251,12 +245,11 @@ const processImageContent = async (
 const processPdfContent = async (
   filePath: string,
   options: ProcessingOptions,
-  convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
     const docId = `dsf-${createId()}`
     const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDF(filePath, docId)
+      await extractTextAndImagesWithChunksFromPDF(filePath, docId, true)
     if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
@@ -267,11 +260,10 @@ const processPdfContent = async (
     return createVespaDataSourceFile(
       text_chunks,
       options,
-      convertedFrom ? "pdf_conversion" : "pdf_processing",
+      "pdf_processing",
       image_chunks,
       text_chunk_pos,
       image_chunk_pos,
-      convertedFrom,
       docId,
     )
   } catch (error) {
@@ -288,7 +280,6 @@ const processPdfContent = async (
 const processDocxContent = async (
   filePath: string,
   options: ProcessingOptions,
-  extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
   try {
     Logger.info(`Processing DOCX file: ${options.fileName}`)
@@ -297,7 +288,7 @@ const processDocxContent = async (
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
       filePath,
       docId,
-      extractImages,
+      true,
     )
 
     if (
@@ -321,7 +312,6 @@ const processDocxContent = async (
       docxResult.image_chunks,
       docxResult.text_chunk_pos,
       docxResult.image_chunk_pos,
-      undefined,
       docId,
     )
   } catch (error) {
@@ -338,7 +328,6 @@ const processDocxContent = async (
 const processPptxContent = async (
   filePath: string,
   options: ProcessingOptions,
-  extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
   try {
     Logger.info(`Processing PPTX file: ${options.fileName}`)
@@ -347,7 +336,7 @@ const processPptxContent = async (
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
       filePath,
       docId,
-      extractImages,
+      true,
     )
 
     if (
@@ -371,7 +360,6 @@ const processPptxContent = async (
       pptxResult.image_chunks,
       pptxResult.text_chunk_pos,
       pptxResult.image_chunk_pos,
-      undefined,
       docId,
     )
   } catch (error) {
@@ -483,7 +471,6 @@ const processSpreadsheetFile = async (
         undefined, // image_chunks
         undefined, // text_chunk_pos
         undefined, // image_chunk_pos
-        undefined, // convertedFrom
         sheetDocId,
       )
 
@@ -605,6 +592,11 @@ export const handleDataSourceFileUpload = async (
 
     let processedFiles: VespaDataSourceFile[] = []
     if (isImageFile(mimeType)) {
+      if (!process.env.LLM_API_ENDPOINT) {
+        throw new FileProcessingError(
+          `LLM API endpoint is not set. Skipping image: ${options.fileName}`,
+        )
+      }
       checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
       const imageBuffer = Buffer.from(await file.arrayBuffer())
       const type = await imageType(new Uint8Array(imageBuffer))
@@ -656,23 +648,15 @@ export const handleDataSourceFileUpload = async (
         processedFiles = [processedFile]
       } else if (isDocxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
-        const processedFile = await processDocxContent(
-          tempFilePath,
-          options,
-          true,
-        )
+        const processedFile = await processDocxContent(tempFilePath, options)
         processedFiles = [processedFile]
       } else if (isPptxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
-        const processedFile = await processPptxContent(
-          tempFilePath,
-          options,
-          true,
-        )
+        const processedFile = await processPptxContent(tempFilePath, options)
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
         processedFiles = await processSheetContent(tempFilePath, options)
-      } else if (isTextFile(mimeType)) {
+      } else if (isTextFile(mimeType) || isMarkdownFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
         const content = await file.text()
         const processedFile = await processTextContent(content, options)

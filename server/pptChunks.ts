@@ -623,6 +623,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
 ): Promise<PptxProcessingResult> {
   return withTempDirectory(async (tempDir) => {
     Logger.info(`Starting PPTX processing for: ${pptxPath}`)
+    let totalTextLength = 0
 
     // Read and unzip the PPTX file
     let pptxBuffer: Buffer
@@ -757,7 +758,18 @@ export async function extractTextAndImagesWithChunksFromPptx(
             item.type === "notes") &&
           item.content
         ) {
-          textBuffer.push(item.content)
+          if (
+            totalTextLength + item.content.length <=
+            DATASOURCE_CONFIG.MAX_PPTX_TEXT_LEN
+          ) {
+            textBuffer.push(item.content)
+            totalTextLength += item.content.length
+          } else {
+            Logger.info(
+              `Text Length exceeded for ${pptxPath.split("/").pop()}, indexing with incomplete content`,
+            )
+            break
+          }
         } else if (item.type === "image" && item.relId && extractImages) {
           // Flush any pending text before processing image
           flushTextBuffer()
