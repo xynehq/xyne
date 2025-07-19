@@ -15,6 +15,9 @@ import {
   postProcessText,
 } from "@/doc"
 import { chunkDocument } from "@/chunks"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
+import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import {
   MessageTypes,
   OperationStatus,
@@ -1487,54 +1490,18 @@ export const getPresentationToBeIngested = async (
   presentation: drive_v3.Schema$File,
   client: GoogleClient,
   email: string,
+  extractImages: boolean = false,
 ) => {
   const slides = google.slides({ version: "v1", auth: client })
   try {
-    const presentationData = await retryWithBackoff(
-      () =>
-        slides.presentations.get({
-          presentationId: presentation.id!,
-        }),
-      `Fetching presentation with id ${presentation.id}`,
-      Apps.GoogleDrive,
-      0,
-      client,
-    )
-    const slidesData = presentationData?.data?.slides!
-    let chunks: string[] = []
-    let totalTextLen = 0
-
-    slidesData?.forEach((slide) => {
-      let slideText = ""
-      slide?.pageElements!?.forEach((element) => {
-        if (
-          element.shape &&
-          element.shape.text &&
-          element.shape.text.textElements
-        ) {
-          element.shape.text.textElements.forEach((textElement) => {
-            if (textElement.textRun) {
-              const textContent = textElement.textRun.content!.trim()
-              slideText += textContent + " "
-              totalTextLen += textContent.length
-            }
-          })
-        }
-      })
-
-      if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
-        // Only chunk if the total text length is within the limit
-        const slideChunks = chunkDocument(slideText)
-        chunks.push(...slideChunks.map((c) => c.chunk))
-      }
-    })
-
-    // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
-    if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
-      loggerWithChild({ email: email }).error(
-        `Text Length exceeded for ${presentation.name}, indexing with empty content`,
+    const { text_chunks, image_chunks } =
+      await extractTextAndImagesWithChunksFromPptx(
+        presentation.id!,
+        presentation.id!,
+        extractImages,
       )
-      chunks = []
+    if (text_chunks.length === 0 && image_chunks.length === 0) {
+      return null
     }
 
     const parentsForMetadata = []
@@ -1561,7 +1528,7 @@ export const getPresentationToBeIngested = async (
         ? (presentation.owners[0]?.emailAddress ?? "")
         : "",
       entity: DriveEntity.Slides,
-      chunks,
+      chunks: text_chunks,
       permissions: presentation.permissions ?? [],
       mimeType: presentation.mimeType ?? "",
       metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -1576,6 +1543,17 @@ export const getPresentationToBeIngested = async (
       `Error in getting presentation data with id ${presentation?.id}`,
     )
     return null
+  } finally {
+    const pptxPath = `${downloadDir}/${hashPdfFilename(
+      `${email}_${presentation.id}_${presentation.name}`,
+    )}.pptx`
+    if (pptxPath && fs.existsSync(pptxPath)) {
+      try {
+        await deleteDocument(pptxPath)
+      } catch (deleteError) {
+        // Logger.warn(`Could not delete PPTX file ${pptxPath}: ${deleteError}`)
+      }
+    }
   }
 }
 
@@ -1584,6 +1562,7 @@ const googleSlidesVespa = async (
   presentationMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail?: string,
+  extractImages: boolean = false,
 ): Promise<VespaFileWithDrivePermission[]> => {
   // sendWebsocketMessage(
   //   `Scanning ${presentationMetadata.length} Google Slides`,
@@ -1605,6 +1584,7 @@ const googleSlidesVespa = async (
         presentation,
         client,
         userEmail!,
+        extractImages,
       )
       if (presentationToBeIngested) {
         presentationsList.push(presentationToBeIngested)
@@ -1835,6 +1815,7 @@ const insertFilesForUser = async (
           googleSlidesMetadata,
           connector.externalId,
           userEmail,
+          false,
         ),
         googleSheetsVespa(
           googleClient,
@@ -2493,6 +2474,7 @@ export const googlePDFsVespa = async (
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail: string,
+  extractImages: boolean = false,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
   loggerWithChild({ email: userEmail! }).info(
@@ -2567,13 +2549,16 @@ export const googlePDFsVespa = async (
         })
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
-        const docs: Document[] = await safeLoadPDF(pdfPath)
-        if (!docs || docs.length === 0) {
+        const { text_chunks, image_chunks } =
+          await extractTextAndImagesWithChunksFromPDF(
+            pdfPath,
+            pdf.id!,
+            extractImages,
+          )
+        if (text_chunks.length === 0 && image_chunks.length === 0) {
           await deleteDocument(pdfPath)
           return null
         }
-
-        const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
 
         const parentsForMetadata = []
         if (pdf?.parents) {
@@ -2605,7 +2590,7 @@ export const googlePDFsVespa = async (
           photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
           ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.PDF,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
           permissions: pdf.permissions ?? [],
           mimeType: pdf.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -3010,6 +2995,7 @@ export const googleDocsVespa = async (
   docsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail?: string,
+  extractImages: boolean = false,
 ): Promise<VespaFileWithDrivePermission[]> => {
   loggerWithChild({ email: userEmail! }).info(
     `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
@@ -3071,7 +3057,12 @@ export const googleDocsVespa = async (
           },
           sizeInBytes,
         )
-        const chunks = chunkDocument(cleanedTextContent)
+        const { text_chunks, image_chunks } =
+          await extractTextAndImagesWithChunksFromDocx(
+            doc.id!,
+            doc.id!,
+            extractImages,
+          )
 
         const parentsForMetadata = []
         // Shared files cannot have parents
@@ -3093,7 +3084,7 @@ export const googleDocsVespa = async (
           photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
           ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
           entity: DriveEntity.Docs,
-          chunks: chunks.map((v) => v.chunk),
+          chunks: text_chunks,
           permissions: doc.permissions ?? [],
           mimeType: doc.mimeType ?? "",
           metadata: JSON.stringify({ parents: parentsForMetadata }),
@@ -3129,6 +3120,17 @@ export const googleDocsVespa = async (
           email: userEmail,
         })
         return null
+      } finally {
+        const docxPath = `${downloadDir}/${hashPdfFilename(
+          `${userEmail}_${doc.id}_${doc.name}`,
+        )}.docx`
+        if (docxPath && fs.existsSync(docxPath)) {
+          try {
+            await deleteDocument(docxPath)
+          } catch (deleteError) {
+            // Logger.warn(`Could not delete DOCX file ${docxPath}: ${deleteError}`)
+          }
+        }
       }
     }),
   )
