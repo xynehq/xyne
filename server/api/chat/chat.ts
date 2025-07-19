@@ -3167,6 +3167,7 @@ export const MessageApi = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
+      localChatId,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
@@ -3395,6 +3396,7 @@ export const MessageApi = async (c: Context) => {
             event: ChatSSEvents.ResponseMetadata,
             data: JSON.stringify({
               chatId: chat.externalId,
+              localChatId,
             }),
           })
 
@@ -3611,6 +3613,7 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: assistantMessageId,
+                  localChatId,
                 }),
               })
             } else {
@@ -3627,6 +3630,7 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: lastMessage.externalId,
+                  localChatId,
                 }),
               })
               await stream.writeSSE({
@@ -4130,6 +4134,7 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: assistantMessageId,
+                  localChatId,
                 }),
               })
             } else {
@@ -4146,6 +4151,7 @@ export const MessageApi = async (c: Context) => {
                 data: JSON.stringify({
                   chatId: chat.externalId,
                   messageId: lastMessage.externalId,
+                  localChatId,
                 }),
               })
               await stream.writeSSE({
