@@ -42,6 +42,16 @@ interface StreamInfo {
 // Global map to store active streams - persists across component unmounts
 const activeStreams = new Map<string, StreamState>()
 
+// Function to get or create a tab ID
+const getTabId = () => {
+  let tabId = sessionStorage.getItem("tabId")
+  if (!tabId) {
+    tabId = crypto.randomUUID()
+    sessionStorage.setItem("tabId", tabId)
+  }
+  return tabId
+}
+
 // Helper function to parse HTML message input safely
 const parseMessageInput = (htmlString: string) => {
   // Create a DOMParser instance for safer parsing
@@ -188,6 +198,13 @@ export const startStream = async (
   ) {
     return
   }
+  const tabId = getTabId()
+  const localChatId = crypto.randomUUID()
+  const pendingChats = JSON.parse(
+    sessionStorage.getItem("pendingChats") || "{}",
+  )
+  pendingChats[localChatId] = { tabId, status: "pending" }
+  sessionStorage.setItem("pendingChats", JSON.stringify(pendingChats))
 
   // Parse message content
   const parsedMessageParts = parseMessageInput(messageToSend)
@@ -211,6 +228,10 @@ export const startStream = async (
   const url = new URL(`/api/v1/message/create`, window.location.origin)
   if (chatId) {
     url.searchParams.append("chatId", chatId)
+  }
+  if (isNewChat) {
+    url.searchParams.append("localChatId", localChatId)
+    url.searchParams.append("tabId", tabId)
   }
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
@@ -310,15 +331,44 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-    const { chatId: realId, messageId } = JSON.parse(event.data)
+    const {
+      chatId: realId,
+      messageId,
+      localChatId: responseLocalChatId,
+    } = JSON.parse(event.data)
     streamState.messageId = messageId
     streamState.chatId = realId
+
+    const pendingChats = JSON.parse(
+      sessionStorage.getItem("pendingChats") || "{}",
+    )
+    const pendingChat = pendingChats[responseLocalChatId]
+
+    if (pendingChat) {
+      pendingChat.status = "completed"
+      sessionStorage.setItem("pendingChats", JSON.stringify(pendingChats))
+      setTimeout(() => {
+        const currentPendingChats = JSON.parse(
+          sessionStorage.getItem("pendingChats") || "{}",
+        )
+        delete currentPendingChats[responseLocalChatId]
+        sessionStorage.setItem(
+          "pendingChats",
+          JSON.stringify(currentPendingChats),
+        )
+      }, 5000)
+    }
 
     if (realId && streamKey !== realId && !streamKey.match(/^[a-z0-9]+$/)) {
       activeStreams.delete(streamKey)
       activeStreams.set(realId, streamState)
 
-      if (router && router.state.location.pathname === "/chat") {
+      if (
+        router &&
+        router.state.location.pathname === "/chat" &&
+        pendingChat &&
+        pendingChat.tabId === getTabId()
+      ) {
         const isGlobalDebugMode =
           import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
         router.navigate({

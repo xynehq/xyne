@@ -121,6 +121,8 @@ export const chatHistorySchema = z.object({
 export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
+  localChatId: z.string().optional(),
+  tabId: z.string().optional(),
   modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
