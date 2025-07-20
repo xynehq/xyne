@@ -1930,206 +1930,207 @@ export const ChatMessage = ({
       <div
         className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
       >
-        <div className="flex flex-row w-full max-w-full min-w-0">
-          <img
-            className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-            src={logo}
-          />
-          <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
-            {thinking && (
-              <>
-                <EnhancedReasoning
-                  content={thinking}
-                  isStreaming={!responseDone}
-                  className="mb-4"
-                  citations={citations}
-                  citationMap={citationMap}
-                />
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
-                  <MarkdownPreview
-                    wrapperElement={{
-                      "data-color-mode": theme,
-                    }}
-                    style={{
-                      padding: 0,
-                      backgroundColor: "transparent",
-                      color: theme === "dark" ? "#A0AEC0" : "#627384",
-                      maxWidth: "100%",
-                      overflowWrap: "break-word",
-                      wordBreak: "break-word",
-                      minWidth: 0,
-                    }}
-                    components={{
-                      a: renderMarkdownLink,
-                      code: Code,
-                      ...createTableComponents(), // Use extracted table components
-                    }}
-                  />
-                </div>
-              </>
-            )}
-            {message === "" && (!responseDone || isRetrying) ? (
-              <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                {`${THINKING_PLACEHOLDER}${dots}`}
-              </div>
-            ) : message !== "" ? (
-              <MarkdownPreview
-                source={processMessage(message)}
-                wrapperElement={{
-                  "data-color-mode": theme,
-                }}
-                style={{
-                  padding: 0,
-                  backgroundColor: "transparent",
-                  color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                  maxWidth: "100%",
-                  overflowWrap: "break-word",
-                  wordBreak: "break-word",
-                  minWidth: 0,
-                }}
-                components={{
-                  a: renderMarkdownLink,
-                  code: Code,
-                  ...createTableComponents(), // Use extracted table components
-                  h1: ({ node, ...props }) => (
-                    <h1
-                      style={{ fontSize: "1.6em" }}
-                      className="dark:text-gray-100"
-                      {...props}
-                    />
-                  ),
-                  h2: ({ node, ...props }) => (
-                    <h1 style={{ fontSize: "1.2em" }} {...props} />
-                  ),
-                  h3: ({ node, ...props }) => (
-                    <h1 style={{ fontSize: "1em" }} {...props} />
-                  ),
-                  h4: ({ node, ...props }) => (
-                    <h1 style={{ fontSize: "0.8em" }} {...props} />
-                  ),
-                  h5: ({ node, ...props }) => (
-                    <h1 style={{ fontSize: "0.7em" }} {...props} />
-                  ),
-                  h6: ({ node, ...props }) => (
-                    <h1 style={{ fontSize: "0.68em" }} {...props} />
-                  ),
-                  ul: ({ node, ...props }) => (
-                    <ul
-                      style={{
-                        listStyleType: "disc",
-                        paddingLeft: "1.5rem",
-                        marginBottom: "1rem",
-                      }}
-                      {...props}
-                    />
-                  ),
-                  ol: ({ node, ...props }) => (
-                    <ol
-                      style={{
-                        listStyleType: "decimal",
-                        paddingLeft: "1.5rem",
-                        marginBottom: "1rem",
-                      }}
-                      {...props}
-                    />
-                  ),
-                  li: ({ node, ...props }) => (
-                    <li
-                      style={{
-                        marginBottom: "0.25rem",
-                      }}
-                      {...props}
-                    />
-                  ),
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
-        {responseDone && !isRetrying && (
-          <div className="flex flex-col">
-            {isDebugMode && messageId && (
-              <button
-                className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
-                onClick={() => onShowRagTrace(messageId)}
-              >
-                View RAG Trace #{messageId.slice(-6)}
-              </button>
-            )}
-            <div className="flex ml-[52px] mt-[12px] items-center">
-              <Copy
-                size={16}
-                stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
-                className={`cursor-pointer`}
-                onMouseDown={() => setIsCopied(true)}
-                onMouseUp={() => setIsCopied(false)}
-                onClick={() =>
-                  navigator.clipboard.writeText(processMessage(message))
-                }
-              />
-              <img
-                className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
-                src={Retry}
-                onClick={() =>
-                  messageId && !disableRetry && handleRetry(messageId)
-                }
-                title="Retry"
-              />
-              {messageId && (
+          <div className="flex flex-row w-full max-w-full min-w-0">
+            <img
+              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
+              src={logo}
+            />
+            <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
+              {thinking && (
                 <>
-                  <ThumbsUp
-                    size={16}
-                    stroke={
-                      feedbackStatus === MessageFeedback.Like
-                        ? "#10B981"
-                        : "#B2C3D4"
-                    }
-                    fill="none"
-                    className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                    onClick={() =>
-                      onFeedback && onFeedback(messageId, MessageFeedback.Like)
-                    }
+                  <EnhancedReasoning
+                    content={thinking}
+                    isStreaming={!responseDone}
+                    className="mb-4"
+                    citations={citations}
+                    citationMap={citationMap}
                   />
-                  <ThumbsDown
-                    size={16}
-                    stroke={
-                      feedbackStatus === MessageFeedback.Dislike
-                        ? "#EF4444"
-                        : "#B2C3D4"
-                    }
-                    fill="none"
-                    className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                    onClick={() =>
-                      onFeedback &&
-                      onFeedback(messageId, MessageFeedback.Dislike)
-                    }
-                  />
-                </>
-              )}
-              {!!citationUrls.length && (
-                <div className="ml-auto flex">
-                  <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                    <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
-                      SOURCES
-                    </span>
-                    <ChevronDown
-                      size={14}
-                      className="ml-[4px]"
-                      color="#B2C3D4"
+                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
+                    <MarkdownPreview
+                      wrapperElement={{
+                        "data-color-mode": theme,
+                      }}
+                      style={{
+                        padding: 0,
+                        backgroundColor: "transparent",
+                        color: theme === "dark" ? "#A0AEC0" : "#627384",
+                        maxWidth: "100%",
+                        overflowWrap: "break-word",
+                        wordBreak: "break-word",
+                        minWidth: 0,
+                      }}
+                      components={{
+                        a: renderMarkdownLink,
+                        code: Code,
+                        ...createTableComponents(), // Use extracted table components
+                      }}
                     />
                   </div>
-                </div>
+                </>
               )}
-            </div>
-
-            <div className="flex flex-row ml-[52px]">
-              <MessageCitationList
-                citations={citations.slice(0, 3)}
-                onToggleSources={onToggleSources}
-              />
+              {message === "" && (!responseDone || isRetrying) ? (
+                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                  {`${THINKING_PLACEHOLDER}${dots}`}
+                </div>
+              ) : message !== "" ? (
+                <MarkdownPreview
+                  source={processMessage(message)}
+                  wrapperElement={{
+                    "data-color-mode": theme,
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
+                  }}
+                  components={{
+                    a: renderMarkdownLink,
+                    code: Code,
+                    ...createTableComponents(), // Use extracted table components
+                    h1: ({ node, ...props }) => (
+                      <h1
+                        style={{ fontSize: "1.6em" }}
+                        className="dark:text-gray-100"
+                        {...props}
+                      />
+                    ),
+                    h2: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "1.2em" }} {...props} />
+                    ),
+                    h3: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "1em" }} {...props} />
+                    ),
+                    h4: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.8em" }} {...props} />
+                    ),
+                    h5: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.7em" }} {...props} />
+                    ),
+                    h6: ({ node, ...props }) => (
+                      <h1 style={{ fontSize: "0.68em" }} {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        style={{
+                          listStyleType: "disc",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol
+                        style={{
+                          listStyleType: "decimal",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li
+                        style={{
+                          marginBottom: "0.25rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                  }}
+                />
+              ) : null}
             </div>
           </div>
-        )}
+          {responseDone && !isRetrying && (
+            <div className="flex flex-col">
+              {isDebugMode && messageId && (
+                <button
+                  className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                  onClick={() => onShowRagTrace(messageId)}
+                >
+                  View RAG Trace #{messageId.slice(-6)}
+                </button>
+              )}
+              <div className="flex ml-[52px] mt-[12px] items-center">
+                <Copy
+                  size={16}
+                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
+                  className={`cursor-pointer`}
+                  onMouseDown={() => setIsCopied(true)}
+                  onMouseUp={() => setIsCopied(false)}
+                  onClick={() =>
+                    navigator.clipboard.writeText(processMessage(message))
+                  }
+                />
+                <img
+                  className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                  src={Retry}
+                  onClick={() =>
+                    messageId && !disableRetry && handleRetry(messageId)
+                  }
+                  title="Retry"
+                />
+                {messageId && (
+                  <>
+                    <ThumbsUp
+                      size={16}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Like
+                          ? "#10B981"
+                          : "#B2C3D4"
+                      }
+                      fill="none"
+                      className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                      onClick={() =>
+                        onFeedback &&
+                        onFeedback(messageId, MessageFeedback.Like)
+                      }
+                    />
+                    <ThumbsDown
+                      size={16}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Dislike
+                          ? "#EF4444"
+                          : "#B2C3D4"
+                      }
+                      fill="none"
+                      className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                      onClick={() =>
+                        onFeedback &&
+                        onFeedback(messageId, MessageFeedback.Dislike)
+                      }
+                    />
+                  </>
+                )}
+                {!!citationUrls.length && (
+                  <div className="ml-auto flex">
+                    <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
+                      <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
+                        SOURCES
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        className="ml-[4px]"
+                        color="#B2C3D4"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-row ml-[52px]">
+                <MessageCitationList
+                  citations={citations.slice(0, 3)}
+                  onToggleSources={onToggleSources}
+                />
+              </div>
+            </div>
+          )}
       </div>
     </div>
   )
