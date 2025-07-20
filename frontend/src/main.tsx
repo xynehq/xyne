@@ -7,6 +7,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router"
 // Import the generated route tree
 import { routeTree } from "@/routeTree.gen"
 import { ThemeProvider } from "@/components/ThemeContext"
+import { SidebarProvider } from "@/components/SidebarContext"
 import { Toaster } from "@/components/ui/toaster"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -29,10 +30,12 @@ declare module "@tanstack/react-router" {
 const App = () => {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
-      </QueryClientProvider>
+      <SidebarProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster />
+        </QueryClientProvider>
+      </SidebarProvider>
     </ThemeProvider>
   )
 }

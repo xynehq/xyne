@@ -2,6 +2,7 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
+import { useSidebar } from "@/components/SidebarContext"
 import {
   createFileRoute,
   useLoaderData,
@@ -310,6 +311,7 @@ export const ChatPage = ({
   agentWhiteList,
 }: ChatPageProps) => {
   const { theme } = useTheme()
+  const { isExpanded } = useSidebar()
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -2081,6 +2083,7 @@ export const ChatMessage = ({
   attachments?: AttachmentMetadata[]
 }) => {
   const { theme } = useTheme()
+  const { isExpanded } = useSidebar()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
   const processMessage = (text: string) => {
@@ -2239,13 +2242,13 @@ export const ChatMessage = ({
               <div className="flex flex-col">
                 {isDebugMode && messageId && (
                   <button
-                    className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                    className={`${isExpanded ? "ml-[200px]" : "ml-[52px]"} text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left transition-all duration-300 ease-in-out`}
                     onClick={() => onShowRagTrace(messageId)}
                   >
                     View RAG Trace #{messageId.slice(-6)}
                   </button>
                 )}
-                <div className="flex ml-[52px] mt-[12px] items-center">
+                <div className={`flex ${isExpanded ? "ml-[200px]" : "ml-[52px]"} mt-[12px] items-center transition-all duration-300 ease-in-out`}>
                   <Copy
                     size={16}
                     stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
@@ -2312,7 +2315,7 @@ export const ChatMessage = ({
                   )}
                 </div>
 
-                <div className="flex flex-row ml-[52px]">
+                <div className={`flex flex-row ${isExpanded ? "ml-[200px]" : "ml-[52px]"} transition-all duration-300 ease-in-out`}>
                   <MessageCitationList
                     citations={citations.slice(0, 3)}
                     onToggleSources={onToggleSources}

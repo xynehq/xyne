@@ -4,6 +4,7 @@ import { SearchFilters } from "@/components/SearchFilter"
 import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
 import { AutocompleteElement } from "@/components/Autocomplete"
 import { useNavigate } from "@tanstack/react-router"
+import { useSidebar } from "@/components/SidebarContext"
 
 export const SearchBar = forwardRef<HTMLDivElement, any>(
   (
@@ -27,6 +28,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
     const inputRef = useRef<HTMLInputElement | null>(null)
     const navigate = useNavigate({ from: "/search" })
     const trimmedQuery = query.trim()
+    const { isExpanded } = useSidebar()
 
     useEffect(() => {
       if (inputRef.current) {
@@ -55,8 +57,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       >
         <div
           className={`flex flex-col max-w-3xl ${
-            hasSearched ? "ml-[186px]" : ""
-          } w-full`}
+            hasSearched ? (isExpanded ? "ml-[230px]" : "ml-[186px]") : ""
+          } w-full transition-all duration-300`}
         >
           <div className="flex w-full">
             <div className="relative w-full">
@@ -156,7 +158,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
           </div>
         </div>
         {hasSearched && (
-          <div className="ml-[230px] text-[13px]">
+          <div className={`${isExpanded ? "ml-[274px]" : "ml-[230px]"} text-[13px] transition-all duration-300`}>
             <SearchFilters onLastUpdated={onLastUpdated} filter={filter} />
           </div>
         )}

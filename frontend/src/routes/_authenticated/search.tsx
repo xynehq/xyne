@@ -10,6 +10,7 @@ const page = 8
 
 import { Sidebar } from "@/components/Sidebar"
 import { useTheme } from "@/components/ThemeContext"
+import { useSidebar } from "@/components/SidebarContext"
 
 import { useEffect, useRef, useState } from "react"
 
@@ -80,6 +81,7 @@ interface IndexProps {
 
 export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const { theme } = useTheme()
+  const { isExpanded: isSidebarExpanded } = useSidebar()
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
@@ -447,7 +449,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         role={user?.role}
         isAgentMode={agentWhiteList}
       />
-      <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
+      <div className={`flex flex-col flex-grow h-full ${isSidebarExpanded ? "ml-[200px]" : "ml-[52px]"} transition-all duration-300 ease-in-out`}>
         <SearchBar
           ref={autocompleteRef}
           autocompleteResults={autocompleteResults}
@@ -468,7 +470,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           }}
         />
 
-        <div className="flex flex-row ml-[186px] h-full">
+        <div className={`flex flex-row ${isSidebarExpanded ? "ml-[230px]" : "ml-[186px]"} h-full transition-all duration-300 ease-in-out`}>
           <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5] dark:border-gray-700">
             {answer && answer.length > 0 && (
               <div className="flex mt-[24px]">

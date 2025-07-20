@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-router"
 import { z } from "zod"
 import { Sidebar } from "@/components/Sidebar"
+import { useSidebar } from "@/components/SidebarContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -187,6 +188,7 @@ interface User {
 function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
+  const { isExpanded } = useSidebar()
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
@@ -2288,6 +2290,7 @@ const AgentChatMessage = ({
   attachments?: AttachmentMetadata[]
 }) => {
   const { theme } = useTheme()
+  const { isExpanded } = useSidebar()
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -2474,7 +2477,7 @@ const AgentChatMessage = ({
             </div>
             {!isStreaming && messageId && (
               <div className="flex flex-col">
-                <div className="flex ml-[52px] mt-[12px] items-center">
+                <div className={`flex ${isExpanded ? "ml-[200px]" : "ml-[52px]"} mt-[12px] items-center transition-all duration-300 ease-in-out`}>
                   <Copy
                     size={16}
                     stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
@@ -2498,7 +2501,7 @@ const AgentChatMessage = ({
                 </div>
 
                 {citations && citations.length > 0 && (
-                  <div className="flex flex-row ml-[52px]">
+                  <div className={`flex flex-row ${isExpanded ? "ml-[200px]" : "ml-[52px]"} transition-all duration-300 ease-in-out`}>
                     <TooltipProvider>
                       <ul className={`flex flex-row mt-[24px]`}>
                         {citations
