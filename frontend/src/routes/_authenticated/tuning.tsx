@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/Sidebar"
+import { useSidebar } from "@/components/SidebarContext"
 import { Button } from "@/components/ui/button"
 import { api, wsClient } from "@/api"
 import { createFileRoute } from "@tanstack/react-router"
@@ -44,6 +45,7 @@ interface DatasetInfo {
 
 export default function TuningPage() {
   // Changed function name to match export default and component prop
+  const { isExpanded } = useSidebar()
   const [jobStatus, setJobStatus] = useState<JobStatus>("idle")
   const [jobMessage, setJobMessage] = useState<string>("")
   const [jobId, setJobId] = useState<string | null>(null)
@@ -372,7 +374,7 @@ export default function TuningPage() {
       {/* Added wrapper div for layout */}
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />{" "}
       {/* Placed Sidebar here and passed props */}
-      <div className="flex flex-col flex-grow h-full ml-[52px] mx-auto w-full max-w-5xl px-4 py-8">
+      <div className={`flex flex-col flex-grow h-full ${isExpanded ? "ml-[200px]" : "ml-[52px]"} mx-auto w-full max-w-5xl px-4 py-8 transition-all duration-300 ease-in-out`}>
         {" "}
         {/* Added margin to content div */}
         <div className="flex flex-col gap-6">

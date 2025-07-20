@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
+import { useSidebar } from "@/components/SidebarContext"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Search as SearchIcon } from "lucide-react"
 import { SearchBar } from "@/components/SearchBar"
@@ -31,6 +32,7 @@ enum Tabs {
 
 const Index = () => {
   const { theme } = useTheme()
+  const { isExpanded } = useSidebar()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
@@ -244,7 +246,7 @@ const Index = () => {
           role={user?.role}
           isAgentMode={agentWhiteList}
         />
-        <div className="flex flex-col flex-grow ml-[52px] relative">
+        <div className={`flex flex-col flex-grow ${isExpanded ? "ml-[200px]" : "ml-[52px]"} relative transition-all duration-300 ease-in-out`}>
           {agent && (
             <div className="flex w-full max-w-3xl items-center justify-between pt-12 self-center">
               <div>

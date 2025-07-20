@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { useTheme } from "@/components/ThemeContext"
+import { useSidebar } from "@/components/SidebarContext"
 import { LoaderContent } from "@/lib/common"
 import { CLASS_NAMES } from "../lib/constants"
 
@@ -77,8 +78,10 @@ export const bookmarkChat = async (
 const HistoryModal = ({
   onClose,
   pathname,
-}: { onClose: () => void; pathname: string }) => {
+  sidebarExpanded = false,
+}: { onClose: () => void; pathname: string; sidebarExpanded?: boolean }) => {
   const { theme } = useTheme()
+  const { setIsExpanded } = useSidebar()
   const queryClient = useQueryClient()
   const navigate = useNavigate({ from: "/" })
 
@@ -519,7 +522,9 @@ const HistoryModal = ({
 
   return (
     <div
-      className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col select-none bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}
+      className={`fixed ${sidebarExpanded ? "left-[200px]" : "left-[52px]"} top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col select-none bg-white dark:bg-[#1E1E1E] transition-all duration-300 ease-in-out ${CLASS_NAMES.HISTORY_MODAL_CONTAINER} z-30`}
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
     >
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
         <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">
