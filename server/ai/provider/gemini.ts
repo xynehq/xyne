@@ -12,6 +12,7 @@ import { Subsystem } from "@/types"
 import path from "path"
 import fs from "fs"
 import { findImageByName } from "@/ai/provider/base"
+import { createLabeledImageContent } from "../utils"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -148,15 +149,17 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
-      const messageParts = [
-        {
-          text:
-            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-            latestText,
-        },
-        ...imageParts,
-      ]
+      const allBlocks = messages[messages.length - 1].content || []
+      const textBlocks = allBlocks.filter((c) => "text" in c)
+      const otherBlocks = allBlocks.filter((c) => !("text" in c))
+      const latestText = textBlocks.map((tb) => tb.text).join("\n")
+
+      const messageParts = createLabeledImageContent(
+        latestText,
+        otherBlocks,
+        imageParts,
+        params.imageFileNames || [],
+      )
 
       const response = await chat.sendMessage({ message: messageParts })
 
@@ -212,17 +215,19 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      const latestText = messages[messages.length - 1]?.content?.[0]?.text || ""
-      const parts = [
-        {
-          text:
-            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n" +
-            latestText,
-        },
-        ...imageParts,
-      ]
+      const allBlocks = messages[messages.length - 1].content || []
+      const textBlocks = allBlocks.filter((c) => "text" in c)
+      const otherBlocks = allBlocks.filter((c) => !("text" in c))
+      const latestText = textBlocks.map((tb) => tb.text).join("\n")
 
-      const stream = await chat.sendMessageStream({ message: parts })
+      const messageParts = createLabeledImageContent(
+        latestText,
+        otherBlocks,
+        imageParts,
+        params.imageFileNames || [],
+      )
+
+      const stream = await chat.sendMessageStream({ message: messageParts })
 
       let isThinkingStarted = false
       let wasThinkingInPreviousChunk = false
