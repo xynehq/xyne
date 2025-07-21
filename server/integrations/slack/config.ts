@@ -18,6 +18,12 @@ export const MAX_CITATIONS_IN_MODAL = 2
 export const MAX_CITATIONS_IN_SHARED = 5
 export const MAX_SOURCES_IN_MODAL = 20
 
+export const FRONTEND_BASE_URL = process.env.FRONTEND_URL || (
+  process.env.NODE_ENV === "production"
+    ? process.env.HOST || "http://localhost:3000"
+    : "http://localhost:5173"
+)
+
 // Constants from client.ts
 export const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 export const MODAL_RESULTS_DISPLAY_LIMIT = 5
@@ -37,13 +43,8 @@ export const ACTION_IDS = {
   PREVIOUS_SOURCE_PAGE: "previous_source_page",
 }
 
-
-
 // Constants for slack Ingestion
-export const periodicSaveState = 4000 // 4 seconds
-
-  
-
+export const periodicSaveState = 4000 // 4 seconds  
 
 // Constants from client.ts
 export const EVENT_CACHE_TTL = 30000; // 30 seconds

@@ -521,7 +521,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
         )}
         <span className="flex items-center font-medium flex-1">Reasoning</span>
         <span className="flex-shrink-0 text-sm text-slate-400">
-          {steps.length} {steps.length === 1 ? "step" : "steps"}
+          {/* temporarily commenting this out */}
+          {/* {steps.length} {steps.length === 1 ? "step" : "steps"} */}
         </span>
       </button>
 
