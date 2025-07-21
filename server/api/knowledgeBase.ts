@@ -28,7 +28,6 @@ import {
   getKbFileByItemId,
   generateStorageKey,
   generateVespaDocId,
-  getParentItems,
   getAllFolderItems,
   getKbFilesVespaIds,
 } from "@/db/knowledgeBase"
@@ -1525,24 +1524,6 @@ export const GetFileContentApi = async (c: Context) => {
   }
 }
 
-export const GetParentItems = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
-  const parentId = c.req.param("pId")
-  try {
-    const resp = await getParentItems(parentId, db)
-    return c.json({
-      data: resp,
-      success: true,
-    })
-  } catch (error) {
-    return c.json(
-      {
-        error: `Failed to fetch the items error :${error}`,
-      },
-      500,
-    )
-  }
-}
 export const GetKbVespaIds = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const { parentIds } = await c.req.json() // Assuming the array is sent in the request body
