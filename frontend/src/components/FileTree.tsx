@@ -1,11 +1,12 @@
 import { useState } from "react"
 import {
+  Folder,
   File as FileIcon,
   ChevronRight,
   ChevronDown,
   Plus,
-  // Share2,
-  // Info,
+  Share2,
+  Info,
   Trash2,
 } from "lucide-react"
 import {
@@ -56,19 +57,18 @@ interface FileTreeProps {
   onAddFiles: (node: FileNode, path: string) => void
   onDelete: (node: FileNode, path: string) => void
   onToggle: (node: FileNode) => void
-  onFileClick?: (node: FileNode) => void
-  userRole?: string
+  onFileClick: (node: FileNode) => void
 }
 
-export default function FileTree({
+const FileTree = ({
   items,
   onAddFiles,
   onDelete,
   onToggle,
   onFileClick,
-}: FileTreeProps) {
+}: FileTreeProps) => {
   return (
-    <div className="space-y-1">
+    <div className="mt-2">
       {items.map((item, index) => (
         <FileNodeComponent
           key={index}
@@ -98,7 +98,7 @@ const FileNodeComponent = ({
   onAddFiles: (node: FileNode, path: string) => void
   onDelete: (node: FileNode, path: string) => void
   onToggle: (node: FileNode) => void
-  onFileClick?: (node: FileNode) => void
+  onFileClick: (node: FileNode) => void
 }) => {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -122,7 +122,7 @@ const FileNodeComponent = ({
               ) : (
                 <ChevronRight size={16} />
               )}
-              {/* <Folder size={16} /> */}
+              <Folder size={16} />
               <span
                 className="font-sans font-semibold text-gray-800 dark:text-gray-200"
                 style={{ fontFamily: "Inter", fontWeight: 500 }}
@@ -132,7 +132,7 @@ const FileNodeComponent = ({
             </div>
           ) : (
             <div
-              className={`flex items-center gap-2 w-full ${onFileClick ? "cursor-pointer" : ""}`}
+              className="flex items-center gap-2 w-full"
               onClick={() => onFileClick && onFileClick(node)}
             >
               <FileIcon size={16} className="flex-shrink-0" />
@@ -145,11 +145,9 @@ const FileNodeComponent = ({
             </div>
           )}
         </div>
-        <div className="col-span-2"></div>
-        <div className="col-span-1 text-center">{node.files}</div>
-        <div className="col-span-2 relative">
+        <div className="col-span-2">
           {isHovered && (
-            <div className="absolute right-full pr-5 flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2 pr-4">
               {node.type === "folder" && (
                 <Plus
                   size={16}
@@ -157,8 +155,8 @@ const FileNodeComponent = ({
                   onClick={() => onAddFiles(node, currentPath)}
                 />
               )}
-              {/* <Share2 size={16} className="cursor-pointer" />
-              <Info size={16} className="cursor-pointer" /> */}
+              <Share2 size={16} className="cursor-pointer" />
+              <Info size={16} className="cursor-pointer" />
               <Trash2
                 size={16}
                 className="cursor-pointer"
@@ -166,6 +164,9 @@ const FileNodeComponent = ({
               />
             </div>
           )}
+        </div>
+        <div className="col-span-1 text-center">{node.files}</div>
+        <div className="col-span-2">
           {node.lastUpdated
             ? new Date(node.lastUpdated).toLocaleDateString("en-GB", {
                 day: "numeric",
@@ -219,3 +220,5 @@ const FileNodeComponent = ({
     </div>
   )
 }
+
+export default FileTree

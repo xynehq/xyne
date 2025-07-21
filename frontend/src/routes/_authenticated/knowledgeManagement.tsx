@@ -236,7 +236,6 @@ function RouteComponent() {
   const [selectedFiles, setSelectedFiles] = useState<FileUploadSelectedFile[]>(
     [],
   )
-
   // Document viewer state
   const [selectedDocument, setSelectedDocument] = useState<{
     file: FileNode
@@ -533,10 +532,16 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
-        const batchFiles = batches[i].map(f => f.file);
-        await uploadFileBatch(batchFiles, kb.id);
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          batch: i + 1,
+        }))
+        const batchFiles = batches[i].map((f) => f.file)
+        await uploadFileBatch(batchFiles, kb.id)
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          current: prev.current + batchFiles.length,
+        }))
       }
 
       // Fetch the updated KB data from the backend
@@ -635,10 +640,16 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
-        const batchFiles = batches[i].map(f => f.file);
-        await uploadFileBatch(batchFiles, addingToCollection.id);
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          batch: i + 1,
+        }))
+        const batchFiles = batches[i].map((f) => f.file)
+        await uploadFileBatch(batchFiles, addingToCollection.id)
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          current: prev.current + batchFiles.length,
+        }))
       }
 
       // Refresh the collection by fetching updated data from backend
@@ -1206,7 +1217,7 @@ function RouteComponent() {
                           onFileClick={(file: FileNode) =>
                             handleFileClick(file, collection)
                           }
-                          onAddFiles={(node: FileNode, path: string) => {
+                          onAddFiles={(node, path) => {
                             const collection = collections.find((c) =>
                               c.items.some((item) => findNode(item, node)),
                             )
@@ -1229,7 +1240,7 @@ function RouteComponent() {
                               }
                             }
                           }}
-                          onToggle={async (node: FileNode) => {
+                          onToggle={async (node) => {
                             if (node.type !== "folder") return
 
                             const updatedCollections = [...collections]
@@ -1267,12 +1278,13 @@ function RouteComponent() {
                                               type: item.type as
                                                 | "file"
                                                 | "folder",
+                                              files: item.totalCount,
                                               lastUpdated: item.updatedAt,
                                               updatedBy:
                                                 item.lastUpdatedByEmail ||
                                                 user?.email ||
                                                 "Unknown",
-                                              isOpen: true,
+                                              isOpen: false,
                                               children:
                                                 item.type === "folder"
                                                   ? []
@@ -1306,7 +1318,6 @@ function RouteComponent() {
                               setCollections(updatedCollections)
                             }
                           }}
-                          userRole={user?.role}
                         />
                       </>
                     )}
