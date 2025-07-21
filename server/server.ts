@@ -151,9 +151,15 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  GetParentItems,
+  GetKbVespaIds,
 } from "@/api/knowledgeBase"
 
-import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
+import {
+  isSlackEnabled,
+  startSocketMode,
+  getSocketModeStatus,
+} from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
 import {
@@ -360,7 +366,6 @@ const handleAppValidation = async (c: Context) => {
     })
   }
 
-
   const user = await userInfoRes.json()
 
   const email = user?.email
@@ -543,6 +548,8 @@ export const AppRoutes = app
   .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
   .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
   .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
+  .get("/kb/:kbId/items", GetParentItems)
+  .get("/kb/:knId/vespaIds", GetKbVespaIds)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -911,22 +918,32 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/knowledge-base", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/knowledgeManagement", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledge-base",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
-      const socketStarted = await startSocketMode();
+      const socketStarted = await startSocketMode()
       if (socketStarted) {
-        Logger.info("Slack Socket Mode connection initiated successfully.");
+        Logger.info("Slack Socket Mode connection initiated successfully.")
       } else {
-        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
+        Logger.warn(
+          "Failed to start Slack Socket Mode - missing configuration.",
+        )
       }
     } catch (error) {
-      Logger.error(error, "Error starting Slack Socket Mode");
+      Logger.error(error, "Error starting Slack Socket Mode")
     }
   } else {
     Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")
