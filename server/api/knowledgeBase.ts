@@ -1545,9 +1545,14 @@ export const GetParentItems = async (c: Context) => {
 }
 export const GetKbVespaIds = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const parentId = c.req.param("pId")
+  const { parentIds } = await c.req.json() // Assuming the array is sent in the request body
+  if (!Array.isArray(parentIds) || parentIds.length === 0) {
+    throw new HTTPException(400, {
+      message: "Invalid or missing parentIds array",
+    })
+  }
   try {
-    const fileIds = await getAllFolderItems(parentId, db)
+    const fileIds = await getAllFolderItems(parentIds, db)
     const ids = await getKbFilesVespaIds(fileIds, db)
     return c.json(
       {

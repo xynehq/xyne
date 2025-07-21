@@ -89,18 +89,28 @@ export const getParentItems = async (
   return results
 }
 
-export const getAllFolderItems = async (parentId: string, trx: TxnOrClient) => {
+export const getAllFolderItems = async (
+  parentId: string[],
+  trx: TxnOrClient,
+) => {
   const res = []
   let queue: any[] = []
-  queue.push(parentId)
+  for (const id of parentId) {
+    queue.push(id)
+  }
   while (queue.length > 0) {
     const curr = queue.shift()
+
     const resp = await getParentItems(curr, trx)
-    for (const a of resp) {
-      if (a.type == "folder" || a.type == "knowledge_base") {
-        queue.push(a.id)
-      } else if (a.type == "file") {
-        res.push(a.id)
+    if (resp.length == 0) {
+      res.push(curr)
+      continue
+    }
+    for (const item of resp) {
+      if (item.type == "folder" || item.type == "knowledge_base") {
+        queue.push(item.id)
+      } else if (item.type == "file") {
+        res.push(item.id)
       }
     }
   }

@@ -549,7 +549,7 @@ export const AppRoutes = app
   .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
   .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
   .get("/kb/:kbId/items", GetParentItems)
-  .get("/kb/:knId/vespaIds", GetKbVespaIds)
+  .get("/kb/vespaIds", GetKbVespaIds)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
