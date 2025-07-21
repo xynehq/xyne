@@ -1079,27 +1079,10 @@ const HybridDefaultProfileAppEntityCounts = (
 }
 
 export const getAllDocumentsForAgent = async (
-  email: string,
   AllowedApps: Apps[] | null,
   dataSourceIds: string[] = [],
   limit: number = 400,
 ): Promise<VespaSearchResponse | null> => {
-  if (AllowedApps?.includes(Apps.DataSource) && dataSourceIds.length === 0) {
-    try {
-      const dataSourcesResponse = await getDataSourcesByCreator(email)
-      if (dataSourcesResponse.root.children) {
-        dataSourceIds = dataSourcesResponse.root.children.map(
-          (child) => (child.fields as VespaDataSource).docId,
-        )
-      }
-    } catch (error) {
-      Logger.error(error, "Failed to fetch data sources for agent")
-      if (AllowedApps.length === 1 && AllowedApps[0] === Apps.DataSource) {
-        return null
-      }
-    }
-  }
-
   const sources: string[] = []
   const conditions: string[] = []
 
@@ -1160,7 +1143,6 @@ export const getAllDocumentsForAgent = async (
   const payload = {
     yql,
     hits: limit,
-    email: email,
     timeout: "30s",
     "ranking.profile": "unranked",
   }
@@ -1635,12 +1617,10 @@ export const IfMailDocExist = async (
   email: string,
   docId: string,
 ): Promise<boolean> => {
-  return fallbackVespa
-    .ifMailDocExist(email, docId)
-    .catch((error) => {
-      Logger.error(error, `Error checking if document docId: ${docId} exists`)
-      return false
-    })
+  return fallbackVespa.ifMailDocExist(email, docId).catch((error) => {
+    Logger.error(error, `Error checking if document docId: ${docId} exists`)
+    return false
+  })
 }
 
 export const GetDocumentsByDocIds = async (
@@ -1790,12 +1770,10 @@ export interface AppEntityCounts {
 export const ifDocumentsExist = async (
   docIds: string[],
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
-  return fallbackVespa
-    .ifDocumentsExist(docIds)
-    .catch((error) => {
-      Logger.error(error, `Error checking if documents exist: ${docIds}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.ifDocumentsExist(docIds).catch((error) => {
+    Logger.error(error, `Error checking if documents exist: ${docIds}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 export const ifMailDocumentsExist = async (
@@ -1811,12 +1789,10 @@ export const ifMailDocumentsExist = async (
     }
   >
 > => {
-  return fallbackVespa
-    .ifMailDocumentsExist(mailIds)
-    .catch((error) => {
-      Logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
-      throw new Error(getErrorMessage(error))
-    })
+  return fallbackVespa.ifMailDocumentsExist(mailIds).catch((error) => {
+    Logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
+    throw new Error(getErrorMessage(error))
+  })
 }
 
 export const ifDocumentsExistInChatContainer = async (
@@ -2580,52 +2556,102 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
   }
 }
 
-export const getDataSourceFilesByName = async (
+export const fetchAllDataSourceFilesByName = async (
   dataSourceName: string,
   userEmail: string,
-  limit: number = 400,
-): Promise<VespaSearchResponse> => {
-  const yql = `
-    select * 
-    from sources ${dataSourceFileSchema} 
-    where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
-    order by createdAt desc 
-    limit ${limit}
-  `
+  concurrency = 3,
+  batchSize = 400,
+): Promise<VespaSearchResult[] | null> => {
+  const Logger = getLogger(Subsystem.Vespa).child({
+    module: "fetchAllDataSourceFilesByName",
+  })
 
-  const payload = {
-    yql,
+  const countPayload = {
+    yql: `
+      select * 
+      from sources ${dataSourceFileSchema} 
+      where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
+    `,
     dataSourceName,
     userEmail,
-    hits: limit,
+    hits: 0,
+    timeout: "20s",
+    "presentation.summary": "count",
     "ranking.profile": "unranked",
-    "presentation.summary": "default",
   }
 
-  const errorMsg = `Error fetching files for DataSource "${dataSourceName}" and user "${userEmail}"`
+  let totalCount: number
 
-  Logger.debug({ payload }, "Fetching files for datasource by name and user")
+  try {
+    const countResponse = await vespa.search<VespaSearchResponse>(countPayload)
+    totalCount = countResponse.root?.fields?.totalCount ?? 0
+    Logger.info(`Found ${totalCount} total files`)
+    if (totalCount === 0) {
+      return null
+    }
+  } catch (error) {
+    Logger.error(error, "Failed to get total count of files")
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: dataSourceFileSchema,
+      message: "Failed to get total count",
+    })
+  }
 
-  return vespa
-    .search<VespaSearchResponse>(payload)
-    .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getDataSourceFilesByName for search, trying fallback",
-        )
-        return fallbackVespa.search<VespaSearchResponse>(payload)
-      }
-      throw err
-    })
-    .catch((error) => {
-      Logger.error(error, errorMsg)
-      throw new ErrorPerformingSearch({
-        message: errorMsg,
-        cause: error as Error,
-        sources: dataSourceFileSchema,
-      })
-    })
+  const batchPayloads = []
+  for (let offset = 0; offset < totalCount; offset += batchSize) {
+    const payload = {
+      yql: `
+        select * 
+        from sources ${dataSourceFileSchema} 
+        where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
+        order by createdAt desc
+      `,
+      dataSourceName,
+      userEmail,
+      hits: Math.min(batchSize, totalCount - offset),
+      offset,
+      timeout: "30s",
+      "ranking.profile": "unranked",
+      "presentation.summary": "default",
+      maxHits: 1000000,
+      maxOffset: 1000000,
+    }
+    batchPayloads.push(payload)
+  }
+
+  Logger.debug(batchPayloads, "Prepared batch payloads for Vespa")
+
+  Logger.info(
+    `Fetching all batches (${batchPayloads.length}) with concurrency=${concurrency}`,
+  )
+
+  const limiter = pLimit(concurrency)
+
+  const results = await Promise.all(
+    batchPayloads.map((payload, idx) =>
+      limiter(async () => {
+        Logger.debug(`Fetching batch ${idx + 1}/${batchPayloads.length}`)
+        const res = await vespa
+          .search<VespaSearchResponse>(payload)
+          .catch(async (err) => {
+            if (vespa instanceof ProductionVespaClient) {
+              Logger.warn(
+                err,
+                `Prod vespa failed in fetchAllDataSourceFilesByName, trying fallback`,
+              )
+              return fallbackVespa.search<VespaSearchResponse>(payload)
+            }
+            throw err
+          })
+        return res
+      }),
+    ),
+  )
+
+  const allChildren = results.flatMap((r) => r.root.children ?? [])
+
+  return allChildren
 }
 
 export const SlackHybridProfile = (

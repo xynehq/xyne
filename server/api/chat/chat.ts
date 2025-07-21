@@ -1550,7 +1550,9 @@ async function* generateAnswerFromGivenContext(
   const finalImageFileNames = imageFileNames || []
 
   if (attachmentFileIds?.length) {
-    finalImageFileNames.push(...attachmentFileIds.map((id) => `${id}_${0}`))
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
   }
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")

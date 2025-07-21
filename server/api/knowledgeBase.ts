@@ -344,13 +344,113 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
       });
     }
 
-    await softDeleteKnowledgeBase(db, kbId);
+    // Get all items in the knowledge base before deletion
+    const allItems = await db
+      .select()
+      .from(kbItems)
+      .where(and(
+        isNull(kbItems.deletedAt)
+      ));
+    
+    // Filter items that belong to this KB by checking hierarchy
+    const kbItemsToDelete: KbItem[] = [];
+    for (const item of allItems) {
+      if (item.id === kbId) {
+        kbItemsToDelete.push(item);
+        continue;
+      }
+      
+      // Check if item belongs to this KB by traversing up the hierarchy
+      let currentItem = item;
+      let belongsToKb = false;
+      while (currentItem.parentId) {
+        if (currentItem.parentId === kbId) {
+          belongsToKb = true;
+          break;
+        }
+        const parent = allItems.find(i => i.id === currentItem.parentId);
+        if (!parent) break;
+        currentItem = parent;
+      }
+      
+      if (belongsToKb) {
+        kbItemsToDelete.push(item);
+      }
+    }
+    
+    // Delete all files from Vespa and storage
+    let deletedFilesCount = 0;
+    const fileItemIds: string[] = [];
+    
+    for (const item of kbItemsToDelete) {
+      if (item.type === "file") {
+        const kbFile = await getKbFileByItemId(db, item.id);
+        if (kbFile) {
+          fileItemIds.push(item.id);
+          
+          try {
+            // Delete from Vespa
+            await DeleteDocument(kbFile.vespaDocId, kbFileSchema);
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted from Vespa: ${kbFile.vespaDocId}`
+            );
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`
+            );
+          }
+          
+          try {
+            // Delete from storage
+            await unlink(kbFile.storagePath);
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted from storage: ${kbFile.storagePath}`
+            );
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`
+            );
+          }
+          
+          deletedFilesCount++;
+        }
+      }
+    }
+    
+    // Use transaction to ensure both tables are updated atomically
+    await db.transaction(async (tx) => {
+      // Soft delete all items in the KB (including the KB itself)
+      if (kbItemsToDelete.length > 0) {
+        const itemIds = kbItemsToDelete.map(item => item.id);
+        await tx
+          .update(kbItems)
+          .set({
+            deletedAt: sql`NOW()`,
+            updatedAt: sql`NOW()`,
+          })
+          .where(sql`${kbItems.id} IN (${sql.join(itemIds.map(id => sql`${id}`), sql`, `)})`);
+      }
+      
+      // Also soft delete all file records in kb_files table
+      if (fileItemIds.length > 0) {
+        await tx
+          .update(kbFiles)
+          .set({
+            deletedAt: sql`NOW()`,
+          })
+          .where(sql`${kbFiles.itemId} IN (${sql.join(fileItemIds.map(id => sql`${id}`), sql`, `)})`);
+      }
+    });
 
     loggerWithChild({ email: userEmail }).info(
-      `Deleted Knowledge Base: ${kbId}`
+      `Deleted Knowledge Base: ${kbId} (${kbItemsToDelete.length} total items deleted, ${deletedFilesCount} files removed from Vespa and storage)`
     );
 
-    return c.json({ success: true });
+    return c.json({ 
+      success: true,
+      deletedCount: kbItemsToDelete.length,
+      deletedFiles: deletedFilesCount
+    });
   } catch (error) {
     if (error instanceof HTTPException) throw error;
     
@@ -1110,8 +1210,11 @@ export const DeleteItemApi = async (c: Context) => {
     }
     
     // Delete all files from Vespa and storage
+    const fileItemIds: string[] = [];
     for (const { item: itemToDelete, kbFile } of itemsToDelete) {
       if (itemToDelete.type === "file" && kbFile) {
+        fileItemIds.push(itemToDelete.id);
+        
         try {
           // Delete from Vespa
           await DeleteDocument(kbFile.vespaDocId, kbFileSchema);
@@ -1138,8 +1241,21 @@ export const DeleteItemApi = async (c: Context) => {
       }
     }
 
-    // Now soft delete the item (and all descendants if it's a folder)
-    await softDeleteKbItem(db, itemId);
+    // Use transaction to soft delete items and update kb_files
+    await db.transaction(async (tx) => {
+      // Soft delete the item (and all descendants if it's a folder)
+      await softDeleteKbItem(tx, itemId);
+      
+      // Also soft delete all file records in kb_files table
+      if (fileItemIds.length > 0) {
+        await tx
+          .update(kbFiles)
+          .set({
+            deletedAt: sql`NOW()`,
+          })
+          .where(sql`${kbFiles.itemId} IN (${sql.join(fileItemIds.map(id => sql`${id}`), sql`, `)})`);
+      }
+    });
 
     loggerWithChild({ email: userEmail }).info(
       `Deleted item: ${itemId} from KB: ${kbId} (${itemsToDelete.length} total items deleted)`

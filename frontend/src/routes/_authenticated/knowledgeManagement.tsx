@@ -533,16 +533,10 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          batch: i + 1,
-        }))
-        const batchFiles = batches[i].map((f) => f.file)
-        const uploadResult = await uploadFileBatch(batchFiles, kb.id)
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          current: prev.current + batchFiles.length,
-        }))
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
+        const batchFiles = batches[i].map(f => f.file);
+        await uploadFileBatch(batchFiles, kb.id);
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
       // Fetch the updated KB data from the backend
@@ -641,19 +635,10 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          batch: i + 1,
-        }))
-        const batchFiles = batches[i].map((f) => f.file)
-        const uploadResult = await uploadFileBatch(
-          batchFiles,
-          addingToCollection.id,
-        )
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          current: prev.current + batchFiles.length,
-        }))
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
+        const batchFiles = batches[i].map(f => f.file);
+        await uploadFileBatch(batchFiles, addingToCollection.id);
+        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
       }
 
       // Refresh the collection by fetching updated data from backend

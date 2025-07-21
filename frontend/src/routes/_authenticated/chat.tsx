@@ -1401,7 +1401,7 @@ const Sources = ({
 
 interface ImageCitationComponentProps {
   citationKey: string
-  imageCitations: ImageCitation[]
+  imageCitations?: ImageCitation[] | ImageCitation
   className?: string
 }
 
@@ -1411,18 +1411,33 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   className = "",
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const imageCitation = imageCitations.find(
-    (ic) => ic.citationKey === citationKey,
-  )
+  let imageCitation: ImageCitation | undefined
+  let imageSrc = ""
 
-  if (!imageCitation) {
-    return (
-      <span className="text-blue-600 dark:text-blue-400">[{citationKey}]</span>
-    )
+  try {
+    if (Array.isArray(imageCitations)) {
+      imageCitation = imageCitations.find(
+        (ic) => ic.citationKey === citationKey,
+      )
+    } else if (
+      imageCitations &&
+      typeof imageCitations === "object" &&
+      "citationKey" in imageCitations
+    ) {
+      if ((imageCitations as ImageCitation).citationKey === citationKey) {
+        imageCitation = imageCitations as ImageCitation
+      }
+    }
+    if (!imageCitation) {
+      return null
+    }
+
+    // TODO: Fetch image data from API instead of using base64
+    imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+  } catch (error) {
+    console.error("Error fetching image data:", error)
+    return null
   }
-
-  // TODO: Fetch image data from API instead of using base64
-  const imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
 
   const ImageModal = () => {
     const handleCloseModal = () => {
@@ -2126,28 +2141,6 @@ export const ChatMessage = ({
                       citations={citations}
                       citationMap={citationMap}
                     />
-                    <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
-                      <MarkdownPreview
-                        source={thinking}
-                        wrapperElement={{
-                          "data-color-mode": theme,
-                        }}
-                        style={{
-                          padding: 0,
-                          backgroundColor: "transparent",
-                          color: theme === "dark" ? "#A0AEC0" : "#627384",
-                          maxWidth: "100%",
-                          overflowWrap: "break-word",
-                          wordBreak: "break-word",
-                          minWidth: 0,
-                        }}
-                        components={{
-                          a: renderMarkdownLink,
-                          code: Code,
-                          ...createTableComponents(), // Use extracted table components
-                        }}
-                      />
-                    </div>
                   </>
                 )}
                 {message === "" && (!responseDone || isRetrying) ? (

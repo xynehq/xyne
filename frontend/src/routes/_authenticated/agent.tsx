@@ -774,8 +774,7 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
-      const currentAgentIsRagOn =
-        editingAgent.isRagOn === false ? false : true
+      const currentAgentIsRagOn = editingAgent.isRagOn === false ? false : true
       setIsRagOn(currentAgentIsRagOn)
       setTestAgentIsRagOn(currentAgentIsRagOn)
       setAgentName(editingAgent.name)

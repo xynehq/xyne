@@ -523,7 +523,6 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     try {
       jsonVal = parse(text.trim())
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
-        
         let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
@@ -1126,17 +1125,13 @@ export const baselineRAGOffJsonStream = (
   messages: Message[],
   attachmentFileIds?: string[],
 ): AsyncIterableIterator<ConverseResponse> => {
-  if (attachmentFileIds && attachmentFileIds.length > 0) {
-    params.imageFileNames = attachmentFileIds.map((id) => `${id}_0`)
-  }
-
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
 
   params.systemPrompt = ragOffPromptJson(
     userCtx,
-    indexToCitation(retrievedCtx),
+    retrievedCtx,
     parseAgentPrompt(agentPrompt),
   )
   params.json = true
