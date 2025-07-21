@@ -149,17 +149,26 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      const allBlocks = messages[messages.length - 1].content || []
-      const textBlocks = allBlocks.filter((c) => "text" in c)
-      const otherBlocks = allBlocks.filter((c) => !("text" in c))
-      const latestText = textBlocks.map((tb) => tb.text).join("\n")
+      const lastMessage = messages[messages.length - 1]
+      const allBlocks = lastMessage?.content || []
 
-      const messageParts = createLabeledImageContent(
-        latestText,
-        otherBlocks,
-        imageParts,
-        params.imageFileNames || [],
-      )
+      let messageParts
+      if (lastMessage?.role == "user" && imageParts.length > 0) {
+        // only build labeled image content when we actually have images
+        const textBlocks = allBlocks.filter((c) => "text" in c)
+        const otherBlocks = allBlocks.filter((c) => !("text" in c))
+        const latestText = textBlocks.map((tb) => tb.text).join("\n")
+
+        messageParts = createLabeledImageContent(
+          latestText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames || [],
+        )
+      } else {
+        // otherwise just pass along the raw blocks
+        messageParts = allBlocks
+      }
 
       const response = await chat.sendMessage({ message: messageParts })
 
@@ -215,17 +224,26 @@ export class GeminiAIProvider extends BaseProvider {
         } satisfies GenerateContentConfig,
       })
 
-      const allBlocks = messages[messages.length - 1].content || []
-      const textBlocks = allBlocks.filter((c) => "text" in c)
-      const otherBlocks = allBlocks.filter((c) => !("text" in c))
-      const latestText = textBlocks.map((tb) => tb.text).join("\n")
+      const lastMessage = messages[messages.length - 1]
+      const allBlocks = lastMessage?.content || []
 
-      const messageParts = createLabeledImageContent(
-        latestText,
-        otherBlocks,
-        imageParts,
-        params.imageFileNames || [],
-      )
+      let messageParts
+      if (lastMessage?.role == "user" && imageParts.length > 0) {
+        // only build labeled image content when we actually have images
+        const textBlocks = allBlocks.filter((c) => "text" in c)
+        const otherBlocks = allBlocks.filter((c) => !("text" in c))
+        const latestText = textBlocks.map((tb) => tb.text).join("\n")
+
+        messageParts = createLabeledImageContent(
+          latestText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames || [],
+        )
+      } else {
+        // otherwise just pass along the raw blocks
+        messageParts = allBlocks
+      }
 
       const stream = await chat.sendMessageStream({ message: messageParts })
 
