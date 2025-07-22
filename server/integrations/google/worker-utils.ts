@@ -32,7 +32,9 @@ const processPptxFile = async (
   try {
     // Handle non-spreadsheet files as before
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
+    Logger.info(
+      `[TIMING] Starting extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
+    )
 
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
       filePath,
@@ -42,7 +44,9 @@ const processPptxFile = async (
 
     const endTime = Date.now()
     const duration = endTime - startTime
-    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
+    Logger.info(
+      `[TIMING] Completed extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
+    )
 
     return pptxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
@@ -59,8 +63,10 @@ const processPdfFile = async (
   try {
     // Handle non-spreadsheet files as before
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
-    
+    Logger.info(
+      `[TIMING] Starting extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
+    )
+
     const pdfResult = await extractTextAndImagesWithChunksFromPDF(
       filePath,
       attachmentId,
@@ -69,7 +75,9 @@ const processPdfFile = async (
 
     const endTime = Date.now()
     const duration = endTime - startTime
-    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
+    Logger.info(
+      `[TIMING] Completed extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
+    )
 
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
@@ -86,7 +94,9 @@ const processDocxFile = async (
   try {
     // Handle non-spreadsheet files as before
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
+    Logger.info(
+      `[TIMING] Starting extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
+    )
 
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
       filePath,
@@ -96,13 +106,31 @@ const processDocxFile = async (
 
     const endTime = Date.now()
     const duration = endTime - startTime
-    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
+    Logger.info(
+      `[TIMING] Completed extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
+    )
 
     return docxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
     Logger.error(error, `Error processing DOCX file: ${filePath}`)
     return []
   }
+}
+
+const writeFileWithTimeout = async (
+  fileName: string,
+  data: Uint8Array,
+  timeoutMs: number,
+) => {
+  return await Promise.race([
+    writeFile(fileName, data),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`writeFile timed out for ${fileName}`)),
+        timeoutMs,
+      ),
+    ),
+  ])
 }
 
 export async function saveGmailAttachment(
@@ -119,13 +147,19 @@ export async function saveGmailAttachment(
     const buffer = Buffer.from(normalizedBase64, "base64")
 
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(startTime).toISOString()}`)
+    Logger.info(
+      `[TIMING] Starting writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(startTime).toISOString()}`,
+    )
+    Logger.info(`Decoded buffer size: ${buffer.length} bytes for ${fileName}`)
+    Logger.info(`Checking write permissions on dir: ${path.dirname(fileName)}`)
 
-    await writeFile(fileName, new Uint8Array(buffer))
+    await writeFileWithTimeout(fileName, new Uint8Array(buffer), 5000)
 
     const endTime = Date.now()
     const duration = endTime - startTime
-    Logger.info(`[TIMING] Completed writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
+    Logger.info(
+      `[TIMING] Completed writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
+    )
 
     Logger.debug(`Successfully saved gmail attachment at ${fileName}`)
   } catch (error) {
@@ -160,7 +194,9 @@ export const getGmailAttachmentChunks = async (
     downloadAttachmentFilePath = path.join(downloadDir, newfileName)
 
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+    Logger.info(
+      `[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`,
+    )
 
     const attachementResp = await retryWithBackoff(
       () =>
@@ -177,7 +213,9 @@ export const getGmailAttachmentChunks = async (
 
     const endTime = Date.now()
     const duration = endTime - startTime
-    Logger.info(`[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
+    Logger.info(
+      `[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
+    )
 
     await saveGmailAttachment(
       attachementResp.data.data,
@@ -257,14 +295,18 @@ export const getGmailAttachmentChunks = async (
       }
 
       const startTime = Date.now()
-      Logger.info(`[TIMING] Starting text file chunk for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+      Logger.info(
+        `[TIMING] Starting text file chunk for file: ${filename}, at ${new Date(startTime).toISOString()}`,
+      )
 
       const content = await readFile(downloadAttachmentFilePath, "utf8")
       const chunks = chunkDocument(content)
       attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
 
       const endTime = Date.now()
-      Logger.info(`[TIMING] Completed text file chunk for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`)
+      Logger.info(
+        `[TIMING] Completed text file chunk for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`,
+      )
     } else {
       Logger.warn(
         `Unsupported file type ${mimeType} for file ${filename}. Skipping.`,
@@ -277,9 +319,13 @@ export const getGmailAttachmentChunks = async (
     // Cleanup logic - always delete temporary files
     try {
       if (downloadAttachmentFilePath) {
-        Logger.info(`[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`)
+        Logger.info(
+          `[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`,
+        )
         await deleteDocument(downloadAttachmentFilePath)
-        Logger.info(`[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`)
+        Logger.info(
+          `[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`,
+        )
       }
     } catch (cleanupError) {
       Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
@@ -356,7 +402,9 @@ export const getGmailSpreadsheetSheets = async (
     downloadAttachmentFilePath = path.join(downloadDir, newfileName)
 
     const startTime = Date.now()
-    Logger.info(`[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+    Logger.info(
+      `[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`,
+    )
 
     const attachementResp = await retryWithBackoff(
       () =>
@@ -372,7 +420,9 @@ export const getGmailSpreadsheetSheets = async (
     )
 
     const endTime = Date.now()
-    Logger.info(`[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`)
+    Logger.info(
+      `[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`,
+    )
 
     await saveGmailAttachment(
       attachementResp.data.data,
@@ -400,9 +450,13 @@ export const getGmailSpreadsheetSheets = async (
     // Cleanup logic
     try {
       if (downloadAttachmentFilePath) {
-        Logger.info(`[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`)
+        Logger.info(
+          `[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`,
+        )
         await deleteDocument(downloadAttachmentFilePath)
-        Logger.info(`[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`)
+        Logger.info(
+          `[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`,
+        )
       }
     } catch (cleanupError) {
       Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
@@ -548,7 +602,7 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
 
     // Check if adding this rowText would exceed the maximum text length
     if (totalTextLength + rowText.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
-      // Logger.warn(`Text length excedded, indexing with empty content`)
+      Logger.warn(`Text length excedded, indexing with empty content`)
       // Return an empty array if the total text length exceeds the limit
       return []
     }
