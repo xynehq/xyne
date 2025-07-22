@@ -181,7 +181,27 @@ export async function extractTextAndImagesWithChunksFromPDF(
     wasmUrl: openjpegWasmPath,
     iccUrl: qcmsWasmPath,
   })
-  const pdfDocument = await loadingTask.promise
+  let pdfDocument: pdfjsLib.PDFDocumentProxy
+  try {
+    pdfDocument = await loadingTask.promise
+  } catch (error) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected PDF, skipping")
+    } else {
+      Logger.error(error, `PDF load error: ${error}`)
+    }
+    return {
+      text_chunks: [],
+      image_chunks: [],
+      text_chunk_pos: [],
+      image_chunk_pos: [],
+    }
+  }
+
   try {
     let text_chunks: string[] = []
     let image_chunks: string[] = []
