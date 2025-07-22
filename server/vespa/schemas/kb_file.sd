@@ -24,6 +24,13 @@ schema kb_file {
       index { enable-bm25 }
     }
 
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+      # Entity type: file or folder
+    }
+
     field description type string {
       indexing: index | summary | attribute
       index { enable-bm25 }
@@ -101,9 +108,9 @@ schema kb_file {
     match { gram gram-size: 3 }
   }
 
-  fieldset default      { fields:  description, chunks, image_chunks, fileName, createdBy }
+  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy }
   fieldset autocomplete { fields:  fileName }
-  fieldset search       { fields:  description, chunks, image_chunks, fileName }
+  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity }
 
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search

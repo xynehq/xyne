@@ -233,10 +233,10 @@ function RouteComponent() {
   } | null>(null)
   const [addingToCollection, setAddingToCollection] =
     useState<Collection | null>(null)
+  const [targetFolder, setTargetFolder] = useState<FileNode | null>(null)
   const [selectedFiles, setSelectedFiles] = useState<FileUploadSelectedFile[]>(
     [],
   )
-
   // Document viewer state
   const [selectedDocument, setSelectedDocument] = useState<{
     file: FileNode
@@ -486,6 +486,7 @@ function RouteComponent() {
   const handleCloseModal = () => {
     setShowNewCollection(false)
     setAddingToCollection(null)
+    setTargetFolder(null)
     setCollectionName("")
     setSelectedFiles([])
   }
@@ -533,10 +534,16 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
-        const batchFiles = batches[i].map(f => f.file);
-        await uploadFileBatch(batchFiles, kb.id);
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          batch: i + 1,
+        }))
+        const batchFiles = batches[i].map((f) => f.file)
+        await uploadFileBatch(batchFiles, kb.id)
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          current: prev.current + batchFiles.length,
+        }))
       }
 
       // Fetch the updated KB data from the backend
@@ -600,8 +607,9 @@ function RouteComponent() {
     setSelectedFiles([])
   }
 
-  const handleOpenAddFilesModal = (collection: Collection) => {
+  const handleOpenAddFilesModal = (collection: Collection, folder?: FileNode) => {
     setAddingToCollection(collection)
+    setTargetFolder(folder || null)
     setCollectionName(collection.name)
     setShowNewCollection(true)
   }
@@ -635,10 +643,16 @@ function RouteComponent() {
       }))
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, batch: i + 1 }))
-        const batchFiles = batches[i].map(f => f.file);
-        await uploadFileBatch(batchFiles, addingToCollection.id);
-        setBatchProgress((prev: typeof batchProgress) => ({ ...prev, current: prev.current + batchFiles.length }))
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          batch: i + 1,
+        }))
+        const batchFiles = batches[i].map((f) => f.file)
+        await uploadFileBatch(batchFiles, addingToCollection.id, targetFolder?.id)
+        setBatchProgress((prev: typeof batchProgress) => ({
+          ...prev,
+          current: prev.current + batchFiles.length,
+        }))
       }
 
       // Refresh the collection by fetching updated data from backend
@@ -1206,12 +1220,12 @@ function RouteComponent() {
                           onFileClick={(file: FileNode) =>
                             handleFileClick(file, collection)
                           }
-                          onAddFiles={(node: FileNode, path: string) => {
+                          onAddFiles={(node, path) => {
                             const collection = collections.find((c) =>
                               c.items.some((item) => findNode(item, node)),
                             )
                             if (collection) {
-                              handleOpenAddFilesModal(collection)
+                              handleOpenAddFilesModal(collection, node)
                             }
                           }}
                           onDelete={(node, path) => {
@@ -1229,7 +1243,7 @@ function RouteComponent() {
                               }
                             }
                           }}
-                          onToggle={async (node: FileNode) => {
+                          onToggle={async (node) => {
                             if (node.type !== "folder") return
 
                             const updatedCollections = [...collections]
@@ -1267,12 +1281,13 @@ function RouteComponent() {
                                               type: item.type as
                                                 | "file"
                                                 | "folder",
+                                              files: item.totalCount,
                                               lastUpdated: item.updatedAt,
                                               updatedBy:
                                                 item.lastUpdatedByEmail ||
                                                 user?.email ||
                                                 "Unknown",
-                                              isOpen: true,
+                                              isOpen: false,
                                               children:
                                                 item.type === "folder"
                                                   ? []
@@ -1306,7 +1321,6 @@ function RouteComponent() {
                               setCollections(updatedCollections)
                             }
                           }}
-                          userRole={user?.role}
                         />
                       </>
                     )}
@@ -1431,7 +1445,7 @@ function RouteComponent() {
               <div className="flex justify-between items-center">
                 <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
                   {addingToCollection
-                    ? `Add files to ${addingToCollection.name}`
+                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ''}`
                     : "CREATE NEW COLLECTION"}
                 </h2>
                 <Button

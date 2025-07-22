@@ -646,3 +646,8 @@ export const generateStorageKey = (): string => {
 export const generateVespaDocId = (): string => {
   return `kbf-${createId()}`
 }
+
+// Generate Vespa document ID for KB folders
+export const generateFolderVespaDocId = (): string => {
+  return `kbfd-${createId()}`
+}
