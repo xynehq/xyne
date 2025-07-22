@@ -43,6 +43,7 @@ export const users = pgTable(
       .default(sql`'1970-01-01T00:00:00Z'`),
     lastLogin: timestamp("last_login", { withTimezone: true }),
     role: userRoleEnum("role").notNull().default(UserRole.User),
+    refreshToken: text("refreshToken").notNull(),
   },
   (table) => ({
     emailUniqueIndex: uniqueIndex("email_unique_index").on(

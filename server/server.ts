@@ -62,7 +62,7 @@ import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
-import { createUser, getUserByEmail } from "@/db/user"
+import { createUser, getUserByEmail, saveRefreshTokenToDB } from "@/db/user"
 import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
@@ -189,7 +189,8 @@ const postOauthRedirect = config.postOauthRedirect
 
 const jwtSecret = process.env.JWT_SECRET!
 
-const CookieName = "auth-token"
+const AccessTokenCookieName = "access-token"
+const RefreshTokenCookieName = "refresh-token"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -199,7 +200,7 @@ const app = new Hono<{ Variables: Variables }>()
 
 const AuthMiddleware = jwt({
   secret: jwtSecret,
-  cookie: CookieName,
+  cookie: AccessTokenCookieName,
 })
 
 // Middleware for frontend routes
@@ -207,7 +208,7 @@ const AuthMiddleware = jwt({
 // If there is token, verify it is valid or not
 // Redirect to auth page if no token or invalid token
 const AuthRedirect = async (c: Context, next: Next) => {
-  const authToken = getCookie(c, CookieName)
+  const authToken = getCookie(c, AccessTokenCookieName)
 
   // If no auth token is found
   if (!authToken) {
@@ -259,12 +260,10 @@ export const WsApp = app.get(
 )
 
 const LogOut = async (c: Context) => {
-  deleteCookieByEnv(c, CookieName, {
-    secure: true,
-    path: "/",
-    httpOnly: true,
-  })
-  Logger.info("Cookie deleted, logged out")
+  // todo delete the refresh token from DB as well
+  deleteCookieByEnv(c, AccessTokenCookieName)
+  deleteCookieByEnv(c, RefreshTokenCookieName)
+  Logger.info("Cookies deleted, logged out")
   return c.json({ ok: true })
 }
 
@@ -388,14 +387,30 @@ const handleAppValidation = async (c: Context) => {
     )
     const existingUser = existingUserRes[0]
     const workspaceId = existingUser.workspaceExternalId
-    const jwtToken = await generateToken(
-      existingUser.email,
-      existingUser.role,
-      existingUser.workspaceExternalId,
+    // todo figure out how to do this for this case
+    const accessToken = await generateTokens(
+      user.email,
+      user.role,
+      user.workspaceExternalId,
     )
+    const refreshToken = await generateTokens(
+      user.email,
+      user.role,
+      user.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const opts = {
+      secure: true,
+      path: "/",
+      httpOnly: true,
+    }
+    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
 
     return c.json({
-      jwt_token: jwtToken,
+      jwt_token: accessToken,
       workspace_id: workspaceId,
     })
   }
@@ -645,27 +660,28 @@ app.get(
   StartOAuth,
 )
 
-const generateToken = async (
+const generateTokens = async (
   email: string,
   role: string,
   workspaceId: string,
+  forRefreshToken: boolean = false,
 ) => {
-  Logger.info(
-    {
-      tokenInfo: {
-        // email: email,
+  const payload = forRefreshToken
+    ? {
+        sub: email,
         role: role,
         workspaceId,
-      },
-    },
-    "generating token for the following",
-  )
-  const payload = {
-    sub: email,
-    role: role,
-    workspaceId,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60, // Token expires in 2 months
-  }
+        tokenType: "refresh",
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, // Refresh token expires in 30 days
+      }
+    : {
+        sub: email,
+        role: role,
+        workspaceId,
+        tokenType: "access",
+        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Access token expires in 1 hour
+      }
+  // todo keeping the secret same for now for AT RT
   const jwtToken = await sign(payload, jwtSecret)
   return jwtToken
 }
@@ -725,16 +741,26 @@ app.get(
         "User found and authenticated",
       )
       const existingUser = existingUserRes[0]
-      const jwtToken = await generateToken(
+      const accessToken = await generateTokens(
         existingUser.email,
         existingUser.role,
         existingUser.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken, {
+      const refreshToken = await generateTokens(
+        existingUser.email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const opts = {
         secure: true,
         path: "/",
         httpOnly: true,
-      })
+      }
+      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
       return c.redirect(postOauthRedirect)
     }
 
@@ -753,16 +779,26 @@ app.get(
         UserRole.User,
         existingWorkspace.externalId,
       )
-      const jwtToken = await generateToken(
+      const accessToken = await generateTokens(
         user.email,
         user.role,
         user.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken, {
+      const refreshToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const opts = {
         secure: true,
         path: "/",
         httpOnly: true,
-      })
+      }
+      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
       return c.redirect(postOauthRedirect)
     }
 
@@ -784,16 +820,26 @@ app.get(
       return user
     })
 
-    const jwtToken = await generateToken(
+    const accessToken = await generateTokens(
       userAcc.email,
       userAcc.role,
       userAcc.workspaceExternalId,
     )
-    setCookieByEnv(c, CookieName, jwtToken, {
+    const refreshToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const opts = {
       secure: true,
       path: "/",
       httpOnly: true,
-    })
+    }
+    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
     return c.redirect(postOauthRedirect)
   },
 )
