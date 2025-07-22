@@ -144,6 +144,7 @@ import {
   startSocketMode,
   getSocketModeStatus,
 } from "@/integrations/slack/client"
+import { startMcpServer } from "@/mcp"
 
 // Import Vespa proxy handlers
 import {
@@ -889,6 +890,7 @@ app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
+  startMcpServer()
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
@@ -912,7 +914,7 @@ app.get("/metrics", async (c) => {
   try {
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
-      "Content-Type": metricRegister.contentType,
+        "Content-Type": metricRegister.contentType,
     })
   } catch (err) {
     return c.text("Error generating metrics", 500)
