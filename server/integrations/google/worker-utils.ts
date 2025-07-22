@@ -30,11 +30,19 @@ const processPptxFile = async (
   attachmentId: string,
 ): Promise<string[]> => {
   try {
+    // Handle non-spreadsheet files as before
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
+
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
       filePath,
       attachmentId,
       false, // Don't extract images for email attachments
     )
+
+    const endTime = Date.now()
+    const duration = endTime - startTime
+    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
     return pptxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
@@ -49,11 +57,19 @@ const processPdfFile = async (
   attachmentId: string,
 ): Promise<string[]> => {
   try {
+    // Handle non-spreadsheet files as before
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
+    
     const pdfResult = await extractTextAndImagesWithChunksFromPDF(
       filePath,
       attachmentId,
       false, // Don't extract images for email attachments
     )
+
+    const endTime = Date.now()
+    const duration = endTime - startTime
+    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
@@ -68,11 +84,19 @@ const processDocxFile = async (
   attachmentId: string,
 ): Promise<string[]> => {
   try {
+    // Handle non-spreadsheet files as before
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`)
+
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
       filePath,
       attachmentId,
       false, // Don't extract images for email attachments
     )
+
+    const endTime = Date.now()
+    const duration = endTime - startTime
+    Logger.info(`[TIMING] Completed extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
     return docxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
@@ -94,7 +118,14 @@ export async function saveGmailAttachment(
 
     const buffer = Buffer.from(normalizedBase64, "base64")
 
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(startTime).toISOString()}`)
+
     await writeFile(fileName, new Uint8Array(buffer))
+
+    const endTime = Date.now()
+    const duration = endTime - startTime
+    Logger.info(`[TIMING] Completed writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
     Logger.debug(`Successfully saved gmail attachment at ${fileName}`)
   } catch (error) {
@@ -127,6 +158,10 @@ export const getGmailAttachmentChunks = async (
     if (hashFileName == null) return null
     const newfileName = `${hashFileName}${fileExt}`
     downloadAttachmentFilePath = path.join(downloadDir, newfileName)
+
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -139,6 +174,10 @@ export const getGmailAttachmentChunks = async (
       0,
       client,
     )
+
+    const endTime = Date.now()
+    const duration = endTime - startTime
+    Logger.info(`[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
     await saveGmailAttachment(
       attachementResp.data.data,
@@ -216,9 +255,16 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
+
+      const startTime = Date.now()
+      Logger.info(`[TIMING] Starting text file chunk for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+
       const content = await readFile(downloadAttachmentFilePath, "utf8")
       const chunks = chunkDocument(content)
       attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
+
+      const endTime = Date.now()
+      Logger.info(`[TIMING] Completed text file chunk for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`)
     } else {
       Logger.warn(
         `Unsupported file type ${mimeType} for file ${filename}. Skipping.`,
@@ -231,7 +277,9 @@ export const getGmailAttachmentChunks = async (
     // Cleanup logic - always delete temporary files
     try {
       if (downloadAttachmentFilePath) {
+        Logger.info(`[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`)
         await deleteDocument(downloadAttachmentFilePath)
+        Logger.info(`[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`)
       }
     } catch (cleanupError) {
       Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
@@ -307,6 +355,9 @@ export const getGmailSpreadsheetSheets = async (
     const newfileName = `${hashFileName}${fileExt}`
     downloadAttachmentFilePath = path.join(downloadDir, newfileName)
 
+    const startTime = Date.now()
+    Logger.info(`[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`)
+
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -319,6 +370,9 @@ export const getGmailSpreadsheetSheets = async (
       0,
       client,
     )
+
+    const endTime = Date.now()
+    Logger.info(`[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`)
 
     await saveGmailAttachment(
       attachementResp.data.data,
@@ -346,7 +400,9 @@ export const getGmailSpreadsheetSheets = async (
     // Cleanup logic
     try {
       if (downloadAttachmentFilePath) {
+        Logger.info(`[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`)
         await deleteDocument(downloadAttachmentFilePath)
+        Logger.info(`[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`)
       }
     } catch (cleanupError) {
       Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
