@@ -456,15 +456,7 @@ export const parseMail = async (
   let mailExist = false
   if (mailId) {
     try {
-      const startTime = Date.now()
-      Logger.info(`[TIMING] Starting ifMailDocumentsExist check for mailId: ${mailId} at ${new Date(startTime).toISOString()}`)
-      
       const res = await ifMailDocumentsExist([mailId])
-      
-      const endTime = Date.now()
-      const duration = endTime - startTime
-      Logger.info(`[TIMING] Completed ifMailDocumentsExist check for mailId: ${mailId} at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
-      
       if (res[mailId] && res[mailId]?.exists) {
         mailExist = true
         userMap = res[mailId].userMap || {}
@@ -529,9 +521,6 @@ export const parseMail = async (
 
             // Handle spreadsheet files differently to process each sheet separately
             if (isSpreadsheetFile(validMimeType)) {
-              const startTime = Date.now()
-              Logger.info(`[TIMING] Starting getGmailSpreadsheetSheets for attachmentId: ${attachmentId}, filename: ${filename} at ${new Date(startTime).toISOString()}`)
-              
               const sheetsData = await getGmailSpreadsheetSheets(
                 gmail,
                 {
@@ -543,10 +532,6 @@ export const parseMail = async (
                 },
                 client,
               )
-
-              const endTime = Date.now()
-              const duration = endTime - startTime
-              Logger.info(`[TIMING] Completed getGmailSpreadsheetSheets for attachmentId: ${attachmentId}, filename: ${filename} at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
 
               if (!sheetsData || sheetsData.length === 0) continue
 
@@ -577,22 +562,11 @@ export const parseMail = async (
                   permissions,
                 }
 
-                const insertStartTime = Date.now()
-                Logger.info(`[TIMING] Starting insert for spreadsheet attachment docId: ${sheetDocId}, filename: ${sheetFilename} at ${new Date(insertStartTime).toISOString()}`)
-                
                 await insert(attachmentDoc, mailAttachmentSchema)
-                
-                const insertEndTime = Date.now()
-                const insertDuration = insertEndTime - insertStartTime
-                Logger.info(`[TIMING] Completed insert for spreadsheet attachment docId: ${sheetDocId}, filename: ${sheetFilename} at ${new Date(insertEndTime).toISOString()}, duration: ${insertDuration}ms`)
-                
                 insertedAttachmentCount++
               }
             } else {
               // Handle non-spreadsheet files as before
-              const startTime = Date.now()
-              Logger.info(`[TIMING] Starting getGmailAttachmentChunks for attachmentId: ${attachmentId}, filename: ${filename} at ${new Date(startTime).toISOString()}`)
-              
               const attachmentChunks = await getGmailAttachmentChunks(
                 gmail,
                 {
@@ -604,11 +578,6 @@ export const parseMail = async (
                 },
                 client,
               )
-              
-              const endTime = Date.now()
-              const duration = endTime - startTime
-              Logger.info(`[TIMING] Completed getGmailAttachmentChunks for attachmentId: ${attachmentId}, filename: ${filename} at ${new Date(endTime).toISOString()}, duration: ${duration}ms`)
-              
               if (!attachmentChunks) continue
 
               const attachmentDoc: MailAttachment = {
@@ -626,15 +595,7 @@ export const parseMail = async (
                 permissions,
               }
 
-              const insertStartTime = Date.now()
-              Logger.info(`[TIMING] Starting insert for attachment docId: ${attachmentId}, filename: ${filename} at ${new Date(insertStartTime).toISOString()}`)
-              
               await insert(attachmentDoc, mailAttachmentSchema)
-              
-              const insertEndTime = Date.now()
-              const insertDuration = insertEndTime - insertStartTime
-              Logger.info(`[TIMING] Completed insert for attachment docId: ${attachmentId}, filename: ${filename} at ${new Date(insertEndTime).toISOString()}, duration: ${insertDuration}ms`)
-              
               insertedAttachmentCount++
             }
           } catch (error) {

@@ -1,8 +1,7 @@
 import { Subsystem, type GoogleClient } from "@/types"
 import { getLogger } from "@/logger"
 import { gmail_v1 } from "googleapis"
-import { deleteDocument, downloadDir } from "@/integrations/google/pdf-utils"
-import { hashPdfFilename, retryWithBackoff } from "@/utils"
+import { retryWithBackoff } from "@/utils"
 import { chunkDocument } from "@/chunks"
 import { Apps, MailAttachmentEntity, type Attachment } from "@/search/types"
 import {
@@ -13,10 +12,6 @@ import {
   MAX_ATTACHMENT_SHEET_ROWS,
   MAX_ATTACHMENT_SHEET_TEXT_LEN,
 } from "@/integrations/google/config"
-import crypto from "node:crypto"
-import fs from "fs"
-import { readFile, writeFile } from "fs/promises"
-import path from "path"
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
@@ -26,145 +21,58 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 // Function to process PPTX file content using our PPTX extractor
 const processPptxFile = async (
-  filePath: string,
+  pptxBuffer: Uint8Array,
   attachmentId: string,
 ): Promise<string[]> => {
   try {
     // Handle non-spreadsheet files as before
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
-    )
-
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
-      filePath,
+      pptxBuffer,
       attachmentId,
       false, // Don't extract images for email attachments
     )
-
-    const endTime = Date.now()
-    const duration = endTime - startTime
-    Logger.info(
-      `[TIMING] Completed extractTextAndImagesWithChunksFromPptx in processPptxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
-    )
-
     return pptxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
-    Logger.error(error, `Error processing PPTX file: ${filePath}`)
+    Logger.error(error, `Error processing PPTX buffer`)
     return []
   }
 }
 
 // Function to process PDF file content using our PDF extractor
 const processPdfFile = async (
-  filePath: string,
+  pdfBuffer: Uint8Array,
   attachmentId: string,
 ): Promise<string[]> => {
   try {
     // Handle non-spreadsheet files as before
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
-    )
-
     const pdfResult = await extractTextAndImagesWithChunksFromPDF(
-      filePath,
+      pdfBuffer,
       attachmentId,
       false, // Don't extract images for email attachments
     )
-
-    const endTime = Date.now()
-    const duration = endTime - startTime
-    Logger.info(
-      `[TIMING] Completed extractTextAndImagesWithChunksFromPDF in processPdfFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
-    )
-
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
-    Logger.error(error, `Error processing PDF file: ${filePath}`)
+    Logger.error(error, `Error processing PDF buffer`)
     return []
   }
 }
 
 // Function to process DOCX file content using our DOCX extractor
 const processDocxFile = async (
-  filePath: string,
+  docxBuffer: Uint8Array,
   attachmentId: string,
 ): Promise<string[]> => {
   try {
     // Handle non-spreadsheet files as before
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(startTime).toISOString()}`,
-    )
-
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
-      filePath,
+      docxBuffer,
       attachmentId,
       false, // Don't extract images for email attachments
     )
-
-    const endTime = Date.now()
-    const duration = endTime - startTime
-    Logger.info(
-      `[TIMING] Completed extractTextAndImagesWithChunksFromDocx in processDocxFile for attachmentId: ${attachmentId}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
-    )
-
     return docxResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
-    Logger.error(error, `Error processing DOCX file: ${filePath}`)
+    Logger.error(error, `Error processing DOCX buffer`)
     return []
-  }
-}
-
-const writeFileWithTimeout = async (
-  fileName: string,
-  data: Uint8Array,
-  timeoutMs: number,
-) => {
-  return await Promise.race([
-    writeFile(fileName, data),
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`writeFile timed out for ${fileName}`)),
-        timeoutMs,
-      ),
-    ),
-  ])
-}
-
-export async function saveGmailAttachment(
-  attachmentData: any,
-  fileName: string,
-) {
-  try {
-    // The attachment data is base64 encoded, so we need to decode it
-    // Replace any `-` with `+` and `_` with `/` to make it standard base64
-    const normalizedBase64 = attachmentData
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
-
-    const buffer = Buffer.from(normalizedBase64, "base64")
-
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(startTime).toISOString()}`,
-    )
-    Logger.info(`Decoded buffer size: ${buffer.length} bytes for ${fileName}`)
-    Logger.info(`Checking write permissions on dir: ${path.dirname(fileName)}`)
-
-    await writeFileWithTimeout(fileName, new Uint8Array(buffer), 5000)
-
-    const endTime = Date.now()
-    const duration = endTime - startTime
-    Logger.info(
-      `[TIMING] Completed writeFile in saveGmailAttachment for file: ${fileName}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
-    )
-
-    Logger.debug(`Successfully saved gmail attachment at ${fileName}`)
-  } catch (error) {
-    Logger.error("Error saving gmail attachment:", error)
-    throw error
   }
 }
 
@@ -182,22 +90,8 @@ export const getGmailAttachmentChunks = async (
   const { attachmentId, filename, messageId, size, mimeType } =
     attachmentMetadata
   let attachmentChunks: string[] = []
-  let downloadAttachmentFilePath: string | null = null
-  let filePathForProcessing: string | null = null
 
   try {
-    const hashInput = `${filename}_${messageId}`
-    const fileExt = path.extname(filename)
-    const hashFileName = hashPdfFilename(hashInput)
-    if (hashFileName == null) return null
-    const newfileName = `${hashFileName}${fileExt}`
-    downloadAttachmentFilePath = path.join(downloadDir, newfileName)
-
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`,
-    )
-
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -211,16 +105,28 @@ export const getGmailAttachmentChunks = async (
       client,
     )
 
-    const endTime = Date.now()
-    const duration = endTime - startTime
-    Logger.info(
-      `[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${duration}ms`,
-    )
+    if (!attachementResp.data.data) {
+      Logger.error(`No attachment data received for ${filename}`)
+      return null
+    }
 
-    await saveGmailAttachment(
-      attachementResp.data.data,
-      downloadAttachmentFilePath,
-    )
+    // Decode base64 data to buffer
+    const normalizedBase64 = attachementResp.data.data
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+    
+    let attachmentBuffer: Buffer
+    try {
+      attachmentBuffer = Buffer.from(normalizedBase64, "base64")
+    } catch (error) {
+      Logger.error(`Failed to decode base64 data for ${filename}:`, error)
+      return null
+    }
+
+    if (attachmentBuffer.length === 0) {
+      Logger.error(`Decoded buffer is empty for ${filename}`)
+      return null
+    }
 
     if (mimeType === "application/pdf") {
       const fileSizeMB = size.value / (1024 * 1024)
@@ -231,7 +137,7 @@ export const getGmailAttachmentChunks = async (
         return null
       }
       const pdfChunks = await processPdfFile(
-        downloadAttachmentFilePath,
+        new Uint8Array(attachmentBuffer),
         attachmentId,
       )
       if (pdfChunks && pdfChunks.length > 0) {
@@ -252,7 +158,7 @@ export const getGmailAttachmentChunks = async (
         return null
       }
       const docxChunks = await processDocxFile(
-        downloadAttachmentFilePath,
+        new Uint8Array(attachmentBuffer),
         attachmentId,
       )
       if (docxChunks && docxChunks.length > 0) {
@@ -273,7 +179,7 @@ export const getGmailAttachmentChunks = async (
         return null
       }
       const pptxChunks = await processPptxFile(
-        downloadAttachmentFilePath,
+        new Uint8Array(attachmentBuffer),
         attachmentId,
       )
       if (pptxChunks && pptxChunks.length > 0) {
@@ -293,20 +199,9 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-
-      const startTime = Date.now()
-      Logger.info(
-        `[TIMING] Starting text file chunk for file: ${filename}, at ${new Date(startTime).toISOString()}`,
-      )
-
-      const content = await readFile(downloadAttachmentFilePath, "utf8")
+      const content = attachmentBuffer.toString('utf8')
       const chunks = chunkDocument(content)
       attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
-
-      const endTime = Date.now()
-      Logger.info(
-        `[TIMING] Completed text file chunk for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`,
-      )
     } else {
       Logger.warn(
         `Unsupported file type ${mimeType} for file ${filename}. Skipping.`,
@@ -314,22 +209,7 @@ export const getGmailAttachmentChunks = async (
       return null
     }
   } catch (error) {
-    Logger.error(error, `Error in getting gmailAttachmentChunks`)
-  } finally {
-    // Cleanup logic - always delete temporary files
-    try {
-      if (downloadAttachmentFilePath) {
-        Logger.info(
-          `[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`,
-        )
-        await deleteDocument(downloadAttachmentFilePath)
-        Logger.info(
-          `[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`,
-        )
-      }
-    } catch (cleanupError) {
-      Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
-    }
+    Logger.error(error, `Error in getting gmailAttachmentChunks for ${filename}`)
   }
   return attachmentChunks
 }
@@ -391,21 +271,8 @@ export const getGmailSpreadsheetSheets = async (
 ): Promise<SheetData[] | null> => {
   const { attachmentId, filename, messageId, size, mimeType } =
     attachmentMetadata
-  let downloadAttachmentFilePath: string | null = null
 
   try {
-    const hashInput = `${filename}_${messageId}`
-    const fileExt = path.extname(filename)
-    const hashFileName = hashPdfFilename(hashInput)
-    if (hashFileName == null) return null
-    const newfileName = `${hashFileName}${fileExt}`
-    downloadAttachmentFilePath = path.join(downloadDir, newfileName)
-
-    const startTime = Date.now()
-    Logger.info(
-      `[TIMING] Starting get attachment for file: ${filename}, at ${new Date(startTime).toISOString()}`,
-    )
-
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -419,15 +286,28 @@ export const getGmailSpreadsheetSheets = async (
       client,
     )
 
-    const endTime = Date.now()
-    Logger.info(
-      `[TIMING] Completed get attachment for file: ${filename}, at ${new Date(endTime).toISOString()}, duration: ${endTime - startTime}ms`,
-    )
+    if (!attachementResp.data.data) {
+      Logger.error(`No attachment data received for ${filename}`)
+      return null
+    }
 
-    await saveGmailAttachment(
-      attachementResp.data.data,
-      downloadAttachmentFilePath,
-    )
+    // Decode base64 data to buffer
+    const normalizedBase64 = attachementResp.data.data
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+    
+    let attachmentBuffer: Buffer
+    try {
+      attachmentBuffer = Buffer.from(normalizedBase64, "base64")
+    } catch (error) {
+      Logger.error(`Failed to decode base64 data for ${filename}:`, error)
+      return null
+    }
+
+    if (attachmentBuffer.length === 0) {
+      Logger.error(`Decoded buffer is empty for ${filename}`)
+      return null
+    }
 
     // Check if it's a supported spreadsheet type
     if (
@@ -437,7 +317,8 @@ export const getGmailSpreadsheetSheets = async (
       mimeType === "text/csv"
     ) {
       const sheetsData = processSpreadsheetFileWithSheetInfo(
-        downloadAttachmentFilePath,
+        attachmentBuffer,
+        filename,
       )
       return sheetsData
     }
@@ -446,21 +327,6 @@ export const getGmailSpreadsheetSheets = async (
   } catch (error) {
     Logger.error(error, `Error in getting gmail spreadsheet sheets`)
     return null
-  } finally {
-    // Cleanup logic
-    try {
-      if (downloadAttachmentFilePath) {
-        Logger.info(
-          `[TIMING] Starting cleanup for file: ${filename}, at ${new Date().toISOString()}`,
-        )
-        await deleteDocument(downloadAttachmentFilePath)
-        Logger.info(
-          `[TIMING] Completed cleanup for file: ${filename}, at ${new Date().toISOString()}`,
-        )
-      }
-    } catch (cleanupError) {
-      Logger.warn(cleanupError, `Error during cleanup for file: ${filename}`)
-    }
   }
 }
 
@@ -493,13 +359,13 @@ export const parseAttachments = (
 }
 
 // Function to process spreadsheet files and return individual sheet data
-const processSpreadsheetFileWithSheetInfo = (filePath: string): SheetData[] => {
+const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): SheetData[] => {
   try {
-    const workbook = XLSX.readFile(filePath)
+    let workbook = XLSX.read(buffer, { type: 'buffer' })
     const sheetsData: SheetData[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      Logger.warn(`No worksheets found in spreadsheet file: ${filePath}`)
+      Logger.warn(`No worksheets found in spreadsheet file: ${filename}`)
       return []
     }
 
@@ -557,7 +423,7 @@ const processSpreadsheetFileWithSheetInfo = (filePath: string): SheetData[] => {
 
     if (sheetsData.length === 0) {
       Logger.warn(
-        `No valid content found in any worksheet of file: ${filePath}`,
+        `No valid content found in any worksheet of file: ${filename}`,
       )
     } else {
       Logger.info(
@@ -577,6 +443,9 @@ const processSpreadsheetFileWithSheetInfo = (filePath: string): SheetData[] => {
       Logger.error(error, `Spreadsheet load error: ${error}`)
     }
     return []
+  } finally {
+    // @ts-ignore
+    workbook = null
   }
 }
 

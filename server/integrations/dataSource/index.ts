@@ -5,10 +5,7 @@ import { Subsystem } from "@/types"
 import { insertDataSourceFile, NAMESPACE } from "@/search/vespa"
 import { type VespaDataSourceFile, datasourceSchema } from "@/search/types"
 import { createId } from "@paralleldrive/cuid2"
-import fs from "fs"
-import { writeFile, unlink } from "fs/promises"
 import path from "path"
-import { v4 as uuidv4 } from "uuid"
 import * as XLSX from "xlsx"
 import {
   DATASOURCE_CONFIG,
@@ -30,10 +27,7 @@ import {
   handleDataSourceError,
   isDataSourceError,
 } from "./errors"
-import {
-  describeImageWithllm,
-  withTempDirectory,
-} from "@/lib/describeImageWithllm"
+import { describeImageWithllm } from "@/lib/describeImageWithllm"
 import { promises as fsPromises } from "fs"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
@@ -57,7 +51,6 @@ interface FileMetadata {
   uploadedBy: string
   chunksCount: number
   processingMethod: string
-  convertedFrom?: string
 }
 
 interface ProcessingOptions {
@@ -67,39 +60,6 @@ interface ProcessingOptions {
   dataSourceUserSpecificId: string
   mimeType: string
   description?: string
-}
-
-const ensureTempDir = async (): Promise<void> => {
-  try {
-    if (!fs.existsSync(DATASOURCE_CONFIG.TEMP_DIR)) {
-      fs.mkdirSync(DATASOURCE_CONFIG.TEMP_DIR, { recursive: true })
-    }
-  } catch (error) {
-    throw new FileProcessingError(
-      `Failed to create temporary directory: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-}
-
-const cleanupFiles = async (filePaths: string[]): Promise<void> => {
-  const results = await Promise.allSettled(
-    filePaths.map(async (filePath) => {
-      try {
-        if (fs.existsSync(filePath)) {
-          await unlink(filePath)
-          Logger.debug(`Cleaned up temp file: ${filePath}`)
-        }
-      } catch (error) {
-        Logger.warn(error, `Failed to cleanup file: ${filePath}`)
-        throw error
-      }
-    }),
-  )
-
-  const failures = results.filter((result) => result.status === "rejected")
-  if (failures.length > 0) {
-    Logger.warn(`Failed to cleanup ${failures.length} temporary files`)
-  }
 }
 
 const validateFile = (file: File): void => {
@@ -158,7 +118,6 @@ const createVespaDataSourceFile = (
   image_chunks?: string[],
   text_chunk_pos?: number[],
   image_chunk_pos?: number[],
-  convertedFrom?: string,
   docId?: string,
 ): VespaDataSourceFile => {
   const now = Date.now()
@@ -184,7 +143,6 @@ const createVespaDataSourceFile = (
       options.userEmail,
       text_chunks.length,
       processingMethod,
-      convertedFrom,
     ),
   }
 }
@@ -216,26 +174,19 @@ const processTextContent = async (
 const processImageContent = async (
   imageBuffer: Buffer,
   options: ProcessingOptions,
-  convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
-    return withTempDirectory(
-      async (tempDir: string): Promise<VespaDataSourceFile> => {
-        const image_chunk: string = await describeImageWithllm(
-          imageBuffer,
-          tempDir,
-          "provide only a concise and detailed description of the image",
-        )
-        return createVespaDataSourceFile(
-          [],
-          options,
-          convertedFrom ? "image_conversion" : "image_processing",
-          [image_chunk],
-          [],
-          [0],
-          convertedFrom,
-        )
-      },
+    const image_chunk: string = await describeImageWithllm(
+      imageBuffer,
+      "provide only a concise and detailed description of the image",
+    )
+    return createVespaDataSourceFile(
+      [],
+      options,
+      "image_processing",
+      [image_chunk],
+      [],
+      [0],
     )
   } catch (error) {
     if (isDataSourceError(error)) {
@@ -249,14 +200,13 @@ const processImageContent = async (
 }
 
 const processPdfContent = async (
-  filePath: string,
+  pdfBuffer: Uint8Array,
   options: ProcessingOptions,
-  convertedFrom?: string,
 ): Promise<VespaDataSourceFile> => {
   try {
     const docId = `dsf-${createId()}`
     const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDF(filePath, docId)
+      await extractTextAndImagesWithChunksFromPDF(pdfBuffer, docId)
     if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
@@ -267,11 +217,10 @@ const processPdfContent = async (
     return createVespaDataSourceFile(
       text_chunks,
       options,
-      convertedFrom ? "pdf_conversion" : "pdf_processing",
+      "pdf_processing",
       image_chunks,
       text_chunk_pos,
       image_chunk_pos,
-      convertedFrom,
       docId,
     )
   } catch (error) {
@@ -286,7 +235,7 @@ const processPdfContent = async (
 }
 
 const processDocxContent = async (
-  filePath: string,
+  docxBuffer: Uint8Array,
   options: ProcessingOptions,
   extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
@@ -295,7 +244,7 @@ const processDocxContent = async (
 
     const docId = `dsf-${createId()}`
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
-      filePath,
+      docxBuffer,
       docId,
       extractImages,
     )
@@ -321,7 +270,6 @@ const processDocxContent = async (
       docxResult.image_chunks,
       docxResult.text_chunk_pos,
       docxResult.image_chunk_pos,
-      undefined,
       docId,
     )
   } catch (error) {
@@ -336,7 +284,7 @@ const processDocxContent = async (
 }
 
 const processPptxContent = async (
-  filePath: string,
+  pptxBuffer: Uint8Array,
   options: ProcessingOptions,
   extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
@@ -345,7 +293,7 @@ const processPptxContent = async (
 
     const docId = `dsf-${createId()}`
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
-      filePath,
+      pptxBuffer,
       docId,
       extractImages,
     )
@@ -371,7 +319,6 @@ const processPptxContent = async (
       pptxResult.image_chunks,
       pptxResult.text_chunk_pos,
       pptxResult.image_chunk_pos,
-      undefined,
       docId,
     )
   } catch (error) {
@@ -386,11 +333,11 @@ const processPptxContent = async (
 }
 
 const processSheetContent = async (
-  filePath: string,
+  sheetBuffer: Buffer,
   options: ProcessingOptions,
 ): Promise<VespaDataSourceFile[]> => {
   try {
-    const sheetDocuments = await processSpreadsheetFile(filePath, options)
+    const sheetDocuments = await processSpreadsheetFile(sheetBuffer, options)
     if (sheetDocuments.length === 0) {
       throw new ContentExtractionError(
         "No valid content found in spreadsheet",
@@ -412,11 +359,11 @@ const processSheetContent = async (
 
 // Spreadsheet processing functions (XLSX, CSV)
 const processSpreadsheetFile = async (
-  filePath: string,
+  buffer: Buffer,
   options: ProcessingOptions,
 ): Promise<VespaDataSourceFile[]> => {
   try {
-    const workbook = XLSX.readFile(filePath)
+    const workbook = XLSX.read(buffer, { type: 'buffer' })
     const sheetDocuments: VespaDataSourceFile[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
@@ -483,7 +430,6 @@ const processSpreadsheetFile = async (
         undefined, // image_chunks
         undefined, // text_chunk_pos
         undefined, // image_chunk_pos
-        undefined, // convertedFrom
         sheetDocId,
       )
 
@@ -577,22 +523,12 @@ export const handleDataSourceFileUpload = async (
   dataSourceUserSpecificId: string,
   description?: string,
 ): Promise<FileProcessingResult> => {
-  const filesToCleanup: string[] = []
-
   try {
     validateFile(file)
-    await ensureTempDir()
 
     // Extract base MIME type (remove parameters like charset)
     const rawMimeType = file.type || "text/plain"
     const mimeType = getBaseMimeType(rawMimeType)
-
-    const fileExtension = path.extname(file.name) || ".txt"
-    const tempFilePath = path.join(
-      DATASOURCE_CONFIG.TEMP_DIR,
-      `${uuidv4()}${fileExtension}`,
-    )
-    filesToCleanup.push(tempFilePath)
 
     const options: ProcessingOptions = {
       fileName: file.name,
@@ -638,40 +574,33 @@ export const handleDataSourceFileUpload = async (
         // Continue processing even if saving fails
       }
     } else {
-      // Write file to temp location
-      try {
-        const fileBuffer = new Uint8Array(await file.arrayBuffer())
-        await writeFile(tempFilePath, fileBuffer)
-      } catch (error) {
-        throw new FileProcessingError(
-          `Failed to write temporary file: ${error instanceof Error ? error.message : String(error)}`,
-          file.name,
-        )
-      }
-
       // Process based on file type
       if (mimeType === "application/pdf") {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
-        const processedFile = await processPdfContent(tempFilePath, options)
+        const fileBuffer = new Uint8Array(await file.arrayBuffer())
+        const processedFile = await processPdfContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isDocxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
+        const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processDocxContent(
-          tempFilePath,
+          fileBuffer,
           options,
           true,
         )
         processedFiles = [processedFile]
       } else if (isPptxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
+        const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processPptxContent(
-          tempFilePath,
+          fileBuffer,
           options,
           true,
         )
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
-        processedFiles = await processSheetContent(tempFilePath, options)
+        const fileBuffer = Buffer.from(await file.arrayBuffer())
+        processedFiles = await processSheetContent(fileBuffer, options)
       } else if (isTextFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
         const content = await file.text()
@@ -729,10 +658,5 @@ export const handleDataSourceFileUpload = async (
       `Error processing DataSource file "${file.name}"`,
     )
     throw dsError
-  } finally {
-    // Cleanup temporary files
-    if (filesToCleanup.length > 0) {
-      await cleanupFiles(filesToCleanup)
-    }
   }
 }

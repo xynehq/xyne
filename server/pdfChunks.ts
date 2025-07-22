@@ -6,10 +6,7 @@ import path from "path"
 import imageType from "image-type"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
-import {
-  describeImageWithllm,
-  withTempDirectory,
-} from "./lib/describeImageWithllm"
+import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const openjpegWasmPath =
@@ -168,7 +165,7 @@ function processTextParagraphs(
 }
 
 export async function extractTextAndImagesWithChunksFromPDF(
-  pdfPath: string,
+  data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = true,
 ): Promise<{
@@ -177,37 +174,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
   text_chunk_pos: number[]
   image_chunk_pos: number[]
 }> {
-  return withTempDirectory(async (tempDir) => {
-    Logger.info(`Starting PDF processing for: ${pdfPath}`)
+  Logger.info(`Starting PDF processing for: ${docid}`)
 
-    let data: Uint8Array
-    try {
-      const buffer = await fsPromises.readFile(pdfPath)
-      data = new Uint8Array(buffer)
-    } catch (error) {
-      const { name, message } = error as Error
-      if (
-        message.includes("PasswordException") ||
-        name.includes("PasswordException")
-      ) {
-        Logger.warn("Password protected PDF, skipping")
-      } else {
-        Logger.error(error, `PDF load error: ${error}`)
-      }
-      return {
-        text_chunks: [],
-        image_chunks: [],
-        text_chunk_pos: [],
-        image_chunk_pos: [],
-      }
-    }
-    const loadingTask = PDFJS.getDocument({
-      data,
-      wasmUrl: openjpegWasmPath,
-      iccUrl: qcmsWasmPath,
-    })
-    const pdfDocument = await loadingTask.promise
-
+  const loadingTask = PDFJS.getDocument({
+    data,
+    wasmUrl: openjpegWasmPath,
+    iccUrl: qcmsWasmPath,
+  })
+  const pdfDocument = await loadingTask.promise
+  try {
     let text_chunks: string[] = []
     let image_chunks: string[] = []
     let text_chunk_pos: number[] = []
@@ -494,7 +469,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     `Reusing description for repeated image ${imageName} on page ${pageNum}`,
                   )
                 } else {
-                  description = await describeImageWithllm(buffer, tempDir)
+                  description = await describeImageWithllm(buffer)
                   if (
                     description === "No description returned." ||
                     description === "Image is not worth describing."
@@ -583,5 +558,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       text_chunk_pos,
       image_chunk_pos,
     }
-  })
+  } finally {
+    await pdfDocument.destroy()
+  }
 }
