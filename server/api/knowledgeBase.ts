@@ -1535,9 +1535,10 @@ export const GetKbVespaIds = async (c: Context) => {
   try {
     const fileIds = await getAllFolderItems(parentIds, db)
     const ids = await getKbFilesVespaIds(fileIds, db)
+    const vespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
     return c.json(
       {
-        data: ids,
+        data: vespaIds,
         success: true,
       },
       200,

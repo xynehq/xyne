@@ -547,7 +547,7 @@ export const AppRoutes = app
   .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
   .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
   .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
-  .get("/kb/vespaIds", GetKbVespaIds)
+  .post("/kb/vespaIds", GetKbVespaIds)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug

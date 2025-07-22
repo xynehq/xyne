@@ -122,10 +122,10 @@ export const getKbFilesVespaIds = async (
   trx: TxnOrClient,
 ) => {
   const resp = await trx
-    .select()
+    .select({ vespaDocId: kbFiles.vespaDocId })
     .from(kbFiles)
     .where(
-      sql`${kbFiles.id} IN (${sql.join(
+      sql`${kbFiles.itemId} IN (${sql.join(
         KbFilesId.map((id) => sql`${id}`),
         sql`, `,
       )})`,
