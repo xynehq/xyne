@@ -85,7 +85,7 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
@@ -260,7 +260,7 @@ const initializeProviders = (): void => {
   }
 
   if (GeminiAIModel && GeminiApiKey) {
-    const gemini = new GoogleGenerativeAI(GeminiApiKey)
+    const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
@@ -339,7 +339,7 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
   }
   const provider = ProviderMap[providerType]
   if (!provider) {
-    throw new Error("Invalid provider type")
+    throw new Error("Invalid provider")
   }
   return provider
 }
