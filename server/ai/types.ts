@@ -210,6 +210,7 @@ interface PillValue {
   docId: string
   threadId?: string
   app?: Apps
+  entity?: string
 }
 
 interface PillQueryItem {

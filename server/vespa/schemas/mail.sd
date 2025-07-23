@@ -335,6 +335,28 @@ schema mail {
     }
   }
 
+  rank-profile title_boosted_hybrid inherits initial {
+    #nativeRank(chunk) just to balance the vector score
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(subject)+0.2*nativeRank(chunks)))
+  }
+  
+  global-phase {
+    expression {
+      (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (5 * nativeRank(subject) + 0.2*nativeRank(chunks)))
+      ) * doc_recency
+    }
+    rerank-count: 1000
+  }
+
+  match-features {
+  nativeRank(subject) 
+  nativeRank(chunks)
+  }
+}
+
   rank-profile default_random inherits initial {
     first-phase {
         expression: random.match

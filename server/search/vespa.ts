@@ -297,6 +297,7 @@ export enum SearchModes {
   AI = "default_ai",
   Random = "default_random",
   GlobalSorted = "global_sorted",
+  BoostTitle = "title_boosted_hybrid",
 }
 
 type YqlProfile = {

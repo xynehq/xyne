@@ -277,6 +277,10 @@ export const VespaSearchResponseToSearchResult = (
             const fields = child.fields as VespaChatMessageSearch & {
               type?: string
             }
+            // Convert seconds to milliseconds
+            fields.createdAt = Number(fields.createdAt) * 1000
+            fields.updatedAt = Number(fields.updatedAt) * 1000
+            fields.deletedAt = Number(fields.deletedAt) * 1000
             fields.type = chatMessageSchema
             fields.relevance = child.relevance
             fields.attachmentIds = []
