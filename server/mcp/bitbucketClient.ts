@@ -1,4 +1,4 @@
-import fetch, { type RequestInit } from 'node-fetch';
+import fetch, { type RequestInit } from "node-fetch";
 
 class BitbucketClient {
   private maxRetries: number = 3;
@@ -9,8 +9,9 @@ class BitbucketClient {
   constructor(baseUrl: string, userName: string, appPassword: string) {
     this.baseUrl = baseUrl;
     this.baseHeaders = {
-      'Accept': 'application/json;charset=UTF-8',
-      'Authorization': 'Basic ' + Buffer.from(`${userName}:${appPassword}`).toString('base64'),
+      Accept: "application/json;charset=UTF-8",
+      Authorization:
+        "Basic " + Buffer.from(`${userName}:${appPassword}`).toString("base64"),
     };
   }
 
@@ -29,7 +30,7 @@ class BitbucketClient {
       if (!response.ok) {
         if (response.status === 401) {
           const errorBody = await response.text();
-          console.error('Authentication Error:', errorBody);
+          console.error("Authentication Error:", errorBody);
         }
         if (response.status === 429 || response.status >= 500) {
           if (retryCount < this.maxRetries) {
@@ -42,7 +43,10 @@ class BitbucketClient {
 
       return response.json();
     } catch (error) {
-      if (retryCount < this.maxRetries && !(error as Error).message.includes('HTTP')) {
+      if (
+        retryCount < this.maxRetries &&
+        !(error as Error).message.includes("HTTP")
+      ) {
         await this.delay(this.retryDelay * Math.pow(2, retryCount));
         return this.fetchWithRetry(url, options, retryCount + 1);
       }
@@ -50,22 +54,30 @@ class BitbucketClient {
     }
   }
 
-  async getGitBlame(projectKey: string, repoSlug: string, filePath: string): Promise<any> {
+  async getGitBlame(
+    projectKey: string,
+    repoSlug: string,
+    filePath: string
+  ): Promise<any> {
     const url = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}?blame=true&noContent=true`;
     console.log(`Fetching git blame from URL: ${url}`);
     const options: RequestInit = {
-      method: 'GET',
+      method: "GET",
       headers: this.baseHeaders,
     };
 
     return this.fetchWithRetry(url, options);
   }
 
-  async getCommit(projectKey: string, repoSlug: string, commitId: string): Promise<any> {
+  async getCommit(
+    projectKey: string,
+    repoSlug: string,
+    commitId: string
+  ): Promise<any> {
     const url = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/commits/${commitId}`;
     console.log(`Fetching commit data from URL: ${url}`);
     const options: RequestInit = {
-      method: 'GET',
+      method: "GET",
       headers: this.baseHeaders,
     };
 
