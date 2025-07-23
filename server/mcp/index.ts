@@ -4,6 +4,7 @@ import { z } from "zod";
 import http from 'http';
 import { randomUUID } from "node:crypto";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
+import JiraClient from "./jiraClient.js";
 
 export function startMcpServer() {
   const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
@@ -59,6 +60,56 @@ export function startMcpServer() {
             async ({ a, b }: { a: number, b: number }) => ({
               content: [{ type: "text", text: String(a + b) }]
             })
+          );
+
+          // Initialize Jira client
+          const jiraClient = new JiraClient(
+            process.env.JIRA_BASE_URL!,
+            process.env.JIRA_USER_EMAIL!,
+            process.env.JIRA_API_TOKEN!
+          );
+
+          // Add Jira tool
+          mcpServer.tool(
+            "jira_get_issue",
+            "Get Jira issue details by issue key",
+            {
+              issueKey: z.string().describe("Jira issue key (e.g., EUL-14500)")
+            },
+            async ({ issueKey }: { issueKey: string }) => {
+              try {
+                const issue = await jiraClient.getIssue(issueKey);
+
+                // Extract relevant information
+                const issueData = {
+                  key: issue.key,
+                  summary: issue.fields.summary,
+                  description: issue.fields.description?.content || issue.fields.description || "No description",
+                  status: issue.fields.status.name,
+                  assignee: issue.fields.assignee?.displayName || "Unassigned",
+                  reporter: issue.fields.reporter?.displayName || "Unknown",
+                  priority: issue.fields.priority?.name || "Unknown",
+                  issueType: issue.fields.issuetype.name,
+                  created: issue.fields.created,
+                  updated: issue.fields.updated,
+                  url: `${process.env.JIRA_BASE_URL}/browse/${issue.key}`
+                };
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: JSON.stringify(issueData, null, 2)
+                  }]
+                };
+              } catch (error) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Error fetching Jira issue: ${(error as Error).message}`
+                  }]
+                };
+              }
+            }
           );
 
           await mcpServer.connect(transport);
