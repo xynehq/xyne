@@ -64,10 +64,6 @@ export const DATASOURCE_CONFIG = {
     "image/gif",
     "image/webp",
   ]),
-
-  // Directories
-  TEMP_DIR:
-    process.env.DATASOURCE_TEMP_DIR || path.resolve(__dirname, "../../tmp"),
 } as const
 
 // Utility function to extract base MIME type (remove parameters like charset)
