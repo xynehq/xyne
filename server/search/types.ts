@@ -245,6 +245,7 @@ export const VespaFileSchema = z.object({
   entity: FileEntitySchema,
   title: z.string(),
   url: z.string().nullable(),
+  parentId: z.string().nullable(),
   chunks: z.array(z.string()),
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),

@@ -2961,3 +2961,24 @@ export const getSlackUserDetails = async (
       })
     })
 }
+
+export const getFolderItems = async (
+  docIds:string[],
+  schema:string,
+  entity:string,
+  email:string,
+)=>{
+  
+  try{
+    const resp = fallbackVespa.getFolderItem(docIds,schema,entity,email)
+    return resp
+  }
+  catch(error){
+    Logger.error(
+      error,
+      `Error fetching folder by threadIds: ${docIds.join(", ")}`,
+    )
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
+  }
+}

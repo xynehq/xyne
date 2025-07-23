@@ -1313,6 +1313,45 @@ class VespaClient {
       )
     }
   }
+  async getFolderItem(
+    docId: string[],
+    schema: string,
+    entity: string,
+    email: string,
+  ): Promise<VespaSearchResponse> {
+    const yqlIds = docId.map((id) => `parentId contains '${id}'`).join(" or ")
+    const yqlQuery = `select * from sources ${schema} where ${yqlIds} and (permissions contains '${email}' or ownerEmail contains '${email}')`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+      }
+      console.log(yqlQuery)
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(
+        `Error fetching folderItem with folderId ${docId.join(",")}: ${errMessage}`,
+      )
+    }
+  }
 }
 
 export default VespaClient

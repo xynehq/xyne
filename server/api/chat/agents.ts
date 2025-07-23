@@ -580,7 +580,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     let attachmentStorageError: Error | null = null
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -2407,7 +2407,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -2871,7 +2871,7 @@ export const AgentMessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],

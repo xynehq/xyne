@@ -161,7 +161,9 @@ export const getFileContent = async (
     const chunks = chunkDocument(cleanedTextContent)
 
     const parentsForMetadata = []
+    let parentId = null
     if (file?.parents) {
+      if (file.parents.length > 0) parentId = file.parents[0]
       for (const parentId of file.parents!) {
         const parentData = await getFile(client, parentId)
         const folderName = parentData?.name!
@@ -174,6 +176,7 @@ export const getFileContent = async (
       url: file.webViewLink ?? "",
       app: Apps.GoogleDrive,
       docId: file.id!,
+      parentId: parentId,
       owner: file.owners ? (file.owners[0].displayName ?? "") : "",
       photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
       ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
@@ -227,7 +230,9 @@ export const getPDFContent = async (
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
 
     const parentsForMetadata = []
+    let parentId = null
     if (pdfFile?.parents) {
+      if (pdfFile.parents.length) parentId = pdfFile.parents[0]
       for (const parentId of pdfFile.parents!) {
         const parentData = await getFile(client, parentId)
         const folderName = parentData?.name!
@@ -242,6 +247,7 @@ export const getPDFContent = async (
       url: pdfFile.webViewLink ?? "",
       app: Apps.GoogleDrive,
       docId: pdfFile.id!,
+      parentId: parentId,
       owner: pdfFile.owners ? (pdfFile.owners[0].displayName ?? "") : "",
       photoLink: pdfFile.owners ? (pdfFile.owners[0].photoLink ?? "") : "",
       ownerEmail: pdfFile.owners ? (pdfFile.owners[0]?.emailAddress ?? "") : "",
@@ -307,7 +313,9 @@ export const driveFileToIndexed = async (
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
   try {
     const parentsForMetadata = []
+    let parentId = null
     if (file?.parents) {
+      if (file.parents.length) parentId = file.parents[0]
       for (const parentId of file.parents!) {
         const parentData = await getFile(client, parentId)
         const folderName = parentData?.name!
@@ -322,6 +330,7 @@ export const driveFileToIndexed = async (
       url: file.webViewLink ?? "",
       app: Apps.GoogleDrive,
       docId: file.id!,
+      parentId: parentId,
       entity,
       chunks: [],
       owner: file.owners ? (file.owners[0].displayName ?? "") : "",

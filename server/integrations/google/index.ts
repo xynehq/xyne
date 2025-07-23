@@ -1538,7 +1538,9 @@ export const getPresentationToBeIngested = async (
     }
 
     const parentsForMetadata = []
+    let parentId = null
     if (presentation?.parents) {
+      if (presentation.parents.length > 0) parentId = presentation.parents[0]
       for (const parentId of presentation.parents!) {
         const parentData = await getFile(client, parentId)
         const folderName = parentData?.name!
@@ -1551,6 +1553,7 @@ export const getPresentationToBeIngested = async (
       url: presentation.webViewLink ?? "",
       app: Apps.GoogleDrive,
       docId: presentation.id!,
+      parentId: parentId,
       owner: presentation.owners
         ? (presentation.owners[0].displayName ?? "")
         : "",
@@ -2255,9 +2258,11 @@ export const getSheetsListFromOneSpreadsheet = async (
       // There can be multiple parents
       // Element of parents array contains folderId and folderName
       const parentsForMetadata = []
+      let parentId = null
       // Shared files cannot have parents
       // There can be some files that user has access to may not have parents as they are shared
       if (spreadsheet?.parents) {
+        if (spreadsheet.parents.length > 0) parentId = spreadsheet.parents[0]
         for (const parentId of spreadsheet?.parents!) {
           const parentData = await getFile(client, parentId)
           const folderName = parentData?.name!
@@ -2294,6 +2299,7 @@ export const getSheetsListFromOneSpreadsheet = async (
           // TODO Document it eveyrwhere
           // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
           docId: `${spreadsheet?.id}_${sheetIndex}`,
+          parentId: parentId,
           owner: spreadsheet.owners
             ? (spreadsheet.owners[0].displayName ?? "")
             : "",
@@ -2574,9 +2580,10 @@ export const googlePDFsVespa = async (
         }
 
         const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
-
+        let parentId = null
         const parentsForMetadata = []
         if (pdf?.parents) {
+          if (pdf.parents.length) parentId = pdf.parents[0]
           for (const parentId of pdf.parents!) {
             const parentData = await getFile(client, parentId)
             const folderName = parentData?.name!
@@ -2601,6 +2608,7 @@ export const googlePDFsVespa = async (
           url: pdf.webViewLink ?? "",
           app: Apps.GoogleDrive,
           docId: pdf.id!,
+          parentId: parentId,
           owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
           photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
           ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
@@ -3076,7 +3084,9 @@ export const googleDocsVespa = async (
         const parentsForMetadata = []
         // Shared files cannot have parents
         // There can be some files that user has access to may not have parents as they are shared
+        let parentId = null
         if (doc?.parents) {
+          if (doc.parents.length) parentId = doc.parents[0]
           for (const parentId of doc?.parents!) {
             const parentData = await getFile(client, parentId)
             const folderName = parentData?.name!
@@ -3089,6 +3099,7 @@ export const googleDocsVespa = async (
           url: doc.webViewLink ?? "",
           app: Apps.GoogleDrive,
           docId: doc.id!,
+          parentId: parentId,
           owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
           photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
           ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",

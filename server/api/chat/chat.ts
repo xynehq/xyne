@@ -3207,7 +3207,7 @@ export const MessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -4492,7 +4492,7 @@ export const MessageRetryApi = async (c: Context) => {
       fileIds = fileIdsFromDB
       const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
       const extractedInfo = isMsgWithContext
-        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        ? await extractFileIdsFromMessage(prevUserMessage.message, email)
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
