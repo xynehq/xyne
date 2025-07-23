@@ -139,7 +139,7 @@ export function startMcpServer() {
                 let processedBlame = blame.map((item: any) => ({
                   name: item.author.name,
                   emailAddress: item.author.emailAddress,
-                  commitId: item.displayCommitHash,
+                  commitId: item.commitHash,
                   lineNoFrom: item.lineNumber,
                   lineNoTo: item.lineNumber + item.spannedLines - 1,
                 }));
@@ -152,10 +152,27 @@ export function startMcpServer() {
                   });
                 }
 
+                const uniqueCommitIds = [...new Set(processedBlame.map((item: any) => item.commitId))] as string[];
+                const commitDataPromises = uniqueCommitIds.map((commitId: string) => bitbucketClient.getCommit(projectKey, repoSlug, commitId));
+                const commitDataArray = await Promise.all(commitDataPromises);
+
+                const commitDataMap = commitDataArray.reduce((acc: any, commit: any) => {
+                  acc[commit.id] = {
+                    message: commit.message,
+                    jiraKey: commit.properties?.['jira-key']?.[0],
+                  };
+                  return acc;
+                }, {});
+
+                const finalBlame = processedBlame.map((item: any) => ({
+                  ...item,
+                  ...commitDataMap[item.commitId],
+                }));
+
                 return {
                   content: [{
                     type: "text",
-                    text: JSON.stringify(processedBlame, null, 2)
+                    text: JSON.stringify(finalBlame, null, 2)
                   }]
                 };
               } catch (error) {
