@@ -11,7 +11,68 @@ import { Toaster } from "@/components/ui/toaster"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-const queryClient = new QueryClient({})
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
+
+async function refreshToken(): Promise<boolean> {
+  console.log("refresh token ran...... in frontend")
+  try {
+    const response = await fetch("/api/v1/refresh-token", {
+      method: "POST",
+      credentials: "include",
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error: any) => {
+        // Don't retry if it's a 401 - let the mutation error handler deal with it
+        if (error?.message?.includes("401")) {
+          return false
+        }
+        return failureCount < 3
+      },
+    },
+    mutations: {
+      onError: async (error: any, variables, context) => {
+        console.log("onError triggered....")
+        // Check if error is 401 (token expired)
+        if (error?.message?.includes("401") && !isRefreshing) {
+          if (refreshPromise) {
+            const refreshSuccess = await refreshPromise
+            if (refreshSuccess) {
+              // Invalidate queries to refetch with new token
+              queryClient.invalidateQueries()
+            }
+            return
+          }
+
+          isRefreshing = true
+          refreshPromise = refreshToken()
+
+          try {
+            const refreshSuccess = await refreshPromise
+            if (refreshSuccess) {
+              // Invalidate all queries to refetch with new token
+              queryClient.invalidateQueries()
+            } else {
+              // Refresh failed - redirect to login
+              window.location.href = "/auth"
+            }
+          } finally {
+            isRefreshing = false
+            refreshPromise = null
+          }
+        }
+      },
+    },
+  },
+})
 
 // Create a new router instance
 const router = createRouter({ routeTree })

@@ -56,13 +56,18 @@ import { init as initQueue } from "@/queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
-import { jwt } from "hono/jwt"
+import { decode, jwt } from "hono/jwt"
 import type { JwtVariables } from "hono/jwt"
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
-import { createUser, getUserByEmail, saveRefreshTokenToDB } from "@/db/user"
+import {
+  createUser,
+  getPublicUserAndWorkspaceByEmail,
+  getUserByEmail,
+  saveRefreshTokenToDB,
+} from "@/db/user"
 import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
@@ -165,6 +170,7 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
+import type { PublicUserWorkspace } from "./db/schema"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -186,6 +192,7 @@ const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 const postOauthRedirect = config.postOauthRedirect
+const JwtPayloadKey = config.JwtPayloadKey
 
 const jwtSecret = process.env.JWT_SECRET!
 
@@ -424,9 +431,69 @@ const handleAppValidation = async (c: Context) => {
   )
 }
 
+const getNewAccessRefreshToken = async (c: Context) => {
+  console.log("getNewAccessRefreshToken ran....")
+  const accessToken = getCookie(c, AccessTokenCookieName)
+  const refreshToken = getCookie(c, RefreshTokenCookieName)
+
+  if (!accessToken || !refreshToken) {
+    // If no auth token is found
+    Logger.warn("Redirected by server - No AuthToken")
+    // Redirect to login page if no token found
+    return c.redirect(`/auth`)
+  }
+  const hello = decode(refreshToken)
+  const { header, payload } = hello
+  console.log("payload")
+  console.log(payload)
+  console.log("payload")
+  const { sub, workspaceId } = payload
+  const email = sub
+  const userAndWorkspace: PublicUserWorkspace =
+    await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+  if (!userAndWorkspace.user || !userAndWorkspace.workspace) {
+    return c.redirect(`/auth`)
+  }
+
+  if (userAndWorkspace.user.refreshToken === refreshToken) {
+    const existingUserRes = await getUserByEmail(db, email)
+    if (existingUserRes && existingUserRes.length) {
+      // if user exists then workspace exists too
+      const existingUser = existingUserRes[0]
+      const accessToken = await generateTokens(
+        existingUser.email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+      )
+      const refreshToken = await generateTokens(
+        existingUser.email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const opts = {
+        secure: true,
+        path: "/",
+        httpOnly: true,
+      }
+      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
+      return c.json({
+        msg: "Access Token refreshed",
+      })
+    }
+  } else {
+    return c.redirect(`/auth`)
+  }
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
+  .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -679,7 +746,7 @@ const generateTokens = async (
         role: role,
         workspaceId,
         tokenType: "access",
-        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Access token expires in 1 hour
+        exp: Math.floor(Date.now() / 1000) + 60 * 1, // Access token expires in 1 hour
       }
   // todo keeping the secret same for now for AT RT
   const jwtToken = await sign(payload, jwtSecret)
