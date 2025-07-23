@@ -130,17 +130,28 @@ export function startMcpServer() {
               projectKey: z.string().describe("Bitbucket project key (e.g., JBIZ)"),
               repoSlug: z.string().describe("Bitbucket repository slug (e.g., euler-api-txns)"),
               filePath: z.string().describe("Path to the file in the repository (e.g., nix/stan.nix)"),
+              startLine: z.number().optional().describe("The starting line number for the blame range"),
+              endLine: z.number().optional().describe("The ending line number for the blame range"),
             },
-            async ({ projectKey, repoSlug, filePath }: { projectKey: string, repoSlug: string, filePath: string }) => {
+            async ({ projectKey, repoSlug, filePath, startLine, endLine }: { projectKey: string, repoSlug: string, filePath: string, startLine?: number, endLine?: number }) => {
               try {
                 const blame = await bitbucketClient.getGitBlame(projectKey, repoSlug, filePath);
-                const processedBlame = blame.map((item: any) => ({
+                let processedBlame = blame.map((item: any) => ({
                   name: item.author.name,
                   emailAddress: item.author.emailAddress,
                   commitId: item.displayCommitHash,
                   lineNoFrom: item.lineNumber,
                   lineNoTo: item.lineNumber + item.spannedLines - 1,
                 }));
+
+                if (startLine !== undefined && endLine !== undefined) {
+                  processedBlame = processedBlame.filter((item: any) => {
+                    const itemStartLine = item.lineNoFrom;
+                    const itemEndLine = item.lineNoTo;
+                    return Math.max(itemStartLine, startLine) <= Math.min(itemEndLine, endLine);
+                  });
+                }
+
                 return {
                   content: [{
                     type: "text",
