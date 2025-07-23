@@ -1,9 +1,12 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import http from 'http';
+import http from "http";
 import { randomUUID } from "node:crypto";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import JiraClient from "./jiraClient.js";
 import BitbucketClient from "./bitbucketClient.js";
 
@@ -11,12 +14,12 @@ export function startMcpServer() {
   const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
   const server = http.createServer(async (req, res) => {
-    let body = '';
-    req.on('data', chunk => {
+    let body = "";
+    req.on("data", (chunk) => {
       body += chunk.toString();
     });
-    req.on('end', async () => {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    req.on("end", async () => {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
       let transport: StreamableHTTPServerTransport;
 
       if (sessionId && transports[sessionId]) {
@@ -26,12 +29,14 @@ export function startMcpServer() {
         try {
           parsedBody = JSON.parse(body);
         } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32700, message: 'Parse error' },
-            id: null
-          }));
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: { code: -32700, message: "Parse error" },
+              id: null,
+            })
+          );
           return;
         }
 
@@ -51,21 +56,12 @@ export function startMcpServer() {
 
           const mcpServer = new McpServer({
             name: "xyne-server",
-            version: "0.0.1"
+            version: "0.0.1",
           });
 
-          mcpServer.tool(
-            "add",
-            "Add two numbers",
-            { a: z.number(), b: z.number() },
-            async ({ a, b }: { a: number, b: number }) => ({
-              content: [{ type: "text", text: String(a + b) }]
-            })
-          );
-
           // Initialize Jira client
-          console.log('JIRA_BASE_URL:', process.env.JIRA_BASE_URL);
-          console.log('BITBUCKET_BASE_URL:', process.env.BITBUCKET_BASE_URL);
+          console.log("JIRA_BASE_URL:", process.env.JIRA_BASE_URL);
+          console.log("BITBUCKET_BASE_URL:", process.env.BITBUCKET_BASE_URL);
           const jiraClient = new JiraClient(
             process.env.JIRA_BASE_URL!,
             process.env.JIRA_USER_EMAIL!,
@@ -84,7 +80,7 @@ export function startMcpServer() {
             "jira_get_issue",
             "Get Jira issue details by issue key",
             {
-              issueKey: z.string().describe("Jira issue key (e.g., EUL-14500)")
+              issueKey: z.string().describe("Jira issue key (e.g., EUL-14500)"),
             },
             async ({ issueKey }: { issueKey: string }) => {
               try {
@@ -94,7 +90,10 @@ export function startMcpServer() {
                 const issueData = {
                   key: issue.key,
                   summary: issue.fields.summary,
-                  description: issue.fields.description?.content || issue.fields.description || "No description",
+                  description:
+                    issue.fields.description?.content ||
+                    issue.fields.description ||
+                    "No description",
                   status: issue.fields.status.name,
                   assignee: issue.fields.assignee?.displayName || "Unassigned",
                   reporter: issue.fields.reporter?.displayName || "Unknown",
@@ -102,21 +101,27 @@ export function startMcpServer() {
                   issueType: issue.fields.issuetype.name,
                   created: issue.fields.created,
                   updated: issue.fields.updated,
-                  url: `${process.env.JIRA_BASE_URL}/browse/${issue.key}`
+                  url: `${process.env.JIRA_BASE_URL}/browse/${issue.key}`,
                 };
 
                 return {
-                  content: [{
-                    type: "text",
-                    text: JSON.stringify(issueData, null, 2)
-                  }]
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(issueData, null, 2),
+                    },
+                  ],
                 };
               } catch (error) {
                 return {
-                  content: [{
-                    type: "text",
-                    text: `Error fetching Jira issue: ${(error as Error).message}`
-                  }]
+                  content: [
+                    {
+                      type: "text",
+                      text: `Error fetching Jira issue: ${
+                        (error as Error).message
+                      }`,
+                    },
+                  ],
                 };
               }
             }
@@ -127,15 +132,45 @@ export function startMcpServer() {
             "bitbucket_get_git_blame",
             "Get Git blame for a file in Bitbucket",
             {
-              projectKey: z.string().describe("Bitbucket project key (e.g., JBIZ)"),
-              repoSlug: z.string().describe("Bitbucket repository slug (e.g., euler-api-txns)"),
-              filePath: z.string().describe("Path to the file in the repository (e.g., nix/stan.nix)"),
-              startLine: z.number().optional().describe("The starting line number for the blame range"),
-              endLine: z.number().optional().describe("The ending line number for the blame range"),
+              projectKey: z
+                .string()
+                .describe("Bitbucket project key (e.g., JBIZ)"),
+              repoSlug: z
+                .string()
+                .describe("Bitbucket repository slug (e.g., euler-api-txns)"),
+              filePath: z
+                .string()
+                .describe(
+                  "Path to the file in the repository (e.g., nix/stan.nix)"
+                ),
+              startLine: z
+                .union([z.number(), z.string().transform(Number)])
+                .optional()
+                .describe("The starting line number for the blame range"),
+              endLine: z
+                .union([z.number(), z.string().transform(Number)])
+                .optional()
+                .describe("The ending line number for the blame range"),
             },
-            async ({ projectKey, repoSlug, filePath, startLine, endLine }: { projectKey: string, repoSlug: string, filePath: string, startLine?: number, endLine?: number }) => {
+            async ({
+              projectKey,
+              repoSlug,
+              filePath,
+              startLine,
+              endLine,
+            }: {
+              projectKey: string;
+              repoSlug: string;
+              filePath: string;
+              startLine?: number;
+              endLine?: number;
+            }) => {
               try {
-                const blame = await bitbucketClient.getGitBlame(projectKey, repoSlug, filePath);
+                const blame = await bitbucketClient.getGitBlame(
+                  projectKey,
+                  repoSlug,
+                  filePath
+                );
                 let processedBlame = blame.map((item: any) => ({
                   name: item.author.name,
                   emailAddress: item.author.emailAddress,
@@ -144,25 +179,37 @@ export function startMcpServer() {
                   lineNoTo: item.lineNumber + item.spannedLines - 1,
                 }));
 
-                if (startLine !== undefined && endLine !== undefined) {
+                // Only filter if both startLine and endLine are provided and valid
+                if (startLine !== undefined && endLine !== undefined && startLine > 0 && endLine > 0) {
                   processedBlame = processedBlame.filter((item: any) => {
                     const itemStartLine = item.lineNoFrom;
                     const itemEndLine = item.lineNoTo;
-                    return Math.max(itemStartLine, startLine) <= Math.min(itemEndLine, endLine);
+                    return (
+                      Math.max(itemStartLine, startLine) <=
+                      Math.min(itemEndLine, endLine)
+                    );
                   });
                 }
 
-                const uniqueCommitIds = [...new Set(processedBlame.map((item: any) => item.commitId))] as string[];
-                const commitDataPromises = uniqueCommitIds.map((commitId: string) => bitbucketClient.getCommit(projectKey, repoSlug, commitId));
+                const uniqueCommitIds = [
+                  ...new Set(processedBlame.map((item: any) => item.commitId)),
+                ] as string[];
+                const commitDataPromises = uniqueCommitIds.map(
+                  (commitId: string) =>
+                    bitbucketClient.getCommit(projectKey, repoSlug, commitId)
+                );
                 const commitDataArray = await Promise.all(commitDataPromises);
 
-                const commitDataMap = commitDataArray.reduce((acc: any, commit: any) => {
-                  acc[commit.id] = {
-                    message: commit.message,
-                    jiraKey: commit.properties?.['jira-key']?.[0],
-                  };
-                  return acc;
-                }, {});
+                const commitDataMap = commitDataArray.reduce(
+                  (acc: any, commit: any) => {
+                    acc[commit.id] = {
+                      message: commit.message,
+                      jiraKey: commit.properties?.["jira-key"]?.[0],
+                    };
+                    return acc;
+                  },
+                  {}
+                );
 
                 const finalBlame = processedBlame.map((item: any) => ({
                   ...item,
@@ -170,17 +217,23 @@ export function startMcpServer() {
                 }));
 
                 return {
-                  content: [{
-                    type: "text",
-                    text: JSON.stringify(finalBlame, null, 2)
-                  }]
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(finalBlame, null, 2),
+                    },
+                  ],
                 };
               } catch (error) {
                 return {
-                  content: [{
-                    type: "text",
-                    text: `Error fetching Git blame from Bitbucket: ${(error as Error).message}`
-                  }]
+                  content: [
+                    {
+                      type: "text",
+                      text: `Error fetching Git blame from Bitbucket: ${
+                        (error as Error).message
+                      }`,
+                    },
+                  ],
                 };
               }
             }
@@ -188,16 +241,21 @@ export function startMcpServer() {
 
           await mcpServer.connect(transport);
         } else {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
-            id: null
-          }));
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -32000,
+                message: "Bad Request: No valid session ID provided",
+              },
+              id: null,
+            })
+          );
           return;
         }
       }
-      if (req.method === 'POST') {
+      if (req.method === "POST") {
         await transport.handleRequest(req, res, JSON.parse(body));
       } else {
         await transport.handleRequest(req, res);

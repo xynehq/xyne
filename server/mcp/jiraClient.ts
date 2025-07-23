@@ -1,4 +1,4 @@
-import fetch, { type RequestInit } from 'node-fetch';
+import fetch, { type RequestInit } from "node-fetch";
 
 class JiraClient {
   private maxRetries: number = 3;
@@ -8,7 +8,8 @@ class JiraClient {
 
   constructor(baseUrl: string, email: string, apiToken: string) {
     this.baseUrl = baseUrl;
-    this.authHeader = 'Basic ' + Buffer.from(`${email}:${apiToken}`).toString('base64');
+    this.authHeader =
+      "Basic " + Buffer.from(`${email}:${apiToken}`).toString("base64");
   }
 
   private async delay(ms: number): Promise<void> {
@@ -35,7 +36,10 @@ class JiraClient {
 
       return response.json();
     } catch (error) {
-      if (retryCount < this.maxRetries && !(error as Error).message.includes('HTTP')) {
+      if (
+        retryCount < this.maxRetries &&
+        !(error as Error).message.includes("HTTP")
+      ) {
         await this.delay(this.retryDelay * Math.pow(2, retryCount));
         return this.fetchWithRetry(url, options, retryCount + 1);
       }
@@ -46,10 +50,10 @@ class JiraClient {
   async getIssue(issueKey: string): Promise<any> {
     const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}`;
     const options: RequestInit = {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': this.authHeader,
-        'Accept': 'application/json',
+        Authorization: this.authHeader,
+        Accept: "application/json",
       },
     };
 
