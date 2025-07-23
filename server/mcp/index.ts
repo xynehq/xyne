@@ -134,10 +134,17 @@ export function startMcpServer() {
             async ({ projectKey, repoSlug, filePath }: { projectKey: string, repoSlug: string, filePath: string }) => {
               try {
                 const blame = await bitbucketClient.getGitBlame(projectKey, repoSlug, filePath);
+                const processedBlame = blame.map((item: any) => ({
+                  name: item.author.name,
+                  emailAddress: item.author.emailAddress,
+                  commitId: item.displayCommitHash,
+                  lineNoFrom: item.lineNumber,
+                  lineNoTo: item.lineNumber + item.spannedLines - 1,
+                }));
                 return {
                   content: [{
                     type: "text",
-                    text: JSON.stringify(blame, null, 2)
+                    text: JSON.stringify(processedBlame, null, 2)
                   }]
                 };
               } catch (error) {
