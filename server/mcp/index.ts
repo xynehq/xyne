@@ -5,6 +5,7 @@ import http from 'http';
 import { randomUUID } from "node:crypto";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import JiraClient from "./jiraClient.js";
+import BitbucketClient from "./bitbucketClient.js";
 
 export function startMcpServer() {
   const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
@@ -63,10 +64,19 @@ export function startMcpServer() {
           );
 
           // Initialize Jira client
+          console.log('JIRA_BASE_URL:', process.env.JIRA_BASE_URL);
+          console.log('BITBUCKET_BASE_URL:', process.env.BITBUCKET_BASE_URL);
           const jiraClient = new JiraClient(
             process.env.JIRA_BASE_URL!,
             process.env.JIRA_USER_EMAIL!,
             process.env.JIRA_API_TOKEN!
+          );
+
+          // Initialize Bitbucket client
+          const bitbucketClient = new BitbucketClient(
+            process.env.BITBUCKET_BASE_URL!,
+            process.env.BITBUCKET_USER_NAME!,
+            process.env.BITBUCKET_APP_PASSWORD!
           );
 
           // Add Jira tool
@@ -106,6 +116,35 @@ export function startMcpServer() {
                   content: [{
                     type: "text",
                     text: `Error fetching Jira issue: ${(error as Error).message}`
+                  }]
+                };
+              }
+            }
+          );
+
+          // Add Bitbucket tool
+          mcpServer.tool(
+            "bitbucket_get_git_blame",
+            "Get Git blame for a file in Bitbucket",
+            {
+              projectKey: z.string().describe("Bitbucket project key (e.g., JBIZ)"),
+              repoSlug: z.string().describe("Bitbucket repository slug (e.g., euler-api-txns)"),
+              filePath: z.string().describe("Path to the file in the repository (e.g., nix/stan.nix)"),
+            },
+            async ({ projectKey, repoSlug, filePath }: { projectKey: string, repoSlug: string, filePath: string }) => {
+              try {
+                const blame = await bitbucketClient.getGitBlame(projectKey, repoSlug, filePath);
+                return {
+                  content: [{
+                    type: "text",
+                    text: JSON.stringify(blame, null, 2)
+                  }]
+                };
+              } catch (error) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Error fetching Git blame from Bitbucket: ${(error as Error).message}`
                   }]
                 };
               }
