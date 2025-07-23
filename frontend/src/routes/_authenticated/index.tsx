@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
@@ -69,13 +69,13 @@ const Index = () => {
     }
   }, [favoriteAgents])
 
-  const toggleFavorite = (agentExternalId: string) => {
+  const toggleFavorite = useCallback((agentExternalId: string) => {
     setFavoriteAgents((prevFavorites) =>
       prevFavorites.includes(agentExternalId)
         ? prevFavorites.filter((id) => id !== agentExternalId)
         : [...prevFavorites, agentExternalId],
     )
-  }
+  }, [])
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -96,9 +96,10 @@ const Index = () => {
     fetchAgents()
   }, [])
 
-  const favoriteAgentObjects = allAgents.filter((agent) =>
-    favoriteAgents.includes(agent.externalId),
-  )
+  const favoriteAgentObjects = useMemo(() => {
+    const favoriteIdSet = new Set(favoriteAgents)
+    return allAgents.filter((agent) => favoriteIdSet.has(agent.externalId))
+  }, [allAgents, favoriteAgents])
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
@@ -424,7 +425,7 @@ const Index = () => {
                     <div key={agent.externalId} className="flex-shrink-0 w-64">
                       <AgentCard
                         agent={agent}
-                        isFavorite={favoriteAgents.includes(agent.externalId)}
+                        isFavorite={true}
                         onToggleFavorite={toggleFavorite}
                         onClick={() =>
                           navigate({
