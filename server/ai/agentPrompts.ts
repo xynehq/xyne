@@ -996,13 +996,21 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    6. Extract the main intent or search keywords from the query to create a "filterQuery" field:
+    6. Extract email addresses and main intent from the query:
       
-      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
+      **EMAIL ADDRESS EXTRACTION:**
+      - Detect email patterns: anything matching [text]@[domain].[extension]
+      - Extract email addresses for metadata filtering:
+        - "emails from john@company.com" → extract "john@company.com" for from_email
+        - "messages to support@company.com" → extract "support@company.com" for to_email
+        - "emails where alice@work.com was cc'd" → extract "alice@work.com" for cc_email
+        - "emails where admin@company.com was bcc'd" → extract "admin@company.com" for bcc_email
+      
+      **FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
       - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
-      - Person names (e.g., "John", "Sarah", "marketing team")
+      - Person names (e.g., "John", "Sarah", "marketing team") - but NOT email addresses
       - Specific topics or subjects (e.g., "contract", "invoice", "receipt", "proposal")
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
@@ -1014,6 +1022,8 @@ export const agentSearchQueryPrompt = (
       - Quantity terms: "5", "10", "most", "all", "some", "few"
       - Generic item types: "emails", "files", "documents", "meetings", "orders" (when used generically)
       - Structural words: "summary", "details", "info", "information"
+      - Email addresses that have been extracted for metadata filtering
+      - Prepositions related to email metadata: "from", "to", "cc", "bcc"
       
       Step 3: Apply the rule:
       - IF specific content keywords remain after exclusion → set filterQuery to those keywords
@@ -1090,6 +1100,8 @@ export const agentSearchQueryPrompt = (
       - Examples Queries: 
         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+        - "emails from john@company.com" (has 'emails' = gmail, extract email for metadata)
+        - "messages to support@company.com" (has 'emails' = gmail, extract email for metadata)
 
        - **JSON Structure**:
         {
@@ -1099,9 +1111,13 @@ export const agentSearchQueryPrompt = (
             "entity": "<entity>",
             "count": "<number of items to list>",
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
-            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
             "sortDirection": <boolean or null>,
-            "filterQuery": "<extracted keywords>"
+            "filterQuery": "<extracted keywords>",
+            "from_email": "<sender email if mentioned>",
+            "to_email": "<recipient email if mentioned>",
+            "cc_email": "<cc email if mentioned>",
+            "bcc_email": "<bcc email if mentioned>"
           }
         }
 
@@ -1161,7 +1177,11 @@ export const agentSearchQueryPrompt = (
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
+           "sortDirection": "<'asc' | 'desc' | null>",
+           "from_email": "<sender email if mentioned, or null>",
+           "to_email": "<recipient email if mentioned, or null>",
+           "cc_email": "<cc email if mentioned, or null>",
+           "bcc_email": "<bcc email if mentioned, or null>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.

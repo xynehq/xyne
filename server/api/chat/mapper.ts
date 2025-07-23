@@ -488,7 +488,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
+      "Retrieves items based on metadata filters (time range, app, entity, email addresses). Use this tool when searching within a specific app/entity with optional keyword filtering. For Gmail queries, supports filtering by sender/recipient email addresses.",
     params: [
       {
         name: "from",
@@ -531,6 +531,30 @@ export const internalTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description: "Keywords to refine the search based on the user's query.",
+      },
+      {
+        name: "from_email",
+        type: "string",
+        required: false,
+        description: "Filter emails by sender email address. Use when the query mentions 'from' or 'sent by' a specific email address (e.g., 'emails from john@company.com').",
+      },
+      {
+        name: "to_email",
+        type: "string",
+        required: false,
+        description: "Filter emails by recipient email address. Use when the query mentions 'to' or 'sent to' a specific email address (e.g., 'emails to support@company.com').",
+      },
+      {
+        name: "cc_email",
+        type: "string",
+        required: false,
+        description: "Filter emails by CC email address. Use when the query mentions 'cc' or 'copied' a specific email address (e.g., 'emails where alice@work.com was cc'd').",
+      },
+      {
+        name: "bcc_email",
+        type: "string",
+        required: false,
+        description: "Filter emails by BCC email address. Use when the query mentions 'bcc' or 'blind copied' a specific email address (e.g., 'emails where admin@company.com was bcc'd').",
       },
       {
         name: "limit",

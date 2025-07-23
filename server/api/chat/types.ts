@@ -129,6 +129,10 @@ export interface MetadataRetrievalParams {
   offset?: number
   order_direction?: "asc" | "desc"
   excludedIds?: string[]
+  from_email?: string
+  to_email?: string
+  cc_email?: string
+  bcc_email?: string
 }
 
 export interface SearchParams {
