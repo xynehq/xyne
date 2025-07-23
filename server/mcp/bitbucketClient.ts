@@ -60,6 +60,17 @@ class BitbucketClient {
 
     return this.fetchWithRetry(url, options);
   }
+
+  async getCommit(projectKey: string, repoSlug: string, commitId: string): Promise<any> {
+    const url = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/commits/${commitId}`;
+    console.log(`Fetching commit data from URL: ${url}`);
+    const options: RequestInit = {
+      method: 'GET',
+      headers: this.baseHeaders,
+    };
+
+    return this.fetchWithRetry(url, options);
+  }
 }
 
 export default BitbucketClient;
