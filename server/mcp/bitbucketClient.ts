@@ -83,6 +83,86 @@ class BitbucketClient {
 
     return this.fetchWithRetry(url, options);
   }
+
+  async getFileContent(
+    projectKey: string,
+    repoSlug: string,
+    filePath: string
+  ): Promise<string> {
+    // Try to get structured content with pagination
+    const structuredUrl = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}`;
+    console.log(`Fetching structured file content from URL: ${structuredUrl}`);
+    
+    let structuredError: any = null;
+    
+    try {
+      let allLines: string[] = [];
+      let start = 0;
+      let isLastPage = false;
+      const pageSize = 2000; // Increase page size
+      
+      while (!isLastPage) {
+        const pagedUrl = `${structuredUrl}?start=${start}&limit=${pageSize}`;
+        console.log(`Fetching page starting at line ${start}, limit ${pageSize}`);
+        
+        const response = await this.fetchWithRetry(pagedUrl, {
+          method: "GET",
+          headers: this.baseHeaders,
+        });
+        
+        // Handle the structured response format
+        if (response && response.lines && Array.isArray(response.lines)) {
+          const extractedLines = response.lines.map((line: any) => {
+            if (typeof line === 'object' && line.text !== undefined) {
+              return line.text;
+            }
+            return line || '';
+          });
+          
+          allLines = allLines.concat(extractedLines);
+          
+          // Check if this is the last page
+          isLastPage = response.isLastPage === true || response.lines.length < pageSize;
+          start += response.lines.length;
+          
+          console.log(`Fetched ${response.lines.length} lines, total so far: ${allLines.length}, isLastPage: ${isLastPage}`);
+        } else {
+          // If it's a single page string response, return it directly
+          if (typeof response === 'string') {
+            return response;
+          }
+          
+          throw new Error('Unable to extract file content from structured response');
+        }
+      }
+      
+      console.log(`Total file content retrieved: ${allLines.length} lines`);
+      return allLines.join('\n');
+      
+    } catch (error) {
+      structuredError = error;
+      console.log("Structured content fetch failed, trying raw format:", error);
+    }
+
+    // Fallback: try raw content
+    const rawUrl = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}?raw`;
+    console.log(`Fetching raw file content from URL: ${rawUrl}`);
+    
+    try {
+      const rawResponse = await fetch(rawUrl, {
+        method: "GET",
+        headers: this.baseHeaders,
+      });
+      
+      if (rawResponse.ok) {
+        return await rawResponse.text();
+      }
+      
+      throw new Error(`Raw fetch failed: HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
+    } catch (rawError) {
+      throw new Error(`Both structured and raw content fetching failed. Structured error: ${structuredError}. Raw error: ${rawError}`);
+    }
+  }
 }
 
 export default BitbucketClient;
