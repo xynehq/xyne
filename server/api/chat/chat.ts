@@ -39,6 +39,7 @@ import {
   getChatByExternalIdWithAuth,
   getFavoriteChats,
   getPublicChats,
+  getAllChatsForDashboard,
   insertChat,
   updateChatByExternalIdWithAuth,
   updateChatBookmarkStatus,
@@ -51,6 +52,8 @@ import {
   getChatMessagesBefore,
   updateMessage,
   getChatMessagesWithAuth,
+  getMessageCountsByChats,
+  getMessageFeedbackStats,
 } from "@/db/message"
 import { eq } from "drizzle-orm"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
@@ -153,7 +156,12 @@ import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 // import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalId,
+  getAllAgents,
+  getAgentsAccessibleToUser,
+  type SelectAgent,
+} from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
   ragPipelineConfig,
@@ -185,6 +193,14 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isImageFile } from "@/utils/image"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import {
+  getAgentUsageByUsers,
+  getChatCountsByAgents,
+  getFeedbackStatsByAgents,
+  getMessageCountsByAgents,
+  getPublicAgentsByUser,
+  type SharedAgentUsageData,
+} from "@/db/sharedAgentUsage"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -661,9 +677,12 @@ export const ChatHistory = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore
-    const { page } = c.req.valid("query")
+    const { page, from, to } = c.req.valid("query")
     const offset = page * chatHistoryPageSize
-    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
+    const timeRange = from || to ? { from, to } : undefined
+    return c.json(
+      await getPublicChats(db, email, chatHistoryPageSize, offset, timeRange),
+    )
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(
@@ -672,6 +691,197 @@ export const ChatHistory = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Could not get chat history",
+    })
+  }
+}
+
+export const DashboardDataApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Fetch all chats based on time range (no pagination)
+    const chats = await getAllChatsForDashboard(db, email, timeRange)
+
+    // Get message counts for all chats
+    const chatExternalIds = chats.map((chat) => chat.externalId)
+    const messageCounts = await getMessageCountsByChats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Get feedback statistics for all chats
+    const feedbackStats = await getMessageFeedbackStats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Fetch all agents accessible to user
+    const agents = await getAgentsAccessibleToUser(
+      db,
+      user.id,
+      workspace.id,
+      100, // limit to 100 agents
+      0, // offset 0
+    )
+
+    return c.json({
+      chats,
+      agents,
+      messageCounts,
+      feedbackStats,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Dashboard Data Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get dashboard data",
+    })
+  }
+}
+
+export const SharedAgentUsageApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Get public agents created by this user
+    const publicAgents = await getPublicAgentsByUser({
+      db,
+      userId: user.id,
+      workspaceId: workspace.id,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    if (publicAgents.length === 0) {
+      return c.json({
+        sharedAgents: [],
+        totalUsage: {
+          totalChats: 0,
+          totalMessages: 0,
+          totalLikes: 0,
+          totalDislikes: 0,
+          uniqueUsers: 0,
+        },
+      })
+    }
+
+    const agentExternalIds = publicAgents.map((agent) => agent.externalId)
+
+    // Get usage statistics for these agents
+    const [chatCounts, messageCounts, feedbackStats, userUsageData] =
+      await Promise.all([
+        getChatCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getMessageCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getFeedbackStatsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getAgentUsageByUsers({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+      ])
+
+    // Transform data into the desired format
+    const sharedAgents: SharedAgentUsageData[] = publicAgents.map((agent) => {
+      const agentId = agent.externalId
+      const userUsage = userUsageData[agentId] || []
+      const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
+
+      return {
+        agentId,
+        agentName: agent.name,
+        agentDescription: agent.description,
+        totalChats: chatCounts[agentId] || 0,
+        totalMessages: messageCounts[agentId] || 0,
+        likes: feedback.likes,
+        dislikes: feedback.dislikes,
+        userUsage,
+      }
+    })
+
+    // Calculate total usage across all shared agents
+    let totalChats = 0
+    let totalMessages = 0
+    let totalLikes = 0
+    let totalDislikes = 0
+    const uniqueUsers = new Set<number>()
+
+    sharedAgents.forEach((agent) => {
+      totalChats += agent.totalChats
+      totalMessages += agent.totalMessages
+      totalLikes += agent.likes
+      totalDislikes += agent.dislikes
+      agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
+    })
+
+    return c.json({
+      sharedAgents: sharedAgents.sort(
+        (a, b) => b.totalMessages - a.totalMessages,
+      ),
+      totalUsage: {
+        totalChats,
+        totalMessages,
+        totalLikes,
+        totalDislikes,
+        uniqueUsers: uniqueUsers.size,
+      },
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Shared Agent Usage Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get shared agent usage data",
     })
   }
 }

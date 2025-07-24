@@ -6,7 +6,7 @@ import {
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt } from "drizzle-orm"
+import { and, asc, eq, lt, count, inArray } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -82,4 +82,148 @@ export const updateMessage = async (
     .update(messages)
     .set(updatedFields)
     .where(and(eq(messages.externalId, messageId)))
+}
+
+export async function getAllMessages({
+  db,
+  externalChatId,
+}: {
+  db: TxnOrClient
+  externalChatId: string
+}): Promise<SelectMessage[]> {
+  const result = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.chatExternalId, externalChatId))
+    .orderBy(asc(messages.createdAt))
+
+  return selectMessageSchema.array().parse(result)
+}
+
+export async function getMessageCountsByChats({
+  db,
+  chatExternalIds,
+  email,
+  workspaceExternalId,
+}: {
+  db: TxnOrClient
+  chatExternalIds: string[]
+  email: string
+  workspaceExternalId: string
+}): Promise<Record<string, number>> {
+  if (chatExternalIds.length === 0) {
+    return {}
+  }
+
+  const result = await db
+    .select({
+      chatExternalId: messages.chatExternalId,
+      messageCount: count(messages.externalId),
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+      ),
+    )
+    .groupBy(messages.chatExternalId)
+
+  return result.reduce(
+    (acc, row) => {
+      acc[row.chatExternalId] = row.messageCount
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+}
+
+export async function getMessageFeedbackStats({
+  db,
+  chatExternalIds,
+  email,
+  workspaceExternalId,
+}: {
+  db: TxnOrClient
+  chatExternalIds: string[]
+  email: string
+  workspaceExternalId: string
+}): Promise<{
+  totalLikes: number
+  totalDislikes: number
+  feedbackByChat: Record<string, { likes: number; dislikes: number }>
+}> {
+  if (chatExternalIds.length === 0) {
+    return {
+      totalLikes: 0,
+      totalDislikes: 0,
+      feedbackByChat: {},
+    }
+  }
+
+  const result = await db
+    .select({
+      chatExternalId: messages.chatExternalId,
+      feedback: messages.feedback,
+      count: count(messages.externalId),
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+        eq(messages.feedback, "like"),
+      ),
+    )
+    .groupBy(messages.chatExternalId, messages.feedback)
+    .union(
+      db
+        .select({
+          chatExternalId: messages.chatExternalId,
+          feedback: messages.feedback,
+          count: count(messages.externalId),
+        })
+        .from(messages)
+        .where(
+          and(
+            inArray(messages.chatExternalId, chatExternalIds),
+            eq(messages.email, email),
+            eq(messages.workspaceExternalId, workspaceExternalId),
+            eq(messages.feedback, "dislike"),
+          ),
+        )
+        .groupBy(messages.chatExternalId, messages.feedback),
+    )
+
+  let totalLikes = 0
+  let totalDislikes = 0
+  const feedbackByChat: Record<string, { likes: number; dislikes: number }> = {}
+
+  // Initialize all chats with zero feedback
+  chatExternalIds.forEach((chatId) => {
+    feedbackByChat[chatId] = { likes: 0, dislikes: 0 }
+  })
+
+  // Populate with actual feedback counts
+  result.forEach((row) => {
+    if (!feedbackByChat[row.chatExternalId]) {
+      feedbackByChat[row.chatExternalId] = { likes: 0, dislikes: 0 }
+    }
+
+    if (row.feedback === "like") {
+      feedbackByChat[row.chatExternalId].likes = row.count
+      totalLikes += row.count
+    } else if (row.feedback === "dislike") {
+      feedbackByChat[row.chatExternalId].dislikes = row.count
+      totalDislikes += row.count
+    }
+  })
+
+  return {
+    totalLikes,
+    totalDislikes,
+    feedbackByChat,
+  }
 }

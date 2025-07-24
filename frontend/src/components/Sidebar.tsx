@@ -10,6 +10,7 @@ import {
   LogOut,
   ExternalLink,
   Key,
+  BarChart3,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -223,6 +224,26 @@ export const Sidebar = ({
               />
             </Tooltip>
           </div>
+
+          <Link
+            to="/dashboard"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+              location.pathname.includes("/dashboard")
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : ""
+            }`}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BarChart3
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Dashboard" />
+            </Tooltip>
+          </Link>
         </div>
         <div className="mt-auto mb-4 flex justify-center">
           <DropdownMenu>
