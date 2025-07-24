@@ -114,7 +114,7 @@ export const getGmailAttachmentChunks = async (
     const normalizedBase64 = attachementResp.data.data
       .replace(/-/g, "+")
       .replace(/_/g, "/")
-    
+
     let attachmentBuffer: Buffer
     try {
       attachmentBuffer = Buffer.from(normalizedBase64, "base64")
@@ -199,7 +199,7 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-      const content = attachmentBuffer.toString('utf8')
+      const content = attachmentBuffer.toString("utf8")
       const chunks = chunkDocument(content)
       attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
     } else {
@@ -209,7 +209,10 @@ export const getGmailAttachmentChunks = async (
       return null
     }
   } catch (error) {
-    Logger.error(error, `Error in getting gmailAttachmentChunks for ${filename}`)
+    Logger.error(
+      error,
+      `Error in getting gmailAttachmentChunks for ${filename}`,
+    )
   }
   return attachmentChunks
 }
@@ -295,7 +298,7 @@ export const getGmailSpreadsheetSheets = async (
     const normalizedBase64 = attachementResp.data.data
       .replace(/-/g, "+")
       .replace(/_/g, "/")
-    
+
     let attachmentBuffer: Buffer
     try {
       attachmentBuffer = Buffer.from(normalizedBase64, "base64")
@@ -359,9 +362,12 @@ export const parseAttachments = (
 }
 
 // Function to process spreadsheet files and return individual sheet data
-const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): SheetData[] => {
+const processSpreadsheetFileWithSheetInfo = (
+  buffer: Buffer,
+  filename: string,
+): SheetData[] => {
   try {
-    let workbook = XLSX.read(buffer, { type: 'buffer' })
+    let workbook = XLSX.read(buffer, { type: "buffer" })
     const sheetsData: SheetData[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {

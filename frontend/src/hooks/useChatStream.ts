@@ -116,6 +116,12 @@ const parseMessageInput = (htmlString: string) => {
             app: el.dataset.app,
             entity: entity,
             imgSrc: imgSrc,
+            wholeSheet:
+              el.dataset.wholeSheet === "true"
+                ? true
+                : el.dataset.wholeSheet === "false"
+                  ? false
+                  : undefined,
             threadId: el.dataset.threadId,
           },
         })

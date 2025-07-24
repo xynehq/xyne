@@ -404,6 +404,41 @@ export const extractFileIdsFromMessage = async (
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
       }
+
+      const pillValue = obj.value
+      const docId = pillValue.docId
+
+      // Check if this is a Google Sheets reference with wholeSheet: true
+      if (pillValue.wholeSheet === true) {
+        // Extract the base docId (remove the "_X" suffix if present)
+        const baseDocId = docId.replace(/_\d+$/, "")
+
+        // Get the spreadsheet metadata to find all sub-sheets
+        const validFile = await getDocumentOrSpreadsheet(baseDocId)
+        if (validFile) {
+          const fields = validFile?.fields as VespaFile
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            // Add all sub-sheet IDs
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${baseDocId}_${i}`)
+            }
+          } else {
+            // Fallback: just add the docId if it's not a spreadsheet
+            fileIds.push(docId)
+          }
+        } else {
+          // Fallback: just add the docId if we can't get metadata
+          fileIds.push(docId)
+        }
+      } else {
+        // Regular pill behavior: just add the docId
+        fileIds.push(docId)
+      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {

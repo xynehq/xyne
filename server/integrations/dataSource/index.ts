@@ -363,7 +363,7 @@ const processSpreadsheetFile = async (
   options: ProcessingOptions,
 ): Promise<VespaDataSourceFile[]> => {
   try {
-    const workbook = XLSX.read(buffer, { type: 'buffer' })
+    const workbook = XLSX.read(buffer, { type: "buffer" })
     const sheetDocuments: VespaDataSourceFile[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
