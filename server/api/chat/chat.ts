@@ -2862,7 +2862,7 @@ async function* generateMetadataQueryAnswer(
           }`,
         )
         pageSpan?.end()
-        yield { text: "null" }
+        yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
 
@@ -2883,7 +2883,7 @@ async function* generateMetadataQueryAnswer(
         pageSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
           pageSpan?.end()
-          yield { text: "null" }
+          yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
           loggerWithChild({ email: email }).info(
