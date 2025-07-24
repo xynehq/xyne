@@ -2,6 +2,7 @@ import { FastMCP, UserError } from "fastmcp";
 import { z } from "zod";
 import JiraClient from "./jiraClient.js";
 import BitbucketClient from "./bitbucketClient.js";
+import { file } from "jszip";
 
 export function startMcpServer() {
   const server = new FastMCP({
@@ -53,6 +54,346 @@ export function startMcpServer() {
         return JSON.stringify(issueData, null, 2);
       } catch (err) {
         throw new UserError(`Error fetching Jira issue: ${(err as Error).message}`);
+      }
+    },
+  });
+
+  // -------- Find Code Lines tool --------
+  server.addTool({
+    name: "find_code_lines",
+    description: "Find the exact line numbers of a code snippet within a file. Gets the whole file content and searches for your code snippet. Use this tool BEFORE using bitbucket_get_git_blame to ensure accurate line numbers.",
+    parameters: z.object({
+      projectKey: z.string(),
+      repoSlug: z.string(),
+      filePath: z.string(),
+      codeSnippet: z.string().optional().describe("Code snippet to locate in the file. If not provided, shows file overview"),
+      startLine: z.number().optional().describe("Start line for file overview (default: 1)"),
+      endLine: z.number().optional().describe("End line for file overview (default: 100)"),
+      searchAroundLine: z.number().optional().describe("If provided, search for the code snippet around this specific line number")
+    }),
+    execute: async ({
+      projectKey,
+      repoSlug,
+      filePath,
+      codeSnippet,
+      startLine = 1,
+      endLine = 100,
+      searchAroundLine,
+    }: {
+      projectKey: string;
+      repoSlug: string;
+      filePath: string;
+      codeSnippet?: string;
+      startLine?: number;
+      endLine?: number;
+      searchAroundLine?: number;
+    }) => {
+      try {
+        console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
+        const fileContent = await bitbucket.getFileContent(projectKey, repoSlug, filePath);
+        
+        if (!fileContent) {
+          throw new Error("File content is empty or null");
+        }
+        
+        const lines = fileContent.split("\n");
+        
+        console.log(`File has ${lines.length} lines`);
+        console.log(`File size: ${fileContent.length} characters`);
+        console.log(`First few lines: ${lines.slice(0, 5).join("\\n")}`);
+        console.log(`Last few lines: ${lines.slice(-5).join("\\n")}`);
+        
+        // Check if file seems truncated
+        const lastLine = lines[lines.length - 1];
+        if (fileContent.length > 50000 && !lastLine.trim()) {
+          console.warn("File might be truncated - large size but ends abruptly");
+        }
+        
+        // If no code snippet provided, show file overview
+        if (!codeSnippet) {
+          const actualStartLine = Math.max(1, startLine);
+          const actualEndLine = Math.min(lines.length, endLine);
+          
+          const numberedLines = lines.slice(actualStartLine - 1, actualEndLine).map((line, idx) => 
+            `${actualStartLine + idx}: ${line}`
+          );
+          
+          return JSON.stringify({
+            filePath,
+            totalLines: lines.length,
+            showing: `Lines ${actualStartLine}-${actualEndLine}`,
+            content: numberedLines,
+            tip: "Call this tool again with a codeSnippet parameter to find exact line numbers"
+          }, null, 2);
+        }
+        
+        // Enhanced search for code snippet - process the entire file thoroughly
+        let foundLine = -1;
+        const cleanSnippet = codeSnippet.trim();
+        
+        console.log(`Searching for snippet in ${lines.length} lines:`);
+        console.log(`Snippet: "${cleanSnippet}"`);
+        
+        // If searchAroundLine is provided, check that specific area first
+        if (searchAroundLine && codeSnippet) {
+          console.log(`Searching around line ${searchAroundLine} for snippet...`);
+          const searchStart = Math.max(0, searchAroundLine - 50);
+          const searchEnd = Math.min(lines.length, searchAroundLine + 50);
+          
+          console.log(`Checking lines ${searchStart + 1} to ${searchEnd} around target line ${searchAroundLine}`);
+          
+          for (let i = searchStart; i < searchEnd; i++) {
+            const line = lines[i].trim();
+            if (line.includes(cleanSnippet.trim())) {
+              foundLine = i + 1;
+              console.log(`Found snippet near expected line ${searchAroundLine}: actual line ${foundLine}`);
+              console.log(`Content: "${line}"`);
+              break;
+            }
+          }
+          
+          // If found around the expected line, skip other strategies
+          if (foundLine !== -1) {
+            console.log(`Success: Found code around expected line ${searchAroundLine}`);
+          } else {
+            console.log(`Code not found around line ${searchAroundLine}, will try other strategies`);
+            
+            // Show context around the expected line for debugging
+            const contextStart = Math.max(0, searchAroundLine - 10);
+            const contextEnd = Math.min(lines.length, searchAroundLine + 10);
+            console.log(`Context around line ${searchAroundLine}:`);
+            for (let i = contextStart; i < contextEnd; i++) {
+              console.log(`${i + 1}: ${lines[i]}`);
+            }
+          }
+        }
+        
+        // Multiple search strategies with detailed logging
+        const searchStrategies = [
+          { name: "exact_line", description: "Exact line match (trimmed)" },
+          { name: "exact_multiline", description: "Exact multi-line sequence match" },
+          { name: "substring_match", description: "Substring match (non-comment lines)" },
+          { name: "contains_all_words", description: "Contains all significant words" },
+          { name: "fuzzy_match", description: "Fuzzy matching with scoring" }
+        ];
+        
+        // Continue with existing search strategies if not found around specific line
+        if (foundLine === -1) {
+          // Strategy 1: Exact line match (for single lines)
+          if (!cleanSnippet.includes('\n')) {
+            console.log("Trying exact line match...");
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].trim() === cleanSnippet) {
+                foundLine = i + 1;
+                console.log(`Found exact match at line ${foundLine}`);
+                break;
+              }
+            }
+          }
+        
+        // Strategy 2: Exact multi-line sequence match
+        if (foundLine === -1 && cleanSnippet.includes('\n')) {
+          console.log("Trying exact multi-line match...");
+          const snippetLines = cleanSnippet.split('\n').map(line => line.trim());
+          
+          for (let i = 0; i <= lines.length - snippetLines.length; i++) {
+            let allLinesMatch = true;
+            
+            for (let j = 0; j < snippetLines.length; j++) {
+              const fileLine = lines[i + j].trim();
+              const snippetLine = snippetLines[j];
+              
+              if (fileLine !== snippetLine) {
+                allLinesMatch = false;
+                break;
+              }
+            }
+            
+            if (allLinesMatch) {
+              foundLine = i + 1;
+              console.log(`Found exact multi-line match starting at line ${foundLine}`);
+              break;
+            }
+          }
+        }
+        
+        // Strategy 3: Substring match (skip comments and empty lines)
+        if (foundLine === -1) {
+          console.log("Trying substring match...");
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Skip empty lines and comments
+            if (!line || line.startsWith('--') || line.startsWith('//') || 
+                line.startsWith('/*') || line.startsWith('*') || line.startsWith('#')) {
+              continue;
+            }
+            
+            if (line.includes(cleanSnippet)) {
+              foundLine = i + 1;
+              console.log(`Found substring match at line ${foundLine}: "${line}"`);
+              break;
+            }
+          }
+        }
+        
+        // Strategy 4: Contains all significant words (for function signatures, etc.)
+        if (foundLine === -1) {
+          console.log("Trying contains all words match...");
+          const snippetWords = cleanSnippet.split(/\s+/)
+            .filter(word => word.length > 2 && !/^(::|\->|=>|{|}|\(|\)|;|,)$/.test(word));
+          
+          if (snippetWords.length > 0) {
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              
+              // Skip empty lines and comments
+              if (!line || line.startsWith('--') || line.startsWith('//') || 
+                  line.startsWith('/*') || line.startsWith('*') || line.startsWith('#')) {
+                continue;
+              }
+              
+              const lineText = line.toLowerCase();
+              let wordsFound = 0;
+              
+              for (const word of snippetWords) {
+                if (lineText.includes(word.toLowerCase())) {
+                  wordsFound++;
+                }
+              }
+              
+              // Must contain ALL significant words
+              if (wordsFound === snippetWords.length) {
+                foundLine = i + 1;
+                console.log(`Found all-words match at line ${foundLine}: "${line}"`);
+                console.log(`Matched words: ${snippetWords.join(', ')}`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // Strategy 5: Fuzzy matching with detailed scoring
+        if (foundLine === -1) {
+          console.log("Trying fuzzy match with scoring...");
+          const snippetWords = cleanSnippet.split(/\s+/).filter(word => word.length > 1);
+          let bestMatch = { line: -1, score: 0, matchedLine: "" };
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Skip empty lines and comments
+            if (!line || line.startsWith('--') || line.startsWith('//') || 
+                line.startsWith('/*') || line.startsWith('*') || line.startsWith('#')) {
+              continue;
+            }
+            
+            const lineText = line.toLowerCase();
+            const snippetText = cleanSnippet.toLowerCase();
+            
+            // Calculate multiple similarity scores
+            let wordMatchCount = 0;
+            let totalWordScore = 0;
+            
+            for (const word of snippetWords) {
+              if (lineText.includes(word.toLowerCase())) {
+                wordMatchCount++;
+                totalWordScore += word.length; // Weight by word length
+              }
+            }
+            
+            const wordMatchRatio = snippetWords.length > 0 ? wordMatchCount / snippetWords.length : 0;
+            const substringScore = lineText.includes(snippetText.slice(0, 20)) ? 0.5 : 0; // Partial substring
+            const lengthPenalty = Math.abs(line.length - cleanSnippet.length) / Math.max(line.length, cleanSnippet.length);
+            
+            const finalScore = (wordMatchRatio * 0.7) + (substringScore * 0.3) - (lengthPenalty * 0.1);
+            
+            if (finalScore > bestMatch.score && finalScore >= 0.6) {
+              bestMatch = { line: i + 1, score: finalScore, matchedLine: line };
+            }
+          }
+          
+          if (bestMatch.line > 0) {
+            foundLine = bestMatch.line;
+            console.log(`Found fuzzy match at line ${foundLine} (score: ${bestMatch.score.toFixed(3)}): "${bestMatch.matchedLine}"`);
+          }
+        }
+        
+        if (foundLine === -1) {
+          console.log("No match found with any strategy");
+          
+          // Enhanced debugging - show file structure and sample lines
+          const debugInfo = {
+            totalLines: lines.length,
+            searchedSnippet: cleanSnippet,
+            searchStrategies: searchStrategies.map(s => s.description),
+            fileSample: {
+              firstLines: lines.slice(0, 10).map((line, idx) => `${idx + 1}: ${line}`),
+              middleLines: lines.slice(Math.floor(lines.length/2) - 5, Math.floor(lines.length/2) + 5)
+                .map((line, idx) => `${Math.floor(lines.length/2) - 4 + idx}: ${line}`),
+              lastLines: lines.slice(-10).map((line, idx) => `${lines.length - 9 + idx}: ${line}`)
+            },
+            potentialMatches: [] as Array<{lineNumber: number, content: string, similarity: string}>
+          };
+          
+          // Find potential partial matches for debugging
+          const snippetLower = cleanSnippet.toLowerCase();
+          const firstWord = cleanSnippet.split(/\s+/)[0];
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            const lineLower = line.toLowerCase();
+            
+            if (line && (lineLower.includes(firstWord.toLowerCase()) || 
+                         lineLower.includes(snippetLower.slice(0, 10)))) {
+              debugInfo.potentialMatches.push({
+                lineNumber: i + 1,
+                content: line,
+                similarity: "Contains first word or partial match"
+              });
+              
+              if (debugInfo.potentialMatches.length >= 20) break; // Limit output
+            }
+          }
+          
+          return JSON.stringify({
+            found: false,
+            message: "Code snippet not found in the file after exhaustive search.",
+            debugInfo,
+            suggestion: "Check if the code snippet is exact, or try searching for a unique function name or variable"
+          }, null, 2);
+        }
+        
+        } // End of search strategies
+        
+        // Show context around found line
+        const contextStart = Math.max(1, foundLine - 5);
+        const contextEnd = Math.min(lines.length, foundLine + 5);
+        const contextLines = lines.slice(contextStart - 1, contextEnd).map((line, idx) => {
+          const lineNum = contextStart + idx;
+          const marker = lineNum === foundLine ? " >>> " : "     ";
+          return `${marker}${lineNum}: ${line}`;
+        });
+        
+        // For multi-line snippets, calculate the end line
+        const snippetLineCount = cleanSnippet.includes('\n') ? cleanSnippet.split('\n').length : 1;
+        const endLineNumber = foundLine + snippetLineCount - 1;
+        
+        return JSON.stringify({
+          found: true,
+          startLine: foundLine,
+          endLine: endLineNumber,
+          lineNumber: foundLine, // Keep for backward compatibility
+          message: `Code snippet found at line${snippetLineCount > 1 ? 's' : ''} ${foundLine}${snippetLineCount > 1 ? `-${endLineNumber}` : ''}`,
+          matchedLine: lines[foundLine - 1],
+          matchedLines: snippetLineCount > 1 ? lines.slice(foundLine - 1, endLineNumber) : undefined,
+          context: contextLines,
+          totalLines: lines.length,
+          nextStep: `Use with bitbucket_get_git_blame (startLine: ${foundLine}, endLine: ${endLineNumber})`
+        }, null, 2);
+        
+      } catch (err) {
+        throw new UserError(`Error processing file: ${(err as Error).message}`);
       }
     },
   });
@@ -127,7 +468,7 @@ export function startMcpServer() {
           ...commitMap[b.commitId],
         }));
 
-        return JSON.stringify(final, null, 2);
+          return JSON.stringify(final, null, 2);
       } catch (err) {
         throw new UserError(`Error fetching Git blame: ${(err as Error).message}`);
       }
@@ -140,6 +481,6 @@ export function startMcpServer() {
       port: 7320,
     },
   });
-
+  
   console.error("MCP-HTTPStream server listening on http://localhost:7320/mcp");
 }
