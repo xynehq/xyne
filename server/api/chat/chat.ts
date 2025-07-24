@@ -17,6 +17,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  extractEmailsFromContext,
 } from "@/ai/provider"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -26,6 +27,7 @@ import {
   Models,
   QueryType,
   type ConverseResponse,
+  type Intent,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
@@ -174,6 +176,7 @@ import {
   expandEmailThreadsInResults,
   getCitationToImage,
   mimeTypeMap,
+  extractNamesFromIntent,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -186,245 +189,118 @@ import { isImageFile } from "@/utils/image"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { nameToEmailResolutionPrompt } from "@/ai/prompts"
+import { get } from "node:http"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
-// Utility function to detect if intent contains names or organizations (vs email addresses)
-function hasNamesInIntent(intent: any): boolean {
-  if (!intent || typeof intent !== 'object') return false
-  
-  const fieldsToCheck = ['from', 'to', 'cc', 'bcc']
-  
-  for (const field of fieldsToCheck) {
-    if (Array.isArray(intent[field])) {
-      for (const value of intent[field]) {
-        if (typeof value === 'string' && !value.includes('@')) {
-          return true // Found a name or organization (no @ symbol)
-        }
-      }
-    }
-  }
-  
-  return false
-}
-
-// Utility function to extract names and organizations from intent
-function extractNamesFromIntent(intent: any): string[] {
-  if (!intent || typeof intent !== 'object') return []
-  
-  const names: string[] = []
-  const fieldsToCheck = ['from', 'to', 'cc', 'bcc']
-  
-  for (const field of fieldsToCheck) {
-    if (Array.isArray(intent[field])) {
-      for (const value of intent[field]) {
-        if (typeof value === 'string' && !value.includes('@')) {
-          names.push(value) // Include both person names and organization names
-        }
-      }
-    }
-  }
-  
-  return [...new Set(names)] // Remove duplicates
-}
-
-// Main function to resolve names to emails
 async function resolveNamesToEmails(
-  intent: any,
+  intent: Intent,
   email: string,
   userCtx: string,
-  span?: Span
+  span?: Span,
 ): Promise<any> {
   const resolveSpan = span?.startSpan("resolve_names_to_emails")
-  
+
   try {
-    console.log(`[NAME_RESOLUTION] Starting name resolution process for user: ${email}`)
-    console.log(`[NAME_RESOLUTION] Original intent:`, JSON.stringify(intent, null, 2))
-    
-    // Extract names from intent (this will only extract non-email values)
-    const names = extractNamesFromIntent(intent)
-    if (names.length === 0) {
-      console.log(`[NAME_RESOLUTION] No names found in intent, skipping resolution`)
+    const extractedNames = extractNamesFromIntent(intent)
+    console.log(extractedNames, "names to resolve")
+
+    const allNames = [
+      ...(extractedNames.from || []),
+      ...(extractedNames.to || []),
+      ...(extractedNames.cc || []),
+      ...(extractedNames.bcc || []),
+      ...(extractedNames.subject || []),
+    ]
+
+    if (allNames.length === 0) {
       resolveSpan?.setAttribute("no_names_found", true)
       resolveSpan?.end()
-      return intent // No names to resolve
+      return intent
     }
-    
-    console.log(`[NAME_RESOLUTION] Extracted ${names.length} names/organizations for resolution:`, names)
-    console.log(`[NAME_RESOLUTION] Note: Email addresses in intent are preserved as-is`)
-    
-    resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(names))
-    
-    // Search for users matching the names
-    const searchSpan = resolveSpan?.startSpan("search_users")
-    const searchQuery = names.join(' ')
-    
-    console.log(`[NAME_RESOLUTION] Searching user directory with query: "${searchQuery}"`)
-    console.log(`[NAME_RESOLUTION] Search parameters: App=${Apps.GoogleWorkspace}, Entity=${GooglePeopleEntity.Contacts}, Limit=20`)
-    
-    const searchResults = await searchVespa(searchQuery, email, Apps.GoogleWorkspace, GooglePeopleEntity.Contacts, {
-      limit: 20, // Get more results to find best matches
-      alpha: 0.5,
-      span: searchSpan,
-    })
-    
-    searchSpan?.setAttribute("search_query", searchQuery)
-    searchSpan?.setAttribute("results_count", searchResults.root.children?.length || 0)
-    searchSpan?.end()
-    
-    const resultCount = searchResults.root.children?.length || 0
-    console.log(`[NAME_RESOLUTION] User directory search completed. Found ${resultCount} results`)
-    
-    if (!searchResults.root.children || searchResults.root.children.length === 0) {
-      console.log(`[NAME_RESOLUTION] No users found in directory search for names: ${names.join(', ')}`)
-      console.log(`[NAME_RESOLUTION] Returning original intent to allow fallback to normal search flow`)
-      resolveSpan?.setAttribute("no_search_results", true)
+
+    const isValidEmailAddress = (email: string): boolean => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      return emailRegex.test(email)
+    }
+
+    const allNamesAreEmails = allNames.every((name) =>
+      isValidEmailAddress(name),
+    )
+    if (allNamesAreEmails) {
+      resolveSpan?.setAttribute("all_names_are_emails", true)
+      resolveSpan?.setAttribute("skip_resolution", true)
       resolveSpan?.end()
-      return intent // Return original intent if no users found - this allows fallback to normal flow
+      return intent
     }
-    
-    // Build context from search results
-    console.log(`[NAME_RESOLUTION] Building search context from ${resultCount} results:`)
+    resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
+
+    const searchSpan = resolveSpan?.startSpan("search_users")
+    const searchQuery = allNames.join(" ")
+
+    const searchResults = await searchVespa(
+      searchQuery,
+      email,
+      Apps.Gmail,
+      MailEntity.Email,
+      {
+        limit: 50,
+        alpha: 0.5,
+        span: searchSpan,
+        isIntentSearch: true,
+      },
+    )
+
+    console.log(searchResults.root.children.length, "search results length")
+    searchSpan?.setAttribute("search_query", searchQuery)
+    searchSpan?.setAttribute(
+      "results_count",
+      searchResults.root.children?.length || 0,
+    )
+    searchSpan?.end()
+
+    const resultCount = searchResults.root.children?.length || 0
+
+    if (
+      !searchResults.root.children ||
+      searchResults.root.children.length === 0
+    ) {
+      return intent
+    }
+
     const searchContext = searchResults.root.children
       .map((result, index) => {
-        const fields = result.fields as any
-        const contextLine = `Index ${index}: ${fields.name || 'Unknown'} <${fields.email || 'no-email'}> - ${fields.jobTitle || 'No title'} - ${fields.department || 'No department'}`
-        
-        console.log(`[NAME_RESOLUTION]   Result ${index}: ${fields.name || 'Unknown'} <${fields.email || 'no-email'}> - ${fields.jobTitle || 'No title'} - ${fields.department || 'No department'}`)
-        
+        const fields = result.fields as VespaMail
+        const contextLine = `
+        [Index ${index}]: 
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})
+        Subject: ${fields.subject || "Unknown"}
+        From: <${fields.from}>
+        To: <${fields.to}>
+        CC: <${fields.cc}>
+        BCC: <${fields.bcc}>
+        `
+
         return contextLine
       })
-      .join('\n')
-    
-    console.log(`[NAME_RESOLUTION] Built search context (${searchContext.length} chars) for LLM resolution`)
-    
-    resolveSpan?.setAttribute("search_context_length", searchContext.length)
-    
-    // Use LLM to resolve names to emails
-    const llmSpan = resolveSpan?.startSpan("llm_resolution")
-    
-    console.log(`[NAME_RESOLUTION] Invoking LLM for name-to-email resolution`)
-    console.log(`[NAME_RESOLUTION] Model: ${defaultFastModel}`)
-    console.log(`[NAME_RESOLUTION] Names to resolve: ${names.join(', ')}`)
-    
-    const resolutionIterator = baselineRAGJsonStream(
-      '', // No user query needed for this internal operation
+      .join("\n")
+
+    let resolvedData: Intent = {}
+    const resolutionResult = await extractEmailsFromContext(
+      extractedNames,
       userCtx,
       searchContext,
-      {
-        stream: false,
-        modelId: defaultFastModel,
-        systemPrompt: nameToEmailResolutionPrompt(userCtx, searchContext, names),
-      }
+      { modelId: config.defaultFastModel, json: false, stream: false },
     )
-    
-    let resolutionResult = ''
-    for await (const chunk of resolutionIterator) {
-      if (chunk.text) {
-        resolutionResult += chunk.text
-      }
-    }
-    
-    console.log(`[NAME_RESOLUTION] LLM resolution completed (${resolutionResult.length} chars)`)
-    console.log(`[NAME_RESOLUTION] Raw LLM response:`, resolutionResult)
-    
-    llmSpan?.setAttribute("llm_response", resolutionResult)
-    llmSpan?.end()
-    
-    // Parse LLM response
-    let resolvedData: { resolved: Record<string, string>, unresolved: string[] }
-    try {
-      resolvedData = JSON.parse(resolutionResult)
-      
-      console.log(`[NAME_RESOLUTION] Successfully parsed LLM response`)
-      console.log(`[NAME_RESOLUTION] Resolved: ${Object.keys(resolvedData.resolved || {}).length} names/organizations`)
-      console.log(`[NAME_RESOLUTION] Unresolved: ${(resolvedData.unresolved || []).length} names/organizations`)
-      console.log(`[NAME_RESOLUTION] Resolved mappings:`, resolvedData.resolved)
-      console.log(`[NAME_RESOLUTION] Unresolved names:`, resolvedData.unresolved)
-      
-    } catch (error) {
-      console.log(`[NAME_RESOLUTION] Failed to parse LLM resolution response`)
-      console.log(`[NAME_RESOLUTION] Parse error:`, getErrorMessage(error))
-      console.log(`[NAME_RESOLUTION] Raw response that failed to parse:`, resolutionResult)
-      console.log(`[NAME_RESOLUTION] Returning original intent to allow fallback to normal search flow`)
-      resolveSpan?.setAttribute("parse_error", getErrorMessage(error))
-      resolveSpan?.end()
-      return intent // Return original intent if parsing fails - allows fallback to normal flow
-    }
-    
-    resolveSpan?.setAttribute("resolved_count", Object.keys(resolvedData.resolved || {}).length)
-    resolveSpan?.setAttribute("unresolved_count", (resolvedData.unresolved || []).length)
-    
-    // Check if we resolved any names at all
-    const hasAnyResolutions = Object.keys(resolvedData.resolved || {}).length > 0
-    if (!hasAnyResolutions) {
-      console.log(`[NAME_RESOLUTION]  No names were successfully resolved`)
-      console.log(`[NAME_RESOLUTION]  Returning original intent to allow fallback to normal search flow`)
-      resolveSpan?.setAttribute("no_resolutions", true)
-      resolveSpan?.end()
-      return intent // Return original intent if no resolutions - allows fallback to normal flow
-    }
-    
-    // Apply resolved emails to intent
-    const resolvedIntent = { ...intent }
-    const fieldsToCheck = ['from', 'to', 'cc', 'bcc']
-    
-    console.log(`[NAME_RESOLUTION] Applying resolved emails to intent fields: ${fieldsToCheck.join(', ')}`)
-    
-    for (const field of fieldsToCheck) {
-      if (Array.isArray(resolvedIntent[field])) {
-        const originalValues = [...resolvedIntent[field]]
-        
-        resolvedIntent[field] = resolvedIntent[field].map((value: string) => {
-          if (typeof value === 'string' && !value.includes('@')) {
-            // This is a name, try to resolve it
-            const resolvedEmail = resolvedData.resolved[value]
-            if (resolvedEmail) {
-              console.log(`[NAME_RESOLUTION]   ${field}: "${value}" → "${resolvedEmail}"`)
-              return resolvedEmail
-            } else {
-              console.log(`[NAME_RESOLUTION]   ${field}: "${value}" → UNRESOLVED (keeping original for fallback)`)
-              return value // Keep original name if not resolved - allows fallback search
-            }
-          } else {
-            // This is already an email address, keep it as-is
-            console.log(`[NAME_RESOLUTION]   📧 ${field}: "${value}" → PRESERVED (already email)`)
-            return value // Keep email addresses as-is
-          }
-        })
-        
-        const hasChanges = JSON.stringify(originalValues) !== JSON.stringify(resolvedIntent[field])
-        console.log(`[NAME_RESOLUTION] Field "${field}" processed: ${hasChanges ? 'CHANGED' : 'NO CHANGES'}`)
-        if (hasChanges) {
-          console.log(`[NAME_RESOLUTION]   Before: ${JSON.stringify(originalValues)}`)
-          console.log(`[NAME_RESOLUTION]   After:  ${JSON.stringify(resolvedIntent[field])}`)
-        }
-      }
-    }
-    
-    console.log(`[NAME_RESOLUTION] Name resolution process completed successfully!`)
-    console.log(`[NAME_RESOLUTION] Summary:`)
-    console.log(`[NAME_RESOLUTION]   - Total names processed: ${names.length}`)
-    console.log(`[NAME_RESOLUTION]   - Successful resolutions: ${Object.keys(resolvedData.resolved || {}).length}`)
-    console.log(`[NAME_RESOLUTION]   - Failed resolutions: ${(resolvedData.unresolved || []).length}`)
-    console.log(`[NAME_RESOLUTION]   - Mixed query support: Email addresses preserved alongside resolved names`)
-    console.log(`[NAME_RESOLUTION] Final resolved intent:`, JSON.stringify(resolvedIntent, null, 2))
-    
-    resolveSpan?.setAttribute("resolution_success", true)
-    resolveSpan?.end()
-    
-    return resolvedIntent
-    
+
+    resolvedData = resolutionResult.emails || []
+
+    searchSpan?.end()
+    return resolvedData
   } catch (error) {
-    console.log(`[NAME_RESOLUTION] CRITICAL ERROR in name resolution process`)
-    console.log(`[NAME_RESOLUTION] Error:`, getErrorMessage(error))
-    console.log(`[NAME_RESOLUTION] Stack:`, (error as Error).stack)
-    console.log(`[NAME_RESOLUTION] Original intent:`, JSON.stringify(intent, null, 2))
-    console.log(`[NAME_RESOLUTION] Returning original intent to allow fallback to normal search flow`)
-    resolveSpan?.setAttribute("error", getErrorMessage(error))
     resolveSpan?.end()
-    return intent // Return original intent on error - allows fallback to normal flow
+    return intent
   }
 }
 
@@ -2550,7 +2426,7 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { app, entity, startTime, endTime, sortDirection } =
+  const { app, entity, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
@@ -2683,6 +2559,16 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -2698,6 +2584,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile: SearchModes.GlobalSorted,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -2822,6 +2709,18 @@ async function* generateMetadataQueryAnswer(
     loggerWithChild({ email: email }).info(
       `Search Type : ${QueryType.GetItems}`,
     )
+
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
@@ -2848,7 +2747,7 @@ async function* generateMetadataQueryAnswer(
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
-          intent: classification.filters.intent,
+          intent: resolvedIntent || {},
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -2868,36 +2767,14 @@ async function* generateMetadataQueryAnswer(
         timestampRange,
         limit: userSpecifiedCountLimit,
         asc: sortDirection === "asc",
-        intent: classification.filters.intent,
+        intent: resolvedIntent || {},
       }
 
       loggerWithChild({ email: email }).info(
         `[GetItems] Query parameters: ${JSON.stringify(getItemsParams)}`,
       )
 
-      // Check if intent contains names that need to be resolved to emails
-      let resolvedIntent = getItemsParams.intent
-      if (hasNamesInIntent(getItemsParams.intent)) {
-        loggerWithChild({ email: email }).info(
-          `[GetItems] Detected names in intent, resolving to emails: ${JSON.stringify(getItemsParams.intent)}`,
-        )
-        resolvedIntent = await resolveNamesToEmails(
-          getItemsParams.intent,
-          email,
-          userCtx,
-          span,
-        )
-        loggerWithChild({ email: email }).info(
-          `[GetItems] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
-        )
-      }
-
-      const finalGetItemsParams = {
-        ...getItemsParams,
-        intent: resolvedIntent,
-      }
-
-      searchResults = await getItems(finalGetItemsParams)
+      searchResults = await getItems(getItemsParams)
       items = searchResults!.root.children || []
       loggerWithChild({ email: email }).info(
         `[GetItems] Query completed - Retrieved ${items.length} items`,
@@ -2964,38 +2841,15 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
-    // Check if intent contains names that need to be resolved to emails for SearchWithFilters
-    let resolvedIntent = classification.filters.intent
-    if (hasNamesInIntent(classification.filters.intent)) {
+    let resolvedIntent = {} as any
+    if (intent && Object.keys(intent).length > 0) {
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(classification.filters.intent)}`,
+        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(
-        classification.filters.intent,
-        email,
-        userCtx,
-        span,
-      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
-      
-      // Update the query to include resolved email addresses for better search
-      if (resolvedIntent && Object.keys(resolvedIntent).length > 0) {
-        const emailsFromIntent = []
-        if (resolvedIntent.from) emailsFromIntent.push(...resolvedIntent.from)
-        if (resolvedIntent.to) emailsFromIntent.push(...resolvedIntent.to)
-        if (resolvedIntent.cc) emailsFromIntent.push(...resolvedIntent.cc)
-        if (resolvedIntent.bcc) emailsFromIntent.push(...resolvedIntent.bcc)
-        
-        const resolvedEmails = emailsFromIntent.filter(email => email.includes('@'))
-        if (resolvedEmails.length > 0) {
-          query = `${filterQuery} ${resolvedEmails.join(' ')}`
-          loggerWithChild({ email: email }).info(
-            `[SearchWithFilters] Enhanced query with resolved emails: "${query}"`,
-          )
-        }
-      }
     }
 
     const searchOptions = {
@@ -3004,6 +2858,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {

@@ -185,7 +185,12 @@ schema mail {
       }
 
       function combined_nativeRank() {
-        expression: (nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+        expression {
+          if(query(is_intent_search) == 1.0,
+            simplePeopleRank,
+            ((nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount))
+          )
+        }
       }
 
       function chunk_scores() {

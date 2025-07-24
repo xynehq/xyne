@@ -1155,13 +1155,12 @@ export const searchQueryPrompt = (userContext: string): string => {
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
-      - ONLY use this when you have EXACT identifiers like:
-        - Complete email addresses (e.g., "emails from john@company.com")
-        - Exact user IDs or precise metadata that can be matched exactly
-      - DO NOT use this for person names without email addresses or without exact identifiers. 
-      - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
-      - This is for PRECISE metadata filtering, not content search
+      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
+      - This can be only classified when <app> and <entity> present
+      - Example Queries:
+        - "Show me all emails from last week."
+        - "List all Google Docs modified in October."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
@@ -1171,9 +1170,9 @@ export const searchQueryPrompt = (userContext: string): string => {
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
-            "intent": <intent object with EXACT metadata like complete email addresses>
           }
         }
+
 
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring to a single <app> or <entity> and wants to search content
@@ -1946,18 +1945,32 @@ export const synthesisContextPrompt = (
 export const nameToEmailResolutionPrompt = (
   userContext: string,
   searchResults: string,
-  names: string[],
+  names: string,
+  intent?: { from?: string[]; to?: string[]; cc?: string[]; bcc?: string[] },
 ) => {
-  return `You are an assistant that resolves person names to their corresponding email addresses using search results from a user directory.
+  const intentFields = intent
+    ? Object.keys(intent).filter(
+        (key) => intent[key as keyof typeof intent]?.length,
+      )
+    : ["from", "to", "cc", "bcc"]
+
+  const responseFormatFields = intentFields
+    .map((field) => `  "${field}": [<emails goes here>]`)
+    .join(",\n")
+
+  return `You are an assistant that resolves person names to their corresponding email addresses using search context provided.
 
 **User Context:**
 ${userContext}
 
 **Names to Resolve:**
-${names.join(', ')}
+${names}
 
-**Search Results from User Directory:**
+**Search Context**
 ${searchResults}
+
+**Intent Fields:**
+Only populate the following fields: ${intentFields.join(", ")}
 
 **Your Task:**
 Analyze the search results and extract the most relevant email addresses for each name. Consider:
@@ -1967,36 +1980,29 @@ Analyze the search results and extract the most relevant email addresses for eac
 - If multiple matches exist, choose the most relevant based on context
 
 **Response Format:**
-Return a JSON object with resolved email addresses:
-
-{
-  "resolved": {
-    "Name1": "email1@company.com",
-    "Name2": "email2@company.com"
-  },
-  "unresolved": ["Name3", "Name4"]
-}
+Return a JSON object with "emails" field containing ONLY the fields specified in the intent:
 
 **Rules:**
-- Only include names in "resolved" if you find a confident email match
-- Put names without clear matches in "unresolved" array
+- Only include email addresses you can confidently match to the provided names
 - Use exact email addresses from the search results
 - Do not guess or fabricate email addresses
-- If no matches found for any names, return empty "resolved" object
+- If no matches found for any names, return empty array: []
+- Return only the email addresses, not the names
+- CRITICAL: ONLY populate the fields that are specified in the intent (${intentFields.join(", ")})
+- Do NOT populate fields that are not in the intent
+- Each field should only contain emails that match the names specified for that field
 
 **Example:**
-If searching for ["John", "Sarah"] and results show:
-- John Smith <john.smith@company.com> - Engineering
-- Sarah Wilson <sarah.wilson@company.com> - Marketing
+If intent is {"from": ["prasad"]} and results show:
+- Prasad Nagarale <prasad.nagarale@juspay.in> - Engineering
 
-Return:
+Response Format:
 {
-  "resolved": {
-    "John": "john.smith@company.com",
-    "Sarah": "sarah.wilson@company.com"
-  },
-  "unresolved": []
-}`
+ "emails": {
+${responseFormatFields}
+  }
+}
+`
 }
 
 export const fallbackReasoningGenerationPrompt = (

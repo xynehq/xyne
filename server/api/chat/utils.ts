@@ -36,7 +36,7 @@ import {
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { UserQuery } from "@/ai/types"
+import type { Intent, UserQuery } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
@@ -621,4 +621,22 @@ export const getCitationToImage = async (
     )
     return null
   }
+}
+
+export function extractNamesFromIntent(intent: any): Intent {
+  if (!intent || typeof intent !== "object") return {}
+
+  const result: Intent = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+
+  for (const field of fieldsToCheck) {
+    if (Array.isArray(intent[field]) && intent[field].length > 0) {
+      const uniqueValues = [...new Set(intent[field])].filter((v) => v)
+      if (uniqueValues.length > 0) {
+        result[field] = uniqueValues
+      }
+    }
+  }
+
+  return result
 }

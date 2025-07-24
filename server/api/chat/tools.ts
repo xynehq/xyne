@@ -603,7 +603,7 @@ export const metadataRetrievalTool: AgentTool = {
       if (intent) {
         Logger.debug(
           `[metadata_retrieval] Using intent parameter directly:`,
-          JSON.stringify(intent, null, 2)
+          JSON.stringify(intent, null, 2),
         )
       }
 
