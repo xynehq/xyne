@@ -536,8 +536,14 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "intent",
         type: "object",
         required: false,
-        description:
-          "Email filtering intent with support for multiple addresses, names, and organizations. Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. Each field is an array of strings containing email addresses, person names, or organization names. Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'. The system will automatically resolve names and organizations to email addresses. Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}",
+        description: `
+          Email filtering intent with support for multiple addresses, names, and organizations. 
+            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
+            - Each field is an array of strings containing email addresses, person names, or organization names. 
+            - Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'.
+            - The system will automatically resolve names and organizations to email addresses. 
+            Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}
+          `,
       },
       {
         name: "limit",

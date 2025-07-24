@@ -194,7 +194,7 @@ import { get } from "node:http"
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
-async function resolveNamesToEmails(
+export async function resolveNamesToEmails(
   intent: Intent,
   email: string,
   userCtx: string,
@@ -204,7 +204,6 @@ async function resolveNamesToEmails(
 
   try {
     const extractedNames = extractNamesFromIntent(intent)
-    console.log(extractedNames, "names to resolve")
 
     const allNames = [
       ...(extractedNames.from || []),

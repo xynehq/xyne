@@ -1001,8 +1001,8 @@ export const agentSearchQueryPrompt = (
       **EMAIL ADDRESS EXTRACTION:**
       - Detect email patterns: anything matching [text]@[domain].[extension]
       - Extract email addresses for metadata filtering:
-        - "emails from john@company.com" → extract "john@company.com" for from_email
-        - "messages to support@company.com" → extract "support@company.com" for to_email
+        - "emails from john@company.com" → extract "john@company.com" for from
+        - "messages to support@company.com" → extract "support@company.com" for to
         - "emails where alice@work.com was cc'd" → extract "alice@work.com" for cc_email
         - "emails where admin@company.com was bcc'd" → extract "admin@company.com" for bcc_email
       
@@ -1114,10 +1114,7 @@ export const agentSearchQueryPrompt = (
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
             "sortDirection": <boolean or null>,
             "filterQuery": "<extracted keywords>",
-            "from_email": "<sender email if mentioned>",
-            "to_email": "<recipient email if mentioned>",
-            "cc_email": "<cc email if mentioned>",
-            "bcc_email": "<bcc email if mentioned>"
+            "intent": {}
           }
         }
 
@@ -1178,10 +1175,7 @@ export const agentSearchQueryPrompt = (
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
-           "from_email": "<sender email if mentioned, or null>",
-           "to_email": "<recipient email if mentioned, or null>",
-           "cc_email": "<cc email if mentioned, or null>",
-           "bcc_email": "<bcc email if mentioned, or null>"
+            "intent": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
