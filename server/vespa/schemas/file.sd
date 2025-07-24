@@ -72,6 +72,7 @@ schema file {
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
+    attribute: paged
     attribute {
         distance-metric: angular
     }

@@ -14,7 +14,7 @@ interface AssociatedAgent {
 interface DataSourceSidebarProps {
   dataSources: { name: string; docId: string }[]
   activeDataSource: string | null
-  onSelectDataSource: (name:string) => void
+  onSelectDataSource: (name: string) => void
   onAddNewDataSource: () => void
   onDataSourceDeleted: () => void
 }

@@ -26,6 +26,7 @@ import {
   Citation,
   SelectPublicAgent,
   DriveEntity,
+  AttachmentMetadata,
 } from "shared/types"
 import {
   ChevronDown,
@@ -63,8 +64,10 @@ import {
 } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
-import { Card, CardContent, CardTitle } from "@/components/ui/card" // Added CardTitle and CardDescription
+import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
+import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
+import { AttachmentGallery } from "@/components/AttachmentGallery"
 
 type CurrentResp = {
   resp: string
@@ -207,6 +210,7 @@ function AgentComponent() {
   const [agentDescription, setAgentDescription] = useState("")
   const [agentPrompt, setAgentPrompt] = useState("")
   const [isPublic, setIsPublic] = useState(false)
+  const [isRagOn, setIsRagOn] = useState(true)
 
   // Prompt generation states
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
@@ -267,6 +271,7 @@ function AgentComponent() {
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
   const searchResultsRef = useRef<HTMLDivElement>(null)
   const [listSearchQuery, setListSearchQuery] = useState("")
+  const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<
     "all" | "shared-to-me" | "made-by-me"
   >("all")
@@ -463,6 +468,9 @@ function AgentComponent() {
   useEffect(() => {
     if (viewMode === "list") {
       fetchAllAgentData()
+    } else {
+      // When switching to create/edit view, also fetch all agents for the dropdown
+      fetchAgents("all")
     }
   }, [viewMode])
 
@@ -686,6 +694,7 @@ function AgentComponent() {
     setAgentDescription("")
     setAgentPrompt("")
     setIsPublic(false)
+    setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
     setEditingAgent(null)
@@ -718,8 +727,24 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
+    if (!isRagOn) {
+      return dynamicDataSources
+    }
     return [...availableIntegrationsList, ...dynamicDataSources]
-  }, [fetchedDataSources])
+  }, [fetchedDataSources, isRagOn])
+
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
+      const currentAgentIsRagOn = editingAgent.isRagOn === false ? false : true
+      setIsRagOn(currentAgentIsRagOn)
+      setTestAgentIsRagOn(currentAgentIsRagOn)
+      setAgentName(editingAgent.name)
+      setAgentDescription(editingAgent.description || "")
+      setAgentPrompt(editingAgent.prompt || "")
+      setIsPublic(editingAgent.isPublic || false)
+      setSelectedModel(editingAgent.model)
+    }
+  }, [editingAgent, viewMode])
 
   useEffect(() => {
     if (
@@ -727,19 +752,17 @@ function AgentComponent() {
       (viewMode === "create" || viewMode === "edit") &&
       allAvailableIntegrations.length > 0
     ) {
-      setAgentName(editingAgent.name)
-      setAgentDescription(editingAgent.description || "")
-      setAgentPrompt(editingAgent.prompt || "")
-      setIsPublic(editingAgent.isPublic || false)
-      setSelectedModel(editingAgent.model)
-
       const currentIntegrations: Record<string, boolean> = {}
       allAvailableIntegrations.forEach((int) => {
         currentIntegrations[int.id] =
           editingAgent.appIntegrations?.includes(int.id) || false
       })
       setSelectedIntegrations(currentIntegrations)
+    }
+  }, [editingAgent, viewMode, allAvailableIntegrations])
 
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
       // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
@@ -766,7 +789,7 @@ function AgentComponent() {
         setSelectedUsers([]) // Clear users for public agents
       }
     }
-  }, [editingAgent, viewMode, allAvailableIntegrations, users])
+  }, [editingAgent, viewMode, users])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
     setConfirmModalTitle("Delete Agent")
@@ -822,6 +845,7 @@ function AgentComponent() {
       prompt: agentPrompt,
       model: selectedModel,
       isPublic: isPublic,
+      isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
@@ -907,6 +931,23 @@ function AgentComponent() {
   }, [selectedIntegrations, allAvailableIntegrations])
 
   useEffect(() => {
+    if (!isRagOn) {
+      setSelectedIntegrations((prev) => {
+        const newSelections = { ...prev }
+        availableIntegrationsList.forEach((int) => {
+          newSelections[int.id] = false
+        })
+        return newSelections
+      })
+    }
+    // Also update the test agent's RAG status when the form's RAG changes,
+    // but only if we are testing the current form config.
+    if (selectedChatAgentExternalId === null) {
+      setTestAgentIsRagOn(isRagOn)
+    }
+  }, [isRagOn, selectedChatAgentExternalId])
+
+  useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
@@ -923,7 +964,10 @@ function AgentComponent() {
     }
   }, [isStreaming])
 
-  const handleSend = async (messageToSend: string) => {
+  const handleSend = async (
+    messageToSend: string,
+    metadata?: AttachmentMetadata[],
+  ) => {
     if (!messageToSend || isStreaming) return
 
     setUserHasScrolled(false)
@@ -991,6 +1035,10 @@ function AgentComponent() {
     }
     url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
 
+    if (metadata && metadata.length > 0) {
+      url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
+    }
+
     eventSourceRef.current = new EventSource(url.toString(), {
       withCredentials: true,
     })
@@ -1051,6 +1099,56 @@ function AgentComponent() {
           }
         }
         if (!stopMsg) setStopMsg(true)
+      },
+    )
+
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.AttachmentUpdate,
+      (event) => {
+        try {
+          const { messageId, attachments } = JSON.parse(event.data)
+
+          // Validate required fields
+          if (!messageId) {
+            console.error(
+              "AttachmentUpdate: Missing messageId in event data",
+              event.data,
+            )
+            return
+          }
+
+          if (!attachments || !Array.isArray(attachments)) {
+            console.error(
+              "AttachmentUpdate: Invalid attachments data",
+              event.data,
+            )
+            return
+          }
+
+          // Store attachment metadata for the specific message using messageId
+          setMessages((prevMessages) => {
+            const messageIndex = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (messageIndex === -1) {
+              console.warn(
+                `AttachmentUpdate: Message with ID ${messageId} not found`,
+              )
+              return prevMessages
+            }
+
+            return prevMessages.map((msg, index) =>
+              index === messageIndex ? { ...msg, attachments } : msg,
+            )
+          })
+        } catch (error) {
+          console.error("AttachmentUpdate: Failed to parse event data", {
+            error,
+            eventData: event.data,
+          })
+          // Don't crash the application, just log the error
+        }
       },
     )
 
@@ -1180,8 +1278,9 @@ function AgentComponent() {
     if (assistantMessageIndex > 0) {
       const userMessageToResend = messages[assistantMessageIndex - 1]
       if (userMessageToResend && userMessageToResend.messageRole === "user") {
+        const userMessageAttachments = userMessageToResend.attachments
         setMessages((prev) => prev.slice(0, assistantMessageIndex - 1))
-        await handleSend(userMessageToResend.message)
+        await handleSend(userMessageToResend.message, userMessageAttachments)
       } else {
         toast({
           title: "Retry Error",
@@ -1247,7 +1346,7 @@ function AgentComponent() {
               <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
                 <div className="flex flex-col space-y-6">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-4xl font-bold tracking-wider doto-heading text-gray-700 dark:text-gray-100">
+                    <h1 className="text-4xl tracking-wider font-display text-gray-700 dark:text-gray-100">
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">
@@ -1263,7 +1362,7 @@ function AgentComponent() {
                       </div>
                       <Button
                         onClick={handleCreateNewAgent}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                        className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
                       >
                         <Plus size={18} /> CREATE
                       </Button>
@@ -1645,6 +1744,46 @@ function AgentComponent() {
                   </div>
                 </div>
 
+                <div className="w-full">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    RAG
+                  </Label>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOn"
+                        name="rag"
+                        checked={isRagOn}
+                        onChange={() => setIsRagOn(true)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOn"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        On
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        id="ragOff"
+                        name="rag"
+                        checked={!isRagOn}
+                        onChange={() => setIsRagOn(false)}
+                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
+                      />
+                      <Label
+                        htmlFor="ragOff"
+                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        Off
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                     App Integrations
@@ -1881,7 +2020,10 @@ function AgentComponent() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuItem
-                      onSelect={() => setSelectedChatAgentExternalId(null)}
+                      onSelect={() => {
+                        setSelectedChatAgentExternalId(null)
+                        setTestAgentIsRagOn(isRagOn) // When switching to form, use form's RAG
+                      }}
                     >
                       Test Current Form Config
                     </DropdownMenuItem>
@@ -1892,9 +2034,10 @@ function AgentComponent() {
                     {allAgentsList.map((agent) => (
                       <DropdownMenuItem
                         key={agent.externalId}
-                        onSelect={() =>
+                        onSelect={() => {
                           setSelectedChatAgentExternalId(agent.externalId)
-                        }
+                          setTestAgentIsRagOn(agent.isRagOn) // Use selected agent's RAG
+                        }}
                       >
                         {agent.name}
                       </DropdownMenuItem>
@@ -1924,6 +2067,7 @@ function AgentComponent() {
                   messageId={message.externalId}
                   handleRetry={handleRetry}
                   citationMap={message.citationMap}
+                  attachments={message.attachments || []}
                   dots={
                     isStreaming &&
                     index === messages.length - 1 &&
@@ -1948,6 +2092,7 @@ function AgentComponent() {
                   dots={dots}
                   messageId={currentResp.messageId}
                   citationMap={currentResp.citationMap}
+                  attachments={[]}
                   isStreaming={isStreaming}
                 />
               )}
@@ -1967,95 +2112,12 @@ function AgentComponent() {
                 allCitations={allCitations}
                 isReasoningActive={isReasoningActive}
                 setIsReasoningActive={setIsReasoningActive}
+                overrideIsRagOn={testAgentIsRagOn}
               />
             </div>
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function AgentCard({
-  agent,
-  isFavorite,
-  onToggleFavorite,
-  onClick,
-}: {
-  agent: SelectPublicAgent
-  isFavorite: boolean
-  onToggleFavorite: (id: string) => void
-  onClick: () => void
-}) {
-  return (
-    <Card
-      className="bg-gray-50 dark:bg-slate-800 p-6 rounded-3xl relative hover:bg-gray-100 dark:hover:bg-slate-700/60 transition-colors flex flex-col border-none shadow-none cursor-pointer" // Removed h-full
-      onClick={onClick}
-    >
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onToggleFavorite(agent.externalId)
-        }}
-        className="absolute top-4 right-4 text-amber-400 hover:text-amber-500 z-10"
-      >
-        <Star fill={isFavorite ? "currentColor" : "none"} size={20} />
-      </button>
-      <div>
-        <AgentIconDisplay agentName={agent.name} size="default" />
-        <div className="mt-4">
-          <CardTitle
-            className="text-lg font-medium text-gray-900 dark:text-gray-100 truncate"
-            title={agent.name}
-          >
-            {agent.name}
-          </CardTitle>
-        </div>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 line-clamp-2 min-h-10">
-          {agent.description || <span className="italic">No description</span>}
-        </p>
-      </div>
-    </Card>
-  )
-}
-
-const getIconStyling = (agentName: string) => {
-  // Simple hash function to get a color based on agent name
-  let hash = 0
-  for (let i = 0; i < agentName.length; i++) {
-    hash = agentName.charCodeAt(i) + ((hash << 5) - hash)
-    hash = hash & hash // Convert to 32bit integer
-  }
-  const colors = [
-    "bg-blue-100 text-blue-500 dark:bg-blue-900/50 dark:text-blue-400",
-    "bg-green-100 text-green-500 dark:bg-green-900/50 dark:text-green-400",
-    "bg-purple-100 text-purple-500 dark:bg-purple-900/50 dark:text-purple-400",
-    "bg-orange-100 text-orange-500 dark:bg-orange-900/50 dark:text-orange-400",
-    "bg-pink-100 text-pink-500 dark:bg-pink-900/50 dark:text-pink-400",
-    "bg-cyan-100 text-cyan-500 dark:bg-cyan-900/50 dark:text-cyan-400",
-    "bg-red-100 text-red-500 dark:bg-red-900/50 dark:text-red-400",
-    "bg-yellow-100 text-yellow-500 dark:bg-yellow-900/50 dark:text-yellow-400",
-  ]
-  return (
-    colors[Math.abs(hash) % colors.length] ||
-    "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-300"
-  )
-}
-
-const AgentIconDisplay = ({
-  agentName,
-  size = "small",
-}: { agentName: string; size?: "default" | "small" }) => {
-  const styling = getIconStyling(agentName)
-  const sizeClasses = size === "small" ? "w-8 h-8" : "w-10 h-10" // Corresponds to image
-  const textSizeClasses = size === "small" ? "text-sm" : "text-lg" // Corrected: text-sm for small icons
-  return (
-    <div
-      className={`${sizeClasses} rounded-md flex items-center justify-center ${styling} flex-shrink-0`}
-    >
-      <span className={`${textSizeClasses} font-semibold`}>
-        {agentName.charAt(0).toUpperCase()}
-      </span>
     </div>
   )
 }
@@ -2172,7 +2234,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${
         active
           ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
           : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
@@ -2211,6 +2273,7 @@ const AgentChatMessage = ({
   dots = "",
   citationMap,
   isStreaming = false,
+  attachments = [],
 }: {
   message: string
   thinking?: string
@@ -2222,6 +2285,7 @@ const AgentChatMessage = ({
   handleRetry: (messageId: string) => void
   citationMap?: Record<number, number>
   isStreaming?: boolean
+  attachments?: AttachmentMetadata[]
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
@@ -2255,198 +2319,194 @@ const AgentChatMessage = ({
   }
 
   return (
-    <div
-      className={`rounded-[16px] max-w-full ${
-        /* Added max-w-full for consistency */
-        isUser
-          ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words"
-          : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full" /* Added w-full for assistant */
-      }`}
-    >
-      {isUser ? (
-        <div
-          className="break-words overflow-wrap-anywhere"
-          dangerouslySetInnerHTML={{ __html: message }}
-        />
-      ) : (
-        <div
-          className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
-        >
-          <div className="flex flex-row w-full">
-            {" "}
-            {/* Added w-full */}
-            <img
-              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={AssistantLogo}
-              alt="Agent"
-            />
-            <div className="mt-[4px] markdown-content w-full">
-              {thinking && (
-                <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+    <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
+      {/* Render attachments above the message box for user messages */}
+      {isUser && attachments && attachments.length > 0 && (
+        <div className="w-full max-w-full">
+          <AttachmentGallery attachments={attachments} />
+        </div>
+      )}
+
+      <div
+        className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
+      >
+        {isUser ? (
+          <div
+            className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
+            dangerouslySetInnerHTML={{ __html: message }}
+          />
+        ) : (
+          <div
+            className={`flex flex-col mt-[40px] w-full ${citationUrls && citationUrls.length ? "mb-[35px]" : ""}`} /* Added w-full */
+          >
+            <div className="flex flex-row w-full">
+              {" "}
+              {/* Added w-full */}
+              <img
+                className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
+                src={AssistantLogo}
+                alt="Agent"
+              />
+              <div className="mt-[4px] markdown-content w-full">
+                {thinking && (
+                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400">
+                    <MarkdownPreview
+                      source={processMessage(thinking)}
+                      wrapperElement={{
+                        "data-color-mode": theme,
+                      }}
+                      style={{
+                        padding: 0,
+                        backgroundColor: "transparent",
+                        color: theme === "dark" ? "#A0AEC0" : "#627384",
+                        fontSize: "15px",
+                        maxWidth: "100%",
+                        overflowWrap: "break-word",
+                      }}
+                      components={{
+                        a: renderMarkdownLink,
+                      }}
+                    />
+                  </div>
+                )}
+                {message === "" && !thinking && isStreaming ? (
+                  <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                    {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  </div>
+                ) : (
                   <MarkdownPreview
-                    source={processMessage(thinking)}
+                    source={processMessage(message)}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: theme === "dark" ? "#A0AEC0" : "#627384",
+                      color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
                       fontSize: "15px",
                       maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
-                    }}
-                  />
-                </div>
-              )}
-              {message === "" && !thinking && isStreaming ? (
-                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
-                </div>
-              ) : (
-                <MarkdownPreview
-                  source={processMessage(message)}
-                  wrapperElement={{
-                    "data-color-mode": theme,
-                  }}
-                  style={{
-                    padding: 0,
-                    backgroundColor: "transparent",
-                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                    fontSize: "15px",
-                    maxWidth: "100%",
-                    overflowWrap: "break-word",
-                  }}
-                  components={{
-                    a: renderMarkdownLink,
-                    table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-full my-2">
-                        <table
+                      table: ({ node, ...props }) => (
+                        <div className="overflow-x-auto w-full my-2">
+                          <table
+                            style={{
+                              borderCollapse: "collapse",
+                              borderStyle: "hidden",
+                              tableLayout: "auto",
+                              width: "100%",
+                            }}
+                            className="min-w-full dark:bg-slate-800"
+                            {...props}
+                          />
+                        </div>
+                      ),
+                      th: ({ node, ...props }) => (
+                        <th
                           style={{
-                            borderCollapse: "collapse",
-                            borderStyle: "hidden",
-                            tableLayout: "auto",
-                            width: "100%",
+                            border: "none",
+                            padding: "4px 8px",
+                            textAlign: "left",
+                            overflowWrap: "break-word",
                           }}
-                          className="min-w-full dark:bg-slate-800"
+                          className="dark:text-gray-200"
                           {...props}
                         />
-                      </div>
-                    ),
-                    th: ({ node, ...props }) => (
-                      <th
-                        style={{
-                          border: "none",
-                          padding: "4px 8px",
-                          textAlign: "left",
-                          overflowWrap: "break-word",
-                        }}
-                        className="dark:text-gray-200"
-                        {...props}
-                      />
-                    ),
-                    td: ({ node, ...props }) => (
-                      <td
-                        style={{
-                          border: "none",
-                          borderTop: "1px solid #e5e7eb",
-                          padding: "4px 8px",
-                          overflowWrap: "break-word",
-                        }}
-                        className="dark:border-gray-700 dark:text-gray-300"
-                        {...props}
-                      />
-                    ),
-                    tr: ({ node, ...props }) => (
-                      <tr
-                        style={{ backgroundColor: "#ffffff", border: "none" }}
-                        className="dark:bg-slate-800"
-                        {...props}
-                      />
-                    ),
-                    h1: ({ node, ...props }) => (
-                      <h1
-                        style={{
-                          fontSize: "1.6em",
-                          fontWeight: "600",
-                          margin: "0.67em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h2: ({ node, ...props }) => (
-                      <h2
-                        style={{
-                          fontSize: "1.3em",
-                          fontWeight: "600",
-                          margin: "0.83em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h3: ({ node, ...props }) => (
-                      <h3
-                        style={{
-                          fontSize: "1.1em",
-                          fontWeight: "600",
-                          margin: "1em 0",
-                        }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                  }}
-                />
-              )}
-            </div>
-          </div>
-          {!isStreaming && messageId && (
-            <div className="flex flex-col">
-              <div className="flex ml-[52px] mt-[12px] items-center">
-                <Copy
-                  size={16}
-                  stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
-                  className={`cursor-pointer`}
-                  onMouseDown={() => setIsCopied(true)}
-                  onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}
-                  onClick={() => {
-                    navigator.clipboard.writeText(rawTextForCopy(message))
-                    toast({
-                      description: "Copied to clipboard!",
-                      duration: 1500,
-                    })
-                  }}
-                />
-                <img
-                  className={`ml-[18px] ${isStreaming ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  src={RetryAsset}
-                  onClick={() => !isStreaming && handleRetry(messageId!)}
-                  alt="Retry"
-                />
+                      ),
+                      td: ({ node, ...props }) => (
+                        <td
+                          style={{
+                            border: "none",
+                            borderTop: "1px solid #e5e7eb",
+                            padding: "4px 8px",
+                            overflowWrap: "break-word",
+                          }}
+                          className="dark:border-gray-700 dark:text-gray-300"
+                          {...props}
+                        />
+                      ),
+                      tr: ({ node, ...props }) => (
+                        <tr
+                          style={{ backgroundColor: "#ffffff", border: "none" }}
+                          className="dark:bg-slate-800"
+                          {...props}
+                        />
+                      ),
+                      h1: ({ node, ...props }) => (
+                        <h1
+                          style={{
+                            fontSize: "1.6em",
+                            fontWeight: "600",
+                            margin: "0.67em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h2: ({ node, ...props }) => (
+                        <h2
+                          style={{
+                            fontSize: "1.3em",
+                            fontWeight: "600",
+                            margin: "0.83em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h3: ({ node, ...props }) => (
+                        <h3
+                          style={{
+                            fontSize: "1.1em",
+                            fontWeight: "600",
+                            margin: "1em 0",
+                          }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                    }}
+                  />
+                )}
               </div>
+            </div>
+            {!isStreaming && messageId && (
+              <div className="flex flex-col">
+                <div className="flex ml-[52px] mt-[12px] items-center">
+                  <Copy
+                    size={16}
+                    stroke={`${isCopied ? (theme === "dark" ? "#A0AEC0" : "#4F535C") : theme === "dark" ? "#6B7280" : "#B2C3D4"}`}
+                    className={`cursor-pointer`}
+                    onMouseDown={() => setIsCopied(true)}
+                    onMouseUp={() => setTimeout(() => setIsCopied(false), 200)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(rawTextForCopy(message))
+                      toast({
+                        description: "Copied to clipboard!",
+                        duration: 1500,
+                      })
+                    }}
+                  />
+                  <img
+                    className={`ml-[18px] ${isStreaming ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    src={RetryAsset}
+                    onClick={() => !isStreaming && handleRetry(messageId!)}
+                    alt="Retry"
+                  />
+                </div>
 
-              {citations && citations.length > 0 && (
-                <div className="flex flex-row ml-[52px]">
-                  <TooltipProvider>
-                    <ul className={`flex flex-row mt-[24px]`}>
-                      {citations
-                        .slice(0, 3)
-                        .map((citation: Citation, index: number) => (
-                          <li
-                            key={index}
-                            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
-                          >
-                            <a
-                              href={citation.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title={citation.title}
-                              className="block hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors duration-150"
+                {citations && citations.length > 0 && (
+                  <div className="flex flex-row ml-[52px]">
+                    <TooltipProvider>
+                      <ul className={`flex flex-row mt-[24px]`}>
+                        {citations
+                          .slice(0, 3)
+                          .map((citation: Citation, index: number) => (
+                            <li
+                              key={index}
+                              className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
                             >
                               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                                 <div className="flex flex-col w-full">
@@ -2466,27 +2526,24 @@ const AgentChatMessage = ({
                                       >
                                         {getName(citation.app, citation.entity)}
                                       </span>
-                                      <span
-                                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] text-[#4A4F59]"
-                                        style={{ fontFamily: "JetBrains Mono" }}
-                                      >
+                                      <span className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] text-[#4A4F59] font-mono">
                                         {index + 1}
                                       </span>
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            </a>
-                          </li>
-                        ))}
-                    </ul>
-                  </TooltipProvider>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+                            </li>
+                          ))}
+                      </ul>
+                    </TooltipProvider>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

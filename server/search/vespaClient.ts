@@ -38,10 +38,10 @@ class VespaClient {
   private retryDelay: number
   private vespaEndpoint: string
 
-  constructor() {
+  constructor(endpoint?: string) {
     this.maxRetries = config.vespaMaxRetryAttempts || 3
     this.retryDelay = config.vespaRetryDelay || 1000 // milliseconds
-    this.vespaEndpoint = `http://${config.vespaBaseHost}:8080`
+    this.vespaEndpoint = endpoint || `http://${config.vespaBaseHost}:8080`
   }
 
   private async delay(ms: number): Promise<void> {
@@ -92,6 +92,7 @@ class VespaClient {
 
   async search<T>(payload: any): Promise<T> {
     const url = `${this.vespaEndpoint}/search/`
+
     try {
       const response = await this.fetchWithRetry(url, {
         method: "POST",
@@ -104,18 +105,19 @@ class VespaClient {
       if (!response.ok) {
         const errorText = response.statusText
         const errorBody = await response.text()
-        Logger.error(`Vespa error: ${errorBody}`)
+        Logger.error(
+          `Vespa search failed - Status: ${response.status}, StatusText: ${errorText}`,
+        )
+        Logger.error(`Vespa error body: ${errorBody}`)
         throw new Error(
           `Failed to fetch documents in searchVespa: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
 
-      return response.json()
+      const result = await response.json()
+      return result
     } catch (error: any) {
-      Logger.error(
-        error,
-        `Error performing search in searchVespa:, ${error} ${(error as Error).stack}`,
-      )
+      Logger.error(`VespaClient.search error:`, error)
       throw new Error(`Vespa search error: ${error.message}`)
     }
   }
@@ -309,6 +311,7 @@ class VespaClient {
   async autoComplete<T>(searchPayload: T): Promise<VespaAutocompleteResponse> {
     try {
       const url = `${this.vespaEndpoint}/search/`
+
       const response = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
@@ -319,6 +322,11 @@ class VespaClient {
 
       if (!response.ok) {
         const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(
+          `AutoComplete failed - Status: ${response.status}, StatusText: ${errorText}`,
+        )
+        Logger.error(`AutoComplete error body: ${errorBody}`)
         throw new Error(
           `Failed to perform autocomplete search: ${response.status} ${response.statusText} - ${errorText}`,
         )
@@ -327,10 +335,7 @@ class VespaClient {
       const data = await response.json()
       return data
     } catch (error) {
-      Logger.error(
-        error,
-        `Error performing autocomplete search:, ${error} ${(error as Error).stack} `,
-      )
+      Logger.error(`VespaClient.autoComplete error:`, error)
       throw new Error(
         `Error performing autocomplete search:, ${error} ${(error as Error).stack} `,
       )
@@ -1186,6 +1191,59 @@ class VespaClient {
     } catch (error) {
       const errMessage = getErrorMessage(error)
       throw new Error(`Error fetching documents with threadId: ${errMessage}`)
+    }
+  }
+
+  async getEmailsByThreadIds(
+    threadIds: string[],
+    email: string,
+  ): Promise<VespaSearchResponse> {
+    const yqlIds = threadIds
+      .map((id) => `threadId contains '${id}'`)
+      .join(" or ")
+    // Include permissions check to ensure user has access to these emails
+    const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
+    const url = `${this.vespaEndpoint}/search/`
+    try {
+      const payload = {
+        yql: yqlQuery,
+        email: email, // Pass the user's email for permissions check
+        hits: 200, // Increased limit to fetch more thread emails
+        "ranking.profile": "unranked", // Use unranked for simple retrieval
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(
+          `getEmailsByThreadIds - Query failed: ${response.status} ${response.statusText} - ${errorBody}`,
+        )
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      Logger.info(
+        `getEmailsByThreadIds - Results: ${result?.root?.children?.length || 0} emails found for threadIds: ${JSON.stringify(threadIds)}`,
+      )
+
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        `getEmailsByThreadIds - Error: ${errMessage} for threadIds: ${JSON.stringify(threadIds)}`,
+      )
+      throw new Error(`Error fetching emails by threadIds: ${errMessage}`)
     }
   }
 

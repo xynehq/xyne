@@ -156,6 +156,12 @@ export enum DriveEntity {
 
 export enum MailAttachmentEntity {
   PDF = "pdf",
+  Sheets = "sheets",
+  CSV = "csv",
+  WordDocument = "worddocument",
+  PowerPointPresentation = "powerpointpresentation",
+  Text = "text",
+  NotValid = "notvalid",
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
@@ -182,8 +188,11 @@ export enum SystemEntity {
   SystemInfo = "system_info",
   UserProfile = "user_profile",
 }
+export enum DataSourceEntity {
+  DataSourceFile = "data_source_file",
+}
 export const SystemEntitySchema = z.nativeEnum(SystemEntity)
-
+export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -193,6 +202,7 @@ export const entitySchema = z.union([
   EventEntitySchema,
   MailAttachmentEntitySchema,
   ChatEntitySchema,
+  DataSourceEntitySchema,
 ])
 
 export type Entity =
@@ -204,6 +214,7 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | DataSourceEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -341,6 +352,9 @@ export const VespaDataSourceFileSchemaBase = z.object({
   fileName: z.string().optional(),
   fileSize: z.number().optional(), // long
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()).optional(), // Added for image descriptions
+  chunks_pos: z.array(z.number()).optional(), // Added for text chunk positions
+  image_chunks_pos: z.array(z.number()).optional(), // Added for image chunk positions
   uploadedBy: z.string(),
   duration: z.number().optional(), // long
   mimeType: z.string().optional(),
@@ -362,6 +376,11 @@ export const VespaDataSourceFileSearchSchema =
     .merge(defaultVespaFieldsSchema)
     .extend({
       chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+      image_chunks_summary: z
+        .array(z.union([z.string(), scoredChunk]))
+        .optional(),
+      chunks_pos_summary: z.array(z.number()).optional(),
+      image_chunks_pos_summary: z.array(z.number()).optional(),
     })
 export type VespaDataSourceFileSearch = z.infer<
   typeof VespaDataSourceFileSearchSchema

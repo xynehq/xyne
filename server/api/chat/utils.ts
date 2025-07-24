@@ -1,8 +1,9 @@
-import { splitGroupedCitationsWithSpaces } from "@/utils"
+import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
 import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  DataSourceEntity,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -18,6 +19,7 @@ import {
   userSchema,
   type Entity,
   type VespaChatMessage,
+  type VespaDataSourceFile,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -41,7 +43,220 @@ import {
   type AgentReasoningStep,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
+import { SearchEmailThreads } from "@/search/vespa"
+import { getLoggerWithChild } from "@/logger"
+import type { Span } from "@/tracer"
+import { Subsystem } from "@/types"
 const { maxValidLinks } = config
+import fs from "fs"
+import path from "path"
+function slackTs(ts: string | number) {
+  if (typeof ts === "number") ts = ts.toString()
+  return ts.replace(".", "").padEnd(16, "0")
+}
+
+// Interface for email search result fields
+export interface EmailSearchResultFields {
+  app: Apps
+  threadId?: string
+  docId: string
+  [key: string]: any // Allow other fields
+}
+
+// Type for VespaSearchResult with email fields
+export type EmailSearchResult = VespaSearchResult & {
+  fields: EmailSearchResultFields
+}
+
+export async function expandEmailThreadsInResults(
+  results: VespaSearchResult[],
+  email: string,
+  span?: Span,
+): Promise<VespaSearchResult[]> {
+  // Extract unique thread IDs from email results
+  const threadIds = extractThreadIdsFromResults(results)
+  if (threadIds.length === 0) {
+    return results
+  }
+  const { mergedResults, addedCount } = await mergeThreadResults(
+    results,
+    threadIds,
+    email,
+    span,
+  )
+
+  if (addedCount > 0) {
+    getLoggerWithChild(Subsystem.Chat)({ email }).info(
+      `Added ${addedCount} additional emails from ${threadIds.length} threads to search results`,
+    )
+  }
+
+  return mergedResults
+}
+
+// Helper function to process thread results and merge them with existing results
+export function processThreadResults(
+  threadResults: VespaSearchResult[],
+  existingDocIds: Set<string>,
+  mergedResults: VespaSearchResult[],
+): { addedCount: number; threadInfo: Record<string, number> } {
+  let addedCount = 0
+  let threadInfo: Record<string, number> = {}
+
+  for (const child of threadResults) {
+    const emailChild = child as EmailSearchResult
+    const docId = emailChild.fields.docId
+    const threadId = emailChild.fields.threadId
+
+    // Skip if already in results
+    if (!existingDocIds.has(docId)) {
+      mergedResults.push(child)
+      existingDocIds.add(docId)
+      addedCount++
+
+      // Track count per thread for logging
+      if (threadId) {
+        threadInfo[threadId] = (threadInfo[threadId] || 0) + 1
+      }
+    }
+  }
+
+  return { addedCount, threadInfo }
+}
+
+// Function to extract thread IDs from search results
+export function extractThreadIdsFromResults(
+  results: VespaSearchResult[],
+): string[] {
+  const seenThreadIds = new Set<string>()
+
+  return results.reduce<string[]>((threadIds, result) => {
+    const fields = result.fields as EmailSearchResultFields
+    // Check if it's an email result
+    if (fields.app === Apps.Gmail && fields.threadId) {
+      if (!seenThreadIds.has(fields.threadId)) {
+        threadIds.push(fields.threadId)
+        seenThreadIds.add(fields.threadId)
+      }
+    }
+    return threadIds
+  }, [])
+}
+
+// Helper function to merge thread results into existing results
+export async function mergeThreadResults(
+  existingResults: VespaSearchResult[],
+  threadIds: string[],
+  email: string,
+  span?: Span,
+): Promise<{
+  mergedResults: VespaSearchResult[]
+  addedCount: number
+  threadInfo: Record<string, number>
+}> {
+  if (threadIds.length === 0) {
+    return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
+  }
+
+  const threadSpan = span?.startSpan("fetch_email_threads")
+  threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+
+  try {
+    const threadResults = await SearchEmailThreads(threadIds, email)
+
+    if (
+      !threadResults.root.children ||
+      threadResults.root.children.length === 0
+    ) {
+      threadSpan?.setAttribute("no_thread_results", true)
+      threadSpan?.end()
+      return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
+    }
+
+    // Create a set of existing docIds to avoid duplicates
+    const existingDocIds = new Set(
+      existingResults.map((child: any) => child.fields.docId),
+    )
+
+    // Merge thread results
+    const mergedResults = [...existingResults]
+
+    const { addedCount, threadInfo } = processThreadResults(
+      threadResults.root.children,
+      existingDocIds,
+      mergedResults,
+    )
+
+    threadSpan?.setAttribute("added_email_count", addedCount)
+    threadSpan?.setAttribute(
+      "total_thread_emails_found",
+      threadResults.root.children.length,
+    )
+    threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
+    threadSpan?.end()
+
+    return { mergedResults, addedCount, threadInfo }
+  } catch (error) {
+    getLoggerWithChild(Subsystem.Chat)({ email }).error(
+      error,
+      `Error fetching email threads: ${getErrorMessage(error)}`,
+    )
+    threadSpan?.setAttribute("error", getErrorMessage(error))
+    threadSpan?.end()
+    return { mergedResults: existingResults, addedCount: 0, threadInfo: {} }
+  }
+}
+
+export const extractImageFileNames = (
+  context: string,
+  results?: VespaSearchResult[],
+): { imageFileNames: string[] } => {
+  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score:"
+  const imageContentRegex =
+    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
+  const matches = [...context.matchAll(imageContentRegex)]
+
+  let imageFileNames: string[] = []
+  for (const match of matches) {
+    let imageContent = match[1].trim()
+    try {
+      if (imageContent) {
+        const docId = imageContent.split("_")[0]
+        // const docIndex =
+        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+        const docIndex =
+          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+        if (docIndex === -1) {
+          console.warn(
+            `No matching document found for docId: ${docId} in results for image content extraction.`,
+          )
+          continue
+        }
+
+        // Split by newlines and filter out empty strings
+        const fileNames = imageContent
+          .split("\n")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0)
+          // Additional safety: split by spaces and filter out empty strings
+          // in case multiple filenames are on the same line
+          .flatMap((name) =>
+            name.split(/\s+/).filter((part) => part.length > 0),
+          )
+          .map((name) => `${docIndex}_${name}`)
+        imageFileNames.push(...fileNames)
+      }
+    } catch (error) {
+      console.error(
+        `Error processing image content: ${getErrorMessage(error)}`,
+        { imageContent },
+      )
+      continue
+    }
+  }
+  return { imageFileNames }
+}
 
 export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
@@ -68,6 +283,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
       app: (fields as VespaMail).app,
       entity: (fields as VespaMail).entity,
+      threadId: (fields as VespaMail).threadId,
     }
   } else if (result.fields.sddocname === eventSchema) {
     return {
@@ -90,14 +306,28 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       entity: (fields as VespaMailAttachment).entity,
     }
   } else if (result.fields.sddocname === chatMessageSchema) {
+    let slackUrl = ""
+    if (result.fields.threadId) {
+      // Thread message format
+      slackUrl = `https://${result.fields.domain}.slack.com/archives/${result.fields.channelId}/p${slackTs(result.fields.createdAt)}?thread_ts=${result.fields.threadId}&cid=${result.fields.channelId}`
+    } else {
+      // Normal message format
+      slackUrl = `https://${result.fields.domain}.slack.com/archives/${result.fields.channelId}/p${slackTs(result.fields.createdAt)}`
+    }
     return {
       docId: (fields as VespaChatMessage).docId,
       title: (fields as VespaChatMessage).text,
-      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${
-        (fields as VespaChatMessage).channelId
-      }/p${(fields as VespaChatMessage).updatedAt}`,
+      url: slackUrl,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
+    }
+  } else if (result.fields.sddocname === dataSourceFileSchema) {
+    return {
+      docId: (fields as VespaDataSourceFile).docId,
+      title: (fields as VespaDataSourceFile).fileName,
+      url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
+      app: (fields as VespaDataSourceFile).app,
+      entity: DataSourceEntity.DataSourceFile,
     }
   } else {
     throw new Error("Invalid search result type for citation")
@@ -160,13 +390,21 @@ export const extractFileIdsFromMessage = async (
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
+  threadIds: string[]
 }> => {
   const fileIds: string[] = []
+  const threadIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
+      fileIds.push(obj?.value?.docId)
+      // Check if this pill has a threadId (for email threads)
+      if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
+        threadIds.push(obj?.value?.threadId)
+      }
+
       const pillValue = obj.value
       const docId = pillValue.docId
 
@@ -237,7 +475,7 @@ export const extractFileIdsFromMessage = async (
     "validFileIdsFromLinkCount",
     validFileIdsFromLinkCount,
   )
-  return { totalValidFileIdsFromLinkCount, fileIds }
+  return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 
 export const handleError = (error: any) => {
@@ -287,7 +525,8 @@ export const convertReasoningStepToText = (
       return `Executing tool: ${step.toolName}...\n`
     case AgentReasoningStepType.ToolResult:
       let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
-      if (step.itemsFound !== undefined) {
+      // Don't show item counts for fallback tool to keep it clean
+      if (step.itemsFound !== undefined && step.toolName !== "fall_back") {
         resultText += ` (Found ${step.itemsFound} item(s))`
       }
       if (step.error) {
@@ -304,5 +543,123 @@ export const convertReasoningStepToText = (
       return step.message + "\n"
     default:
       return "Unknown reasoning step"
+  }
+}
+
+export const mimeTypeMap: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+}
+export const getCitationToImage = async (
+  citationIndex: string,
+  doc: VespaSearchResult,
+  email: string,
+): Promise<{
+  imagePath: string
+  imageBuffer: Buffer
+  extension: string | null
+} | null> => {
+  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+  try {
+    // Parse the citation index format: docIndex_imageNumber
+    const parts = citationIndex.split("_")
+    if (parts.length < 2) {
+      loggerWithChild({ email: email }).error(
+        "Invalid citation index format, expected docIndex_imageNumber",
+        citationIndex,
+      )
+      return null
+    }
+
+    const docIndex = parseInt(parts[0], 10)
+    const imageNumber = parseInt(parts[1], 10)
+    if (isNaN(docIndex) || isNaN(imageNumber)) {
+      loggerWithChild({ email: email }).error(
+        "Invalid numeric values in citation index",
+        { citationIndex, docIndex, imageNumber },
+      )
+      return null
+    }
+
+    const document = doc
+    if (!document) {
+      loggerWithChild({ email: email }).error("Document not found at index", {
+        docIndex,
+      })
+      return null
+    }
+
+    const docId = (document.fields as any)?.docId
+    if (!docId) {
+      loggerWithChild({ email: email }).error("DocId not found in document", {
+        docIndex,
+        document,
+      })
+      return null
+    }
+
+    const imageDir = process.env.IMAGE_DIR || "downloads/xyne_images_db"
+    const imagePathProcess = path.join(process.cwd(), imageDir, docId)
+
+    let imagePath: string | null = null
+    let ext: string | null = null
+
+    try {
+      const files = await fs.promises.readdir(imagePathProcess)
+
+      // Find file that matches the pattern: imageNumber.extension
+      const imageFile = files.find((file) => {
+        const nameWithoutExt = path.parse(file).name
+        return nameWithoutExt === imageNumber.toString()
+      })
+
+      if (imageFile) {
+        imagePath = path.join(imagePathProcess, imageFile)
+        ext = path.parse(imageFile).ext
+      }
+    } catch (dirError) {
+      loggerWithChild({ email: email }).error("Error reading image directory", {
+        citationIndex,
+        docId,
+        imageNumber,
+        directory: imagePathProcess,
+        error: getErrorMessage(dirError),
+      })
+      return null
+    }
+
+    if (!imagePath) {
+      loggerWithChild({ email: email }).error(
+        "Image file not found in directory",
+        { citationIndex, docId, imageNumber, directory: imagePathProcess },
+      )
+      return null
+    }
+
+    const imageBuffer = await fs.promises.readFile(imagePath)
+
+    loggerWithChild({ email: email }).info("Successfully retrieved image", {
+      citationIndex,
+      docId,
+      imageNumber,
+      imagePath,
+      extension: ext,
+    })
+
+    return {
+      imagePath,
+      imageBuffer,
+      extension: ext,
+    }
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error retrieving image for citation",
+      { citationIndex, error: getErrorMessage(error) },
+    )
+    return null
   }
 }

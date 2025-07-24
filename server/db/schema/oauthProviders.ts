@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm"
-import { serial, pgTable, text, integer, timestamp } from "drizzle-orm/pg-core"
+import {
+  serial,
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  boolean,
+} from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { encryptedText } from "../customType"
@@ -43,6 +50,7 @@ export const oauthProviders = pgTable("oauth_providers", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
+  isGlobal: boolean("is_global").default(false),
 })
 
 export const insertProviderSchema = createInsertSchema(oauthProviders, {

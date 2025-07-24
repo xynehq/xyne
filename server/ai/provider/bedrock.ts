@@ -3,6 +3,7 @@ import {
   ConverseCommand,
   ConverseStreamCommand,
   type Message,
+  type ContentBlock,
 } from "@aws-sdk/client-bedrock-runtime"
 import { modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
@@ -11,9 +12,101 @@ import BaseProvider from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import fs from "fs"
+import path from "path"
+import os from "os"
 const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
+import { findImageByName } from "@/ai/provider/base"
+import { createLabeledImageContent } from "../utils"
+
+// Helper function to convert images to Bedrock format
+const buildBedrockImageParts = async (
+  imagePaths: string[],
+): Promise<ContentBlock[]> => {
+  const baseDir = path.resolve(
+    process.env.IMAGE_DIR || "downloads/xyne_images_db",
+  )
+
+  const imagePromises = imagePaths.map(async (imgPath) => {
+    //  format: docIndex_docId_imageNumber
+    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    if (!match) {
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
+      throw new Error(`Invalid image path: ${imgPath}`)
+    }
+
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
+    if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+      Logger.error(`Invalid docId containing path traversal: ${docId}`)
+      throw new Error(`Invalid docId: ${docId}`)
+    }
+
+    const imageDir = path.join(baseDir, docId)
+    const absolutePath = findImageByName(imageDir, imageNumber)
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to Bedrock format values
+    const formatMap: Record<string, string> = {
+      ".png": "png",
+      ".jpg": "jpeg",
+      ".jpeg": "jpeg",
+      ".gif": "gif",
+      ".webp": "webp",
+    }
+
+    const format = formatMap[extension]
+    if (!format) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
+
+    // Ensure the resolved path is within baseDir
+    const resolvedPath = path.resolve(imageDir)
+    if (!resolvedPath.startsWith(baseDir)) {
+      Logger.error(`Path traversal attempt detected: ${imageDir}`)
+      throw new Error(`Invalid path: ${imageDir}`)
+    }
+
+    try {
+      // Check if file exists before trying to read it
+      await fs.promises.access(absolutePath, fs.constants.F_OK)
+      const imageBytes = await fs.promises.readFile(absolutePath)
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
+
+      return {
+        image: {
+          format: format,
+          source: {
+            bytes: imageBytes,
+          },
+        },
+      } as ContentBlock
+    } catch (error) {
+      Logger.error(
+        `Failed to read image file ${absolutePath}: ${error instanceof Error ? error.message : error}`,
+      )
+      throw error
+    }
+  })
+
+  const results = await Promise.all(imagePromises)
+  return results.filter((result): result is ContentBlock => result !== null) // Remove any null entries
+}
+
 export class BedrockProvider extends BaseProvider {
   constructor(client: any) {
     super(client, AIProviders.AwsBedrock)
@@ -24,14 +117,55 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
+        return {
+          ...message,
+          content: newContent,
+        }
+      }
+      return message
+    })
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
         {
-          text: modelParams.systemPrompt!,
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
         },
       ],
-      messages,
+      messages: transformedMessages,
       inferenceConfig: {
         maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
@@ -97,11 +231,57 @@ export class BedrockProvider extends BaseProvider {
           temperature: temperature,
         }
 
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
+        return {
+          ...message,
+          content: newContent,
+        }
+      }
+      return message
+    })
+
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [{ text: modelParams.systemPrompt! }],
-      messages: messages,
+      system: [
+        {
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
+        },
+      ],
+      messages: transformedMessages,
       inferenceConfig,
     })
 

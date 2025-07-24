@@ -3155,14 +3155,14 @@
           "text": "__Select Email__",
           "value": []
         },
-        "definition": "label_values(app_request_count,email)",
+        "definition": "label_values(gmail_to_be_ingested_total_count,email)",
         "includeAll": false,
         "multi": true,
         "name": "email",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(app_request_count,email)",
+          "query": "label_values(gmail_to_be_ingested_total_count,email)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

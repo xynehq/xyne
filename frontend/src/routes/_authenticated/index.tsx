@@ -9,6 +9,8 @@ import {
   AutocompleteResults,
   AutocompleteResultsSchema,
   Autocomplete,
+  SelectPublicAgent,
+  AttachmentMetadata,
 } from "shared/types"
 import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
@@ -40,6 +42,43 @@ const Index = () => {
     const storedValue = localStorage.getItem(AGENTIC_STATE)
     return storedValue ? JSON.parse(storedValue) : false
   })
+  const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
+  const [agent, setAgent] = useState<SelectPublicAgent | null>(null)
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const agentIdFromUrl = searchParams.get("agentId")
+
+    if (agentIdFromUrl) {
+      setPersistedAgentId(agentIdFromUrl)
+    } else {
+      setPersistedAgentId(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    const fetchAgentDetails = async () => {
+      if (persistedAgentId) {
+        try {
+          const response = await api.agent[":agentExternalId"].$get({
+            param: { agentExternalId: persistedAgentId },
+          })
+          if (response.ok) {
+            const currentAgent = (await response.json()) as SelectPublicAgent
+            setAgent(currentAgent)
+          } else {
+            setAgent(null)
+          }
+        } catch (error) {
+          setAgent(null)
+        }
+      } else {
+        setAgent(null) // Clear display name if no persistedAgentId
+      }
+    }
+
+    fetchAgentDetails()
+  }, [persistedAgentId]) // Depend on persistedAgentId
 
   useEffect(() => {
     localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
@@ -132,6 +171,7 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
@@ -144,6 +184,7 @@ const Index = () => {
         agentId?: string
         toolsList?: ToolsListItem[]
         agentic?: boolean
+        metadata?: AttachmentMetadata[]
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -161,6 +202,10 @@ const Index = () => {
       }
       if (isAgenticMode) {
         searchParams.agentic = true
+      }
+
+      if (metadata && metadata.length > 0) {
+        searchParams.metadata = metadata
       }
 
       // Use toolsList as array instead of JSON string
@@ -199,101 +244,117 @@ const Index = () => {
           role={user?.role}
           isAgentMode={agentWhiteList}
         />
-        <div className="flex flex-col flex-grow justify-center items-center ml-[52px] relative">
-          <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
-            {" "}
-            {/* Ensure content is above the text logo */}
-            <div className="flex mb-[14px] w-full justify-start">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex items-center pr-[12px] rounded-[20px] ${
-                      activeTab === Tabs.Ask
-                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
-                        : "text-[#728395] dark:text-gray-400"
-                    }`}
-                    onClick={() => setActiveTab(Tabs.Ask)}
-                  >
-                    <Sparkle
-                      stroke={
-                        activeTab === Tabs.Ask
-                          ? theme === "dark"
-                            ? "#F3F4F6"
-                            : "#33383D"
-                          : theme === "dark"
-                            ? "#9CA3AF"
-                            : "#728395"
-                      }
-                      className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
-                    />
-                    Ask
-                  </button>
-                </TooltipTrigger>
-                <Tip info="Use `tab` key to switch between Ask & Search" />
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex items-center pr-[12px] rounded-[20px] ${
-                      activeTab === Tabs.Search
-                        ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
-                        : "text-[#728395] dark:text-gray-400"
-                    }`}
-                    onClick={() => setActiveTab(Tabs.Search)}
-                  >
-                    <SearchIcon
-                      size={16}
-                      stroke={
-                        activeTab === Tabs.Search
-                          ? theme === "dark"
-                            ? "#F3F4F6"
-                            : "#33383D"
-                          : theme === "dark"
-                            ? "#9CA3AF"
-                            : "#728395"
-                      }
-                      className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
-                    />
-                    Search
-                  </button>
-                </TooltipTrigger>
-                <Tip info="Use `tab` key to switch between Ask & Search" />
-              </Tooltip>
+        <div className="flex flex-col flex-grow ml-[52px] relative">
+          {agent && (
+            <div className="flex w-full max-w-3xl items-center justify-between pt-12 self-center">
+              <div>
+                <h1 className="font-display text-3xl dark:text-white">
+                  {agent.name}
+                </h1>
+              </div>
+              <div className="w-1/2 pl-5">
+                <p className="text-gray-500 dark:text-gray-400 text-right line-clamp-2">
+                  {agent.description}
+                </p>
+              </div>
             </div>
-            {activeTab === "search" && (
-              <div className="w-full h-72">
-                <SearchBar
-                  query={query}
-                  setQuery={setQuery}
-                  handleSearch={handleSearch}
-                  autocompleteResults={autocompleteResults}
-                  setAutocompleteResults={setAutocompleteResults}
-                  setAutocompleteQuery={setAutocompleteQuery}
-                  setOffset={setOffset}
-                  setFilter={setFilter}
-                  handleAnswer={() => {}}
-                  ref={autocompleteRef}
-                  hasSearched={false}
-                  filter={filter}
-                />
+          )}
+          <div className="flex flex-col flex-grow justify-center items-center w-full">
+            <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+              {" "}
+              {/* Ensure content is above the text logo */}
+              <div className="flex mb-[14px] w-full justify-start">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className={`flex items-center pr-[12px] rounded-[20px] ${
+                        activeTab === Tabs.Ask
+                          ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                          : "text-[#728395] dark:text-gray-400"
+                      }`}
+                      onClick={() => setActiveTab(Tabs.Ask)}
+                    >
+                      <Sparkle
+                        stroke={
+                          activeTab === Tabs.Ask
+                            ? theme === "dark"
+                              ? "#F3F4F6"
+                              : "#33383D"
+                            : theme === "dark"
+                              ? "#9CA3AF"
+                              : "#728395"
+                        }
+                        className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
+                      />
+                      Ask
+                    </button>
+                  </TooltipTrigger>
+                  <Tip info="Use `tab` key to switch between Ask & Search" />
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className={`flex items-center pr-[12px] rounded-[20px] ${
+                        activeTab === Tabs.Search
+                          ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
+                          : "text-[#728395] dark:text-gray-400"
+                      }`}
+                      onClick={() => setActiveTab(Tabs.Search)}
+                    >
+                      <SearchIcon
+                        size={16}
+                        stroke={
+                          activeTab === Tabs.Search
+                            ? theme === "dark"
+                              ? "#F3F4F6"
+                              : "#33383D"
+                            : theme === "dark"
+                              ? "#9CA3AF"
+                              : "#728395"
+                        }
+                        className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
+                      />
+                      Search
+                    </button>
+                  </TooltipTrigger>
+                  <Tip info="Use `tab` key to switch between Ask & Search" />
+                </Tooltip>
               </div>
-            )}
-            {activeTab === "ask" && (
-              <div className="w-full h-72">
-                <ChatBox
-                  role={user?.role}
-                  query={query}
-                  user={user}
-                  setQuery={setQuery}
-                  handleSend={handleAsk}
-                  allCitations={new Map()} // Change this line
-                  isReasoningActive={isReasoningActive}
-                  setIsReasoningActive={setIsReasoningActive}
-                  isAgenticMode={isAgenticMode}
-                  setIsAgenticMode={setIsAgenticMode}
-                />
-              </div>
-            )}
+              {activeTab === "search" && (
+                <div className="w-full h-72">
+                  <SearchBar
+                    query={query}
+                    setQuery={setQuery}
+                    handleSearch={handleSearch}
+                    autocompleteResults={autocompleteResults}
+                    setAutocompleteResults={setAutocompleteResults}
+                    setAutocompleteQuery={setAutocompleteQuery}
+                    setOffset={setOffset}
+                    setFilter={setFilter}
+                    handleAnswer={() => {}}
+                    ref={autocompleteRef}
+                    hasSearched={false}
+                    filter={filter}
+                  />
+                </div>
+              )}
+              {activeTab === "ask" && (
+                <div className="w-full h-72">
+                  <ChatBox
+                    role={user?.role}
+                    query={query}
+                    user={user}
+                    setQuery={setQuery}
+                    handleSend={handleAsk}
+                    allCitations={new Map()} // Change this line
+                    isReasoningActive={isReasoningActive}
+                    setIsReasoningActive={setIsReasoningActive}
+                    isAgenticMode={isAgenticMode}
+                    setIsAgenticMode={setIsAgenticMode}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -2,6 +2,8 @@ import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import type { ConverseResponse, LLMProvider, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import config from "@/config"
+import path from "path"
+import fs from "fs"
 
 const { defaultFastModel } = config
 abstract class Provider implements LLMProvider {
@@ -35,6 +37,15 @@ abstract class Provider implements LLMProvider {
     messages: Message[],
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse>
+}
+
+export function findImageByName(directory: string, imageName: string) {
+  const files = fs.readdirSync(directory)
+  const match = files.find((file) => path.parse(file).name === imageName)
+  if (!match) {
+    throw new Error(`Image "${imageName}" not found`)
+  }
+  return path.join(directory, match)
 }
 
 export default Provider

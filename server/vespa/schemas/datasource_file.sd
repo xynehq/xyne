@@ -31,6 +31,19 @@ schema datasource_file {
       index { enable-bm25 }
     }
 
+    field image_chunks type array<string> {
+      indexing: index | summary
+      index { enable-bm25 }
+    }
+
+    field chunks_pos type array<long> {
+      indexing: attribute | summary
+    }
+
+    field image_chunks_pos type array<long> {
+      indexing: attribute | summary
+    }
+
     field uploadedBy type string {
       indexing: attribute | summary
       attribute: fast-search
@@ -69,6 +82,11 @@ schema datasource_file {
   # Vector embeddings
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
     indexing: input chunks | embed | attribute | index
+    attribute { distance-metric: angular }
+  }
+
+  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+    indexing: input image_chunks | embed | attribute | index
     attribute { distance-metric: angular }
   }
 
@@ -114,26 +132,30 @@ schema datasource_file {
     }
 
     function vector_score() {
-      expression: closeness(field, chunk_embeddings)
+      expression: closeness(field, chunk_embeddings) + closeness(field, image_chunk_embeddings)
     }
 
     function combined_bm25() {
-      expression: bm25(fileName) + bm25(chunks)
+      expression: bm25(fileName) + bm25(chunks) + bm25(image_chunks)
     }
 
     function matchedFieldCount() {
       expression {
         # The `matches` returns 1 if the field contains a match, otherwise 0
-        matches(fileName) + matches(chunks)
+        matches(fileName) + matches(chunks) + matches(image_chunks)
       }
     }
 
     function combined_nativeRank() {
-      expression: (nativeRank(fileName) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(fileName) + nativeRank(chunks) + nativeRank(image_chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
       expression: elementwise(bm25(chunks), x, double)
+    }
+
+    function image_chunk_scores() {
+      expression: elementwise(bm25(image_chunks), x, double)
     }
   }
 
@@ -161,6 +183,7 @@ schema datasource_file {
       nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
@@ -229,6 +252,7 @@ schema datasource_file {
       nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
+      image_chunk_scores
       document_age_days_gs
       query(bin_size_days_gs)  
       recency_bin_index_gs
@@ -265,6 +289,7 @@ schema datasource_file {
       bm25(fileName)
       scale(combined_bm25)
       chunk_scores
+      image_chunk_scores
     }
   }
 
@@ -291,6 +316,7 @@ schema datasource_file {
       nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
@@ -305,6 +331,7 @@ schema datasource_file {
       nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
@@ -313,6 +340,16 @@ schema datasource_file {
     summary chunks_summary {
       bolding: on
       source: chunks
+    }
+    summary image_chunks_summary {
+      bolding: on
+      source: image_chunks
+    }
+    summary chunks_pos_summary {
+      source: chunks_pos
+    }
+    summary image_chunks_pos_summary {
+      source: image_chunks_pos
     }
     summary dataSourceName {}
     summary createdBy {}

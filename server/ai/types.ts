@@ -36,6 +36,8 @@ export enum Models {
 
   DeepSeek_R1 = "us.deepseek.r1-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
+  Gemini_2_5_Flash = "gemini-2.5-flash",
+  Gemini_2_0_Flash_Thinking = "gemini-2.0-flash-thinking-exp",
 }
 
 export enum QueryCategory {
@@ -76,6 +78,7 @@ export interface ModelParams {
   reasoning?: boolean
   prompt?: string
   agentPrompt?: string
+  imageFileNames?: string[]
 }
 
 export interface ConverseResponse {
@@ -129,6 +132,17 @@ export const ToolAnswerResponse = z.object({
   arguments: z.record(z.string(), z.any()).optional(),
 })
 
+// Intent Schema - only includes fields with actual values (modular for different apps)
+export const IntentSchema = z.object({
+  from: z.array(z.string()).optional(),
+  to: z.array(z.string()).optional(),
+  cc: z.array(z.string()).optional(),
+  bcc: z.array(z.string()).optional(),
+  subject: z.array(z.string()).optional(),
+})
+
+export type Intent = z.infer<typeof IntentSchema>
+
 // Zod schemas for filters
 export const FiltersSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
@@ -137,6 +151,7 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  intent: IntentSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({
@@ -194,6 +209,8 @@ interface PillValue {
   title: string
   docId: string
   wholeSheet?: boolean
+  threadId?: string
+  app?: Apps
 }
 
 interface PillQueryItem {

@@ -1,6 +1,6 @@
 import config from "@/config"
 import { messageFeedbackEnum } from "@/db/schema"
-import { Apps, entitySchema } from "@/search/types"
+import { Apps, entitySchema, type Entity } from "@/search/types"
 import type { Span } from "@/tracer"
 import { z } from "zod"
 
@@ -68,15 +68,25 @@ export const MinimalCitationSchema = z.object({
   url: z.string().optional(),
   app: z.nativeEnum(Apps),
   entity: entitySchema,
+  threadId: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
+
+export interface ImageCitation {
+  citationKey: string
+  imagePath: string
+  imageData: string
+  item: Citation
+  mimeType?: string
+}
 
 export interface MinimalAgentFragment {
   id: string // Unique ID for the fragment
   content: string
   source: Citation
   confidence: number
+  imageFileNames?: string[]
 }
 
 export const messageFeedbackSchema = z.object({
@@ -101,9 +111,56 @@ export interface AgentTool {
     email?: string,
     userCtx?: string,
     agentPrompt?: string,
+    userMessage?: string,
   ) => Promise<{
     result: string // Human-readable summary of action/result
     contexts?: MinimalAgentFragment[] // Data fragments found
     error?: string // Error message if failed
+    fallbackReasoning?: string // Detailed reasoning about why search failed
   }>
+}
+export interface MetadataRetrievalParams {
+  from?: string
+  to?: string
+  app: string
+  entity?: string
+  filter_query?: string
+  limit?: number
+  offset?: number
+  order_direction?: "asc" | "desc"
+  excludedIds?: string[]
+}
+
+export interface SearchParams {
+  filter_query: string
+  limit?: number
+  order_direction?: "asc" | "desc"
+  offset?: number
+  excludedIds?: string[]
+}
+
+export interface ConversationalParams {
+  // No parameters
+}
+
+export interface SlackThreadsParams {
+  filter_query?: string
+  limit?: number
+  offset?: number
+  order_direction?: string
+}
+
+export interface SlackRelatedMessagesParams {
+  channel_name: string
+  filter_query?: string
+  user_email?: string
+  limit?: number
+  offset?: number
+  order_direction?: string
+  from?: string
+  to?: string
+}
+
+export interface SlackUserProfileParams {
+  user_email: string
 }

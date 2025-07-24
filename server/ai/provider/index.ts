@@ -57,6 +57,7 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   emailPromptJson,
+  fallbackReasoningGenerationPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   promptGenerationSystemPrompt,
@@ -73,6 +74,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -83,7 +85,7 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
@@ -99,10 +101,11 @@ import {
   agentTemporalDirectionJsonPrompt,
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
+import type { ToolDefinition } from "@/api/chat/mapper"
 
 const Logger = getLogger(Subsystem.AI)
 
-interface AgentPromptData {
+export interface AgentPromptData {
   name: string
   description: string
   prompt: string
@@ -257,7 +260,7 @@ const initializeProviders = (): void => {
   }
 
   if (GeminiAIModel && GeminiApiKey) {
-    const gemini = new GoogleGenerativeAI(GeminiApiKey)
+    const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
@@ -336,7 +339,7 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
   }
   const provider = ProviderMap[providerType]
   if (!provider) {
-    throw new Error("Invalid provider type")
+    throw new Error("Invalid provider")
   }
   return provider
 }
@@ -687,9 +690,27 @@ export const generateTitleUsingQuery = async (
       text = text?.split(EndThinkingToken)[1]
     }
     if (text) {
-      const jsonVal = jsonParseLLMOutput(text)
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(err, `Failed to parse LLM output for title: ${text}`)
+        jsonVal = undefined
+      }
+      let title = "Untitled"
+      if (
+        jsonVal &&
+        typeof jsonVal.title === "string" &&
+        jsonVal.title.trim()
+      ) {
+        title = jsonVal.title.trim()
+      } else {
+        Logger.error(
+          `LLM output did not contain a valid title. Raw output: ${text}`,
+        )
+      }
       return {
-        title: jsonVal.title,
+        title,
         cost: cost!,
       }
     } else {
@@ -1095,6 +1116,45 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+  messages: Message[],
+  attachmentFileIds?: string[],
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    retrievedCtx,
+    parseAgentPrompt(agentPrompt),
+  )
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
+}
+
 export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -1135,8 +1195,12 @@ export const mailPromptJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
+  let defaultReasoning = isReasoning
   if (!params.modelId) {
     params.modelId = defaultFastModel
+  }
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
   }
   if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentEmailPromptJson(
@@ -1144,6 +1208,19 @@ export const mailPromptJsonStream = (
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
     )
+  } else if (defaultReasoning) {
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else {
     params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   }
@@ -1279,14 +1356,25 @@ export const temporalEventClassification = async (
   }
 }
 
-export function generateToolSelectionOutput(
+export async function generateToolSelectionOutput(
   userQuery: string,
   userContext: string,
   toolContext: string,
   initialPlanning: string,
   params: ModelParams,
   agentContext?: string,
-): AsyncIterableIterator<ConverseResponse> {
+  pastActions?: string,
+  tools?: {
+    internal?: Record<string, ToolDefinition> | undefined
+    slack?: Record<string, ToolDefinition> | undefined
+  },
+  isDebugMode?: boolean,
+): Promise<{
+  queryRewrite: string
+  tool: string
+  arguments: Record<string, any>
+  reasoning?: string | null
+} | null> {
   params.json = true
 
   let defaultReasoning = isReasoning
@@ -1294,6 +1382,10 @@ export function generateToolSelectionOutput(
     userContext,
     toolContext,
     initialPlanning,
+    parseAgentPrompt(agentContext),
+    pastActions,
+    tools,
+    isDebugMode,
   )
 
   const baseMessage = {
@@ -1308,8 +1400,22 @@ export function generateToolSelectionOutput(
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
 
-  return getProviderByModel(params.modelId).converseStream(messages, params)
+  if (text) {
+    const jsonVal = jsonParseLLMOutput(text)
+    return {
+      queryRewrite: jsonVal.queryRewrite || "",
+      tool: jsonVal.tool,
+      arguments: jsonVal.arguments || {},
+      reasoning: jsonVal.reasoning || null,
+    }
+  } else {
+    throw new Error("Failed to rewrite query")
+  }
 }
 
 export function generateSearchQueryOrAnswerFromConversation(
@@ -1359,6 +1465,7 @@ export function generateAnswerBasedOnToolOutput(
   toolContext: string,
   toolOutput: string,
   agentContext?: string,
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   if (!isAgentPromptEmpty(agentContext)) {
@@ -1367,15 +1474,17 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      parsedAgentPrompt,
+      fallbackReasoning,
     )
-    params.systemPrompt = parsedAgentPrompt.prompt
-      ? `${parsedAgentPrompt.prompt}\n\n${defaultSystemPrompt}`
-      : defaultSystemPrompt
+    params.systemPrompt = defaultSystemPrompt
   } else {
     params.systemPrompt = withToolQueryPrompt(
       userContext,
       toolContext,
       toolOutput,
+      undefined,
+      fallbackReasoning,
     )
   }
 
@@ -1414,7 +1523,7 @@ export function generateSynthesisBasedOnToolOutput(
     role: ConversationRole.USER,
     content: [
       {
-        text: `user query: "${currentMessage}"`,
+        text: `user-query: "${currentMessage}"`,
       },
     ],
   }
@@ -1463,6 +1572,65 @@ export const generatePromptFromRequirements = async function* (
     Logger.info("Prompt generation completed successfully")
   } catch (error) {
     Logger.error(error, "Error in generatePromptFromRequirements")
+    throw error
+  }
+}
+
+export const generateFallback = async (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<{
+  reasoning: string
+  cost: number
+}> => {
+  Logger.info("Starting fallback reasoning generation")
+
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = fallbackReasoningGenerationPrompt(
+      userContext,
+      originalQuery,
+      agentScratchpad,
+      toolLog,
+      gatheredFragments,
+    )
+    params.json = true
+
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [
+          {
+            text: `Analyze why the search failed for the original query: "${originalQuery}"`,
+          },
+        ],
+      },
+    ]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      messages,
+      params,
+    )
+
+    if (text) {
+      const parsedResponse = jsonParseLLMOutput(text)
+      Logger.info("Fallback reasoning generation completed successfully")
+      return {
+        reasoning: parsedResponse.reasoning || "No reasoning provided",
+        cost: cost!,
+      }
+    } else {
+      throw new Error("No response from LLM for fallback reasoning generation")
+    }
+  } catch (error) {
+    Logger.error(error, "Error in generateFallback")
     throw error
   }
 }

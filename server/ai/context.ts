@@ -19,21 +19,31 @@ import {
   dataSourceFileSchema,
   type VespaDataSourceFileSearch,
 } from "@/search/types"
+import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
-import { getSortedScoredChunks } from "@/search/mappers"
+import {
+  getSortedScoredChunks,
+  getSortedScoredImageChunks,
+} from "@/search/mappers"
 import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
-export const constructToolContext = (tool_schema: string) => {
+export const constructToolContext = (
+  tool_schema: string,
+  toolName: string,
+  description: string,
+) => {
   const tool = JSON.parse(tool_schema)
   const toolSchemaContext = Object.entries(tool).map(
     ([key, value]) => `- ${key}: ${JSON.stringify(value)}`,
   )
   return `
+Tool Name: ${toolName}
+Tool Description: ${description}
   Tool Schema:
    ${toolSchemaContext.join("\n")}
    `
@@ -83,7 +93,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString()})` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -147,7 +157,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -177,7 +187,12 @@ const constructSlackMessageContext = (
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
+    ${fields.threadId ? "it's a message thread" : ""}
+    ${
+      typeof fields.createdAt === "number" && isFinite(fields.createdAt)
+        ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})`
+        : ""
+    }
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -224,7 +239,12 @@ const constructMailAttachmentContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
+Entity: ${fields.entity}
+${
+  typeof fields.timestamp === "number" && isFinite(fields.timestamp)
+    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString()})`
+    : ""
+}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
@@ -242,7 +262,27 @@ Description: ${fields.description ? fields.description.substring(0, 50) : ""}
 Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
 Status: ${fields.status ? fields.status : "Status unknown"}
 Location: ${fields.location ? fields.location : "No location specified"}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated: ${getRelativeTime(fields.updatedAt)}` : ""}
-Today's Date: ${getDateForAI()}${typeof fields.startTime === "number" && isFinite(fields.startTime) ? `\nStart Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}` : ""}${typeof fields.endTime === "number" && isFinite(fields.endTime) ? `\nEnd Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}` : ""}
+Today's Date: ${getDateForAI()}
+${
+  typeof fields.startTime === "number" && isFinite(fields.startTime)
+    ? `\nStart Time: ${
+        !fields.defaultStartTime
+          ? new Date(fields.startTime).toUTCString() +
+            `(${new Date(fields.startTime).toLocaleString()})`
+          : `No start time specified but date is ${new Date(fields.startTime)}`
+      }`
+    : ""
+}
+${
+  typeof fields.endTime === "number" && isFinite(fields.endTime)
+    ? `\nEnd Time: ${
+        !fields.defaultStartTime
+          ? new Date(fields.endTime).toUTCString() +
+            `(${new Date(fields.endTime).toLocaleString()})`
+          : `No end time specified but date is ${new Date(fields.endTime)}`
+      }`
+    : ""
+}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
     fields.attendees && fields.attendees.length
@@ -410,13 +450,63 @@ const constructDataSourceFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+  if (fields.matchfeatures) {
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      fields.image_chunks_summary as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => ({
+        chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let imageContent = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    imageContent = imageChunks.map((v) => v.chunk).join("\n")
+  } else {
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
+      .join("\n")
+  }
+
   return `Title: ${fields.fileName || "N/A"}
   App: ${fields.app || "N/A"}
   ${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
   Mime Type: ${fields.mimeType || "N/A"}
-  ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+  ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}
+  ${
+    typeof fields.createdAt === "number" && isFinite(fields.createdAt)
+      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})`
+      : ""
+  }
+  ${
+    typeof fields.updatedAt === "number" && isFinite(fields.updatedAt)
+      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString()})`
+      : ""
+  }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
   ${content ? `Content: ${content}` : ""}
+  ${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
   \nvespa relevance score: ${relevance}\n`
 }
 
@@ -526,6 +616,23 @@ export const answerContextMap = (
       `Invalid search result type: ${searchResult.fields.sddocname}`,
     )
   }
+}
+
+// New function to handle MinimalAgentFragment arrays
+export const answerContextMapFromFragments = (
+  fragments: MinimalAgentFragment[],
+  maxSummaryChunks?: number,
+): string => {
+  if (!fragments || fragments.length === 0) {
+    return ""
+  }
+
+  return fragments
+    .map((fragment, index) => {
+      const citationIndex = index + 1
+      return `[index ${citationIndex}] ${fragment.content}`
+    })
+    .join("\n\n")
 }
 
 export const cleanContext = (text: string): string => {

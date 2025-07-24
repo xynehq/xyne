@@ -446,31 +446,60 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [steps, setSteps] = useState<ReasoningStep[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
 
   useEffect(() => {
     const parsedSteps = parseReasoningContent(content)
     setSteps(parsedSteps)
   }, [content])
 
+  // Check if user is at the bottom of the scroll container
+  const isScrolledToBottom = () => {
+    const container = scrollContainerRef.current
+    if (!container) return true
+
+    const threshold = 10 // pixels from bottom to consider "at bottom"
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold
+    )
+  }
+
+  // Handle manual scrolling by user
+  const handleScroll = () => {
+    const isAtBottom = isScrolledToBottom()
+    setUserHasScrolled(!isAtBottom)
+  }
+
+  // Reset user scroll state when streaming starts
+  useEffect(() => {
+    if (isStreaming) {
+      setUserHasScrolled(false)
+    }
+  }, [isStreaming])
+
   // Auto-scroll to bottom when new content arrives during streaming
   useEffect(() => {
     if (
       isStreaming &&
       !isCollapsed &&
+      !userHasScrolled &&
       scrollContainerRef.current &&
       steps.length > 0
     ) {
       const container = scrollContainerRef.current
       // Use setTimeout to ensure DOM has updated before scrolling
       setTimeout(() => {
-        // Scroll to the bottom smoothly
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: "smooth",
-        })
+        // Only scroll if user hasn't manually scrolled
+        if (!userHasScrolled) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: "smooth",
+          })
+        }
       }, 10)
     }
-  }, [steps, isStreaming, isCollapsed])
+  }, [steps, isStreaming, isCollapsed, userHasScrolled])
 
   if (!content.trim() && !isStreaming) {
     return null
@@ -492,7 +521,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
         )}
         <span className="flex items-center font-medium flex-1">Reasoning</span>
         <span className="flex-shrink-0 text-sm text-slate-400">
-          {steps.length} {steps.length === 1 ? "step" : "steps"}
+          {/* temporarily commenting this out */}
+          {/* {steps.length} {steps.length === 1 ? "step" : "steps"} */}
         </span>
       </button>
 
@@ -501,6 +531,7 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
         <div className="w-full min-w-full max-w-none pl-3 mt-2">
           <div
             ref={scrollContainerRef}
+            onScroll={handleScroll}
             className="space-y-1 max-h-80 overflow-y-auto w-full min-w-full"
           >
             {steps.length > 0 ? (

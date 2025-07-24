@@ -14,7 +14,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
-import { asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq } from "drizzle-orm"
 
 export const insertChat = async (
   trx: TxnOrClient,
@@ -66,15 +66,47 @@ export const getChatByExternalId = async (
   return selectChatSchema.parse(chatArr[0])
 }
 
-export const updateChatByExternalId = async (
+export const getChatByExternalIdWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
+  userEmail: string,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .select()
+    .from(chats)
+    .where(and(eq(chats.externalId, chatId), eq(chats.email, userEmail)))
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found or access denied")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
+export const updateChatByExternalIdWithAuth = async (
+  trx: TxnOrClient,
+  chatId: string,
+  userEmail: string,
   chat: Partial<InsertChat>,
 ): Promise<SelectChat> => {
   chat.updatedAt = new Date()
   const chatArr = await trx
     .update(chats)
     .set(chat)
+    .where(and(eq(chats.externalId, chatId), eq(chats.email, userEmail)))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found or access denied")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
+export const updateChatBookmarkStatus = async (
+  trx: TxnOrClient,
+  chatId: string,
+  isBookmarked: boolean,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .update(chats)
+    .set({ isBookmarked })
     .where(eq(chats.externalId, chatId))
     .returning()
   if (!chatArr || !chatArr.length) {
@@ -83,16 +115,17 @@ export const updateChatByExternalId = async (
   return selectChatSchema.parse(chatArr[0])
 }
 
-export const deleteChatByExternalId = async (
+export const deleteChatByExternalIdWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
+  userEmail: string,
 ): Promise<SelectChat> => {
   const chatArr = await trx
     .delete(chats)
-    .where(eq(chats.externalId, chatId))
+    .where(and(eq(chats.externalId, chatId), eq(chats.email, userEmail)))
     .returning()
   if (!chatArr || !chatArr.length) {
-    throw new Error("Chat not found")
+    throw new Error("Chat not found or access denied")
   }
   return selectChatSchema.parse(chatArr[0])
 }
@@ -137,7 +170,23 @@ export const getPublicChats = async (
   const chatsArr = await trx
     .select()
     .from(chats)
-    .where(eq(chats.email, email))
+    .where(and(eq(chats.email, email), eq(chats.isBookmarked, false)))
+    .limit(pageSize)
+    .offset(offset)
+    .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getFavoriteChats = async (
+  trx: TxnOrClient,
+  email: string,
+  pageSize: number,
+  offset: number,
+): Promise<SelectPublicChat[]> => {
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(and(eq(chats.email, email), eq(chats.isBookmarked, true)))
     .limit(pageSize)
     .offset(offset)
     .orderBy(desc(chats.updatedAt))

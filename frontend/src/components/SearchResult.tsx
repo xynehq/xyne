@@ -97,6 +97,11 @@ const formatEmailDisplay = (fromString: string) => {
   }
 }
 
+function slackTs(ts: string | number) {
+  if (typeof ts === "number") ts = ts.toString()
+  return ts.replace(".", "").padEnd(16, "0")
+}
+
 export const SearchResult = ({
   result,
   index,
@@ -367,11 +372,20 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "chat_message") {
+    // Slack message link logic
+    let slackUrl = ""
+    if (result.threadId) {
+      // Thread message format
+      slackUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}?thread_ts=${result.threadId}&cid=${result.channelId}`
+    } else {
+      // Normal message format
+      slackUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}`
+    }
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
           <a
-            href={`https://${result.domain}.slack.com/archives/${result.channelId}/p${result.createdAt}`}
+            href={slackUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center text-blue-800 dark:text-blue-400 space-x-2"
