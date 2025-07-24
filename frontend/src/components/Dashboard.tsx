@@ -58,14 +58,41 @@ interface TimeSeriesData {
   agentMessages: number
 }
 
-interface AgentUsageData {
-  agentId: string
-  agentName: string
+// Base interfaces for reusability
+interface BaseStatsData {
+  totalChats: number
+  totalMessages: number
+}
+
+interface BaseUserData {
+  userId: number
+  userEmail: string
+  userName: string
   chatCount: number
   messageCount: number
   likes: number
   dislikes: number
   lastUsed: string
+}
+
+interface BaseAgentData {
+  agentId: string
+  agentName: string
+  agentDescription?: string | null
+  chatCount: number
+  messageCount: number
+  likes: number
+  dislikes: number
+  lastUsed: string
+}
+
+// Extended interfaces
+interface AgentUsageData extends Omit<BaseAgentData, "agentDescription"> {
+  // AgentUsageData doesn't need description, so we omit it
+}
+
+interface AgentUserUsage extends BaseUserData {
+  // No additional properties needed
 }
 
 interface FeedbackStats {
@@ -74,9 +101,7 @@ interface FeedbackStats {
   feedbackByChat: Record<string, { likes: number; dislikes: number }>
 }
 
-interface DashboardStats {
-  totalChats: number
-  totalMessages: number
+interface DashboardStats extends BaseStatsData {
   activeAgents: number
   normalChats: number
   agentChats: number
@@ -85,43 +110,21 @@ interface DashboardStats {
   feedbackStats: FeedbackStats
 }
 
-interface SharedAgentUsageData {
-  agentId: string
-  agentName: string
-  agentDescription?: string | null
-  totalChats: number
-  totalMessages: number
-  likes: number
-  dislikes: number
+interface SharedAgentUsageData extends BaseAgentData, BaseStatsData {
   userUsage: AgentUserUsage[]
-}
-
-interface AgentUserUsage {
-  userId: number
-  userEmail: string
-  userName: string
-  chatCount: number
-  messageCount: number
-  likes: number
-  dislikes: number
-  lastUsed: string
 }
 
 interface SharedAgentUsageStats {
   sharedAgents: SharedAgentUsageData[]
-  totalUsage: {
-    totalChats: number
-    totalMessages: number
+  totalUsage: BaseStatsData & {
     totalLikes: number
     totalDislikes: number
     uniqueUsers: number
   }
 }
 
-interface AdminDashboardStats {
+interface AdminDashboardStats extends BaseStatsData {
   totalUsers: number
-  totalChats: number
-  totalMessages: number
   totalAgents: number
   totalSharedAgents: number
   recentActivity: TimeSeriesData[]
@@ -130,56 +133,80 @@ interface AdminDashboardStats {
   feedbackStats: FeedbackStats
 }
 
-interface AdminUserUsage {
-  userId: number
-  userEmail: string
-  userName: string
+interface AdminUserUsage extends Omit<BaseUserData, "lastUsed"> {
   role: string
-  chatCount: number
-  messageCount: number
   agentChats: number
   normalChats: number
-  likes: number
-  dislikes: number
   lastActive: string
   createdAt: string
 }
 
-interface UserAgentLeaderboard {
-  agentId: string
-  agentName: string
-  agentDescription?: string | null
-  chatCount: number
-  messageCount: number
-  likes: number
-  dislikes: number
-  lastUsed: string
+interface UserAgentLeaderboard extends BaseAgentData {
   rank: number
 }
 
-interface AgentAnalysisData {
-  agentId: string
-  agentName: string
-  agentDescription?: string | null
+interface AgentAnalysisData extends BaseAgentData, BaseStatsData {
   totalUsers: number
-  totalChats: number
-  totalMessages: number
-  likes: number
-  dislikes: number
   createdAt: string
   userLeaderboard: AgentUserLeaderboard[]
 }
 
-interface AgentUserLeaderboard {
-  userId: number
-  userEmail: string
-  userName: string
-  chatCount: number
-  messageCount: number
-  likes: number
-  dislikes: number
-  lastUsed: string
+interface AgentUserLeaderboard extends BaseUserData {
   rank: number
+}
+
+// Shared utility function for calculating date ranges
+const getDateRangeFromTimeRange = (
+  timeRange: "today" | "1w" | "1m" | "3m" | "all",
+  useStartOfDay: boolean = false,
+): Date | undefined => {
+  const now = new Date()
+
+  switch (timeRange) {
+    case "today":
+      if (useStartOfDay) {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        return today
+      } else {
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      }
+    case "1w":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    case "1m":
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    case "3m":
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    case "all":
+      return undefined
+    default:
+      return undefined
+  }
+}
+
+// Shared utility function for time range descriptions
+const getTimeRangeDescription = (
+  timeRange: string,
+  isAgentAssisted: boolean = false,
+) => {
+  const assistanceText = isAgentAssisted
+    ? "with agent assistance"
+    : "without agent assistance"
+
+  switch (timeRange) {
+    case "today":
+      return `Hourly message activity ${assistanceText} (today)`
+    case "1w":
+      return `Daily message activity ${assistanceText} (last 7 days)`
+    case "1m":
+      return `Daily message activity ${assistanceText} (last month)`
+    case "3m":
+      return `Weekly message activity ${assistanceText} (last 3 months)`
+    case "all":
+      return `Monthly message activity ${assistanceText} (all time)`
+    default:
+      return `Message activity ${assistanceText}`
+  }
 }
 
 const MetricCard = ({
@@ -209,28 +236,34 @@ const MetricCard = ({
   </Card>
 )
 
-const NormalChatsChart = ({
+const MessageActivityChart = ({
   data,
   timeRange,
+  type = "normal",
 }: {
   data: TimeSeriesData[]
   timeRange: "today" | "1w" | "1m" | "3m" | "all"
+  type?: "normal" | "agent"
 }) => {
-  const getTimeRangeDescription = (timeRange: string) => {
-    switch (timeRange) {
-      case "today":
-        return "Hourly message activity without agent assistance (today)"
-      case "1w":
-        return "Daily message activity without agent assistance (last 7 days)"
-      case "1m":
-        return "Daily message activity without agent assistance (last month)"
-      case "3m":
-        return "Weekly message activity without agent assistance (last 3 months)"
-      case "all":
-        return "Monthly message activity without agent assistance (all time)"
-      default:
-        return "Message activity without agent assistance"
-    }
+  const isAgent = type === "agent"
+
+  // Configuration based on type
+  const config = {
+    icon: isAgent ? Bot : Users,
+    title: isAgent ? "Agent Message Activity" : "Normal Message Activity",
+    emptyTitle: isAgent ? "Agent Chat Activity" : "Normal Chat Activity",
+    emptyDescription: isAgent
+      ? "Messages with agent assistance"
+      : "Chats without agent assistance",
+    emptyMessage: isAgent
+      ? "No agent message data available"
+      : "No normal message data available",
+    color: isAgent ? "#10b981" : "#3b82f6",
+    gradientId: isAgent ? "colorAgent" : "colorNormal",
+    dataKey: isAgent ? "agentMessages" : "normalMessages",
+    chatDataKey: isAgent ? "agentChats" : "normalChats",
+    tooltipColor: isAgent ? "text-green-400" : "text-blue-400",
+    name: isAgent ? "Agent Messages" : "Normal Messages",
   }
 
   if (data.length === 0) {
@@ -238,17 +271,15 @@ const NormalChatsChart = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Normal Chat Activity
+            <config.icon className="h-5 w-5" />
+            {config.emptyTitle}
           </CardTitle>
-          <CardDescription>Chats without agent assistance</CardDescription>
+          <CardDescription>{config.emptyDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-12 text-muted-foreground">
-            <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p className="text-sm font-medium">
-              No normal message data available
-            </p>
+            <config.icon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p className="text-sm font-medium">{config.emptyMessage}</p>
           </div>
         </CardContent>
       </Card>
@@ -259,10 +290,12 @@ const NormalChatsChart = ({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Normal Message Activity
+          <config.icon className="h-5 w-5" />
+          {config.title}
         </CardTitle>
-        <CardDescription>{getTimeRangeDescription(timeRange)}</CardDescription>
+        <CardDescription>
+          {getTimeRangeDescription(timeRange, isAgent)}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-64 w-full">
@@ -272,9 +305,23 @@ const NormalChatsChart = ({
               margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
             >
               <defs>
-                <linearGradient id="colorNormal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                <linearGradient
+                  id={config.gradientId}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="5%"
+                    stopColor={config.color}
+                    stopOpacity={0.8}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={config.color}
+                    stopOpacity={0.1}
+                  />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -296,22 +343,16 @@ const NormalChatsChart = ({
                   borderRadius: "8px",
                   color: "#f1f5f9",
                 }}
-                formatter={(value, name) => {
-                  if (name === "Normal Messages") {
-                    // Find the corresponding chat count
-                    return [value, "Messages"]
-                  }
-                  return [value, name]
-                }}
-                labelFormatter={(label) => `Time: ${label}`}
                 content={({ active, payload, label }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload
                     return (
                       <div className="bg-slate-800 border-none rounded-lg p-3 text-slate-100">
                         <p className="font-medium">{`Time: ${label}`}</p>
-                        <p className="text-blue-400">{`Messages: ${data.normalMessages}`}</p>
-                        <p className="text-slate-300 text-sm">{`Chats: ${data.normalChats}`}</p>
+                        <p
+                          className={config.tooltipColor}
+                        >{`Messages: ${data[config.dataKey]}`}</p>
+                        <p className="text-slate-300 text-sm">{`Chats: ${data[config.chatDataKey]}`}</p>
                       </div>
                     )
                   }
@@ -320,12 +361,12 @@ const NormalChatsChart = ({
               />
               <Area
                 type="monotone"
-                dataKey="normalMessages"
-                stroke="#3b82f6"
+                dataKey={config.dataKey}
+                stroke={config.color}
                 strokeWidth={2}
                 fillOpacity={1}
-                fill="url(#colorNormal)"
-                name="Normal Messages"
+                fill={`url(#${config.gradientId})`}
+                name={config.name}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -334,6 +375,15 @@ const NormalChatsChart = ({
     </Card>
   )
 }
+
+// Legacy components for backward compatibility
+const NormalChatsChart = ({
+  data,
+  timeRange,
+}: {
+  data: TimeSeriesData[]
+  timeRange: "today" | "1w" | "1m" | "3m" | "all"
+}) => <MessageActivityChart data={data} timeRange={timeRange} type="normal" />
 
 const AgentChatsChart = ({
   data,
@@ -341,117 +391,7 @@ const AgentChatsChart = ({
 }: {
   data: TimeSeriesData[]
   timeRange: "today" | "1w" | "1m" | "3m" | "all"
-}) => {
-  const getTimeRangeDescription = (timeRange: string) => {
-    switch (timeRange) {
-      case "today":
-        return "Hourly message activity with agent assistance (today)"
-      case "1w":
-        return "Daily message activity with agent assistance (last 7 days)"
-      case "1m":
-        return "Daily message activity with agent assistance (last month)"
-      case "3m":
-        return "Weekly message activity with agent assistance (last 3 months)"
-      case "all":
-        return "Monthly message activity with agent assistance (all time)"
-      default:
-        return "Message activity with agent assistance"
-    }
-  }
-
-  if (data.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            Agent Chat Activity
-          </CardTitle>
-          <CardDescription>Messages with agent assistance</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-12 text-muted-foreground">
-            <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p className="text-sm font-medium">
-              No agent message data available
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bot className="h-5 w-5" />
-          Agent Message Activity
-        </CardTitle>
-        <CardDescription>{getTimeRangeDescription(timeRange)}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={data}
-              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="colorAgent" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="currentColor"
-                strokeOpacity={0.1}
-              />
-              <XAxis
-                dataKey="time"
-                stroke="#64748b"
-                fontSize={12}
-                tickMargin={8}
-              />
-              <YAxis stroke="#64748b" fontSize={12} tickMargin={8} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#1e293b",
-                  border: "none",
-                  borderRadius: "8px",
-                  color: "#f1f5f9",
-                }}
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload
-                    return (
-                      <div className="bg-slate-800 border-none rounded-lg p-3 text-slate-100">
-                        <p className="font-medium">{`Time: ${label}`}</p>
-                        <p className="text-green-400">{`Messages: ${data.agentMessages}`}</p>
-                        <p className="text-slate-300 text-sm">{`Chats: ${data.agentChats}`}</p>
-                      </div>
-                    )
-                  }
-                  return null
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="agentMessages"
-                stroke="#10b981"
-                strokeWidth={2}
-                fillOpacity={1}
-                fill="url(#colorAgent)"
-                name="Agent Messages"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+}) => <MessageActivityChart data={data} timeRange={timeRange} type="agent" />
 
 const AgentUsageCard = ({
   agentUsage,
@@ -1588,29 +1528,7 @@ const AgentAnalysisPage = ({
 
         // Calculate time range
         const now = new Date()
-        let fromDate: Date | undefined
-
-        switch (timeRange) {
-          case "today":
-            fromDate = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            )
-            break
-          case "1w":
-            fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "1m":
-            fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          case "3m":
-            fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-            break
-          case "all":
-            fromDate = undefined
-            break
-        }
+        const fromDate = getDateRangeFromTimeRange(timeRange)
 
         const query: any = {
           // Don't pass workspaceExternalId for admin view to show all data across workspaces
@@ -1866,29 +1784,7 @@ const UserDetailPage = ({
 
         // Calculate time range
         const now = new Date()
-        let fromDate: Date | undefined
-
-        switch (timeRange) {
-          case "today":
-            fromDate = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            )
-            break
-          case "1w":
-            fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "1m":
-            fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          case "3m":
-            fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-            break
-          case "all":
-            fromDate = undefined
-            break
-        }
+        const fromDate = getDateRangeFromTimeRange(timeRange)
 
         const query: any = { userId: user.userId }
         if (fromDate) {
@@ -1927,7 +1823,6 @@ const UserDetailPage = ({
         }
 
         const leaderboardData = await leaderboardResponse.json()
-        console.log("Leaderboard API Response:", leaderboardData)
 
         setUserChats(
           chats.filter(
@@ -1936,7 +1831,6 @@ const UserDetailPage = ({
           ),
         )
         if (leaderboardData.success && leaderboardData.data) {
-          console.log("Setting agent leaderboard data:", leaderboardData.data)
           setAgentLeaderboard(leaderboardData.data)
         } else {
           console.warn(
@@ -2368,14 +2262,6 @@ export const Dashboard = ({
   // Check if user is admin or superadmin
   const isAdmin = user?.role === "Admin" || user?.role === "SuperAdmin"
 
-  // Debug logging
-  console.log("Dashboard Debug:", {
-    role,
-    userRole: user?.role,
-    isAdmin,
-    user,
-  })
-
   // Manage shared agent selection at parent level to prevent loss of state
   const [selectedSharedAgent, setSelectedSharedAgent] = useState<string | null>(
     null,
@@ -2395,26 +2281,7 @@ export const Dashboard = ({
 
         // Calculate time range
         const now = new Date()
-        let fromDate: Date | undefined
-
-        switch (timeRange) {
-          case "today":
-            fromDate = new Date()
-            fromDate.setHours(0, 0, 0, 0) // Start of today
-            break
-          case "1w":
-            fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "1m":
-            fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          case "3m":
-            fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-            break
-          case "all":
-            fromDate = undefined
-            break
-        }
+        const fromDate = getDateRangeFromTimeRange(timeRange, true)
 
         // Use the new dashboard data endpoint
         const query: any = {}
@@ -2464,26 +2331,7 @@ export const Dashboard = ({
 
         // Calculate time range
         const now = new Date()
-        let fromDate: Date | undefined
-
-        switch (timeRange) {
-          case "today":
-            fromDate = new Date()
-            fromDate.setHours(0, 0, 0, 0)
-            break
-          case "1w":
-            fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "1m":
-            fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          case "3m":
-            fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-            break
-          case "all":
-            fromDate = undefined
-            break
-        }
+        const fromDate = getDateRangeFromTimeRange(timeRange, true)
 
         const query: any = {}
         if (fromDate) {
@@ -2532,29 +2380,7 @@ export const Dashboard = ({
 
         // Calculate time range
         const now = new Date()
-        let fromDate: Date | undefined
-
-        switch (timeRange) {
-          case "today":
-            fromDate = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            )
-            break
-          case "1w":
-            fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "1m":
-            fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          case "3m":
-            fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-            break
-          case "all":
-            fromDate = undefined
-            break
-        }
+        const fromDate = getDateRangeFromTimeRange(timeRange)
 
         // Fetch system-wide data (without user/workspace constraints)
         const query: any = {}
