@@ -376,23 +376,6 @@ const MessageActivityChart = ({
   )
 }
 
-// Legacy components for backward compatibility
-const NormalChatsChart = ({
-  data,
-  timeRange,
-}: {
-  data: TimeSeriesData[]
-  timeRange: "today" | "1w" | "1m" | "3m" | "all"
-}) => <MessageActivityChart data={data} timeRange={timeRange} type="normal" />
-
-const AgentChatsChart = ({
-  data,
-  timeRange,
-}: {
-  data: TimeSeriesData[]
-  timeRange: "today" | "1w" | "1m" | "3m" | "all"
-}) => <MessageActivityChart data={data} timeRange={timeRange} type="agent" />
-
 const AgentUsageCard = ({
   agentUsage,
   showAll = false,
@@ -2131,14 +2114,16 @@ const UserDetailPage = ({
 
       {/* Charts Section based on active tab */}
       {activeTab === "agent" ? (
-        <AgentChatsChart
+        <MessageActivityChart
           data={userStats.recentActivity}
           timeRange={timeRange}
+          type="agent"
         />
       ) : activeTab === "normal" ? (
-        <NormalChatsChart
+        <MessageActivityChart
           data={userStats.recentActivity}
           timeRange={timeRange}
+          type="normal"
         />
       ) : (
         <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
@@ -3234,9 +3219,10 @@ export const Dashboard = ({
               {/* Charts Section based on active tab */}
               {activeTab === "agent" ? (
                 <div className="space-y-6">
-                  <AgentChatsChart
+                  <MessageActivityChart
                     data={stats.recentActivity}
                     timeRange={timeRange}
+                    type="agent"
                   />
                   <AgentUsageCard
                     agentUsage={stats.agentUsage}
@@ -3245,9 +3231,10 @@ export const Dashboard = ({
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <NormalChatsChart
+                  <MessageActivityChart
                     data={stats.recentActivity}
                     timeRange={timeRange}
+                    type="normal"
                   />
                 </div>
               )}
@@ -3386,14 +3373,16 @@ export const Dashboard = ({
 
                   {/* Charts Section based on active tab */}
                   {activeTab === "agent" ? (
-                    <AgentChatsChart
+                    <MessageActivityChart
                       data={adminStats.recentActivity}
                       timeRange={timeRange}
+                      type="agent"
                     />
                   ) : (
-                    <NormalChatsChart
+                    <MessageActivityChart
                       data={adminStats.recentActivity}
                       timeRange={timeRange}
+                      type="normal"
                     />
                   )}
 
