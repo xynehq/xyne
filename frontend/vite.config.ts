@@ -5,9 +5,11 @@ import path from "path"
 import react from "@vitejs/plugin-react"
 import svgr from "vite-plugin-svgr"
 import fs from "fs"
+import { viteStaticCopy } from "vite-plugin-static-copy"
 
 // import viteReact from '@vitejs/plugin-react'
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
+
 export default defineConfig(({ mode }) => {
   // Load environment variables from .env.production if in production mode,
   // otherwise fall back to .env.default.
@@ -32,6 +34,15 @@ export default defineConfig(({ mode }) => {
         jsxRuntime: "automatic",
       }),
       svgr(),
+      viteStaticCopy({
+        targets: [
+          {
+            src: "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+            dest: "",
+            rename: "pdf.worker.min.js",
+          },
+        ],
+      }),
     ],
     optimizeDeps: {
       exclude: ["zod"],

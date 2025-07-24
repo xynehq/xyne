@@ -13,9 +13,11 @@ import {
   chatMessageSchema,
   datasourceSchema,
   dataSourceFileSchema,
+  kbFileSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
+  type VespaKbFile,
   SlackEntity,
 } from "@/search/types"
 import type { Intent } from "@/ai/types"
@@ -205,8 +207,7 @@ const AllSources = [
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
-  // Not adding datasource or datasource_file to AllSources by default,
-  // as they are for a specific app functionality.
+  // dataSourceFileSchema and kbFileSchema are intentionally excluded from search
 ].join(", ")
 
 export const autocomplete = async (
@@ -566,6 +567,7 @@ export const HybridDefaultProfileForAgent = (
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
   dataSourceIds: string[] = [],
+  kbIds: string[] = [],
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -707,6 +709,27 @@ export const HybridDefaultProfileForAgent = (
       )`
   }
 
+  const buildKbFileYQL = () => {
+    // For KB files, similar to DataSourceFile
+    // Only build query if we have KB IDs
+    if (!kbIds || kbIds.length === 0) {
+      return null // Return null if no KB IDs
+    }
+    
+    const kbIdConditions = `(${kbIds.map((id) => `kbId contains '${id.trim()}'`).join(" or ")})`
+
+    // KB files use kbId for filtering
+    return `
+      (
+        (
+          ({targetHits:${hits}}userInput(@query))
+          or
+          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+        ) 
+        and ${kbIdConditions}
+      )`
+  }
+
   // Build app-specific queries and sources
   const appQueries: string[] = []
   const sources: string[] = []
@@ -754,6 +777,24 @@ export const HybridDefaultProfileForAgent = (
             )
           }
           break
+        case Apps.KnowledgeBase:
+          // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
+          // The actual filtering by specific kbIds happens in buildKbFileYQL.
+          if (kbIds && kbIds.length > 0) {
+            const kbQuery = buildKbFileYQL()
+            if (kbQuery) {
+              appQueries.push(kbQuery)
+              if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
+            }
+          } else {
+            // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search
+            // across all accessible knowledge bases. This might be too broad or not the intended behavior.
+            // For now, if no specific IDs, we don't add a query part for generic KB search.
+            Logger.warn(
+              "Apps.KnowledgeBase specified for agent, but no specific kbIds provided. Skipping generic KnowledgeBase search part.",
+            )
+          }
+          break
       }
     }
   } else if (dataSourceIds && dataSourceIds.length > 0) {
@@ -764,8 +805,35 @@ export const HybridDefaultProfileForAgent = (
       sources.push(dataSourceFileSchema)
   }
 
+  // Handle knowledge base IDs
+  if (kbIds && kbIds.length > 0) {
+    const kbQuery = buildKbFileYQL()
+    if (kbQuery) {
+      appQueries.push(kbQuery)
+      if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
+    }
+  }
+
+  // Debug logging
+  Logger.debug(`Agent search configuration:`, {
+    AllowedApps,
+    dataSourceIds,
+    kbIds,
+    appQueriesCount: appQueries.length,
+    sources,
+  })
+
+  // If no queries were generated, return an empty result
+  if (appQueries.length === 0) {
+    Logger.warn("No valid queries generated for agent search - returning empty result query")
+    return {
+      profile: profile,
+      yql: `select * from sources ${AllSources} where false`, // This will return no results
+    }
+  }
+
   // Combine all queries
-  const combinedQuery = appQueries.join("or")
+  const combinedQuery = appQueries.join("\n    or\n    ")
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
@@ -773,9 +841,7 @@ export const HybridDefaultProfileForAgent = (
   // or no valid AllowedApps were given), then the YQL query will be invalid.
   const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
 
-  return {
-    profile: profile,
-    yql: `
+  const finalYql = `
     select *
     ${fromClause} 
     where
@@ -786,7 +852,17 @@ export const HybridDefaultProfileForAgent = (
       ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
     )
     ;
-    `,
+    `
+
+  Logger.debug(`Generated YQL for agent search:`, {
+    yql: finalYql,
+    sources: sourcesString,
+    hasKbQueries: kbIds && kbIds.length > 0,
+  })
+
+  return {
+    profile: profile,
+    yql: finalYql,
   }
 }
 
@@ -1188,6 +1264,7 @@ type VespaQueryConfig = {
   maxHits: number
   recencyDecayRate: number
   dataSourceIds?: string[] // Added for agent-specific data source filtering
+  kbIds?: string[] // Added for agent-specific knowledge base filtering
 }
 
 export const searchVespa = async (
@@ -1455,6 +1532,7 @@ export const searchVespaAgent = async (
     maxHits = 400,
     recencyDecayRate = 0.02,
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
+    kbIds = [], // Ensure kbIds is destructured here
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1471,6 +1549,7 @@ export const searchVespaAgent = async (
     notInMailLabels,
     Apps,
     dataSourceIds, // Pass dataSourceIds here
+    kbIds, // Pass kbIds here
   )
 
   const hybridDefaultPayload = {

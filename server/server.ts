@@ -140,6 +140,21 @@ import { z } from "zod" // Ensure z is imported if not already at the top for sc
 import { messageFeedbackSchema } from "@/api/chat/types"
 
 import {
+  CreateKnowledgeBaseApi,
+  ListKnowledgeBasesApi,
+  GetKnowledgeBaseApi,
+  UpdateKnowledgeBaseApi,
+  DeleteKnowledgeBaseApi,
+  ListKbItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+  GetKbVespaIds,
+} from "@/api/knowledgeBase"
+
+import {
   isSlackEnabled,
   startSocketMode,
   getSocketModeStatus,
@@ -518,6 +533,21 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  // Knowledge Base Routes
+  .post("/kb", CreateKnowledgeBaseApi)
+  .get("/kb", ListKnowledgeBasesApi)
+  .get("/kb/:kbId", GetKnowledgeBaseApi)
+  .put("/kb/:kbId", UpdateKnowledgeBaseApi)
+  .delete("/kb/:kbId", DeleteKnowledgeBaseApi)
+  .get("/kb/:kbId/items", ListKbItemsApi)
+  .post("/kb/:kbId/items/folder", CreateFolderApi)
+  .post("/kb/:kbId/items/upload", UploadFilesApi)
+  .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/kb/:kbId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
+  .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
+  .post("/kb/vespaIds", GetKbVespaIds)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -886,6 +916,16 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledge-base",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()
