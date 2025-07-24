@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
+import { NodeHttpHandler } from "@smithy/node-http-handler"
 const {
   AwsAccessKey,
   AwsSecretKey,
@@ -209,6 +210,10 @@ const initializeProviders = (): void => {
     }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 300000,
+        socketTimeout: 300000,
+      }),
       retryMode: "adaptive",
       maxAttempts: 5,
       credentials: {

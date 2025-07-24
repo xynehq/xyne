@@ -18,6 +18,8 @@ import {
   // Corrected import name for datasourceFileSchema
   dataSourceFileSchema,
   type VespaDataSourceFileSearch,
+  chatContainerSchema,
+  type VespaChatContainerSearch,
 } from "@/search/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
@@ -195,6 +197,38 @@ const constructSlackMessageContext = (
     }
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
+}
+
+const constructSlackChannelContext = (
+  fields: VespaChatContainerSearch,
+  relevance: number,
+): string => {
+  let channelCtx = ``
+  if (fields.isIm) {
+    channelCtx = `It's a DM.`
+  } else if (fields.isMpim) {
+    channelCtx = `It's a group DM.`
+  } else if (fields.isPrivate) {
+    channelCtx = `It's a private channel.`
+  } else {
+    channelCtx = `It's a public channel.`
+  }
+
+  return `${channelCtx}
+App: ${fields.app}
+Entity: ${fields.entity ?? "channel"}
+Name: ${fields.name}
+${fields.topic ? `Topic: ${fields.topic}` : ""}
+${fields.description ? `Description: ${fields.description}` : ""}
+${fields.permissions ? `Users in channel: ${fields.permissions.join(", ")}` : ""}
+${
+  typeof fields.createdAt === "number" && isFinite(fields.createdAt)
+    ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(
+        fields.createdAt,
+      ).toLocaleString()})`
+    : ""
+}
+vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (
@@ -601,6 +635,11 @@ export const answerContextMap = (
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
     return constructSlackMessageContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === chatContainerSchema) {
+    return constructSlackChannelContext(
       searchResult.fields,
       searchResult.relevance,
     )

@@ -648,7 +648,7 @@ export const VespaChatContainerSchema = z.object({
   channelName: z.string(),
   creator: z.string(),
   app: z.nativeEnum(Apps),
-
+  entity: z.nativeEnum(SlackEntity),
   isPrivate: z.boolean(),
   isArchived: z.boolean(),
   isGeneral: z.boolean(),
@@ -730,6 +730,8 @@ const SearchMatchFeaturesSchema = z.union([
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
   DataSourceFileMatchFeaturesSchema,
+  //Added chat container match features
+  // ChatContainerMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z

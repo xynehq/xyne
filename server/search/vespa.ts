@@ -17,6 +17,7 @@ import {
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
   SlackEntity,
+  chatContainerSchema,
 } from "@/search/types"
 import type { Intent } from "@/ai/types"
 import type {
@@ -205,6 +206,7 @@ const AllSources = [
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  chatContainerSchema,
   // Not adding datasource or datasource_file to AllSources by default,
   // as they are for a specific app functionality.
 ].join(", ")
@@ -852,6 +854,66 @@ export const HybridDefaultProfileInFiles = (
   }
 }
 
+export const HybridDefaultProfileForSlack = (
+  hits: number,
+  profile: SearchModes = SearchModes.NativeRank,
+  channelIds?: string[],
+  threadId?: string,
+  userId?: string,
+  timestampRange?: { to: number | null; from: number | null } | null,
+): YqlProfile => {
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
+
+  const timestampCondition = buildTimestampConditions("createdAt", "createdAt")
+
+  const channelIdConditions =
+    channelIds && channelIds.length > 0
+      ? `(${channelIds.map((id) => `channelId contains '${id}'`).join(" or ")})`
+      : ""
+
+  const threadIdCondition = threadId ? `threadId contains '${threadId}'` : ""
+  const userIdCondition = userId ? `userId contains '${userId}'` : ""
+
+  const conditions = [
+    timestampCondition,
+    channelIdConditions,
+    threadIdCondition,
+    userIdCondition,
+  ]
+    .filter(Boolean)
+    .join(" and ")
+
+  const yql = `
+    select * from sources ${chatMessageSchema}
+    where (
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        and permissions contains @email
+        ${conditions ? `and ${conditions}` : ""}
+      )
+    )
+  `
+
+  return {
+    profile: profile,
+    yql: yql,
+  }
+}
+
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
@@ -1408,6 +1470,72 @@ export const searchVespaInFiles = async (
       throw new ErrorPerformingSearch({
         cause: error as Error,
         sources: AllSources,
+      })
+    })
+}
+
+export const searchVespaInSlack = async (
+  query: string,
+  email: string,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+    channelIds = [],
+    threadId = undefined,
+    userId = undefined,
+    timestampRange = null,
+  }: Partial<VespaQueryConfig> & {
+    channelIds?: string[]
+    threadId?: string
+    userId?: string
+  },
+): Promise<VespaSearchResponse> => {
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
+  let { yql, profile } = HybridDefaultProfileForSlack(
+    limit,
+    rankProfile,
+    channelIds,
+    threadId,
+    userId,
+    timestampRange,
+  )
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email: email,
+    "ranking.profile": profile,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    maxHits,
+    hits: limit,
+    timeout: "30s",
+    ...(offset && { offset }),
+    ...(isDebugMode && { "ranking.listFeatures": true, tracelevel: 4 }),
+  }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
+  return vespa
+    .search<VespaSearchResponse>(hybridDefaultPayload)
+    .catch((err) => {
+      if (vespa instanceof ProductionVespaClient) {
+        Logger.warn(
+          err,
+          "Prod vespa failed in searchVespaInSlack for search, trying fallback",
+        )
+        return fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
+      }
+      throw err
+    })
+    .catch((error) => {
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatMessageSchema,
       })
     })
 }

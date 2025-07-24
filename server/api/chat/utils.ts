@@ -404,6 +404,7 @@ export const extractFileIdsFromMessage = async (
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
       }
+      //We need to add logic for Slack threads
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
