@@ -1,43 +1,15 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
-import { api } from "@/api"
 import { errorComponent } from "@/components/error"
-
-async function refreshToken(): Promise<any> {
-  try {
-    const response = await fetch("/api/v1/refresh-token", {
-      method: "POST",
-      credentials: "include",
-    })
-    if (response.ok) {
-      const json = response.json()
-      return json
-    }
-  } catch {
-    return false
-  }
-}
+import { authFetch } from "@/utils/authFetch"
 
 export const Route = createFileRoute("/_authenticated")({
-  beforeLoad: async ({ context }) => {
-    try {
-      const res = await api.me.$get()
-      if (!res.ok) {
-        // If user is not logged in, take user to '/auth'
-        const refreshSuccess = await refreshToken()
-        if (refreshSuccess?.msg) {
-          console.log("Everything working fine....")
-          // todo basically try to do a retry here
-          const res = await api.me.$get()
-          return await res.json()
-        } else {
-          throw redirect({ to: "/auth" })
-        }
-      }
+  beforeLoad: async () => {
+    // Try to get user info
+    const res = await authFetch("/api/v1/me")
+    if (res.ok) return res.json()
 
-      return await res.json()
-    } catch (e) {
-      throw redirect({ to: "/auth" })
-    }
+    // If still not ok after refresh, redirect to login
+    throw redirect({ to: "/auth" })
   },
   component: () => {
     return <Outlet />
