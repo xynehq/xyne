@@ -45,6 +45,7 @@ import type {
   SlackRelatedMessagesParams,
   SlackThreadsParams,
   SlackUserProfileParams,
+  GeneratePlotlyCodeParams,
 } from "@/api/chat/types"
 import config from "@/config"
 
@@ -602,6 +603,53 @@ export const internalTools: Record<string, ToolDefinition> = {
       'Determine if the user\'s query is conversational or a basic calculation. Examples include greetings like: "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.',
     params: [],
   },
+  [XyneTools.GeneratePlotlyCode]: {
+    name: XyneTools.GeneratePlotlyCode,
+    description:
+      "**REQUIRED FOR ALL VISUALIZATION REQUESTS** Generate Plotly.js visualization code from structured data. Use this tool whenever the user wants to create charts, graphs, plots, or any visualizations. This includes requests like 'make a chart', 'create a graph', 'plot this data', 'visualize', 'show me a bar chart', or any mention of plotly. This tool analyzes the data structure and creates appropriate Plotly configuration for interactive charts. ALWAYS use this tool for visualization requests instead of providing text-only responses.",
+    params: [
+      {
+        name: "data",
+        type: "object",
+        required: true,
+        description:
+          "The structured data to visualize. Can be an array of objects, nested data, or any JSON structure containing numeric/categorical data suitable for visualization.",
+      },
+      {
+        name: "chart_type",
+        type: "string",
+        required: false,
+        description:
+          "Preferred chart type (e.g., 'bar', 'line', 'scatter', 'pie', 'histogram', 'box'). If not specified, the tool will automatically determine the best chart type based on the data structure.",
+      },
+      {
+        name: "title",
+        type: "string",
+        required: false,
+        description:
+          "Title for the chart. If not provided, a title will be generated based on the data.",
+      },
+      {
+        name: "x_axis_label",
+        type: "string",
+        required: false,
+        description: "Label for the X-axis.",
+      },
+      {
+        name: "y_axis_label",
+        type: "string",
+        required: false,
+        description: "Label for the Y-axis.",
+      },
+      {
+        name: "description",
+        type: "string",
+        required: false,
+        description:
+          "Additional context about what the user wants to visualize or emphasize in the chart.",
+      },
+    ],
+  },
 }
 
 export const slackTools: Record<string, ToolDefinition> = {
@@ -885,6 +933,14 @@ export function getMetadataRetrievalParameters() {
   return getToolParameters(XyneTools.MetadataRetrieval)
 }
 
+// Example: Create Plotly code generation AgentTool
+export function createPlotlyCodeGenerationAgentTool(
+  executeFunction: (params: any, ...args: any[]) => Promise<any>,
+) {
+  const toolDef = internalTools[XyneTools.GeneratePlotlyCode]
+  return createAgentToolFromDefinition(toolDef, executeFunction)
+}
+
 // Example: Create a customized version of a tool with modified parameters
 export function createCustomMetadataRetrievalTool(
   executeFunction: (params: any, ...args: any[]) => Promise<any>,
@@ -907,7 +963,11 @@ export function validateToolParams<
   toolName: T,
   params: any,
 ): params is T extends keyof typeof internalTools
-  ? MetadataRetrievalParams | SearchParams | ConversationalParams
+  ?
+      | MetadataRetrievalParams
+      | SearchParams
+      | ConversationalParams
+      | GeneratePlotlyCodeParams
   : SlackThreadsParams | SlackRelatedMessagesParams | SlackUserProfileParams {
   const toolDef = getToolDefinition(toolName as string)
   if (!toolDef || !toolDef.params) return true

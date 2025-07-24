@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plotly Test</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div id="plotly-div" style="width:100%;height:400px;"></div>
+    
+    <script>
+        // Test the exact format our backend generates
+        const plotlyConfig = {
+            "data": [
+                {
+                    "x": ["gpt-4o", "gpt-4o-mini", "claude"],
+                    "y": [4.5, 4.2, 4.1],
+                    "type": "bar",
+                    "name": "Model Scores",
+                    "text": ["4.50", "4.20", "4.10"],
+                    "textposition": "auto"
+                }
+            ],
+            "layout": {
+                "title": "Data Visualization",
+                "xaxis": { "title": "" },
+                "yaxis": { "title": "" }
+            },
+            "config": {
+                "responsive": true,
+                "displayModeBar": true,
+                "modeBarButtonsToRemove": ["pan2d", "lasso2d"]
+            }
+        };
+        
+        console.log('Rendering Plotly with config:', plotlyConfig);
+        
+        Plotly.newPlot('plotly-div', plotlyConfig.data, plotlyConfig.layout, plotlyConfig.config);
+    </script>
+</body>
+</html>

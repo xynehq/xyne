@@ -488,6 +488,9 @@ export enum XyneTools {
   // Conversational tool
   Conversational = "conversational",
 
+  // Data visualization tool
+  GeneratePlotlyCode = "generate_plotly_code",
+
   // slack tools
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",

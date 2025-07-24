@@ -164,3 +164,12 @@ export interface SlackRelatedMessagesParams {
 export interface SlackUserProfileParams {
   user_email: string
 }
+
+export interface GeneratePlotlyCodeParams {
+  data: object
+  chart_type?: string
+  title?: string
+  x_axis_label?: string
+  y_axis_label?: string
+  description?: string
+}

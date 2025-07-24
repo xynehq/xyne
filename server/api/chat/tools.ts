@@ -58,6 +58,7 @@ import type {
   MetadataRetrievalParams,
   MinimalAgentFragment,
   SearchParams,
+  GeneratePlotlyCodeParams,
 } from "./types"
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
@@ -668,6 +669,407 @@ export const userInfoTool: AgentTool = {
       execSpan?.end()
     }
   },
+}
+
+export const generatePlotlyCodeTool: AgentTool = {
+  name: XyneTools.GeneratePlotlyCode,
+  description: internalTools[XyneTools.GeneratePlotlyCode].description,
+  parameters: getToolParameters(XyneTools.GeneratePlotlyCode),
+  execute: async (
+    params: GeneratePlotlyCodeParams,
+    span?: Span,
+    email?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_generate_plotly_code_tool")
+    try {
+      if (!params.data) {
+        const errorMsg = "Data is required for Plotly code generation."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing data" }
+      }
+
+      // Analyze the data structure to determine the best chart type
+      const data = params.data
+      let chartType = params.chart_type || "auto"
+      let plotlyConfig: any = {}
+
+      // Auto-detect chart type if not specified
+      if (chartType === "auto") {
+        chartType = detectBestChartType(data)
+      }
+
+      // Generate Plotly configuration based on data and chart type
+      plotlyConfig = generatePlotlyConfig(
+        data,
+        chartType,
+        params.title,
+        params.x_axis_label,
+        params.y_axis_label,
+        params.description,
+      )
+
+      const result = `Generated ${chartType} chart configuration with Plotly.js. The chart ${params.title ? `"${params.title}" ` : ""}is ready to be rendered by the frontend.
+
+\`\`\`plotly
+${JSON.stringify(plotlyConfig, null, 2)}
+\`\`\``
+
+      // Create a fragment containing the Plotly configuration
+      const plotlyFragment: MinimalAgentFragment = {
+        id: `plotly_config_${Date.now()}`,
+        content: JSON.stringify(plotlyConfig, null, 2),
+        source: {
+          docId: `plotly_${chartType}_${Date.now()}`,
+          title:
+            params.title ||
+            `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`,
+          app: Apps.Xyne,
+          entity: SystemEntity.SystemInfo,
+          url: "",
+        },
+        confidence: 1.0,
+      }
+
+      execSpan?.setAttribute("chart_type", chartType)
+      execSpan?.setAttribute("has_title", !!params.title)
+      execSpan?.setAttribute(
+        "data_points",
+        Array.isArray(data) ? data.length : Object.keys(data).length,
+      )
+
+      return {
+        result,
+        contexts: [plotlyFragment],
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Error in generate_plotly_code tool: ${errMsg}`)
+      return {
+        result: `Error generating Plotly code: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
+// Helper function to detect the best chart type based on data structure
+function detectBestChartType(data: any): string {
+  if (!data) return "bar"
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) return "bar"
+
+    const firstItem = data[0]
+    if (typeof firstItem === "object" && firstItem !== null) {
+      const keys = Object.keys(firstItem)
+
+      // Check for nested metric data (like model comparisons)
+      const hasNestedArrays = keys.some((key) => Array.isArray(firstItem[key]))
+      if (hasNestedArrays) {
+        // Complex nested data typically works best as grouped bar charts
+        return "bar"
+      }
+
+      const numericKeys = keys.filter(
+        (key) => typeof firstItem[key] === "number" && !isNaN(firstItem[key]),
+      )
+
+      // If we have timestamps or dates, prefer line chart
+      const hasTimeData = keys.some(
+        (key) =>
+          key.toLowerCase().includes("date") ||
+          key.toLowerCase().includes("time") ||
+          (typeof firstItem[key] === "string" &&
+            !isNaN(Date.parse(firstItem[key]))),
+      )
+
+      if (hasTimeData && numericKeys.length > 0) return "line"
+      if (numericKeys.length >= 2) return "scatter"
+      if (numericKeys.length === 1) return "bar"
+    }
+
+    // If it's an array of numbers
+    if (data.every((item) => typeof item === "number")) return "histogram"
+  } else if (typeof data === "object") {
+    const values = Object.values(data)
+    if (values.every((val) => typeof val === "number")) {
+      // If all values are numbers, could be pie chart for categories
+      if (Object.keys(data).length <= 10) return "pie"
+      return "bar"
+    }
+  }
+
+  return "bar" // Default fallback
+}
+
+// Helper function to generate Plotly configuration
+function generatePlotlyConfig(
+  data: any,
+  chartType: string,
+  title?: string,
+  xAxisLabel?: string,
+  yAxisLabel?: string,
+  description?: string,
+): any {
+  let traces: any[] = []
+  let layout: any = {
+    title: title || `Data Visualization`,
+    xaxis: { title: xAxisLabel || "" },
+    yaxis: { title: yAxisLabel || "" },
+  }
+
+  switch (chartType) {
+    case "bar":
+      traces = generateBarChart(data)
+      // If we have multiple traces (grouped bar chart), adjust layout
+      if (traces.length > 1) {
+        layout.barmode = "group"
+        layout.legend = { orientation: "h", x: 0, y: -0.2 }
+      }
+      break
+    case "line":
+      traces = generateLineChart(data)
+      break
+    case "scatter":
+      traces = generateScatterChart(data)
+      break
+    case "pie":
+      traces = generatePieChart(data)
+      break
+    case "histogram":
+      traces = generateHistogram(data)
+      break
+    case "box":
+      traces = generateBoxPlot(data)
+      break
+    default:
+      traces = generateBarChart(data) // fallback
+  }
+
+  return {
+    data: traces,
+    layout,
+    config: {
+      responsive: true,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ["pan2d", "lasso2d"],
+    },
+  }
+}
+
+// Helper functions for different chart types
+function generateBarChart(data: any): any[] {
+  if (Array.isArray(data)) {
+    if (data.length > 0 && typeof data[0] === "object") {
+      const keys = Object.keys(data[0])
+
+      // Handle case where we have nested metric data (like the Claude vs Gemma example)
+      if (keys.some((k) => Array.isArray(data[0][k]))) {
+        // This is for grouped/nested data like model comparison
+        return processNestedBarData(data)
+      }
+
+      const xKey = keys.find((k) => typeof data[0][k] === "string") || keys[0]
+      const yKey = keys.find((k) => typeof data[0][k] === "number") || keys[1]
+
+      return [
+        {
+          type: "bar",
+          x: data.map((item) => item[xKey]),
+          y: data.map((item) => item[yKey]),
+          name: yKey,
+        },
+      ]
+    }
+  } else if (typeof data === "object") {
+    return [
+      {
+        type: "bar",
+        x: Object.keys(data),
+        y: Object.values(data),
+        name: "Values",
+      },
+    ]
+  }
+
+  return [{ type: "bar", x: [], y: [] }]
+}
+
+// Helper function to process nested bar chart data
+function processNestedBarData(data: any): any[] {
+  if (!Array.isArray(data) || data.length === 0) return []
+
+  // Extract the structure - assume first level keys are categories (e.g., "Claude", "Gemma 27B")
+  const categories = data.map((item, index) => {
+    // Find the key that represents the category name
+    const keys = Object.keys(item)
+    const nameKey =
+      keys.find((k) => typeof item[k] === "string") || `Category ${index + 1}`
+    return typeof item[nameKey] === "string" ? item[nameKey] : nameKey
+  })
+
+  // Find the array key that contains the metrics
+  const firstItem = data[0]
+  const arrayKey = Object.keys(firstItem).find((k) =>
+    Array.isArray(firstItem[k]),
+  )
+
+  if (!arrayKey) {
+    // Fallback to simple bar chart
+    return generateSimpleBarChart(data)
+  }
+
+  // Extract all unique metric names
+  const allMetrics: Set<string> = new Set()
+  data.forEach((item) => {
+    if (Array.isArray(item[arrayKey])) {
+      item[arrayKey].forEach((metric: any) => {
+        if (metric && typeof metric === "object" && metric.name) {
+          allMetrics.add(metric.name)
+        }
+      })
+    }
+  })
+
+  const metricNames = Array.from(allMetrics)
+
+  // Create one trace per metric
+  return metricNames.map((metricName) => {
+    const values = categories.map((category) => {
+      const categoryData = data.find((item) => {
+        const keys = Object.keys(item)
+        const nameKey = keys.find((k) => typeof item[k] === "string")
+        return nameKey && item[nameKey] === category
+      })
+
+      if (!categoryData || !Array.isArray(categoryData[arrayKey])) return 0
+
+      const metric = categoryData[arrayKey].find(
+        (m: any) => m && m.name === metricName,
+      )
+      return metric ? metric.score || metric.value || 0 : 0
+    })
+
+    return {
+      type: "bar",
+      name: metricName,
+      x: categories,
+      y: values,
+    }
+  })
+}
+
+// Fallback for simple bar chart generation
+function generateSimpleBarChart(data: any): any[] {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const keys = Object.keys(data[0])
+    const xKey = keys.find((k) => typeof data[0][k] === "string") || keys[0]
+    const yKey = keys.find((k) => typeof data[0][k] === "number") || keys[1]
+
+    return [
+      {
+        type: "bar",
+        x: data.map((item) => item[xKey]),
+        y: data.map((item) => item[yKey]),
+        name: yKey,
+      },
+    ]
+  }
+
+  return [{ type: "bar", x: [], y: [] }]
+}
+
+function generateLineChart(data: any): any[] {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const keys = Object.keys(data[0])
+    const xKey =
+      keys.find(
+        (k) =>
+          k.toLowerCase().includes("date") ||
+          k.toLowerCase().includes("time") ||
+          (typeof data[0][k] === "string" && !isNaN(Date.parse(data[0][k]))),
+      ) || keys[0]
+    const yKey = keys.find((k) => typeof data[0][k] === "number") || keys[1]
+
+    return [
+      {
+        type: "scatter",
+        mode: "lines+markers",
+        x: data.map((item) => item[xKey]),
+        y: data.map((item) => item[yKey]),
+        name: yKey,
+      },
+    ]
+  }
+
+  return generateBarChart(data)
+}
+
+function generateScatterChart(data: any): any[] {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const keys = Object.keys(data[0])
+    const numericKeys = keys.filter((k) => typeof data[0][k] === "number")
+
+    if (numericKeys.length >= 2) {
+      return [
+        {
+          type: "scatter",
+          mode: "markers",
+          x: data.map((item) => item[numericKeys[0]]),
+          y: data.map((item) => item[numericKeys[1]]),
+          name: `${numericKeys[1]} vs ${numericKeys[0]}`,
+        },
+      ]
+    }
+  }
+
+  return generateBarChart(data)
+}
+
+function generatePieChart(data: any): any[] {
+  if (typeof data === "object" && !Array.isArray(data)) {
+    return [
+      {
+        type: "pie",
+        labels: Object.keys(data),
+        values: Object.values(data),
+        name: "Distribution",
+      },
+    ]
+  }
+
+  return generateBarChart(data)
+}
+
+function generateHistogram(data: any): any[] {
+  if (Array.isArray(data) && data.every((item) => typeof item === "number")) {
+    return [
+      {
+        type: "histogram",
+        x: data,
+        name: "Distribution",
+      },
+    ]
+  }
+
+  return generateBarChart(data)
+}
+
+function generateBoxPlot(data: any): any[] {
+  if (Array.isArray(data) && data.every((item) => typeof item === "number")) {
+    return [
+      {
+        type: "box",
+        y: data,
+        name: "Box Plot",
+      },
+    ]
+  }
+
+  return generateBarChart(data)
 }
 
 export const getSlackThreads: AgentTool = {
@@ -1961,6 +2363,7 @@ export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
+  generate_plotly_code: generatePlotlyCodeTool,
   // Slack-specific tools
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,

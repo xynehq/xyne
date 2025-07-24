@@ -35,6 +35,7 @@ import {
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
 import mermaid from "mermaid"
+import PlotlyChart from "@/components/PlotlyChart"
 
 // Initialize mermaid with secure configuration to prevent syntax errors
 mermaid.initialize({
@@ -124,6 +125,7 @@ import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
 import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { Result } from "postcss"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -994,7 +996,6 @@ export const ChatPage = ({
       })
     }
   }
-
   return (
     <div className="h-full w-full flex flex-row bg-white dark:bg-[#1E1E1E]">
       <Sidebar
@@ -1635,6 +1636,100 @@ const Code = ({
     codeContent = children[0]
   }
 
+  // Check if content looks like Plotly JSON configuration
+  const isPlotlyJson = () => {
+    try {
+      if (!codeContent) return false
+      const trimmed = codeContent.trim()
+
+      // Check for JSON structure
+      if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false
+
+      const parsed = JSON.parse(trimmed)
+
+      // Check for Plotly-specific structure (more comprehensive)
+      const hasPlotlyStructure =
+        (parsed.data && Array.isArray(parsed.data)) ||
+        (parsed.layout && typeof parsed.layout === "object") ||
+        (parsed.config && typeof parsed.config === "object") ||
+        (trimmed.includes('"data"') && trimmed.includes('"layout"')) ||
+        (trimmed.includes('"x"') &&
+          trimmed.includes('"y"') &&
+          trimmed.includes('"type"')) ||
+        trimmed.includes('"plotly') ||
+        (parsed.traces && Array.isArray(parsed.traces)) ||
+        (Array.isArray(parsed) &&
+          parsed.some((item) => item.x && item.y && item.type))
+
+      return hasPlotlyStructure
+    } catch {
+      return false
+    }
+  }
+
+  // Also check if it's a JSON code block that looks like Plotly
+  const isJsonCodeBlock =
+    className &&
+    (className.includes("language-json") || className.includes("json"))
+
+  // More aggressive Plotly detection
+  const isPlotly =
+    (className &&
+      (/^language-plotly/.test(className.toLocaleLowerCase()) ||
+        className.includes("language-plotly") ||
+        className === "language-plotly" ||
+        className.includes("plotly"))) ||
+    isPlotlyJson() ||
+    (isJsonCodeBlock && isPlotlyJson()) ||
+    // Additional checks for Plotly content
+    (codeContent.includes("data") &&
+      codeContent.includes("layout") &&
+      codeContent.includes("{")) ||
+    (codeContent.includes('"x"') &&
+      codeContent.includes('"y"') &&
+      codeContent.includes('"type"'))
+
+  // Debug logging for any JSON content detection
+  if (
+    (className &&
+      (className.includes("json") || className.includes("plotly"))) ||
+    codeContent.includes("data") ||
+    codeContent.includes("layout")
+  ) {
+    console.log("JSON/Plotly block detected:", {
+      className,
+      isPlotly,
+      isPlotlyJson: isPlotlyJson(),
+      isJsonCodeBlock,
+      codeContentStart: codeContent.substring(0, 100),
+      hasDataLayout:
+        codeContent.includes("data") && codeContent.includes("layout"),
+      hasXYType:
+        codeContent.includes('"x"') &&
+        codeContent.includes('"y"') &&
+        codeContent.includes('"type"'),
+    })
+  }
+
+  // Debug logging for Plotly detection
+  if (
+    isPlotly ||
+    className?.includes("plotly") ||
+    isPlotlyJson() ||
+    (isJsonCodeBlock && isPlotlyJson())
+  ) {
+    console.log("🎯 PLOTLY CHART DETECTED! Will render chart component:", {
+      className,
+      isPlotly,
+      isPlotlyJson: isPlotlyJson(),
+      isJsonCodeBlock,
+      codeContent: codeContent.substring(0, 200),
+      hasPlotlyInContent: codeContent.includes("plotly"),
+      hasPlotlyInClass: className?.includes("plotly"),
+      fullContent: codeContent.length > 200 ? "truncated" : codeContent,
+    })
+  }
+
   // State for managing mermaid validation and rendering
   const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
   const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -1988,6 +2083,52 @@ const Code = ({
         )}
       </div>
     )
+  }
+
+  // Handle Plotly charts
+  if (isPlotly) {
+    console.log(
+      "🚀 Rendering Plotly chart with content:",
+      codeContent.substring(0, 300),
+    )
+    try {
+      return (
+        <div className="my-4 w-full">
+          <div className="text-xs text-gray-500 mb-2">
+            📊 Interactive Chart (Plotly)
+          </div>
+          <PlotlyChart
+            plotlyConfig={codeContent}
+            title="Interactive Chart"
+            className="w-full"
+          />
+        </div>
+      )
+    } catch (error) {
+      console.error("❌ Error rendering Plotly chart:", error)
+      return (
+        <div className="my-4 w-full p-4 border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 rounded-lg">
+          <div className="text-red-600 dark:text-red-400 font-medium mb-2">
+            📊 Chart Error
+          </div>
+          <div className="text-red-600 dark:text-red-400 text-sm">
+            Failed to render chart. The system detected this as Plotly content
+            but couldn't parse it.
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+            Error: {error instanceof Error ? error.message : String(error)}
+          </div>
+          <details className="mt-2">
+            <summary className="text-xs text-red-500 cursor-pointer hover:text-red-600">
+              Show raw data (for debugging)
+            </summary>
+            <pre className="mt-2 text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-40">
+              {codeContent}
+            </pre>
+          </details>
+        </div>
+      )
+    }
   }
 
   // Enhanced inline detection - fallback if inline prop is not set correctly

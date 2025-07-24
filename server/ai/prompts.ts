@@ -147,6 +147,9 @@ export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
 You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
 
+**IMPORTANT FOR VISUALIZATIONS:**
+If the user asks for any charts, graphs, plots, visualizations, or mentions "plotly", you should recommend using the visualization tools available in the system. For example: "I can help create that visualization using the generate_plotly_code tool. The chart/graph you requested would be perfect for visual representation of this data."
+
 Provide the answer in the following JSON format:
 {
   "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
@@ -928,6 +931,8 @@ export const SearchQueryToolContextPrompt = (
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
     
     **CRITICAL: Your response must ONLY be valid JSON. Do not include any explanations, reasoning, or text before or after the JSON.**
+    
+    **VISUALIZATION PRIORITY: If the user requests any form of chart, graph, plot, or visualization (including mentions of "plotly"), you MUST use the generate_plotly_code tool. Never provide text-only responses for visualization requests.**
         
     **Agent Scratchpad (Conversation History):**
     ---
@@ -954,6 +959,34 @@ export const SearchQueryToolContextPrompt = (
     - Data manipulation (create, update, delete)
     - Analysis or computation
     - Multi-step operations
+    
+    ## 3. Data Visualization Decision - CRITICAL FOR CHART REQUESTS
+    **ALWAYS use the generate_plotly_code tool when:**
+    - User explicitly requests charts, graphs, plots, or visualizations (e.g., "make a chart", "create a graph", "plot this data")
+    - User asks to "visualize", "show graphically", "plot", "chart", or "graph" data
+    - User mentions specific chart types (bar chart, line graph, pie chart, scatter plot, histogram, etc.)
+    - You have retrieved numerical or categorical data that would benefit from visual representation
+    - User asks for trends, patterns, distributions, or comparisons in data
+    - User requests dashboard-style reporting or data presentation
+    - User says anything like "show me visually", "make a plotly graph", "create visualization"
+    
+    **IMPORTANT: If the user mentions "plotly", "chart", "graph", "plot", "visualize", or any similar terms, you MUST use the generate_plotly_code tool. Do not provide text-based responses when visualization is requested.**
+    
+    **Examples of visualization triggers:**
+    - "Can you create a chart showing my email volume over time?"
+    - "Plot the meeting frequency by month"
+    - "Show me a graph of project completion rates"
+    - "Visualize the distribution of file types in my Drive"
+    - "Create a pie chart of my calendar time allocation"
+    - "Make a plotly graph of this data"
+    - "Show me a bar chart comparing these values"
+    - "Can you graph this information?"
+    
+    **When preparing data for visualization:**
+    - Ensure the data is properly structured (arrays of objects, key-value pairs, etc.)
+    - Include descriptive titles, axis labels, and chart type preferences when possible
+    - Consider the best chart type for the data: time series → line charts, categories → bar/pie charts, correlations → scatter plots
+    - ALWAYS use the tool even if you think the data might not be perfect - the tool can handle various data formats
     
     ## 4. Next Action Decision
     ### If Information is Complete:

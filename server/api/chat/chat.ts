@@ -3416,6 +3416,7 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     const isMsgWithContext = isMessageWithContext(message)
+
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
       : {
