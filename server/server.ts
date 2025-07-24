@@ -74,6 +74,7 @@ import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import {
   createUser,
+  deleteRefreshTokenFromDB,
   getPublicUserAndWorkspaceByEmail,
   getUserByEmail,
   saveRefreshTokenToDB,
@@ -204,7 +205,6 @@ const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 const postOauthRedirect = config.postOauthRedirect
-const JwtPayloadKey = config.JwtPayloadKey
 
 const jwtSecret = process.env.JWT_SECRET!
 
@@ -279,9 +279,32 @@ export const WsApp = app.get(
 )
 
 const LogOut = async (c: Context) => {
-  // todo delete the refresh token from DB as well
-  deleteCookieByEnv(c, AccessTokenCookieName)
-  deleteCookieByEnv(c, RefreshTokenCookieName)
+  const accessToken = getCookie(c, AccessTokenCookieName)
+  const refreshToken = getCookie(c, RefreshTokenCookieName)
+
+  if (!accessToken || !refreshToken) {
+    // If no auth token is found
+    Logger.warn("No tokens found")
+    // Redirect to login page if no token found
+    return c.redirect(`/auth`)
+  }
+
+  const { payload } = decode(refreshToken)
+  const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+  const email = sub
+  const userAndWorkspace: PublicUserWorkspace =
+    await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+  const existingUser = userAndWorkspace.user
+  await deleteRefreshTokenFromDB(db, existingUser.email)
+  Logger.info("Deleted refresh token from DB....")
+  const opts = {
+    secure: true,
+    path: "/",
+    httpOnly: true,
+  }
+  deleteCookieByEnv(c, AccessTokenCookieName, opts)
+  deleteCookieByEnv(c, RefreshTokenCookieName, opts)
   Logger.info("Cookies deleted, logged out")
   return c.json({ ok: true })
 }
