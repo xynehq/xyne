@@ -526,14 +526,8 @@ export const metadataRetrievalTool: AgentTool = {
     if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
     if (params.filter_query)
       execSpan?.setAttribute("filter_query", params.filter_query)
-    if (params.from_email)
-      execSpan?.setAttribute("from_email", params.from_email)
-    if (params.to_email)
-      execSpan?.setAttribute("to_email", params.to_email)
-    if (params.cc_email)
-      execSpan?.setAttribute("cc_email", params.cc_email)
-    if (params.bcc_email)
-      execSpan?.setAttribute("bcc_email", params.bcc_email)
+    if (params.intent)
+      execSpan?.setAttribute("intent", JSON.stringify(params.intent))
 
     execSpan?.setAttribute("limit", params.limit || 10)
     execSpan?.setAttribute("offset", params.offset || 0)
@@ -604,17 +598,11 @@ export const metadataRetrievalTool: AgentTool = {
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
 
-      // Build intent object from email parameters
-      let intent: any = null
-      if (params.from_email || params.to_email || params.cc_email || params.bcc_email) {
-        intent = {}
-        if (params.from_email) intent.from = [params.from_email]
-        if (params.to_email) intent.to = [params.to_email]
-        if (params.cc_email) intent.cc = [params.cc_email]
-        if (params.bcc_email) intent.bcc = [params.bcc_email]
-        
+      // Use intent parameter directly - no need to build it manually
+      const intent = params.intent || null
+      if (intent) {
         Logger.debug(
-          `[metadata_retrieval] Built intent object from email params:`,
+          `[metadata_retrieval] Using intent parameter directly:`,
           JSON.stringify(intent, null, 2)
         )
       }

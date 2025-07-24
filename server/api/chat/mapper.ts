@@ -533,28 +533,10 @@ export const internalTools: Record<string, ToolDefinition> = {
         description: "Keywords to refine the search based on the user's query.",
       },
       {
-        name: "from_email",
-        type: "string",
+        name: "intent",
+        type: "object",
         required: false,
-        description: "Filter emails by sender email address. Use when the query mentions 'from' or 'sent by' a specific email address (e.g., 'emails from john@company.com').",
-      },
-      {
-        name: "to_email",
-        type: "string",
-        required: false,
-        description: "Filter emails by recipient email address. Use when the query mentions 'to' or 'sent to' a specific email address (e.g., 'emails to support@company.com').",
-      },
-      {
-        name: "cc_email",
-        type: "string",
-        required: false,
-        description: "Filter emails by CC email address. Use when the query mentions 'cc' or 'copied' a specific email address (e.g., 'emails where alice@work.com was cc'd').",
-      },
-      {
-        name: "bcc_email",
-        type: "string",
-        required: false,
-        description: "Filter emails by BCC email address. Use when the query mentions 'bcc' or 'blind copied' a specific email address (e.g., 'emails where admin@company.com was bcc'd').",
+        description: "Email filtering intent with support for multiple addresses, names, and organizations. Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. Each field is an array of strings containing email addresses, person names, or organization names. Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'. The system will automatically resolve names and organizations to email addresses. Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}",
       },
       {
         name: "limit",
