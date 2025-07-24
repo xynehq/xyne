@@ -5,10 +5,7 @@ import { XMLParser } from "fast-xml-parser"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import path from "path"
-import {
-  describeImageWithllm,
-  withTempDirectory,
-} from "./lib/describeImageWithllm"
+import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -617,36 +614,35 @@ function processTextItems(
 }
 
 export async function extractTextAndImagesWithChunksFromPptx(
-  pptxPath: string,
+  data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
 ): Promise<PptxProcessingResult> {
-  return withTempDirectory(async (tempDir) => {
-    Logger.info(`Starting PPTX processing for: ${pptxPath}`)
+  Logger.info(`Starting PPTX processing for document: ${docid}`)
 
-    // Read and unzip the PPTX file
-    let pptxBuffer: Buffer
-    try {
-      pptxBuffer = await fsPromises.readFile(pptxPath)
-    } catch (error) {
-      const { name, message } = error as Error
-      if (
-        message.includes("PasswordException") ||
-        name.includes("PasswordException")
-      ) {
-        Logger.warn("Password protected PPTX, skipping")
-      } else {
-        Logger.error(error, `PPTX load error: ${error}`)
-      }
-      return {
-        text_chunks: [],
-        image_chunks: [],
-        text_chunk_pos: [],
-        image_chunk_pos: [],
-      }
+  // Load the PPTX data directly
+  let zip: JSZip
+  try {
+    zip = await JSZip.loadAsync(data)
+  } catch (error) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected PPTX, skipping")
+    } else {
+      Logger.error(error, `PPTX load error: ${error}`)
     }
-    const zip = await JSZip.loadAsync(new Uint8Array(pptxBuffer))
+    return {
+      text_chunks: [],
+      image_chunks: [],
+      text_chunk_pos: [],
+      image_chunk_pos: [],
+    }
+  }
 
+  try {
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
@@ -813,7 +809,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
                     `Reusing description for repeated image ${imagePath} in slide ${slideNumber}`,
                   )
                 } else {
-                  description = await describeImageWithllm(imageBuffer, tempDir)
+                  description = await describeImageWithllm(imageBuffer)
                   if (
                     description === "No description returned." ||
                     description === "Image is not worth describing."
@@ -901,5 +897,8 @@ export async function extractTextAndImagesWithChunksFromPptx(
       text_chunk_pos,
       image_chunk_pos,
     }
-  })
+  } finally {
+    //@ts-ignore
+    zip = null
+  }
 }
