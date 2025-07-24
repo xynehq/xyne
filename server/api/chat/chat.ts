@@ -3284,6 +3284,7 @@ export const MessageApi = async (c: Context) => {
             message,
             modelId,
             fileIds: fileIds,
+            isAgentic: isAgentic,
           })
 
           // Store attachment metadata for user message if attachments exist
@@ -3337,6 +3338,7 @@ export const MessageApi = async (c: Context) => {
             message,
             modelId,
             fileIds,
+            isAgentic: isAgentic,
           })
 
           // Store attachment metadata for user message if attachments exist
@@ -4016,7 +4018,6 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.imageCitation) {
                   // Collect image citation for database persistence
                   imageCitations.push(chunk.imageCitation)
-                  console.log("Found image citation, sending it")
                   loggerWithChild({ email: email }).info(
                     `Found image citation, sending it`,
                     { citationKey: chunk.imageCitation.citationKey },
@@ -4380,7 +4381,7 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, isReasoningEnabled, agentId }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
@@ -4392,6 +4393,120 @@ export const MessageRetryApi = async (c: Context) => {
     }
 
     const isUserMessage = originalMessage.messageRole === "user"
+
+    // Determine if the original message was agentic
+    let isAgentic = false
+    if (isUserMessage) {
+      // If retrying a user message, check its own isAgentic field
+      isAgentic = originalMessage.isAgentic || false
+    } else {
+      // If retrying an assistant message, get the previous user message
+      const conversation = await getChatMessagesBefore(
+        db,
+        originalMessage.chatId,
+        originalMessage.createdAt,
+      )
+      if (conversation && conversation.length > 0) {
+        const prevUserMsg = conversation[conversation.length - 1]
+        if (prevUserMsg.messageRole === "user") {
+          isAgentic = prevUserMsg.isAgentic || false
+        }
+      }
+    }
+
+    loggerWithChild({ email: email }).info(
+      `MessageRetryApi - Original message was agentic: ${isAgentic}, messageId: ${messageId}`,
+    )
+
+    // For routing to other APIs, we need to get the user's message
+    let userMessage: string | null = null
+    if (isUserMessage) {
+      userMessage = originalMessage.message
+    } else {
+      // If retrying an assistant message, get the previous user message
+      const conversation = await getChatMessagesBefore(
+        db,
+        originalMessage.chatId,
+        originalMessage.createdAt,
+      )
+      if (conversation && conversation.length > 0) {
+        const prevUserMsg = conversation[conversation.length - 1]
+        if (prevUserMsg.messageRole === "user") {
+          userMessage = prevUserMsg.message
+        }
+      }
+    }
+
+    if (!userMessage) {
+      throw new HTTPException(400, {
+        message: "Could not find user message for retry",
+      })
+    }
+
+    // Check if we need to route to MessageWithToolsApi for agentic retry
+    if (isAgentic) {
+      Logger.info(
+        `[MessageRetryApi] Routing to MessageWithToolsApi for agentic retry`,
+      )
+      // Modify the validated query data to include the message
+      // @ts-ignore
+      c.req.valid = (type: string) => {
+        if (type === "query") {
+          return {
+            message: userMessage,
+            chatId: originalMessage.chatExternalId,
+            modelId: originalMessage.modelId || "gpt-4o-mini",
+            isReasoningEnabled: isReasoningEnabled,
+            agentId: agentId,
+            retry: true,
+            messageId: messageId, // Pass the messageId for retry operations
+          }
+        }
+        return body
+      }
+
+      return MessageWithToolsApi(c)
+    }
+
+    // Check if we need to route to AgentMessageApi
+    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
+    if (agentPromptValue) {
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
+        db,
+        workspaceId,
+        email,
+      )
+      const agentDetails = await getAgentByExternalId(
+        db,
+        agentPromptValue,
+        userAndWorkspaceCheck.workspace.id,
+      )
+      if (!isAgentic && agentDetails) {
+        Logger.info(
+          `[MessageRetryApi] Routing to AgentMessageApi for agent ${agentPromptValue}.`,
+        )
+        // Modify the validated query data to include the message
+        // @ts-ignore
+        c.req.valid = (type: string) => {
+          if (type === "query") {
+            return {
+              message: userMessage,
+              chatId: originalMessage.chatExternalId,
+              modelId: originalMessage.modelId || "gpt-4o-mini",
+              isReasoningEnabled: isReasoningEnabled,
+              agentId: agentId,
+              retry: true,
+              messageId: messageId, // Pass the messageId for retry operations
+            }
+          }
+          return body
+        }
+
+        return AgentMessageApi(c)
+      }
+    }
+
+    // The original message was already fetched above
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []

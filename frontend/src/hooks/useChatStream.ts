@@ -592,7 +592,7 @@ export const useChatStream = (
     async (
       messageId: string,
       isReasoningActive: boolean = false,
-      isAgenticMode: boolean = false,
+      agentId?: string | null,
       attachmentFileIds?: string[],
     ) => {
       if (!messageId) return
@@ -692,8 +692,9 @@ export const useChatStream = (
       if (isReasoningActive) {
         url.searchParams.append("isReasoningEnabled", "true")
       }
-      if (isAgenticMode) {
-        url.searchParams.append("agentic", "true")
+      // Backend will determine agentic mode from the original message
+      if (agentId) {
+        url.searchParams.append("agentId", agentId)
       }
       if (attachmentFileIds) {
         url.searchParams.append(

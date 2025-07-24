@@ -156,7 +156,6 @@ export type MessageReqType = z.infer<typeof messageSchema>
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
   agentId: z.string().optional(),
-  agentic: z.string().optional().default("false"),
   isReasoningEnabled: z
     .string()
     .optional()

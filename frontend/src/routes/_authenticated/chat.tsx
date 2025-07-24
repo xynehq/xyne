@@ -812,7 +812,10 @@ export const ChatPage = ({
 
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
-    await retryMessage(messageId, isReasoningActive, isAgenticMode)
+    // Get agentId from chat data or from URL params
+    const agentIdToUse = data?.chat?.agentId || chatParams.agentId || null
+    // The backend will determine the original agentic status from the database
+    await retryMessage(messageId, isReasoningActive, agentIdToUse)
   }
 
   const bookmarkChatMutation = useMutation<
