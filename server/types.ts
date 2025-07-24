@@ -382,6 +382,7 @@ export enum Subsystem {
   AgentApi = "AgentApi",
   Metric = "Metric",
   Slack = "Slack",
+  MCP = "MCP",
 }
 
 export enum OperationStatus {
