@@ -9,6 +9,8 @@ import {
   chatRenameSchema,
   chatTraceSchema,
   chatSchema,
+  dashboardDataSchema,
+  sharedAgentUsageSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
@@ -50,6 +52,14 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  GetAdminChats,
+  GetAdminAgents,
+  GetAdminUsers,
+  GetUserAgentLeaderboard,
+  GetAgentAnalysis,
+  adminQuerySchema,
+  userAgentLeaderboardQuerySchema,
+  agentAnalysisQuerySchema,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -87,6 +97,8 @@ import {
   ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
+  DashboardDataApi,
+  SharedAgentUsageApi,
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
@@ -438,6 +450,16 @@ export const AppRoutes = app
     zValidator("query", chatHistorySchema),
     ChatFavoritesApi,
   )
+  .get(
+    "/chat/dashboard-data",
+    zValidator("query", dashboardDataSchema),
+    DashboardDataApi,
+  )
+  .get(
+    "/chat/shared-agent-usage",
+    zValidator("query", sharedAgentUsageSchema),
+    SharedAgentUsageApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -597,6 +619,20 @@ export const AppRoutes = app
     AdminDeleteUserData,
   )
   .get("/oauth/global-slack-provider", GetProviders)
+  // Admin Dashboard Routes
+  .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
+  .get("/agents", GetAdminAgents)
+  .get("/users", GetAdminUsers)
+  .get(
+    "/users/:userId/agent-leaderboard",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetUserAgentLeaderboard,
+  )
+  .get(
+    "/agents/:agentId/analysis",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentAnalysis,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app
@@ -811,6 +847,7 @@ app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
