@@ -336,33 +336,6 @@ export const HybridDefaultProfile = (
     return conditions.join(" and ")
   }
 
-  const buildIntentFilter = () => {
-    const intentFilters: string[] = []
-    if (intent?.from && intent.from.length > 0) {
-      intentFilters.push(
-        intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
-      )
-    }
-    if (intent?.to && intent.to.length > 0) {
-      intentFilters.push(
-        intent.to.map((to) => `to contains '${to}'`).join(" or "),
-      )
-    }
-    if (intent?.cc && intent.cc.length > 0) {
-      intentFilters.push(
-        intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
-      )
-    }
-    if (intent?.bcc && intent.bcc.length > 0) {
-      intentFilters.push(
-        intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
-      )
-    }
-    return intentFilters.length > 0
-      ? "and" + " " + intentFilters.join(" and ")
-      : ""
-  }
-
   // ToDo we have to handle this filter as we are applying multiple times app filtering
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
@@ -380,6 +353,7 @@ export const HybridDefaultProfile = (
     if (!notInMailLabels || notInMailLabels.length === 0) return ""
     return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
+  const intentFilter = intent ? buildIntentFilter(intent) : ""
 
   // App-specific YQL builders
   const buildGoogleWorkspaceYQL = () => {
@@ -389,7 +363,6 @@ export const HybridDefaultProfile = (
     )
     const appOrEntityFilter = buildAppEntityFilter()
     const hasAppOrEntity = !!(app || entity)
-    const intentFilter = buildIntentFilter()
     return `
       (
         (
@@ -422,7 +395,6 @@ export const HybridDefaultProfile = (
     const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
     const appOrEntityFilter = buildAppEntityFilter()
     const mailLabelQuery = buildMailLabelQuery()
-    const intentFilter = buildIntentFilter()
     return `
       (
         (
@@ -441,7 +413,6 @@ export const HybridDefaultProfile = (
   const buildDefaultYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
     const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-    const intentFilter = buildIntentFilter()
     return ` 
   (
       (
@@ -460,7 +431,6 @@ export const HybridDefaultProfile = (
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter()
     return `
       (
         (
@@ -478,7 +448,6 @@ export const HybridDefaultProfile = (
   const buildGoogleCalendarYQL = () => {
     const eventTimestamp = buildTimestampConditions("startTime", "startTime")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter()
     return `
       (
         (
@@ -589,7 +558,33 @@ export const HybridDefaultProfile = (
     `,
   }
 }
-
+// Helper function to build intent filter
+const buildIntentFilter = (intent: Intent | null) => {
+  const intentFilters: string[] = []
+  if (intent?.from && intent.from.length > 0) {
+    intentFilters.push(
+      intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
+    )
+  }
+  if (intent?.to && intent.to.length > 0) {
+    intentFilters.push(
+      intent.to.map((to) => `to contains '${to}'`).join(" or "),
+    )
+  }
+  if (intent?.cc && intent.cc.length > 0) {
+    intentFilters.push(
+      intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
+    )
+  }
+  if (intent?.bcc && intent.bcc.length > 0) {
+    intentFilters.push(
+      intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
+    )
+  }
+  return intentFilters.length > 0
+    ? "and" + " " + intentFilters.join(" and ")
+    : ""
+}
 export const HybridDefaultProfileForAgent = (
   hits: number,
   app: Apps | null,
@@ -602,34 +597,6 @@ export const HybridDefaultProfileForAgent = (
   dataSourceIds: string[] = [],
   intent: Intent | null = null,
 ): YqlProfile => {
-  // Helper function to build intent filter
-  const buildIntentFilter = () => {
-    const intentFilters: string[] = []
-    if (intent?.from && intent.from.length > 0) {
-      intentFilters.push(
-        intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
-      )
-    }
-    if (intent?.to && intent.to.length > 0) {
-      intentFilters.push(
-        intent.to.map((to) => `to contains '${to}'`).join(" or "),
-      )
-    }
-    if (intent?.cc && intent.cc.length > 0) {
-      intentFilters.push(
-        intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
-      )
-    }
-    if (intent?.bcc && intent.bcc.length > 0) {
-      intentFilters.push(
-        intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
-      )
-    }
-    return intentFilters.length > 0
-      ? "and" + " " + intentFilters.join(" and ")
-      : ""
-  }
-
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -663,7 +630,7 @@ export const HybridDefaultProfileForAgent = (
     )
     const appOrEntityFilter = buildAppEntityFilter()
     const hasAppOrEntity = !!(app || entity)
-    const intentFilter = buildIntentFilter()
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         ({targetHits:${hits}} userInput(@query))
@@ -687,7 +654,7 @@ export const HybridDefaultProfileForAgent = (
     const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
     const appOrEntityFilter = buildAppEntityFilter()
     const mailLabelQuery = buildMailLabelQuery()
-    const intentFilter = buildIntentFilter()
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -705,7 +672,7 @@ export const HybridDefaultProfileForAgent = (
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter()
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -723,7 +690,7 @@ export const HybridDefaultProfileForAgent = (
   const buildGoogleCalendarYQL = () => {
     const eventTimestamp = buildTimestampConditions("startTime", "startTime")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter()
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -1393,7 +1360,6 @@ async function _searchVespa(
     intent,
   )
 
-  console.log(yql, "yql")
   const hybridDefaultPayload = {
     yql,
     query,

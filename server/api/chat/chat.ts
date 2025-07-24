@@ -251,7 +251,6 @@ export async function resolveNamesToEmails(
       },
     )
 
-    console.log(searchResults.root.children.length, "search results length")
     searchSpan?.setAttribute("search_query", searchQuery)
     searchSpan?.setAttribute(
       "results_count",
@@ -2834,13 +2833,13 @@ async function* generateMetadataQueryAnswer(
     )
 
     const { filterQuery } = classification
-    let query = filterQuery
+    const query = filterQuery
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
-    let resolvedIntent = {} as any
+    let resolvedIntent = {} as Intent
     if (intent && Object.keys(intent).length > 0) {
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
