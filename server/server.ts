@@ -432,59 +432,53 @@ const handleAppValidation = async (c: Context) => {
 }
 
 const getNewAccessRefreshToken = async (c: Context) => {
-  console.log("getNewAccessRefreshToken ran....")
   const accessToken = getCookie(c, AccessTokenCookieName)
   const refreshToken = getCookie(c, RefreshTokenCookieName)
 
   if (!accessToken || !refreshToken) {
     // If no auth token is found
-    Logger.warn("Redirected by server - No AuthToken")
+    Logger.warn("No tokens found")
     // Redirect to login page if no token found
     return c.redirect(`/auth`)
   }
-  const hello = decode(refreshToken)
-  const { header, payload } = hello
-  console.log("payload")
-  console.log(payload)
-  console.log("payload")
-  const { sub, workspaceId } = payload
+  const { payload } = decode(refreshToken)
+  const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
   const email = sub
   const userAndWorkspace: PublicUserWorkspace =
     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
 
-  if (!userAndWorkspace.user || !userAndWorkspace.workspace) {
+  const existingUser = userAndWorkspace.user
+  const existingWorkspace = userAndWorkspace.workspace
+
+  if (!existingUser || !existingWorkspace) {
     return c.redirect(`/auth`)
   }
 
-  if (userAndWorkspace.user.refreshToken === refreshToken) {
-    const existingUserRes = await getUserByEmail(db, email)
-    if (existingUserRes && existingUserRes.length) {
-      // if user exists then workspace exists too
-      const existingUser = existingUserRes[0]
-      const accessToken = await generateTokens(
-        existingUser.email,
-        existingUser.role,
-        existingUser.workspaceExternalId,
-      )
-      const refreshToken = await generateTokens(
-        existingUser.email,
-        existingUser.role,
-        existingUser.workspaceExternalId,
-        true,
-      )
-      // save refresh token generated in user schema
-      await saveRefreshTokenToDB(db, email, refreshToken)
-      const opts = {
-        secure: true,
-        path: "/",
-        httpOnly: true,
-      }
-      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
-      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
-      return c.json({
-        msg: "Access Token refreshed",
-      })
+  if (existingUser.refreshToken === refreshToken) {
+    const accessToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+    const refreshToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const opts = {
+      secure: true,
+      path: "/",
+      httpOnly: true,
     }
+    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
+    Logger.info("Both tokens refreshed successfully...")
+    return c.json({
+      msg: "Access Token refreshed",
+    })
   } else {
     return c.redirect(`/auth`)
   }
