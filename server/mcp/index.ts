@@ -65,8 +65,8 @@ export function startMcpServer() {
       projectKey: z.string(),
       repoSlug: z.string(),
       filePath: z.string(),
-      startLine: z.union([z.number(), z.string().transform(Number)]).optional(),
-      endLine: z.union([z.number(), z.string().transform(Number)]).optional(),
+      startLine: z.union([z.number(), z.string().transform(Number)]),
+      endLine: z.union([z.number(), z.string().transform(Number)]),
     }),
     execute: async ({
       projectKey,
@@ -78,8 +78,8 @@ export function startMcpServer() {
       projectKey: string;
       repoSlug: string;
       filePath: string;
-      startLine?: number;
-      endLine?: number;
+      startLine: number;
+      endLine: number;
     }) => {
       try {
         const blame = await bitbucket.getGitBlame(
@@ -95,12 +95,7 @@ export function startMcpServer() {
           lineNoTo: b.lineNumber + b.spannedLines - 1,
         }));
 
-        if (
-          startLine !== undefined &&
-          endLine !== undefined &&
-          startLine > 0 &&
-          endLine > 0
-        ) {
+        if (startLine > 0 && endLine > 0) {
           processed = processed.filter(
             (b: any) =>
               Math.max(b.lineNoFrom, startLine) <=
