@@ -469,12 +469,6 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
-  console.log(
-    "fieleIds",
-    fileIds,
-    "validFileIdsFromLinkCount",
-    validFileIdsFromLinkCount,
-  )
   return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 
