@@ -998,14 +998,42 @@ export const agentSearchQueryPrompt = (
 
     6. Extract email addresses and main intent from the query:
       
-      **EMAIL ADDRESS EXTRACTION:**
-      - Detect email patterns: anything matching [text]@[domain].[extension]
-      - Extract email addresses for metadata filtering:
-        - "emails from john@company.com" → extract "john@company.com" for from
-        - "messages to support@company.com" → extract "support@company.com" for to
-        - "emails where alice@work.com was cc'd" → extract "alice@work.com" for cc_email
-        - "emails where admin@company.com was bcc'd" → extract "admin@company.com" for bcc_email
-      
+      **CRITICAL RULES for Email Intent Extraction:**
+        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
+          - Specific subjects: "emails with subject 'meeting'"
+        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
+        - Extract from phrases like:
+          - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "messages from [user@company.com]" → add [user@company.com] to "from" array  
+          - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
+          - "sent to [team@company.com]" → add [team@company.com] to "to" array
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
+        
+        For other apps/entities:
+        - Currently no specific intent fields defined
+        - Return empty intent object: {}
+
       **FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
@@ -1114,7 +1142,6 @@ export const agentSearchQueryPrompt = (
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
             "sortDirection": <boolean or null>,
             "filterQuery": "<extracted keywords>",
-            "intent": {}
           }
         }
 
@@ -1175,7 +1202,7 @@ export const agentSearchQueryPrompt = (
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
-            "intent": {}
+           "intent": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1183,6 +1210,7 @@ export const agentSearchQueryPrompt = (
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
+       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
