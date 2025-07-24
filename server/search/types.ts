@@ -1032,6 +1032,7 @@ export type VespaAutocompleteChatContainer = z.infer<
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,
   threadId: true,
+  parentThreadId: true,
   app: true,
   entity: true,
   subject: true,

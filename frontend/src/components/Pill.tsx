@@ -87,6 +87,7 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       {...(newRef.docId ? { "data-doc-id": newRef.docId } : {})}
       {...(newRef.mailId ? { "data-mail-id": newRef.mailId } : {})}
       {...(newRef.threadId ? { "data-thread-id": newRef.threadId } : {})}
+      {...(newRef.parentThreadId ? { "data-parent-thread-id": newRef.parentThreadId } : {})}
       {...(newRef.app ? { "data-app": newRef.app } : {})}
       {...(newRef.entity ? { "data-entity": newRef.entity } : {})}
       {...(newRef.userMap

@@ -109,6 +109,7 @@ const parseMessageInput = (htmlString: string) => {
             entity: entity,
             imgSrc: imgSrc,
             threadId: el.dataset.threadId,
+            parentThreadId: el.dataset.parentThreadId,
           },
         })
       } else if (tagName === "a" && el.getAttribute("href")) {

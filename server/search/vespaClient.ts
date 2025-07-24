@@ -1199,7 +1199,7 @@ class VespaClient {
     email: string,
   ): Promise<VespaSearchResponse> {
     const yqlIds = threadIds
-      .map((id) => `threadId contains '${id}'`)
+      .map((id) => `parentThreadId contains '${id}'`)
       .join(" or ")
     // Include permissions check to ensure user has access to these emails
     const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
