@@ -2,16 +2,16 @@ import { FastMCP, UserError } from "fastmcp";
 import { z } from "zod";
 import JiraClient from "./jiraClient.js";
 import BitbucketClient from "./bitbucketClient.js";
+import { getLogger } from "../logger/index.js";
+import { Subsystem } from "../types.js";
 import { file } from "jszip";
 
 export function startMcpServer() {
+  const logger = getLogger(Subsystem.MCP);
   const server = new FastMCP({
     name: "xyne-server",
     version: "0.0.1",
   });
-
-  console.log("JIRA_BASE_URL:", process.env.JIRA_BASE_URL);
-  console.log("BITBUCKET_BASE_URL:", process.env.BITBUCKET_BASE_URL);
 
   const jira = new JiraClient(
     process.env.JIRA_BASE_URL!,
@@ -67,8 +67,8 @@ export function startMcpServer() {
       repoSlug: z.string(),
       filePath: z.string(),
       codeSnippet: z.string().optional().describe("Code snippet to locate in the file. If not provided, shows file overview"),
-      startLine: z.number().optional().describe("Start line for file overview (default: 1)"),
-      endLine: z.number().optional().describe("End line for file overview (default: 100)"),
+      startLine: z.number().describe("Start line for file overview (default: 1)"),
+      endLine: z.number().describe("End line for file overview (default: 100)"),
       searchAroundLine: z.number().optional().describe("If provided, search for the code snippet around this specific line number")
     }),
     execute: async ({
@@ -76,20 +76,20 @@ export function startMcpServer() {
       repoSlug,
       filePath,
       codeSnippet,
-      startLine = 1,
-      endLine = 100,
+      startLine,
+      endLine,
       searchAroundLine,
     }: {
       projectKey: string;
       repoSlug: string;
       filePath: string;
       codeSnippet?: string;
-      startLine?: number;
-      endLine?: number;
+      startLine: number;
+      endLine: number;
       searchAroundLine?: number;
     }) => {
       try {
-        console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
+        // console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
         const fileContent = await bitbucket.getFileContent(projectKey, repoSlug, filePath);
         
         if (!fileContent) {
@@ -98,10 +98,10 @@ export function startMcpServer() {
         
         const lines = fileContent.split("\n");
         
-        console.log(`File has ${lines.length} lines`);
-        console.log(`File size: ${fileContent.length} characters`);
-        console.log(`First few lines: ${lines.slice(0, 5).join("\\n")}`);
-        console.log(`Last few lines: ${lines.slice(-5).join("\\n")}`);
+        // console.log(`File has ${lines.length} lines`);
+        // console.log(`File size: ${fileContent.length} characters`);
+        // console.log(`First few lines: ${lines.slice(0, 5).join("\\n")}`);
+        // console.log(`Last few lines: ${lines.slice(-5).join("\\n")}`);
         
         // Check if file seems truncated
         const lastLine = lines[lines.length - 1];
@@ -131,39 +131,39 @@ export function startMcpServer() {
         let foundLine = -1;
         const cleanSnippet = codeSnippet.trim();
         
-        console.log(`Searching for snippet in ${lines.length} lines:`);
-        console.log(`Snippet: "${cleanSnippet}"`);
+        // console.log(`Searching for snippet in ${lines.length} lines:`);
+        // console.log(`Snippet: "${cleanSnippet}"`);
         
         // If searchAroundLine is provided, check that specific area first
         if (searchAroundLine && codeSnippet) {
-          console.log(`Searching around line ${searchAroundLine} for snippet...`);
+          // console.log(`Searching around line ${searchAroundLine} for snippet...`);
           const searchStart = Math.max(0, searchAroundLine - 50);
           const searchEnd = Math.min(lines.length, searchAroundLine + 50);
           
-          console.log(`Checking lines ${searchStart + 1} to ${searchEnd} around target line ${searchAroundLine}`);
+          // console.log(`Checking lines ${searchStart + 1} to ${searchEnd} around target line ${searchAroundLine}`);
           
           for (let i = searchStart; i < searchEnd; i++) {
             const line = lines[i].trim();
             if (line.includes(cleanSnippet.trim())) {
               foundLine = i + 1;
-              console.log(`Found snippet near expected line ${searchAroundLine}: actual line ${foundLine}`);
-              console.log(`Content: "${line}"`);
+              // console.log(`Found snippet near expected line ${searchAroundLine}: actual line ${foundLine}`);
+              // console.log(`Content: "${line}"`);
               break;
             }
           }
           
           // If found around the expected line, skip other strategies
           if (foundLine !== -1) {
-            console.log(`Success: Found code around expected line ${searchAroundLine}`);
+            // console.log(`Success: Found code around expected line ${searchAroundLine}`);
           } else {
-            console.log(`Code not found around line ${searchAroundLine}, will try other strategies`);
+            // console.log(`Code not found around line ${searchAroundLine}, will try other strategies`);
             
             // Show context around the expected line for debugging
             const contextStart = Math.max(0, searchAroundLine - 10);
             const contextEnd = Math.min(lines.length, searchAroundLine + 10);
-            console.log(`Context around line ${searchAroundLine}:`);
+            // console.log(`Context around line ${searchAroundLine}:`);
             for (let i = contextStart; i < contextEnd; i++) {
-              console.log(`${i + 1}: ${lines[i]}`);
+              // console.log(`${i + 1}: ${lines[i]}`);
             }
           }
         }
@@ -181,11 +181,11 @@ export function startMcpServer() {
         if (foundLine === -1) {
           // Strategy 1: Exact line match (for single lines)
           if (!cleanSnippet.includes('\n')) {
-            console.log("Trying exact line match...");
+            // console.log("Trying exact line match...");
             for (let i = 0; i < lines.length; i++) {
               if (lines[i].trim() === cleanSnippet) {
                 foundLine = i + 1;
-                console.log(`Found exact match at line ${foundLine}`);
+                // console.log(`Found exact match at line ${foundLine}`);
                 break;
               }
             }
@@ -193,7 +193,7 @@ export function startMcpServer() {
         
         // Strategy 2: Exact multi-line sequence match
         if (foundLine === -1 && cleanSnippet.includes('\n')) {
-          console.log("Trying exact multi-line match...");
+          // console.log("Trying exact multi-line match...");
           const snippetLines = cleanSnippet.split('\n').map(line => line.trim());
           
           for (let i = 0; i <= lines.length - snippetLines.length; i++) {
@@ -211,7 +211,7 @@ export function startMcpServer() {
             
             if (allLinesMatch) {
               foundLine = i + 1;
-              console.log(`Found exact multi-line match starting at line ${foundLine}`);
+              // console.log(`Found exact multi-line match starting at line ${foundLine}`);
               break;
             }
           }
@@ -219,7 +219,7 @@ export function startMcpServer() {
         
         // Strategy 3: Substring match (skip comments and empty lines)
         if (foundLine === -1) {
-          console.log("Trying substring match...");
+          // console.log("Trying substring match...");
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             
@@ -231,7 +231,7 @@ export function startMcpServer() {
             
             if (line.includes(cleanSnippet)) {
               foundLine = i + 1;
-              console.log(`Found substring match at line ${foundLine}: "${line}"`);
+              // console.log(`Found substring match at line ${foundLine}: "${line}"`);
               break;
             }
           }
@@ -239,7 +239,7 @@ export function startMcpServer() {
         
         // Strategy 4: Contains all significant words (for function signatures, etc.)
         if (foundLine === -1) {
-          console.log("Trying contains all words match...");
+          // console.log("Trying contains all words match...");
           const snippetWords = cleanSnippet.split(/\s+/)
             .filter(word => word.length > 2 && !/^(::|\->|=>|{|}|\(|\)|;|,)$/.test(word));
           
@@ -265,8 +265,8 @@ export function startMcpServer() {
               // Must contain ALL significant words
               if (wordsFound === snippetWords.length) {
                 foundLine = i + 1;
-                console.log(`Found all-words match at line ${foundLine}: "${line}"`);
-                console.log(`Matched words: ${snippetWords.join(', ')}`);
+                // console.log(`Found all-words match at line ${foundLine}: "${line}"`);
+                // console.log(`Matched words: ${snippetWords.join(', ')}`);
                 break;
               }
             }
@@ -275,7 +275,7 @@ export function startMcpServer() {
         
         // Strategy 5: Fuzzy matching with detailed scoring
         if (foundLine === -1) {
-          console.log("Trying fuzzy match with scoring...");
+          // console.log("Trying fuzzy match with scoring...");
           const snippetWords = cleanSnippet.split(/\s+/).filter(word => word.length > 1);
           let bestMatch = { line: -1, score: 0, matchedLine: "" };
           
@@ -315,12 +315,12 @@ export function startMcpServer() {
           
           if (bestMatch.line > 0) {
             foundLine = bestMatch.line;
-            console.log(`Found fuzzy match at line ${foundLine} (score: ${bestMatch.score.toFixed(3)}): "${bestMatch.matchedLine}"`);
+            // console.log(`Found fuzzy match at line ${foundLine} (score: ${bestMatch.score.toFixed(3)}): "${bestMatch.matchedLine}"`);
           }
         }
         
         if (foundLine === -1) {
-          console.log("No match found with any strategy");
+          // console.log("No match found with any strategy");
           
           // Enhanced debugging - show file structure and sample lines
           const debugInfo = {
@@ -406,8 +406,8 @@ export function startMcpServer() {
       projectKey: z.string(),
       repoSlug: z.string(),
       filePath: z.string(),
-      startLine: z.union([z.number(), z.string().transform(Number)]),
-      endLine: z.union([z.number(), z.string().transform(Number)]),
+      startLine: z.number(),
+      endLine: z.number(),
     }),
     execute: async ({
       projectKey,
@@ -423,26 +423,21 @@ export function startMcpServer() {
       endLine: number;
     }) => {
       try {
-        const blame = await bitbucket.getGitBlame(
+        const blameResponse = await bitbucket.getGitBlame(
           projectKey,
           repoSlug,
-          filePath
+          filePath,
+          startLine,
+          endLine
         );
-        let processed = blame.map((b: any) => ({
+        const blame = blameResponse.blame || blameResponse.values || [];
+        const processed = blame.map((b: any) => ({
           name: b.author.name,
           emailAddress: b.author.emailAddress,
           commitId: b.commitHash,
           lineNoFrom: b.lineNumber,
           lineNoTo: b.lineNumber + b.spannedLines - 1,
         }));
-
-        if (startLine > 0 && endLine > 0) {
-          processed = processed.filter(
-            (b: any) =>
-              Math.max(b.lineNoFrom, startLine) <=
-              Math.min(b.lineNoTo, endLine)
-          );
-        }
 
         const uniqueCommits = [
           ...new Set(processed.map((b: any) => b.commitId)),
@@ -481,6 +476,5 @@ export function startMcpServer() {
       port: 7320,
     },
   });
-  
-  console.error("MCP-HTTPStream server listening on http://localhost:7320/mcp");
+  logger.info("MCP server started on port 7320");
 }

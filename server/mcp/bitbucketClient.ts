@@ -57,9 +57,13 @@ class BitbucketClient {
   async getGitBlame(
     projectKey: string,
     repoSlug: string,
-    filePath: string
+    filePath: string,
+    startLine: number,
+    endLine: number
   ): Promise<any> {
-    const url = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}?blame=true&noContent=true`;
+    let url = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}?blame=true&noContent=true`;
+    const limit = endLine - startLine + 1;
+    url += `&start=${startLine - 1}&limit=${limit}`;
     console.log(`Fetching git blame from URL: ${url}`);
     const options: RequestInit = {
       method: "GET",
@@ -91,7 +95,7 @@ class BitbucketClient {
   ): Promise<string> {
     // Try to get structured content with pagination
     const structuredUrl = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}`;
-    console.log(`Fetching structured file content from URL: ${structuredUrl}`);
+    // console.log(`Fetching structured file content from URL: ${structuredUrl}`);
     
     let structuredError: any = null;
     
@@ -103,7 +107,7 @@ class BitbucketClient {
       
       while (!isLastPage) {
         const pagedUrl = `${structuredUrl}?start=${start}&limit=${pageSize}`;
-        console.log(`Fetching page starting at line ${start}, limit ${pageSize}`);
+        // console.log(`Fetching page starting at line ${start}, limit ${pageSize}`);
         
         const response = await this.fetchWithRetry(pagedUrl, {
           method: "GET",
@@ -125,7 +129,7 @@ class BitbucketClient {
           isLastPage = response.isLastPage === true || response.lines.length < pageSize;
           start += response.lines.length;
           
-          console.log(`Fetched ${response.lines.length} lines, total so far: ${allLines.length}, isLastPage: ${isLastPage}`);
+          // console.log(`Fetched ${response.lines.length} lines, total so far: ${allLines.length}, isLastPage: ${isLastPage}`);
         } else {
           // If it's a single page string response, return it directly
           if (typeof response === 'string') {
@@ -136,17 +140,17 @@ class BitbucketClient {
         }
       }
       
-      console.log(`Total file content retrieved: ${allLines.length} lines`);
+      // console.log(`Total file content retrieved: ${allLines.length} lines`);
       return allLines.join('\n');
       
     } catch (error) {
       structuredError = error;
-      console.log("Structured content fetch failed, trying raw format:", error);
+      // console.log("Structured content fetch failed, trying raw format:", error);
     }
 
     // Fallback: try raw content
     const rawUrl = `${this.baseUrl}/rest/api/latest/projects/${projectKey}/repos/${repoSlug}/browse/${filePath}?raw`;
-    console.log(`Fetching raw file content from URL: ${rawUrl}`);
+    // console.log(`Fetching raw file content from URL: ${rawUrl}`);
     
     try {
       const rawResponse = await fetch(rawUrl, {
