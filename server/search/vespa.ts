@@ -2232,8 +2232,22 @@ export const getItems = async (
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
-  // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
+  // Construct YQL query with proper clause ordering and spacing
+  let yqlParts = [`select * from sources ${schema}`]
+  
+  yqlParts.push(whereClause)
+  
+  if (orderByClause) {
+    yqlParts.push(orderByClause)
+  }
+  
+  yqlParts.push(`limit ${limit}`)
+  
+  if (offset > 0) {
+    yqlParts.push(`offset ${offset}`)
+  }
+  
+  const yql = yqlParts.join(" ")
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
   Logger.info(`[getItems] Query Details:`, {
@@ -2249,8 +2263,6 @@ export const getItems = async (
   const searchPayload = {
     yql,
     "ranking.profile": "unranked",
-    hits: limit,
-    ...(offset ? { offset } : {}),
     timeout: "30s",
   }
 

@@ -151,6 +151,7 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),
   intent: IntentSchema.optional(),
 })
 

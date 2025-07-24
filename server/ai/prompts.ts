@@ -986,7 +986,10 @@ export const SearchQueryToolContextPrompt = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (
+  userContext: string, 
+  previousClassification?: any
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -995,6 +998,26 @@ export const searchQueryPrompt = (userContext: string): string => {
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
+    
+    ${previousClassification ? `
+    **Previous Query Classification:**
+    The previous query was classified as:
+    ${JSON.stringify(previousClassification, null, 2)}
+    
+    **IMPORTANT - For Follow-Up/Pagination Queries:**
+    When requesting more results ("more", "continue", "next", "show more") or follow-up queries:
+  
+    
+    **OFFSET CALCULATION:**
+    - Formula: newOffset = previousOffset + previousCount
+    - Current calculation: newOffset = ${previousClassification?.filters?.offset || 0} + ${previousClassification?.filters?.count || 0}
+    - CRITICAL: Use original requested count, NOT actual returned count
+    
+    **FOR PAGINATION QUERIES:**
+    - **PRESERVE**: app, entity, intent, sortDirection, temporal settings, filterQuery
+    - **UPDATE ONLY**: offset (using formula above) and count (if user specifies new number)
+    ` : ''}
+    
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
@@ -1157,8 +1180,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     2. **${QueryType.GetItems}**:
       - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
       - ONLY use this when you have EXACT identifiers like:
-        - Complete email addresses (e.g., "emails from john@company.com")
-        - Exact user IDs or precise metadata that can be matched exactly
+        - Exact user IDs, count, or precise metadata that can be matched exactly
       - DO NOT use this for person names without email addresses or without exact identifiers. 
       - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
       - This is for PRECISE metadata filtering, not content search
@@ -1289,6 +1311,7 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
+           "offset": "<number for pagination - IMPORTANT: For follow-up queries, use (previousOffset + previousRequestedCount), NOT returned count>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
