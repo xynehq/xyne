@@ -6,7 +6,7 @@ import {
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt, count, inArray } from "drizzle-orm"
+import { and, asc, eq, lt, count, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -165,8 +165,8 @@ export async function getMessageFeedbackStats({
   const result = await db
     .select({
       chatExternalId: messages.chatExternalId,
-      feedback: messages.feedback,
-      count: count(messages.externalId),
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)::int`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)::int`,
     })
     .from(messages)
     .where(
@@ -174,28 +174,10 @@ export async function getMessageFeedbackStats({
         inArray(messages.chatExternalId, chatExternalIds),
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
-        eq(messages.feedback, "like"),
+        inArray(messages.feedback, ["like", "dislike"]),
       ),
     )
-    .groupBy(messages.chatExternalId, messages.feedback)
-    .union(
-      db
-        .select({
-          chatExternalId: messages.chatExternalId,
-          feedback: messages.feedback,
-          count: count(messages.externalId),
-        })
-        .from(messages)
-        .where(
-          and(
-            inArray(messages.chatExternalId, chatExternalIds),
-            eq(messages.email, email),
-            eq(messages.workspaceExternalId, workspaceExternalId),
-            eq(messages.feedback, "dislike"),
-          ),
-        )
-        .groupBy(messages.chatExternalId, messages.feedback),
-    )
+    .groupBy(messages.chatExternalId)
 
   let totalLikes = 0
   let totalDislikes = 0
@@ -208,17 +190,10 @@ export async function getMessageFeedbackStats({
 
   // Populate with actual feedback counts
   result.forEach((row) => {
-    if (!feedbackByChat[row.chatExternalId]) {
-      feedbackByChat[row.chatExternalId] = { likes: 0, dislikes: 0 }
-    }
-
-    if (row.feedback === "like") {
-      feedbackByChat[row.chatExternalId].likes = row.count
-      totalLikes += row.count
-    } else if (row.feedback === "dislike") {
-      feedbackByChat[row.chatExternalId].dislikes = row.count
-      totalDislikes += row.count
-    }
+    feedbackByChat[row.chatExternalId].likes = row.likes
+    feedbackByChat[row.chatExternalId].dislikes = row.dislikes
+    totalLikes += row.likes
+    totalDislikes += row.dislikes
   })
 
   return {

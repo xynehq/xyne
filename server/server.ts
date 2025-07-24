@@ -57,6 +57,9 @@ import {
   GetAdminUsers,
   GetUserAgentLeaderboard,
   GetAgentAnalysis,
+  adminQuerySchema,
+  userAgentLeaderboardQuerySchema,
+  agentAnalysisQuerySchema,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -617,11 +620,19 @@ export const AppRoutes = app
   )
   .get("/oauth/global-slack-provider", GetProviders)
   // Admin Dashboard Routes
-  .get("/chats", GetAdminChats)
+  .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
   .get("/agents", GetAdminAgents)
   .get("/users", GetAdminUsers)
-  .get("/users/:userId/agent-leaderboard", GetUserAgentLeaderboard)
-  .get("/agents/:agentId/analysis", GetAgentAnalysis)
+  .get(
+    "/users/:userId/agent-leaderboard",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetUserAgentLeaderboard,
+  )
+  .get(
+    "/agents/:agentId/analysis",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentAnalysis,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app

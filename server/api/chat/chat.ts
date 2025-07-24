@@ -737,7 +737,7 @@ export const DashboardDataApi = async (c: Context) => {
       db,
       user.id,
       workspace.id,
-      100, // limit to 100 agents
+      1000, // limit to 1000 agents (increased from 100)
       0, // offset 0
     )
 
@@ -751,7 +751,7 @@ export const DashboardDataApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(
       error,
-      `Dashboard Data Error: ${errMsg} ${(error as Error).stack}`,
+      `Dashboard Data Error: ${errMsg}`,
     )
     throw new HTTPException(500, {
       message: "Could not get dashboard data",

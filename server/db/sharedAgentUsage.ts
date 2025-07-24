@@ -103,7 +103,7 @@ export async function getChatCountsByAgents({
   db: TxnOrClient
   agentExternalIds: string[]
   workspaceExternalId: string
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<Record<string, number>> {
   const conditions = [
     inArray(chats.agentId, agentExternalIds),
@@ -151,7 +151,7 @@ export async function getMessageCountsByAgents({
   db: TxnOrClient
   agentExternalIds: string[]
   workspaceExternalId: string
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<Record<string, number>> {
   const conditions = [
     inArray(chats.agentId, agentExternalIds),
@@ -201,7 +201,7 @@ export async function getFeedbackStatsByAgents({
   db: TxnOrClient
   agentExternalIds: string[]
   workspaceExternalId: string
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<Record<string, { likes: number; dislikes: number }>> {
   const conditions = [
     inArray(chats.agentId, agentExternalIds),
@@ -255,7 +255,7 @@ export async function getAgentUsageByUsers({
   db: TxnOrClient
   agentExternalIds: string[]
   workspaceExternalId: string
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<Record<string, AgentUserUsage[]>> {
   const conditions = [
     inArray(chats.agentId, agentExternalIds),
@@ -366,7 +366,7 @@ export async function getUserAgentLeaderboard({
   db: TxnOrClient
   userId: number
   workspaceExternalId: string
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<UserAgentLeaderboard[]> {
   const conditions = [
     eq(chats.userId, userId),
@@ -508,7 +508,7 @@ export async function getAgentAnalysis({
   db: TxnOrClient
   agentId: string
   workspaceExternalId?: string // Optional for admin cross-workspace view
-  timeRange?: { from: string; to: string }
+  timeRange?: { from?: string; to?: string }
 }): Promise<AgentAnalysisData | null> {
   // First get agent information
   const agentInfo = await db
@@ -519,9 +519,7 @@ export async function getAgentAnalysis({
       createdAt: agents.createdAt,
     })
     .from(agents)
-    .where(
-      and(eq(agents.externalId, agentId), sql`${agents.deletedAt} IS NULL`),
-    )
+    .where(and(eq(agents.externalId, agentId), isNull(agents.deletedAt)))
     .limit(1)
 
   if (agentInfo.length === 0) {

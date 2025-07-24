@@ -12,7 +12,7 @@ import {
   getToolsByConnectorId as dbGetToolsByConnectorId,
   tools as toolsTable,
 } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
-import { eq, and, inArray, sql, gte, lte } from "drizzle-orm"
+import { eq, and, inArray, sql, gte, lte, isNull } from "drizzle-orm"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -74,6 +74,65 @@ import { clearUserSyncJob } from "@/db/syncJob"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
+
+// Schema for admin query validation
+export const adminQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  userId: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined)),
+})
+
+// Schema for user agent leaderboard query
+export const userAgentLeaderboardQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+// Schema for agent analysis query
+export const agentAnalysisQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  workspaceExternalId: z.string().optional(),
+})
 
 export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
@@ -1154,17 +1213,20 @@ export const IngestMoreChannelApi = async (c: Context) => {
 
 export const GetAdminChats = async (c: Context) => {
   try {
-    // Get query parameters for date filtering
-    const from = c.req.query("from")
-    const to = c.req.query("to")
+    // Get validated query parameters
+    // @ts-ignore
+    const { from, to, userId } = c.req.valid("query")
 
     // Build the conditions array
     const conditions = []
     if (from) {
-      conditions.push(gte(chats.createdAt, new Date(from)))
+      conditions.push(gte(chats.createdAt, from))
     }
     if (to) {
-      conditions.push(lte(chats.createdAt, new Date(to)))
+      conditions.push(lte(chats.createdAt, to))
+    }
+    if (userId) {
+      conditions.push(eq(chats.userId, userId))
     }
 
     // Build the query with feedback aggregation
@@ -1245,7 +1307,7 @@ export const GetAdminUsers = async (c: Context) => {
         role: users.role,
         createdAt: users.createdAt,
         lastLogin: users.lastLogin,
-        isActive: sql<boolean>`CASE WHEN ${users.deletedAt} = '1970-01-01 00:00:00+00' THEN true ELSE false END`,
+        isActive: isNull(users.deletedAt),
         totalChats: sql<number>`COUNT(DISTINCT ${chats.id})::int`,
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback} = 'like' THEN 1 END)::int`,
@@ -1283,8 +1345,8 @@ export const GetAdminUsers = async (c: Context) => {
 export const GetUserAgentLeaderboard = async (c: Context) => {
   try {
     const userId = c.req.param("userId")
-    const from = c.req.query("from")
-    const to = c.req.query("to")
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
 
     if (!userId) {
       return c.json(
@@ -1296,13 +1358,29 @@ export const GetUserAgentLeaderboard = async (c: Context) => {
       )
     }
 
+    // Validate that userId is a valid number string
+    const userIdNumber = Number(userId)
+    if (
+      isNaN(userIdNumber) ||
+      !Number.isInteger(userIdNumber) ||
+      userIdNumber <= 0
+    ) {
+      return c.json(
+        {
+          success: false,
+          message: "User ID must be a valid positive integer",
+        },
+        400,
+      )
+    }
+
     // Get the user's workspace information
     const user = await db
       .select({
         workspaceExternalId: users.workspaceExternalId,
       })
       .from(users)
-      .where(eq(users.id, parseInt(userId)))
+      .where(eq(users.id, userIdNumber))
       .limit(1)
 
     if (user.length === 0) {
@@ -1321,7 +1399,7 @@ export const GetUserAgentLeaderboard = async (c: Context) => {
 
     const leaderboard = await getUserAgentLeaderboard({
       db,
-      userId: parseInt(userId),
+      userId: userIdNumber,
       workspaceExternalId,
       timeRange,
     })
@@ -1349,9 +1427,8 @@ export const GetUserAgentLeaderboard = async (c: Context) => {
 export const GetAgentAnalysis = async (c: Context) => {
   try {
     const agentId = c.req.param("agentId")
-    const from = c.req.query("from")
-    const to = c.req.query("to")
-    const workspaceExternalId = c.req.query("workspaceExternalId") // Optional for admin view
+    // @ts-ignore
+    const { from, to, workspaceExternalId } = c.req.valid("query")
 
     if (!agentId) {
       return c.json(
