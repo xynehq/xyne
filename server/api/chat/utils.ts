@@ -72,7 +72,6 @@ export async function expandEmailThreadsInResults(
 ): Promise<VespaSearchResult[]> {
   // Extract unique thread IDs from email results
   const threadIds = extractThreadIdsFromResults(results)
-  console.log(`Found ${threadIds.length} unique email thread IDs to expand`)
   if (threadIds.length === 0) {
     return results
   }
@@ -368,7 +367,6 @@ export const extractFileIdsFromMessage = async (
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
       // Check if this pill has a parentThreadId (for email threads)
-      console.log(`Pill Value ${JSON.stringify(obj.value)}`)
       if (obj?.value?.parentThreadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.parentThreadId)
       }
