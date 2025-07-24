@@ -37,17 +37,17 @@ export function startMcpServer() {
         const issueData = {
           key: issue.key,
           summary: issue.fields.summary,
-          description:
-            issue.fields.description?.content ||
-            issue.fields.description ||
-            "No description",
-          status: issue.fields.status.name,
+          // description:
+          //   issue.fields.description?.content ||
+          //   issue.fields.description ||
+          //   "No description",
+          // status: issue.fields.status.name,
           assignee: issue.fields.assignee?.displayName || "Unassigned",
           reporter: issue.fields.reporter?.displayName || "Unknown",
           priority: issue.fields.priority?.name || "Unknown",
           issueType: issue.fields.issuetype.name,
           created: issue.fields.created,
-          updated: issue.fields.updated,
+          // updated: issue.fields.updated,
           url: `${process.env.JIRA_BASE_URL}/browse/${issue.key}`,
         };
         return JSON.stringify(issueData, null, 2);
@@ -60,7 +60,7 @@ export function startMcpServer() {
   // -------- Bitbucket tool --------
   server.addTool({
     name: "bitbucket_get_git_blame",
-    description: "Get Git blame for a file in Bitbucket",
+    description: "Get Git blame for a file in Bitbucket with the correct lines the given code covers. After this tool, it is mandatory to call jira_get_issue tool to get the Jira description and link from the Jira ticket. For calling this tool you need to be absolutely be sure about the lines of the code. For each of the Jira ID in the response call the jira_get_issue tool to get the description and link. And provide a super detailed output at the end.",
     parameters: z.object({
       projectKey: z.string(),
       repoSlug: z.string(),
