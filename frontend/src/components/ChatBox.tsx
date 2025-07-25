@@ -960,7 +960,6 @@ export const ChatBox = ({
         query: searchTermForFetch,
         limit: limit.toString(),
         offset: offset.toString(),
-        isAtSymbolSearch:"true"
       }
 
       if (persistedAgentId) {
