@@ -3321,7 +3321,6 @@ export const AgentMessageApi = async (c: Context) => {
             // Extract previous classification for pagination and follow-up queries
             let previousClassification = null
             if (messages.length >= 1) {
-              // Get the previous user message (2 messages back: current user message is -1, assistant is -2, previous user is -3)
               const previousUserMessage = messages[messages.length - 2]
               if (previousUserMessage?.queryRouterClassification) {
                 previousClassification = previousUserMessage.queryRouterClassification

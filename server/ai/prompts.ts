@@ -998,25 +998,19 @@ export const searchQueryPrompt = (
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
-    
-    ${previousClassification ? `
-    **Previous Query Classification:**
-    The previous query was classified as:
-    ${JSON.stringify(previousClassification, null, 2)}
-    
-    **IMPORTANT - For Follow-Up/Pagination Queries:**
-    When requesting more results ("more", "continue", "next", "show more") or follow-up queries:
-  
-    
-    **OFFSET CALCULATION:**
+
+    **Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+
+    NOTE : PREVIOUS QUERY CLASSIFICATION IS FOR REFERENCE ONLY, IF YOU FEEL SOME PARAMETERS NEED TO BE CHANGED, CHANGE THEM ACCORDINGLY.
+
+    **IMPORTANT - For Follow-Up Queries:**
+    When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
+
+    **OFFSET CALCULATION WILL HAPPEN FOR ${QueryType.GetItems}:**
     - Formula: newOffset = previousOffset + previousCount
+    - Preserve your app and entity
     - Current calculation: newOffset = ${previousClassification?.filters?.offset || 0} + ${previousClassification?.filters?.count || 0}
-    - CRITICAL: Use original requested count, NOT actual returned count
-    
-    **FOR PAGINATION QUERIES:**
-    - **PRESERVE**: app, entity, intent, sortDirection, temporal settings, filterQuery
-    - **UPDATE ONLY**: offset (using formula above) and count (if user specifies new number)
-    ` : ''}
+    - CRITICAL: Use original requested count, NOT actual returned count    
     
     Now handle the query as follows:
 
@@ -1031,6 +1025,8 @@ export const searchQueryPrompt = (
         - "can you elaborate on [specific content]"
         - "what about the [specific item mentioned before]"
         - "expand on that [specific reference]"
+        - "now tell more from [different source]"
+        - "what about from [different app/source]"
 
       - **Direct Back-References:** Questions referencing specific numbered items, names, or content from previous responses:
         - "the second option you mentioned"
@@ -1038,6 +1034,12 @@ export const searchQueryPrompt = (
         - "the document you found"
 
       - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
+
+      - **Source Transition Patterns:** Queries that request similar information from different sources:
+        - Following a query about emails with "now from slack"
+        - Following a query about one app with "what about [different app]"
+        - Pattern: Previous query about data source A, current query about data source B with similar intent
+        - Temporal continuity words: "now", "then", "next", "also"
 
       **Mandatory Conditions for "isFollowUp": true:**
       1. The current query must contain explicit referential language (as defined above)
@@ -1178,10 +1180,9 @@ export const searchQueryPrompt = (
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
+      - The user is referring to a single <app> or <entity>.
       - ONLY use this when you have EXACT identifiers like:
-        - Exact user IDs, count, or precise metadata that can be matched exactly
-      - DO NOT use this for person names without email addresses or without exact identifiers. 
+        - Exact user IDs, count, or precise metadata that can be matched exactly. 
       - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
       - This is for PRECISE metadata filtering, not content search
         - **JSON Structure**:
@@ -1200,8 +1201,6 @@ export const searchQueryPrompt = (
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring to a single <app> or <entity> and wants to search content
       - Used for content-based searches including:
-        - Person names without email addresses (e.g., "emails from John", "emails from prateek")
-        - Topic/subject keywords
         - Any content that needs to be searched rather than precisely matched
       - Exactly ONE valid app/entity is detected, AND filterQuery contains search keywords
        - **JSON Structure**:
