@@ -46,6 +46,7 @@
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",
+    "axios": "^1.11.0",
     "canvas": "^3.1.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.33.0",
