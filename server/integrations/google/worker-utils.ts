@@ -114,7 +114,7 @@ export const getGmailAttachmentChunks = async (
     const normalizedBase64 = attachementResp.data.data
       .replace(/-/g, "+")
       .replace(/_/g, "/")
-    
+
     let attachmentBuffer: Buffer
     try {
       attachmentBuffer = Buffer.from(normalizedBase64, "base64")
@@ -199,7 +199,7 @@ export const getGmailAttachmentChunks = async (
         )
         return null
       }
-      const content = attachmentBuffer.toString('utf8')
+      const content = attachmentBuffer.toString("utf8")
       const chunks = chunkDocument(content)
       attachmentChunks = chunks.map((v) => v.chunk).filter((v) => v.trim())
     } else {
@@ -209,7 +209,10 @@ export const getGmailAttachmentChunks = async (
       return null
     }
   } catch (error) {
-    Logger.error(error, `Error in getting gmailAttachmentChunks for ${filename}`)
+    Logger.error(
+      error,
+      `Error in getting gmailAttachmentChunks for ${filename}`,
+    )
   }
   return attachmentChunks
 }
@@ -295,7 +298,7 @@ export const getGmailSpreadsheetSheets = async (
     const normalizedBase64 = attachementResp.data.data
       .replace(/-/g, "+")
       .replace(/_/g, "/")
-    
+
     let attachmentBuffer: Buffer
     try {
       attachmentBuffer = Buffer.from(normalizedBase64, "base64")
@@ -316,7 +319,7 @@ export const getGmailSpreadsheetSheets = async (
       mimeType === "application/vnd.ms-excel" ||
       mimeType === "text/csv"
     ) {
-      const sheetsData = processSpreadsheetFileWithSheetInfo(
+      const sheetsData = await processSpreadsheetFileWithSheetInfo(
         attachmentBuffer,
         filename,
       )
@@ -325,7 +328,10 @@ export const getGmailSpreadsheetSheets = async (
 
     return null
   } catch (error) {
-    Logger.error(error, `Error in getting gmail spreadsheet sheets`)
+    Logger.error(
+      error,
+      `Error in getting gmail spreadsheet sheets for ${filename}`,
+    )
     return null
   }
 }
@@ -359,9 +365,36 @@ export const parseAttachments = (
 }
 
 // Function to process spreadsheet files and return individual sheet data
-const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): SheetData[] => {
+export const processSpreadsheetFileWithSheetInfo = async (
+  buffer: Buffer,
+  filename: string,
+): Promise<SheetData[]> => {
+  let workbook: XLSX.WorkBook | null = null
+
   try {
-    let workbook = XLSX.read(buffer, { type: 'buffer' })
+    // Process in a more memory-efficient way
+    workbook = await new Promise<XLSX.WorkBook>((resolve, reject) => {
+      // Use setTimeout to prevent blocking
+      setTimeout(() => {
+        try {
+          const wb = XLSX.read(buffer, {
+            type: "buffer",
+            cellDates: true,
+            cellNF: false,
+            cellText: false,
+            cellFormula: false,
+            cellStyles: false,
+            sheetStubs: false,
+            password: undefined,
+            dense: true, // Use dense mode for better memory efficiency
+          })
+          resolve(wb)
+        } catch (err) {
+          reject(err)
+        }
+      }, 0)
+    })
+
     const sheetsData: SheetData[] = []
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
@@ -371,54 +404,73 @@ const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): 
 
     // Process each sheet in the workbook
     for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
-      const worksheet = workbook.Sheets[sheetName]
-      if (!worksheet) continue
+      try {
+        const worksheet = workbook.Sheets[sheetName]
+        if (!worksheet) continue
 
-      // Convert sheet to JSON array of arrays
-      const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: "",
-        raw: false,
-      })
+        // Get the range of the worksheet
+        const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1")
+        const totalRows = range.e.r - range.s.r + 1
 
-      // Clean and get valid rows
-      const validRows = sheetData.filter((row) =>
-        row.some((cell) => cell && cell.toString().trim().length > 0),
-      )
+        // Skip sheets with too many rows
+        if (totalRows > MAX_ATTACHMENT_SHEET_ROWS) {
+          Logger.warn(
+            `Sheet "${sheetName}" in ${filename} has ${totalRows} rows (max: ${MAX_ATTACHMENT_SHEET_ROWS}), skipping`,
+          )
+          continue
+        }
 
-      if (validRows.length === 0) {
-        Logger.debug(`Sheet "${sheetName}" has no valid content, skipping`)
+        // Convert sheet to JSON array of arrays with a row limit
+        const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: "",
+          raw: false,
+          range: 0, // Start from first row
+          blankrows: false,
+        })
+
+        // Clean and get valid rows
+        const validRows = sheetData.filter((row) =>
+          row.some((cell) => cell && cell.toString().trim().length > 0),
+        )
+
+        if (validRows.length === 0) {
+          Logger.debug(`Sheet "${sheetName}" has no valid content, skipping`)
+          continue
+        }
+
+        // Chunk the rows for this specific sheet
+        const sheetChunks = chunkSheetRows(validRows)
+        const filteredSheetChunks = sheetChunks.filter(
+          (chunk) => chunk.trim().length > 0,
+        )
+
+        if (filteredSheetChunks.length === 0) {
+          Logger.debug(
+            `Sheet "${sheetName}" produced no valid chunks, skipping`,
+          )
+          continue
+        }
+
+        sheetsData.push({
+          sheetName,
+          sheetIndex,
+          chunks: filteredSheetChunks,
+          totalSheets: workbook.SheetNames.length,
+        })
+
+        Logger.debug(
+          `Processed sheet "${sheetName}" with ${filteredSheetChunks.length} chunks`,
+        )
+
+        // Clear the worksheet from memory after processing
+        delete workbook.Sheets[sheetName]
+      } catch (sheetError) {
+        Logger.error(
+          `Error processing sheet "${sheetName}" in ${filename}: ${sheetError}`,
+        )
         continue
       }
-      if (validRows?.length > MAX_ATTACHMENT_SHEET_ROWS) {
-        // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-        // Logger.warn(
-        //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-        // )
-        return []
-      }
-
-      // Chunk the rows for this specific sheet
-      const sheetChunks = chunkSheetRows(validRows)
-      const filteredSheetChunks = sheetChunks.filter(
-        (chunk) => chunk.trim().length > 0,
-      )
-
-      if (filteredSheetChunks.length === 0) {
-        Logger.debug(`Sheet "${sheetName}" produced no valid chunks, skipping`)
-        continue
-      }
-
-      sheetsData.push({
-        sheetName,
-        sheetIndex,
-        chunks: filteredSheetChunks,
-        totalSheets: workbook.SheetNames.length,
-      })
-
-      Logger.debug(
-        `Processed sheet "${sheetName}" with ${filteredSheetChunks.length} chunks`,
-      )
     }
 
     if (sheetsData.length === 0) {
@@ -427,7 +479,7 @@ const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): 
       )
     } else {
       Logger.info(
-        `Successfully processed spreadsheet file with ${workbook.SheetNames.length} sheet(s) and ${sheetsData.length} valid sheets`,
+        `Successfully processed spreadsheet ${filename} with ${sheetsData.length} valid sheets`,
       )
     }
 
@@ -435,17 +487,38 @@ const processSpreadsheetFileWithSheetInfo = (buffer: Buffer, filename: string): 
   } catch (error) {
     const { name, message } = error as Error
     if (
-      message.includes("PasswordException") ||
-      name.includes("PasswordException")
+      message?.includes("PasswordException") ||
+      name?.includes("PasswordException") ||
+      message?.includes("File is password-protected")
     ) {
-      Logger.warn("Password protected Spreadsheet, skipping")
+      Logger.warn(`Password protected spreadsheet '${filename}', skipping`)
+    } else if (
+      message?.includes("Unsupported file") ||
+      message?.includes("Corrupted")
+    ) {
+      Logger.warn(
+        `Corrupted or unsupported spreadsheet format '${filename}', skipping`,
+      )
+    } else if (
+      message?.includes("Cannot read property") ||
+      message?.includes("Cannot read properties")
+    ) {
+      Logger.warn(`Invalid spreadsheet structure in '${filename}', skipping`)
     } else {
-      Logger.error(error, `Spreadsheet load error: ${error}`)
+      Logger.error(`Spreadsheet processing error for '${filename}': ${error}`)
     }
     return []
   } finally {
-    // @ts-ignore
-    workbook = null
+    // Clean up workbook reference
+    if (workbook) {
+      // Clear all sheets
+      if (workbook.Sheets) {
+        for (const sheetName of Object.keys(workbook.Sheets)) {
+          delete workbook.Sheets[sheetName]
+        }
+      }
+      workbook = null
+    }
   }
 }
 
@@ -471,9 +544,11 @@ const chunkSheetRows = (allRows: string[][]): string[] => {
 
     // Check if adding this rowText would exceed the maximum text length
     if (totalTextLength + rowText.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
-      Logger.warn(`Text length excedded, indexing with empty content`)
-      // Return an empty array if the total text length exceeds the limit
-      return []
+      Logger.warn(
+        `Text length exceeded for spreadsheet, stopping at ${totalTextLength} characters`,
+      )
+      // If we have some chunks, return them; otherwise return empty
+      return chunks.length > 0 ? chunks : []
     }
 
     totalTextLength += rowText.length
