@@ -2,6 +2,7 @@ import { FastMCP, UserError } from "fastmcp";
 import { z } from "zod";
 import JiraClient from "./jiraClient.js";
 import BitbucketClient from "./bitbucketClient.js";
+import KibanaClient from "./kibanaClient.js";
 import { getLogger } from "../logger/index.js";
 import { Subsystem } from "../types.js";
 import { file } from "jszip";
@@ -23,6 +24,12 @@ export function startMcpServer() {
     process.env.BITBUCKET_BASE_URL!,
     process.env.BITBUCKET_USER_NAME!,
     process.env.BITBUCKET_APP_PASSWORD!
+  );
+
+  const kibana = new KibanaClient(
+    process.env.KIBANA_BASE_URL!,
+    process.env.KIBANA_COOKIE!,
+    process.env.KIBANA_PREFERENCE
   );
 
   // -------- Jira tool --------
@@ -76,8 +83,8 @@ export function startMcpServer() {
       repoSlug,
       filePath,
       codeSnippet,
-      startLine,
-      endLine,
+      startLine = 1,
+      endLine = 100,
       searchAroundLine,
     }: {
       projectKey: string;
@@ -466,6 +473,58 @@ export function startMcpServer() {
           return JSON.stringify(final, null, 2);
       } catch (err) {
         throw new UserError(`Error fetching Git blame: ${(err as Error).message}`);
+      }
+    },
+  });
+
+  // -------- Kibana Search tool --------
+  server.addTool({
+    name: "kibana_search_logs",
+    description: "Search Kibana logs using OpenSearch API with support for AND, OR, and NOT conditions. Includes progressive token counting and result truncation.",
+    parameters: z.object({
+      start_time: z.string().describe("Start time for log search in ISO format (e.g., '2024-01-01T00:00:00Z')"),
+      end_time: z.string().describe("End time for log search in ISO format (e.g., '2024-01-01T23:59:59Z')"),
+      query_terms: z.array(z.string()).optional().describe("Terms that must all be present (AND condition)"),
+      or_terms: z.array(z.string()).optional().describe("Terms where at least one must be present (OR condition)"),
+      not_terms: z.array(z.string()).optional().describe("Terms that must not be present (NOT condition)"),
+      max_results: z.number().optional().default(500).describe("Maximum number of results to return"),
+      response_format: z.enum(["concise", "detailed"]).optional().default("concise").describe("Format of response - 'concise' for just messages, 'detailed' for full log entries"),
+      max_tokens: z.number().optional().default(50000).describe("Maximum tokens in response before truncation")
+    }),
+    execute: async ({
+      start_time,
+      end_time,
+      query_terms,
+      or_terms,
+      not_terms,
+      max_results = 500,
+      response_format = "concise",
+      max_tokens = 50000
+    }: {
+      start_time: string;
+      end_time: string;
+      query_terms?: string[];
+      or_terms?: string[];
+      not_terms?: string[];
+      max_results?: number;
+      response_format?: "concise" | "detailed";
+      max_tokens?: number;
+    }) => {
+      try {
+        const searchResult = await kibana.searchLogs({
+          start_time,
+          end_time,
+          query_terms,
+          or_terms,
+          not_terms,
+          max_results,
+          response_format,
+          max_tokens
+        });
+        
+        return JSON.stringify(searchResult, null, 2);
+      } catch (err) {
+        throw new UserError(`Error searching Kibana logs: ${(err as Error).message}`);
       }
     },
   });
