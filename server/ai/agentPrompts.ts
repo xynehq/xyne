@@ -153,9 +153,12 @@ this is the context of the agent, it is very important to follow this.
 You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
 
+**CRITICAL FOR PLOTLY CODE:**
+When you receive Plotly visualization code from the generate_plotly_code tool, you MUST include the complete code block in your response. The frontend needs this code to render the chart. Always preserve code blocks that start with \`\`\`plotly exactly as they appear in the tool output - do not summarize or paraphrase them.
+
 Provide the answer in the following JSON format:
 {
-  "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+  "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent. **IMPORTANT**: If the context contains Plotly code blocks (starting with \`\`\`plotly), include them completely in your answer.",
   "citations": [0]  // Array of context indices actually used in the answer
 }
 
@@ -167,6 +170,11 @@ Rules for citations:
 - Numbers must exactly match the index in the citations array
 - All indexing must be 0-based
 - Omit citations for general knowledge or derived conclusions
+
+**SPECIAL RULE FOR CODE BLOCKS:**
+- Always include complete code blocks (especially \`\`\`plotly blocks) from the context in your answer
+- Do not summarize, truncate, or paraphrase code - include it exactly as provided
+- Code blocks are essential for frontend functionality and must be preserved
 
 Do not include any additional text outside of the JSON structure.
 `

@@ -606,47 +606,70 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.GeneratePlotlyCode]: {
     name: XyneTools.GeneratePlotlyCode,
     description:
-      "**REQUIRED FOR ALL VISUALIZATION REQUESTS** Generate Plotly.js visualization code from structured data. Use this tool whenever the user wants to create charts, graphs, plots, or any visualizations. This includes requests like 'make a chart', 'create a graph', 'plot this data', 'visualize', 'show me a bar chart', or any mention of plotly. This tool analyzes the data structure and creates appropriate Plotly configuration for interactive charts. ALWAYS use this tool for visualization requests instead of providing text-only responses.",
+      "Generate interactive Plotly.js visualization code from structured data. Use this tool when the user requests charts, graphs, plots, or visualizations. The tool analyzes data structure and creates appropriate interactive charts, returning executable Plotly.js code that the frontend can render directly. Works with various data formats including arrays of objects, time series data, categorical data, and numerical datasets. **IMPORTANT: This tool returns complete, executable Plotly code that must be included in the response for frontend rendering.**",
     params: [
       {
         name: "data",
         type: "object",
         required: true,
         description:
-          "The structured data to visualize. Can be an array of objects, nested data, or any JSON structure containing numeric/categorical data suitable for visualization.",
+          "The complete dataset to visualize. Should include all relevant data points and fields. Can be an array of objects (e.g., [{name: 'John', value: 10}, {name: 'Jane', value: 15}]), time series data with timestamps, nested objects, or any structured data containing numeric/categorical information. Include comprehensive data to create meaningful visualizations with proper context and details.",
       },
       {
         name: "chart_type",
         type: "string",
         required: false,
         description:
-          "Preferred chart type (e.g., 'bar', 'line', 'scatter', 'pie', 'histogram', 'box'). If not specified, the tool will automatically determine the best chart type based on the data structure.",
+          "Preferred chart type (e.g., 'bar', 'line', 'scatter', 'pie', 'histogram', 'box', 'heatmap', 'treemap'). If not specified, the tool will automatically determine the best chart type based on the data structure and patterns.",
       },
       {
         name: "title",
         type: "string",
         required: false,
         description:
-          "Title for the chart. If not provided, a title will be generated based on the data.",
+          "Descriptive title for the chart. If not provided, a title will be generated based on the data content and context.",
       },
       {
         name: "x_axis_label",
         type: "string",
         required: false,
-        description: "Label for the X-axis.",
+        description:
+          "Label for the X-axis to describe what the horizontal values represent.",
       },
       {
         name: "y_axis_label",
         type: "string",
         required: false,
-        description: "Label for the Y-axis.",
+        description:
+          "Label for the Y-axis to describe what the vertical values represent.",
       },
       {
         name: "description",
         type: "string",
         required: false,
         description:
-          "Additional context about what the user wants to visualize or emphasize in the chart.",
+          "Additional context about what the user wants to visualize, any specific insights to highlight, data relationships to emphasize, or particular aspects of the data to focus on in the visualization.",
+      },
+      {
+        name: "grouping_field",
+        type: "string",
+        required: false,
+        description:
+          "Field name to use for grouping or categorizing data in the visualization (e.g., 'department', 'date', 'category').",
+      },
+      {
+        name: "value_field",
+        type: "string",
+        required: false,
+        description:
+          "Field name that contains the primary numeric values to plot (e.g., 'count', 'amount', 'score').",
+      },
+      {
+        name: "time_field",
+        type: "string",
+        required: false,
+        description:
+          "Field name that contains time/date information for time series visualizations (e.g., 'timestamp', 'date', 'created_at').",
       },
     ],
   },

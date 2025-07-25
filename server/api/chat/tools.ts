@@ -706,6 +706,9 @@ export const generatePlotlyCodeTool: AgentTool = {
         params.x_axis_label,
         params.y_axis_label,
         params.description,
+        params.grouping_field,
+        params.value_field,
+        params.time_field,
       )
 
       const result = `Generated ${chartType} chart configuration with Plotly.js. The chart ${params.title ? `"${params.title}" ` : ""}is ready to be rendered by the frontend.
@@ -762,6 +765,9 @@ function detectBestChartType(data: any): string {
   if (Array.isArray(data)) {
     if (data.length === 0) return "bar"
 
+    // Check for large datasets
+    const isLargeDataset = data.length > 100
+
     const firstItem = data[0]
     if (typeof firstItem === "object" && firstItem !== null) {
       const keys = Object.keys(firstItem)
@@ -769,35 +775,58 @@ function detectBestChartType(data: any): string {
       // Check for nested metric data (like model comparisons)
       const hasNestedArrays = keys.some((key) => Array.isArray(firstItem[key]))
       if (hasNestedArrays) {
-        // Complex nested data typically works best as grouped bar charts
-        return "bar"
+        return "bar" // Complex nested data works best as grouped bar charts
       }
 
       const numericKeys = keys.filter(
         (key) => typeof firstItem[key] === "number" && !isNaN(firstItem[key]),
       )
 
-      // If we have timestamps or dates, prefer line chart
+      const stringKeys = keys.filter(
+        (key) => typeof firstItem[key] === "string",
+      )
+
+      // Check for time-related data patterns
       const hasTimeData = keys.some(
         (key) =>
           key.toLowerCase().includes("date") ||
           key.toLowerCase().includes("time") ||
+          key.toLowerCase().includes("timestamp") ||
+          key.toLowerCase().includes("created") ||
+          key.toLowerCase().includes("updated") ||
           (typeof firstItem[key] === "string" &&
             !isNaN(Date.parse(firstItem[key]))),
       )
 
-      if (hasTimeData && numericKeys.length > 0) return "line"
+      // Time series data with temporal progression
+      if (hasTimeData && numericKeys.length > 0) {
+        return isLargeDataset ? "line" : "line"
+      }
+
+      // Multiple numeric values suggest scatter plot for correlation analysis
       if (numericKeys.length >= 2) return "scatter"
-      if (numericKeys.length === 1) return "bar"
+
+      // Single numeric value with categories
+      if (numericKeys.length === 1 && stringKeys.length >= 1) {
+        // For small categorical datasets, pie chart might be better
+        if (data.length <= 10 && stringKeys.length === 1) return "pie"
+        return "bar"
+      }
+
+      // If mostly numeric data, histogram for distribution
+      if (numericKeys.length > stringKeys.length) return "histogram"
     }
 
-    // If it's an array of numbers
+    // If it's an array of numbers, use histogram for distribution analysis
     if (data.every((item) => typeof item === "number")) return "histogram"
   } else if (typeof data === "object") {
+    const entries = Object.entries(data)
     const values = Object.values(data)
+
     if (values.every((val) => typeof val === "number")) {
-      // If all values are numbers, could be pie chart for categories
-      if (Object.keys(data).length <= 10) return "pie"
+      // Small categorical data works well with pie charts
+      if (entries.length <= 8) return "pie"
+      // Larger categorical data better as bar chart
       return "bar"
     }
   }
@@ -813,17 +842,36 @@ function generatePlotlyConfig(
   xAxisLabel?: string,
   yAxisLabel?: string,
   description?: string,
+  groupingField?: string,
+  valueField?: string,
+  timeField?: string,
 ): any {
   let traces: any[] = []
   let layout: any = {
-    title: title || `Data Visualization`,
-    xaxis: { title: xAxisLabel || "" },
-    yaxis: { title: yAxisLabel || "" },
+    title: {
+      text: title || `Data Visualization`,
+      font: { size: 18 },
+    },
+    xaxis: {
+      title: xAxisLabel || "",
+      showgrid: true,
+      gridcolor: "#f0f0f0",
+    },
+    yaxis: {
+      title: yAxisLabel || "",
+      showgrid: true,
+      gridcolor: "#f0f0f0",
+    },
+    plot_bgcolor: "white",
+    paper_bgcolor: "white",
+    font: { family: "Arial, sans-serif" },
+    margin: { l: 60, r: 30, t: 80, b: 60 },
+    hovermode: "closest",
   }
 
   switch (chartType) {
     case "bar":
-      traces = generateBarChart(data)
+      traces = generateBarChart(data, groupingField, valueField)
       // If we have multiple traces (grouped bar chart), adjust layout
       if (traces.length > 1) {
         layout.barmode = "group"
@@ -831,22 +879,22 @@ function generatePlotlyConfig(
       }
       break
     case "line":
-      traces = generateLineChart(data)
+      traces = generateLineChart(data, groupingField, valueField, timeField)
       break
     case "scatter":
-      traces = generateScatterChart(data)
+      traces = generateScatterChart(data, groupingField, valueField)
       break
     case "pie":
-      traces = generatePieChart(data)
+      traces = generatePieChart(data, groupingField, valueField)
       break
     case "histogram":
-      traces = generateHistogram(data)
+      traces = generateHistogram(data, valueField)
       break
     case "box":
-      traces = generateBoxPlot(data)
+      traces = generateBoxPlot(data, groupingField, valueField)
       break
     default:
-      traces = generateBarChart(data) // fallback
+      traces = generateBarChart(data, groupingField, valueField) // fallback
   }
 
   return {
@@ -856,12 +904,24 @@ function generatePlotlyConfig(
       responsive: true,
       displayModeBar: true,
       modeBarButtonsToRemove: ["pan2d", "lasso2d"],
+      displaylogo: false,
+      toImageButtonOptions: {
+        format: "png",
+        filename: "xyne_chart",
+        height: 500,
+        width: 700,
+        scale: 1,
+      },
     },
   }
 }
 
 // Helper functions for different chart types
-function generateBarChart(data: any): any[] {
+function generateBarChart(
+  data: any,
+  groupingField?: string,
+  valueField?: string,
+): any[] {
   if (Array.isArray(data)) {
     if (data.length > 0 && typeof data[0] === "object") {
       const keys = Object.keys(data[0])
@@ -872,8 +932,15 @@ function generateBarChart(data: any): any[] {
         return processNestedBarData(data)
       }
 
-      const xKey = keys.find((k) => typeof data[0][k] === "string") || keys[0]
-      const yKey = keys.find((k) => typeof data[0][k] === "number") || keys[1]
+      // Use provided field names or auto-detect
+      const xKey =
+        groupingField ||
+        keys.find((k) => typeof data[0][k] === "string") ||
+        keys[0]
+      const yKey =
+        valueField ||
+        keys.find((k) => typeof data[0][k] === "number") ||
+        keys[1]
 
       return [
         {
@@ -881,6 +948,8 @@ function generateBarChart(data: any): any[] {
           x: data.map((item) => item[xKey]),
           y: data.map((item) => item[yKey]),
           name: yKey,
+          text: data.map((item) => `${item[xKey]}: ${item[yKey]}`),
+          hovertemplate: `<b>%{text}</b><extra></extra>`,
         },
       ]
     }
@@ -891,6 +960,8 @@ function generateBarChart(data: any): any[] {
         x: Object.keys(data),
         y: Object.values(data),
         name: "Values",
+        text: Object.entries(data).map(([k, v]) => `${k}: ${v}`),
+        hovertemplate: `<b>%{text}</b><extra></extra>`,
       },
     ]
   }
@@ -982,17 +1053,31 @@ function generateSimpleBarChart(data: any): any[] {
   return [{ type: "bar", x: [], y: [] }]
 }
 
-function generateLineChart(data: any): any[] {
+function generateLineChart(
+  data: any,
+  groupingField?: string,
+  valueField?: string,
+  timeField?: string,
+): any[] {
   if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
     const keys = Object.keys(data[0])
+
+    // Use provided timeField or auto-detect time-related field
     const xKey =
+      timeField ||
       keys.find(
         (k) =>
           k.toLowerCase().includes("date") ||
           k.toLowerCase().includes("time") ||
+          k.toLowerCase().includes("timestamp") ||
           (typeof data[0][k] === "string" && !isNaN(Date.parse(data[0][k]))),
-      ) || keys[0]
-    const yKey = keys.find((k) => typeof data[0][k] === "number") || keys[1]
+      ) ||
+      groupingField ||
+      keys[0]
+
+    // Use provided valueField or auto-detect numeric field
+    const yKey =
+      valueField || keys.find((k) => typeof data[0][k] === "number") || keys[1]
 
     return [
       {
@@ -1001,64 +1086,147 @@ function generateLineChart(data: any): any[] {
         x: data.map((item) => item[xKey]),
         y: data.map((item) => item[yKey]),
         name: yKey,
+        text: data.map((item) => `${item[xKey]}: ${item[yKey]}`),
+        hovertemplate: `<b>%{text}</b><extra></extra>`,
+        line: { width: 3 },
+        marker: { size: 6 },
       },
     ]
   }
 
-  return generateBarChart(data)
+  return generateBarChart(data, groupingField, valueField)
 }
 
-function generateScatterChart(data: any): any[] {
+function generateScatterChart(
+  data: any,
+  groupingField?: string,
+  valueField?: string,
+): any[] {
   if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
     const keys = Object.keys(data[0])
     const numericKeys = keys.filter((k) => typeof data[0][k] === "number")
 
     if (numericKeys.length >= 2) {
+      const xKey = numericKeys[0]
+      const yKey = valueField || numericKeys[1]
+      const colorKey =
+        groupingField || keys.find((k) => typeof data[0][k] === "string")
+
       return [
         {
           type: "scatter",
           mode: "markers",
-          x: data.map((item) => item[numericKeys[0]]),
-          y: data.map((item) => item[numericKeys[1]]),
-          name: `${numericKeys[1]} vs ${numericKeys[0]}`,
+          x: data.map((item) => item[xKey]),
+          y: data.map((item) => item[yKey]),
+          text: data.map((item) =>
+            colorKey
+              ? `${item[colorKey]}<br>${xKey}: ${item[xKey]}<br>${yKey}: ${item[yKey]}`
+              : `${xKey}: ${item[xKey]}<br>${yKey}: ${item[yKey]}`,
+          ),
+          hovertemplate: `<b>%{text}</b><extra></extra>`,
+          marker: {
+            size: 8,
+            color: colorKey ? data.map((item) => item[colorKey]) : undefined,
+            colorscale: colorKey ? "Viridis" : undefined,
+            showscale: !!colorKey,
+          },
+          name: `${yKey} vs ${xKey}`,
         },
       ]
     }
   }
 
-  return generateBarChart(data)
+  return generateBarChart(data, groupingField, valueField)
 }
 
-function generatePieChart(data: any): any[] {
-  if (typeof data === "object" && !Array.isArray(data)) {
+function generatePieChart(
+  data: any,
+  groupingField?: string,
+  valueField?: string,
+): any[] {
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+    const keys = Object.keys(data[0])
+    const labelKey =
+      groupingField ||
+      keys.find((k) => typeof data[0][k] === "string") ||
+      keys[0]
+    const valueKey =
+      valueField || keys.find((k) => typeof data[0][k] === "number") || keys[1]
+
+    return [
+      {
+        type: "pie",
+        labels: data.map((item) => item[labelKey]),
+        values: data.map((item) => item[valueKey]),
+        name: "Distribution",
+        textinfo: "label+percent",
+        hovertemplate: `<b>%{label}</b><br>Value: %{value}<br>Percentage: %{percent}<extra></extra>`,
+      },
+    ]
+  } else if (typeof data === "object" && !Array.isArray(data)) {
     return [
       {
         type: "pie",
         labels: Object.keys(data),
         values: Object.values(data),
         name: "Distribution",
+        textinfo: "label+percent",
+        hovertemplate: `<b>%{label}</b><br>Value: %{value}<br>Percentage: %{percent}<extra></extra>`,
       },
     ]
   }
 
-  return generateBarChart(data)
+  return generateBarChart(data, groupingField, valueField)
 }
 
-function generateHistogram(data: any): any[] {
-  if (Array.isArray(data) && data.every((item) => typeof item === "number")) {
-    return [
-      {
-        type: "histogram",
-        x: data,
-        name: "Distribution",
-      },
-    ]
+function generateHistogram(data: any, valueField?: string): any[] {
+  if (Array.isArray(data)) {
+    // If it's an array of numbers
+    if (data.every((item) => typeof item === "number")) {
+      return [
+        {
+          type: "histogram",
+          x: data,
+          name: "Distribution",
+          nbinsx: Math.min(Math.ceil(Math.sqrt(data.length)), 50),
+          marker: {
+            color: "rgba(100,150,255,0.7)",
+            line: { color: "white", width: 1 },
+          },
+        },
+      ]
+    }
+
+    // If it's an array of objects, extract the value field
+    if (data.length > 0 && typeof data[0] === "object" && valueField) {
+      const values = data
+        .map((item) => item[valueField])
+        .filter((val) => typeof val === "number")
+      if (values.length > 0) {
+        return [
+          {
+            type: "histogram",
+            x: values,
+            name: `${valueField} Distribution`,
+            nbinsx: Math.min(Math.ceil(Math.sqrt(values.length)), 50),
+            marker: {
+              color: "rgba(100,150,255,0.7)",
+              line: { color: "white", width: 1 },
+            },
+          },
+        ]
+      }
+    }
   }
 
-  return generateBarChart(data)
+  return generateBarChart(data, undefined, valueField)
 }
 
-function generateBoxPlot(data: any): any[] {
+function generateBoxPlot(
+  data: any,
+  groupingField?: string,
+  valueField?: string,
+): any[] {
   if (Array.isArray(data) && data.every((item) => typeof item === "number")) {
     return [
       {

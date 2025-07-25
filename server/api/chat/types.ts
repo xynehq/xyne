@@ -172,4 +172,7 @@ export interface GeneratePlotlyCodeParams {
   x_axis_label?: string
   y_axis_label?: string
   description?: string
+  grouping_field?: string
+  value_field?: string
+  time_field?: string
 }

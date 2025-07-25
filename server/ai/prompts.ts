@@ -148,11 +148,14 @@ You are an assistant that answers questions based on the provided context. Your 
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
 
 **IMPORTANT FOR VISUALIZATIONS:**
-If the user asks for any charts, graphs, plots, visualizations, or mentions "plotly", you should recommend using the visualization tools available in the system. For example: "I can help create that visualization using the generate_plotly_code tool. The chart/graph you requested would be perfect for visual representation of this data."
+If the user asks for any charts, graphs, plots, visualizations, or mentions "plotly", consider recommending visualization tools when data is available. For example: "I can help create that visualization using the generate_plotly_code tool. The chart/graph you requested would be perfect for visual representation of this data." Ensure you have numerical or categorical data before suggesting visualizations.
+
+**CRITICAL FOR PLOTLY CODE:**
+When you receive Plotly visualization code from the generate_plotly_code tool, you MUST include the complete code block in your response. The frontend needs this code to render the chart. Always preserve code blocks that start with \`\`\`plotly exactly as they appear in the tool output - do not summarize or paraphrase them.
 
 Provide the answer in the following JSON format:
 {
-  "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+  "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent, If the context contains Plotly code blocks (starting with \`\`\`plotly), include them completely in your answer.",
   "citations": [0]  // Array of context indices actually used in the answer
 }
 
@@ -164,6 +167,11 @@ Rules for citations:
 - Numbers must exactly match the index in the citations array
 - All indexing must be 0-based
 - Omit citations for general knowledge or derived conclusions
+
+**SPECIAL RULE FOR CODE BLOCKS:**
+- Always include complete code blocks (especially \`\`\`plotly blocks) from the context in your answer
+- Do not summarize, truncate, or paraphrase code - include it exactly as provided
+- Code blocks are essential for frontend functionality and must be preserved
 
 Do not include any additional text outside of the JSON structure.
 `
@@ -932,7 +940,7 @@ export const SearchQueryToolContextPrompt = (
     
     **CRITICAL: Your response must ONLY be valid JSON. Do not include any explanations, reasoning, or text before or after the JSON.**
     
-    **VISUALIZATION PRIORITY: If the user requests any form of chart, graph, plot, or visualization (including mentions of "plotly"), you MUST use the generate_plotly_code tool. Never provide text-only responses for visualization requests.**
+    **VISUALIZATION CONSIDERATION: If the user requests charts, graphs, plots, or visualizations, consider using the generate_plotly_code tool when you have retrieved sufficient data for visualization. However, prioritize data retrieval first if no relevant data is available in the current context.**
         
     **Agent Scratchpad (Conversation History):**
     ---
@@ -953,50 +961,57 @@ export const SearchQueryToolContextPrompt = (
     Review the conversation history and understand what information has already been gathered.
     If an **agent prompt** is provided, interpret and apply any additional instructions or constraints it contains before proceeding.
 
-    ## 2. Query Assessment
+    ## 2. Visualization Request Assessment (if applicable)
+    **If the user requests visualization:**
+    1. **Data Availability Check**: Assess whether you have relevant data in the current context
+    2. **Data Suitability Evaluation**: Determine if the available data can be used for the requested visualization type
+    3. **Tool Selection Priority**:
+       - **If data is available**: Consider using generate_plotly_code tool
+       - **If data is missing**: Prioritize data retrieval tools first
+       - **If data needs clarification**: Consider data gathering before visualization
+    4. **Balanced Decision**: Remember that visualization is one of many valuable tools - don't override other important tool selections unless data supports it
+
+    ## 3. Query Assessment
     Determine what type of information or action the user is requesting:
     - Information retrieval (search, lookup, fetch)
     - Data manipulation (create, update, delete)
     - Analysis or computation
     - Multi-step operations
     
-    ## 3. Data Visualization Decision - CRITICAL FOR CHART REQUESTS
-    **ALWAYS use the generate_plotly_code tool when:**
+    ## 4. Data Visualization Decision - SMART CHART REQUESTS
+    **Consider using the generate_plotly_code tool when:**
     - User explicitly requests charts, graphs, plots, or visualizations (e.g., "make a chart", "create a graph", "plot this data")
     - User asks to "visualize", "show graphically", "plot", "chart", or "graph" data
     - User mentions specific chart types (bar chart, line graph, pie chart, scatter plot, histogram, etc.)
-    - You have retrieved numerical or categorical data that would benefit from visual representation
-    - User asks for trends, patterns, distributions, or comparisons in data
-    - User requests dashboard-style reporting or data presentation
+    - You have retrieved numerical or categorical data that can be visualized
+    - User asks for trends, patterns, distributions, or comparisons in data AND you have relevant data
+    - User requests dashboard-style reporting or data presentation AND data is available
     - User says anything like "show me visually", "make a plotly graph", "create visualization"
     
-    **IMPORTANT: If the user mentions "plotly", "chart", "graph", "plot", "visualize", or any similar terms, you MUST use the generate_plotly_code tool. Do not provide text-based responses when visualization is requested.**
+    **DATA-FIRST APPROACH: Use the generate_plotly_code tool when you have relevant data available for visualization. If the user requests a visualization but you don't have any relevant data, prioritize data retrieval tools first.**
     
-    **Examples of visualization triggers:**
-    - "Can you create a chart showing my email volume over time?"
-    - "Plot the meeting frequency by month"
-    - "Show me a graph of project completion rates"
-    - "Visualize the distribution of file types in my Drive"
-    - "Create a pie chart of my calendar time allocation"
-    - "Make a plotly graph of this data"
-    - "Show me a bar chart comparing these values"
-    - "Can you graph this information?"
-    
-    **When preparing data for visualization:**
+
+    **Data preparation guidelines for visualization:**
     - Ensure the data is properly structured (arrays of objects, key-value pairs, etc.)
     - Include descriptive titles, axis labels, and chart type preferences when possible
     - Consider the best chart type for the data: time series → line charts, categories → bar/pie charts, correlations → scatter plots
-    - ALWAYS use the tool even if you think the data might not be perfect - the tool can handle various data formats
+    - Proceed with visualization if you have relevant data to visualize
     
-    ## 4. Next Action Decision
+    ## 5. Next Action Decision
+    ### Data Availability Assessment:
+    - **For Visualization Requests**: Check if you have numerical/categorical data in the current context
+    - **If Data is Missing**: Prioritize data retrieval tools (search, metadata retrieval, etc.) before attempting visualization
+    - **If Data is Available**: Proceed with generate_plotly_code tool for visualization requests
+    
     ### If Information is Complete:
     - Set "tool" and "arguments" to null
     
     ### If More Information Needed:
-    - Choose the most appropriate tool for the next step.
-    - Provide well-formed arguments.
-    - Consider using exclusion parameters to avoid duplicate results.
-    - If you lack necessary discovery capabilities, acknowledge this limitation.
+    - Choose the most appropriate tool for the next step
+    - For visualization requests without data: prioritize data gathering tools first
+    - Provide well-formed arguments
+    - Consider using exclusion parameters to avoid duplicate results
+    - If you lack necessary discovery capabilities, acknowledge this limitation
     
     **CRITICAL: Your response must ONLY be valid JSON. No explanations, reasoning, or text outside the JSON structure.**
     
@@ -1014,6 +1029,12 @@ export const SearchQueryToolContextPrompt = (
     ${isDebugMode ? `- "reasoning": "Your reasoning for the tool selection and arguments."` : ""}
     **Strategic Approach:**
     Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
+    
+    **For Visualization Requests:**
+    - Data comes first: Ensure you have retrieved relevant data before attempting to create visualizations
+    - Balance tool usage: Don't prioritize visualization tools over essential data retrieval tools
+    - Practical approach: If you have data that can be visualized, proceed with the visualization tool
+    - Tool harmony: Each tool has its purpose - respect the workflow of data gathering → analysis → visualization
   `
 }
 
@@ -1883,6 +1904,9 @@ export const withToolQueryPrompt = (
             Your answer must come from the provided **Context** only.`
     }
 
+    **CRITICAL FOR PLOTLY VISUALIZATIONS:**
+    If the context contains Plotly visualization code (marked with \`\`\`plotly), you MUST include the complete code block exactly as it appears in your response. The frontend requires this code to render charts. Never summarize, truncate, or paraphrase Plotly code blocks - include them verbatim.
+
     ---
     **User Context:**  
     ${userContext}
@@ -1920,6 +1944,7 @@ export const withToolQueryPrompt = (
     - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
     - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
+    - **CODE PRESERVATION**: Always include complete code blocks (especially \`\`\`plotly blocks) from the context without modification. Code blocks are essential for frontend functionality.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -1934,9 +1959,13 @@ export const synthesisContextPrompt = (
   User Context: ${userCtx}
   Current date for comparison: ${getDateForAI()}
 
+  **CRITICAL FOR PLOTLY VISUALIZATIONS:**
+  If the Context Fragments contain Plotly visualization code (marked with \`\`\`plotly), you MUST include the complete code block exactly as it appears in your answer. The frontend requires this code to render charts. Never summarize, truncate, or paraphrase Plotly code blocks - include them verbatim.
+
   Instruction:
   - Analyze the provided "Context Fragments" to answer the current user-query.
   - The "answer" key should contain a **concise and focused** synthesis grounded only in the context. If relevant information is missing, state that explicitly.
+  - **CODE PRESERVATION**: Always include complete code blocks (especially \`\`\`plotly blocks) from the context without modification. Code blocks are essential for frontend functionality.
   - Your response MUST be a JSON object with the following two keys: "synthesisState" (string) and "answer" (string).
 
   - The "synthesisState" must be set to one of the following values:
