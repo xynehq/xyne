@@ -450,6 +450,7 @@ export const MailSchema = z.object({
   mailId: z.string().optional(), // Optional for threads
   subject: z.string().default(""), // Default to empty string to avoid zod errors when subject is missing
   chunks: z.array(z.string()),
+  parentThreadId: z.string().optional(),
   timestamp: z.number(),
   app: z.nativeEnum(Apps),
   userMap: z.optional(z.record(z.string())),
@@ -1036,6 +1037,7 @@ export type VespaAutocompleteChatContainer = z.infer<
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,
   threadId: true,
+  parentThreadId: true,
   app: true,
   entity: true,
   subject: true,

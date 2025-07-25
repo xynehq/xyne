@@ -68,4 +68,5 @@ export interface Reference {
   mailId?: string
   userMap?: Record<string, string>
   threadId?: string // Optional threadId for chat references
+  parentThreadId?: string // Optional parentThreadId for email thread references
 }
