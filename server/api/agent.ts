@@ -12,6 +12,7 @@ import {
   getAgentsMadeByMe,
   getAgentsSharedToMe,
 } from "@/db/agent"
+
 import {
   syncAgentUserPermissions,
   getAgentUsers,
@@ -43,6 +44,7 @@ export const createAgentSchema = z.object({
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
+  docIds: z.array(z.string()).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
 
@@ -126,6 +128,7 @@ export const CreateAgentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User or workspace not found" })
     }
 
+
     const agentData = {
       name: validatedBody.name,
       description: validatedBody.description,
@@ -136,6 +139,7 @@ export const CreateAgentApi = async (c: Context) => {
       allowWebSearch: validatedBody.allowWebSearch,
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
+      docIds: validatedBody.docIds,
     }
 
     // Create agent and sync user permissions in a transaction

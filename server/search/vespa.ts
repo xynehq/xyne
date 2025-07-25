@@ -568,6 +568,7 @@ export const HybridDefaultProfileForAgent = (
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
   dataSourceIds: string[] = [],
+  channelIds: string[] = [],
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -674,6 +675,10 @@ export const HybridDefaultProfileForAgent = (
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
+    const channelIdConditions =
+      channelIds && channelIds.length > 0
+        ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
+        : ""
 
     return `
       (
@@ -684,6 +689,7 @@ export const HybridDefaultProfileForAgent = (
         )
         ${appOrEntityFilter}
         and permissions contains @email
+        ${channelIdConditions ? `and ${channelIdConditions}` : ""}
       )`
   }
 
@@ -737,6 +743,8 @@ export const HybridDefaultProfileForAgent = (
           if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
           if (!sources.includes(chatMessageSchema))
             sources.push(chatMessageSchema)
+          if (!sources.includes(chatContainerSchema))
+            sources.push(chatContainerSchema)
           break
         case Apps.DataSource:
           // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
@@ -1250,6 +1258,7 @@ type VespaQueryConfig = {
   maxHits: number
   recencyDecayRate: number
   dataSourceIds?: string[] // Added for agent-specific data source filtering
+  channelIds?: string[]
 }
 
 export const searchVespa = async (
@@ -1583,6 +1592,7 @@ export const searchVespaAgent = async (
     maxHits = 400,
     recencyDecayRate = 0.02,
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
+    channelIds = [],
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1599,6 +1609,7 @@ export const searchVespaAgent = async (
     notInMailLabels,
     Apps,
     dataSourceIds, // Pass dataSourceIds here
+    channelIds,
   )
 
   const hybridDefaultPayload = {
@@ -2225,6 +2236,7 @@ interface GetItemsParams {
   excludedIds?: string[]
   asc: boolean
   intent?: Intent | null
+  channelIds?: string[]
 }
 
 export const getItems = async (
@@ -2241,6 +2253,7 @@ export const getItems = async (
     excludedIds, // Added excludedIds here
     asc,
     intent,
+    channelIds,
   } = params
 
   // Construct conditions based on parameters
@@ -2249,6 +2262,13 @@ export const getItems = async (
   // App condition
   if (app) {
     conditions.push(`app contains '${escapeYqlValue(app)}'`)
+  }
+
+  if (app === Apps.Slack && channelIds && channelIds.length > 0) {
+    const channelIdConditions = channelIds
+      .map((id) => `channelId contains '${escapeYqlValue(id)}'`)
+      .join(" or ")
+    conditions.push(`(${channelIdConditions})`)
   }
 
   // Entity condition

@@ -50,9 +50,57 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
+import { getAgentByExternalId } from "@/db/agent"
+import { db } from "@/db/client"
+import { getWorkspaceByExternalId } from "@/db/workspace"
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
+}
+
+export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
+  try {
+    const agent = JSON.parse(agentPrompt)
+    if (!agent || !agent.docIds) {
+      return []
+    }
+    return (
+      agent.docIds
+        ?.map((docId: string) => {
+          if (docId.startsWith("slack-channel-")) {
+            return docId.replace("slack-channel-", "")
+          }
+          return ""
+        })
+        .filter((id: string) => id !== "") ?? []
+    )
+  } catch (e) {
+    return []
+  }
+}
+
+export const getChannelIdsFromAgent = async (
+  agentId: string,
+  workspaceId: string,
+) => {
+  const workspace = await getWorkspaceByExternalId(db, workspaceId)
+  if (!workspace) {
+    return []
+  }
+  const agent = await getAgentByExternalId(db, agentId, workspace.id)
+  if (!agent || !agent.docIds) {
+    return []
+  }
+  return (
+    agent.docIds
+      ?.map((docId) => {
+        if (docId.startsWith("slack-channel-")) {
+          return docId.replace("slack-channel-", "")
+        }
+        return ""
+      })
+      .filter((id) => id !== "") ?? []
+  )
 }
 
 // Interface for email search result fields

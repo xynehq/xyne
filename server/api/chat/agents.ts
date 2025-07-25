@@ -109,11 +109,14 @@ import {
   searchVespaAgent,
   SearchVespaThreads,
   getAllDocumentsForAgent,
+  searchVespaInSlack,
 } from "@/search/vespa"
 import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  chatUserSchema,
+  chatContainerSchema,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -168,8 +171,11 @@ import {
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import {
+  buildContext,
   buildUserQuery,
   cleanBuffer,
+  getThreadContext,
+  getThreadContextV2,
   isContextSelected,
   textToImageCitationIndex,
   UnderstandMessageAndAnswer,
@@ -1028,33 +1034,105 @@ export const MessageWithToolsApi = async (c: Context) => {
                   results?.root?.children &&
                   results.root.children.length > 0
                 ) {
-                  planningContext = cleanContext(
-                    results.root.children
-                      ?.map(
-                        (v, i) =>
-                          `Index ${i + 1} \n ${answerContextMap(
-                            v as z.infer<typeof VespaSearchResultsSchema>,
-                            0,
-                            true,
-                          )}`,
-                      )
-                      ?.join("\n"),
-                  )
-
-                  gatheredFragments = results.root.children.map(
-                    (child: VespaSearchResult, idx) => ({
-                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
-                      content: answerContextMap(
-                        child as z.infer<typeof VespaSearchResultsSchema>,
+                  const contextPromises = results?.root?.children?.map(
+                    async (v, i) => {
+                      let content = answerContextMap(
+                        v as z.infer<typeof VespaSearchResultsSchema>,
                         0,
                         true,
-                      ),
-                      source: searchToCitation(
-                        child as z.infer<typeof VespaSearchResultsSchema>,
-                      ),
-                      confidence: 1.0,
-                    }),
+                      )
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema &&
+                        (v.fields as any).creator
+                      ) {
+                        const creator = await getDocumentOrNull(
+                          chatUserSchema,
+                          (v.fields as any).creator,
+                        )
+                        if (creator) {
+                          content += `\nCreator: ${(creator.fields as any).name}`
+                        }
+                      }
+                      return `Index ${i + 1} \n ${content}`
+                    },
                   )
+                  const resolvedContexts = contextPromises
+                    ? await Promise.all(contextPromises)
+                    : []
+
+                  const chatContexts: VespaSearchResult[] = []
+                  const threadContexts: VespaSearchResult[] = []
+                  if (results?.root?.children) {
+                    for (const v of results.root.children) {
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema
+                      ) {
+                        const channelId = (v.fields as any).docId
+                        console.log(
+                          `Processing chat container with docId: ${channelId}`,
+                        )
+
+                        if (channelId) {
+                          const searchResults = await searchVespaInSlack(
+                            message,
+                            email,
+                            {
+                              limit: 10,
+                              channelIds: [channelId],
+                            },
+                          )
+                          if (searchResults.root.children) {
+                            chatContexts.push(...searchResults.root.children)
+                            const threadMessages = await getThreadContextV2(
+                              searchResults,
+                              email,
+                              contextFetchSpan,
+                            )
+                            if (
+                              threadMessages &&
+                              threadMessages.root.children
+                            ) {
+                              threadContexts.push(
+                                ...threadMessages.root.children,
+                              )
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  planningContext = cleanContext(resolvedContexts?.join("\n"))
+                  if (chatContexts.length > 0) {
+                    planningContext +=
+                      "\n" + buildContext(chatContexts, 10)
+                  }
+                  if (threadContexts.length > 0) {
+                    planningContext +=
+                      "\n" + buildContext(threadContexts, 10)
+                  }
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) =>
+                      vespaResultToMinimalAgentFragment(child, idx),
+                  )
+                  if (chatContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...chatContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
+                  if (threadContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...threadContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
                   const parseSynthesisOutput = await performSynthesis(
                     ctx,
                     message,
@@ -1346,6 +1424,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     agentPromptForLLM,
                     message,
                   )
+                  console.log(toolExecutionResponse, "Tool execution response")
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
                   loggerWithChild({ email: sub }).error(
@@ -2877,6 +2956,10 @@ export const AgentMessageApi = async (c: Context) => {
           fileIds: [],
         }
     const fileIds = extractedInfo?.fileIds
+    const agentDocs = agentForDb?.docIds || []
+    console.log("Agent docs:", agentDocs)
+
+    //add docIds of agents here itself
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
 

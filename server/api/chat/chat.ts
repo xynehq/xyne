@@ -181,6 +181,7 @@ import {
   expandEmailThreadsInResults,
   getCitationToImage,
   mimeTypeMap,
+  getChannelIdsFromAgentPrompt,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -370,7 +371,7 @@ export function cleanBuffer(buffer: string): string {
   return parsableBuffer.trim()
 }
 
-const getThreadContext = async (
+export const getThreadContext = async (
   searchResults: VespaSearchResponse,
   email: string,
   span?: Span,
@@ -393,6 +394,28 @@ const getThreadContext = async (
     }
   }
   return ""
+}
+
+export const getThreadContextV2 = async (
+  searchResults: VespaSearchResponse,
+  email: string,
+  span?: Span,
+) => {
+  if (searchResults.root.children) {
+    const threadIds = [
+      ...new Set(
+        searchResults.root.children.map(
+          (child: any) => child.fields.threadId,
+        ),
+      ),
+    ].filter((id) => id)
+    if (threadIds.length > 0) {
+      const threadSpan = span?.startSpan("fetch_slack_threads")
+      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      return threadMessages
+    }
+  }
+  return null
 }
 
 async function* processIterator(
@@ -763,7 +786,7 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-function buildContext(
+export function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   startIndex: number = 0,
@@ -971,6 +994,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
+    const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -983,6 +1007,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         timestampRange,
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds: channelIds,
       },
     )
   }
@@ -1020,6 +1045,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+      
+      
       let results
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
@@ -1028,6 +1055,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: vespaSearchSpan,
         })
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         results = await searchVespaAgent(
           message,
           email,
@@ -1039,6 +1067,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -1099,6 +1128,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: getChannelIdsFromAgentPrompt(agentPrompt),
             }))
 
         // Expand email threads in the results
@@ -1139,6 +1169,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
+          const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
           results = await searchVespaAgent(
             query,
             email,
@@ -1152,6 +1183,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 ?.map((v: VespaSearchResult) => (v.fields as any).docId)
                 ?.filter((v) => !!v),
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds,
             },
           )
         }
@@ -1263,6 +1295,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: getChannelIdsFromAgentPrompt(agentPrompt),
           },
         )
       }
@@ -1302,6 +1335,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: searchSpan,
         })
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         results = await searchVespaAgent(
           message,
           email,
@@ -1314,6 +1348,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
           },
         )
       }
@@ -2151,6 +2186,7 @@ async function* generatePointQueryTimeExpansion(
 
     if (agentPrompt) {
       if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         const [agentResults, agentEventResults] = await Promise.all([
           searchVespaAgent(
             message,
@@ -2164,6 +2200,7 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds : channelIds,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2173,6 +2210,7 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
           }),
         ])
         results.root.children = [
@@ -2608,6 +2646,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
@@ -2619,6 +2658,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds : channelIds,
           },
         )
       }
@@ -2728,6 +2768,7 @@ async function* generateMetadataQueryAnswer(
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
@@ -2737,6 +2778,7 @@ async function* generateMetadataQueryAnswer(
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
           intent: classification.filters.intent,
+          channelIds,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -2857,6 +2899,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           query,
           email,
@@ -2867,6 +2910,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds : channelIds,
           },
         )
       }

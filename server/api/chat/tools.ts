@@ -47,7 +47,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import { searchToCitation } from "./utils"
+import { getChannelIdsFromAgent, getChannelIdsFromAgentPrompt, searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
@@ -154,6 +154,7 @@ interface UnifiedSearchOptions {
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
   intent?: any | null
+  channelIds?: string[]
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -174,6 +175,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     agentAppEnums,
     span,
     schema,
+    channelIds,
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
@@ -234,6 +236,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
               ? { from: fromTimestamp, to: toTimestamp }
               : undefined,
           dataSourceIds: options.dataSourceIds ?? undefined,
+          channelIds,
         },
       )
     } else {
@@ -391,7 +394,12 @@ export const searchTool: AgentTool = {
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
-
+      const channelIds = await getChannelIdsFromAgent(
+        // @ts-ignore
+        params.agentId,
+        // @ts-ignore
+        params.workspaceId,
+      )
       return await executeVespaSearch({
         email,
         query: queryToUse,
@@ -400,6 +408,7 @@ export const searchTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -592,6 +601,7 @@ export const metadataRetrievalTool: AgentTool = {
       Logger.debug(
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
+      const channelIds = agentPrompt? await getChannelIdsFromAgentPrompt(agentPrompt) : []
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
@@ -610,6 +620,7 @@ export const metadataRetrievalTool: AgentTool = {
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
         timestampRange: { from: params.from, to: params.to },
+        channelIds: channelIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -1264,6 +1275,7 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Execute the search
       const searchResponse = await getThreadItems(searchParams)
+      console.log(searchResponse , "Search Response from Vespa")
       const rawItems = searchResponse?.root?.children || []
 
       // Filter and validate results
