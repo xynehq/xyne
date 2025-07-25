@@ -374,29 +374,25 @@ export const processSpreadsheetFileWithSheetInfo = async (
   try {
     // Process in a more memory-efficient way
     workbook = await new Promise<XLSX.WorkBook>((resolve, reject) => {
-      try {
-        // Use setTimeout to prevent blocking
-        setTimeout(() => {
-          try {
-            const wb = XLSX.read(buffer, {
-              type: "buffer",
-              cellDates: true,
-              cellNF: false,
-              cellText: false,
-              cellFormula: false,
-              cellStyles: false,
-              sheetStubs: false,
-              password: undefined,
-              dense: true, // Use dense mode for better memory efficiency
-            })
-            resolve(wb)
-          } catch (err) {
-            reject(err)
-          }
-        }, 0)
-      } catch (err) {
-        reject(err)
-      }
+      // Use setTimeout to prevent blocking
+      setTimeout(() => {
+        try {
+          const wb = XLSX.read(buffer, {
+            type: "buffer",
+            cellDates: true,
+            cellNF: false,
+            cellText: false,
+            cellFormula: false,
+            cellStyles: false,
+            sheetStubs: false,
+            password: undefined,
+            dense: true, // Use dense mode for better memory efficiency
+          })
+          resolve(wb)
+        } catch (err) {
+          reject(err)
+        }
+      }, 0)
     })
 
     const sheetsData: SheetData[] = []
@@ -483,7 +479,7 @@ export const processSpreadsheetFileWithSheetInfo = async (
       )
     } else {
       Logger.info(
-        `Successfully processed spreadsheet ${filename} with ${workbook.SheetNames.length} sheet(s) and ${sheetsData.length} valid sheets`,
+        `Successfully processed spreadsheet ${filename} with ${sheetsData.length} valid sheets`,
       )
     }
 
@@ -493,8 +489,7 @@ export const processSpreadsheetFileWithSheetInfo = async (
     if (
       message?.includes("PasswordException") ||
       name?.includes("PasswordException") ||
-      message?.includes("File is password-protected") ||
-      message?.includes("password")
+      message?.includes("File is password-protected")
     ) {
       Logger.warn(`Password protected spreadsheet '${filename}', skipping`)
     } else if (
@@ -523,11 +518,6 @@ export const processSpreadsheetFileWithSheetInfo = async (
         }
       }
       workbook = null
-    }
-
-    // Force garbage collection hint
-    if (global.gc) {
-      global.gc()
     }
   }
 }
