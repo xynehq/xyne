@@ -70,7 +70,7 @@ COMPOSE_FILES_STRING="-f \"$SELECTED_COMPOSE_FILE\"" # Start with the base file,
 if [ -f "deployment/docker-compose.gpu.yml" ]; then
     echo ""
     while true; do
-        read -p "Do you want to enable GPU support for Vespa? (Requires NVIDIA drivers, NVIDIA Container Toolkit, and the 'xyne/vespa-gpu' Docker image built locally) (y/n): " yn
+        read -p "Do you want to enable GPU support for Vespa? (Requires NVIDIA drivers and NVIDIA Container Toolkit) (y/n): " yn
         case $yn in
             [Yy]* )
                 USE_GPU_FLAG="yes"
@@ -132,10 +132,6 @@ if [ -f "deployment/docker-compose.gpu.yml" ]; then
                     echo "NVIDIA Container Toolkit marker found."
                 fi
 
-                # 3. Remind about custom Docker image
-                echo "REMINDER: For GPU mode, ensure you have built the 'xyne/vespa-gpu' Docker image."
-                echo "Build command (from project root): docker build -t xyne/vespa-gpu -f deployment/Dockerfile-vespa-gpu ."
-                echo ""
 
                 COMPOSE_FILES_STRING="$COMPOSE_FILES_STRING -f \"deployment/docker-compose.gpu.yml\""
                 echo "GPU support WILL be enabled using $COMPOSE_FILES_STRING."
