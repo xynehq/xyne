@@ -205,21 +205,21 @@ schema chat_container {
     }
     rank-profile title_boosted_hybrid inherits initial {
   first-phase {
-    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (1 * nativeRank(channelName)))
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (1 * nativeRank(name)))
   }
   
   global-phase {
     expression {
       1.2 * (
         (query(alpha) * vector_score) + 
-        ((1 - query(alpha)) * (1 * nativeRank(channelName)))
+        ((1 - query(alpha)) * (1 * nativeRank(name)))
       )
     }
     rerank-count: 1000
   }
 
   match-features {
-    nativeRank(channelName)
+    nativeRank(name)
   }
 }
 

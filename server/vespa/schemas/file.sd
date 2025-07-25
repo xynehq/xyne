@@ -322,7 +322,7 @@ schema file {
       doc_recency
     }
   }
-  # Add boosted_title here
+
   rank-profile title_boosted_hybrid inherits initial {
   first-phase {
     expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(title)+0.2*nativeRank(chunks)))
