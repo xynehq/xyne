@@ -66,7 +66,7 @@ import { init as initQueue } from "@/queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
-import { decode, jwt } from "hono/jwt"
+import { jwt, verify } from "hono/jwt"
 import type { JwtVariables } from "hono/jwt"
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
@@ -278,26 +278,7 @@ export const WsApp = app.get(
   }),
 )
 
-const LogOut = async (c: Context) => {
-  const accessToken = getCookie(c, AccessTokenCookieName)
-  const refreshToken = getCookie(c, RefreshTokenCookieName)
-
-  if (!accessToken || !refreshToken) {
-    // If no auth token is found
-    Logger.warn("No tokens found")
-    // Redirect to login page if no token found
-    return c.redirect(`/auth`)
-  }
-
-  const { payload } = decode(refreshToken)
-  const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
-  const email = sub
-  const userAndWorkspace: PublicUserWorkspace =
-    await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
-
-  const existingUser = userAndWorkspace.user
-  await deleteRefreshTokenFromDB(db, existingUser.email)
-  Logger.info("Deleted refresh token from DB....")
+const clearCookies = (c: Context) => {
   const opts = {
     secure: true,
     path: "/",
@@ -305,8 +286,40 @@ const LogOut = async (c: Context) => {
   }
   deleteCookieByEnv(c, AccessTokenCookieName, opts)
   deleteCookieByEnv(c, RefreshTokenCookieName, opts)
-  Logger.info("Cookies deleted, logged out")
-  return c.json({ ok: true })
+  Logger.info("Cookies deleted")
+}
+
+const LogOut = async (c: Context) => {
+  const accessToken = getCookie(c, AccessTokenCookieName)
+  const refreshToken = getCookie(c, RefreshTokenCookieName)
+
+  if (!accessToken || !refreshToken) {
+    Logger.warn("No tokens found during logout")
+    clearCookies(c)
+    return c.redirect(`/auth`)
+  }
+
+  try {
+    const { payload } = await verify(refreshToken, jwtSecret)
+    const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+    const email = sub
+    const userAndWorkspace: PublicUserWorkspace =
+      await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+    const existingUser = userAndWorkspace?.user
+    if (existingUser) {
+      await deleteRefreshTokenFromDB(db, existingUser.email)
+      Logger.info("Deleted refresh token from DB")
+    } else {
+      Logger.warn("User not found during logout")
+    }
+  } catch (err) {
+    Logger.error("Error during logout token decode or DB operation", err)
+  } finally {
+    clearCookies(c)
+    Logger.info("Logged out, redirecting to /auth")
+    return c.redirect(`/auth`)
+  }
 }
 
 // Update Metrics From Script
@@ -467,55 +480,74 @@ const handleAppValidation = async (c: Context) => {
 }
 
 const getNewAccessRefreshToken = async (c: Context) => {
-  const accessToken = getCookie(c, AccessTokenCookieName)
   const refreshToken = getCookie(c, RefreshTokenCookieName)
 
-  if (!accessToken || !refreshToken) {
-    // If no auth token is found
-    Logger.warn("No tokens found")
-    // Redirect to login page if no token found
+  const clearAndRedirect = () => {
+    clearCookies(c)
+    Logger.warn("Cleared tokens and redirecting to /auth")
     return c.redirect(`/auth`)
   }
-  const { payload } = decode(refreshToken)
+
+  if (!refreshToken) {
+    Logger.warn("No refresh token found")
+    return clearAndRedirect()
+  }
+
+  let payload
+  try {
+    payload = await verify(refreshToken, jwtSecret)
+  } catch (err) {
+    Logger.warn("Failed to decode refresh token", err)
+    return clearAndRedirect()
+  }
+
   const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
   const email = sub
   const userAndWorkspace: PublicUserWorkspace =
     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
 
-  const existingUser = userAndWorkspace.user
-  const existingWorkspace = userAndWorkspace.workspace
+  const existingUser = userAndWorkspace?.user
+  const existingWorkspace = userAndWorkspace?.workspace
 
   if (!existingUser || !existingWorkspace) {
-    return c.redirect(`/auth`)
+    Logger.warn("User or workspace not found for refresh token")
+    return clearAndRedirect()
   }
 
-  if (existingUser.refreshToken === refreshToken) {
-    const accessToken = await generateTokens(
+  // Check if the refresh token matches the one in DB
+  if (existingUser.refreshToken !== refreshToken) {
+    Logger.warn("Refresh token does not match DB")
+    return clearAndRedirect()
+  }
+
+  try {
+    const newAccessToken = await generateTokens(
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
     )
-    const refreshToken = await generateTokens(
+    const newRefreshToken = await generateTokens(
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
       true,
     )
-    // save refresh token generated in user schema
-    await saveRefreshTokenToDB(db, email, refreshToken)
+    // Save new refresh token in DB
+    await saveRefreshTokenToDB(db, email, newRefreshToken)
     const opts = {
       secure: true,
       path: "/",
       httpOnly: true,
     }
-    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
-    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
-    Logger.info("Both tokens refreshed successfully...")
+    setCookieByEnv(c, AccessTokenCookieName, newAccessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, newRefreshToken, opts)
+    Logger.info("Both tokens refreshed successfully")
     return c.json({
       msg: "Access Token refreshed",
     })
-  } else {
-    return c.redirect(`/auth`)
+  } catch (err) {
+    Logger.error("Error generating new tokens", err)
+    return clearAndRedirect()
   }
 }
 
