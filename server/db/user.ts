@@ -151,6 +151,20 @@ export const saveRefreshTokenToDB = async (
   return selectUserSchema.parse(updatedUser[0])
 }
 
+export const deleteRefreshTokenFromDB = async (
+  trx: TxnOrClient,
+  email: string,
+) => {
+  const updatedUser = await trx
+    .update(users)
+    .set({
+      refreshToken: "",
+    })
+    .where(eq(users.email, email))
+    .returning()
+  return selectUserSchema.parse(updatedUser[0])
+}
+
 export const getUserById = async (
   trx: TxnOrClient,
   userId: number,

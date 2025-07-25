@@ -16,26 +16,31 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: async ({ queryKey }) => {
-        // Example: queryKey = ["/api/v1/me"]
         const url = typeof queryKey[0] === "string" ? queryKey[0] : ""
         const res = await authFetch(url)
+        if (res.status === 401) {
+          // Token refresh failed, force logout or redirect
+          window.location.href = "/auth"
+          throw new Error("Unauthorized")
+        }
         if (!res.ok) throw new Error(await res.text())
         return res.json()
       },
-      // ... existing retry logic if needed ...
     },
     mutations: {
       mutationFn: async (variables) => {
-        // Expect variables to be { url, options }
         const { url, options } = variables as {
           url: string
           options?: RequestInit
         }
         const res = await authFetch(url, options)
+        if (res.status === 401) {
+          window.location.href = "/auth"
+          throw new Error("Unauthorized")
+        }
         if (!res.ok) throw new Error(await res.text())
         return res.json()
       },
-      // ... existing onError logic if needed ...
     },
   },
 })
