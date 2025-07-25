@@ -17,6 +17,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  extractEmailsFromContext,
 } from "@/ai/provider"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -26,6 +27,7 @@ import {
   Models,
   QueryType,
   type ConverseResponse,
+  type Intent,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
@@ -182,6 +184,7 @@ import {
   expandEmailThreadsInResults,
   getCitationToImage,
   mimeTypeMap,
+  extractNamesFromIntent,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -204,6 +207,114 @@ import {
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
+
+export async function resolveNamesToEmails(
+  intent: Intent,
+  email: string,
+  userCtx: string,
+  span?: Span,
+): Promise<any> {
+  const resolveSpan = span?.startSpan("resolve_names_to_emails")
+
+  try {
+    const extractedNames = extractNamesFromIntent(intent)
+
+    const allNames = [
+      ...(extractedNames.from || []),
+      ...(extractedNames.to || []),
+      ...(extractedNames.cc || []),
+      ...(extractedNames.bcc || []),
+      ...(extractedNames.subject || []),
+    ]
+
+    if (allNames.length === 0) {
+      resolveSpan?.setAttribute("no_names_found", true)
+      resolveSpan?.end()
+      return intent
+    }
+
+    const isValidEmailAddress = (email: string): boolean => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      return emailRegex.test(email)
+    }
+
+    const allNamesAreEmails = allNames.every((name) =>
+      isValidEmailAddress(name),
+    )
+    if (allNamesAreEmails) {
+      resolveSpan?.setAttribute("all_names_are_emails", true)
+      resolveSpan?.setAttribute("skip_resolution", true)
+      resolveSpan?.end()
+      return intent
+    }
+    resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
+
+    const searchSpan = resolveSpan?.startSpan("search_users")
+    const searchQuery = allNames.join(" ")
+
+    const searchResults = await searchVespa(
+      searchQuery,
+      email,
+      Apps.Gmail,
+      MailEntity.Email,
+      {
+        limit: 50,
+        alpha: 0.5,
+        span: searchSpan,
+        isIntentSearch: true,
+      },
+    )
+
+    searchSpan?.setAttribute("search_query", searchQuery)
+    searchSpan?.setAttribute(
+      "results_count",
+      searchResults.root.children?.length || 0,
+    )
+    searchSpan?.end()
+
+    const resultCount = searchResults.root.children?.length || 0
+
+    if (
+      !searchResults.root.children ||
+      searchResults.root.children.length === 0
+    ) {
+      return intent
+    }
+
+    const searchContext = searchResults.root.children
+      .map((result, index) => {
+        const fields = result.fields as VespaMail
+        const contextLine = `
+        [Index ${index}]: 
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})
+        Subject: ${fields.subject || "Unknown"}
+        From: <${fields.from}>
+        To: <${fields.to}>
+        CC: <${fields.cc}>
+        BCC: <${fields.bcc}>
+        `
+
+        return contextLine
+      })
+      .join("\n")
+
+    let resolvedData: Intent = {}
+    const resolutionResult = await extractEmailsFromContext(
+      extractedNames,
+      userCtx,
+      searchContext,
+      { modelId: config.defaultFastModel, json: false, stream: false },
+    )
+
+    resolvedData = resolutionResult.emails || []
+
+    searchSpan?.end()
+    return resolvedData
+  } catch (error) {
+    resolveSpan?.end()
+    return intent
+  }
+}
 
 const {
   JwtPayloadKey,
@@ -2521,7 +2632,7 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { app, entity, startTime, endTime, sortDirection } =
+  const { app, entity, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
@@ -2654,6 +2765,16 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -2669,6 +2790,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile: SearchModes.GlobalSorted,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -2740,7 +2862,7 @@ async function* generateMetadataQueryAnswer(
           }`,
         )
         pageSpan?.end()
-        yield { text: "null" }
+        yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
 
@@ -2761,7 +2883,7 @@ async function* generateMetadataQueryAnswer(
         pageSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
           pageSpan?.end()
-          yield { text: "null" }
+          yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
           loggerWithChild({ email: email }).info(
@@ -2793,6 +2915,18 @@ async function* generateMetadataQueryAnswer(
     loggerWithChild({ email: email }).info(
       `Search Type : ${QueryType.GetItems}`,
     )
+
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
@@ -2819,7 +2953,7 @@ async function* generateMetadataQueryAnswer(
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
-          intent: classification.filters.intent,
+          intent: resolvedIntent || {},
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -2839,7 +2973,7 @@ async function* generateMetadataQueryAnswer(
         timestampRange,
         limit: userSpecifiedCountLimit,
         asc: sortDirection === "asc",
-        intent: classification.filters.intent,
+        intent: resolvedIntent || {},
       }
 
       loggerWithChild({ email: email }).info(
@@ -2913,12 +3047,24 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
+    let resolvedIntent = {} as Intent
+    if (intent && Object.keys(intent).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     const searchOptions = {
       limit: pageSize,
       alpha: userAlpha,
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
