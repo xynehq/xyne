@@ -13,6 +13,7 @@ import {
   cleanupPreviewUrls,
 } from "@/utils/fileUtils"
 import { isValidFile } from "../../../shared/filesutils"
+import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
   file: File
@@ -141,7 +142,7 @@ export default function FileUpload({
       formData.append("file", selectedFile.file, fileName)
     })
 
-    const response = await fetch("/api/v1/files/upload", {
+    const response = await authFetch("/api/v1/files/upload", {
       method: "POST",
       body: formData,
     })
