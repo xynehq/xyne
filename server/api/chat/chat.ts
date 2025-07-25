@@ -2593,7 +2593,10 @@ async function* generateMetadataQueryAnswer(
     )
   } else if (isGenericItemFetch && isValidAppOrEntity) {
     const userSpecifiedCountLimit = count
-      ? Math.min(count + (classification.filters.offset || 0), config.maxUserRequestCount)
+      ? Math.min(
+          count + (classification.filters.offset || 0),
+          config.maxUserRequestCount,
+        )
       : 5
     span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
@@ -2694,19 +2697,14 @@ async function* generateMetadataQueryAnswer(
     if (!items.length) {
       span?.end()
       loggerWithChild({ email: email }).info(
-        "No documents found for GetItems - data retrieval failed",
+        "No documents found for unspecific metadata retrieval",
       )
       yield { text: METADATA_NO_DOCUMENTS_FOUND }
       return
     }
 
-    // Only proceed with LLM processing if we successfully got data from getItems
-    loggerWithChild({ email: email }).info(
-      `GetItems succeeded - proceeding with LLM processing for ${items.length} items`,
-    )
-    
     span?.end()
-    const answer = yield* processResultsForMetadata(
+    yield* processResultsForMetadata(
       items,
       input,
       userCtx,
@@ -2718,37 +2716,8 @@ async function* generateMetadataQueryAnswer(
       email,
       agentPrompt,
     )
-    
-    // Only retry LLM if we successfully got data but LLM failed to generate answer
-    if (answer == null) {
-      loggerWithChild({ email: email }).info(
-        `GetItems data retrieval succeeded but LLM failed to generate answer on first attempt, retrying once more`,
-      )
-      
-      // Retry once more with processResultsForMetadata before falling back to RAG
-      const retryAnswer = yield* processResultsForMetadata(
-        items,
-        input,
-        userCtx,
-        app as Apps,
-        entity,
-        maxSummaryCount,
-        userRequestsReasoning,
-        span,
-        email,
-        agentPrompt,
-      )
-      
-      if (retryAnswer == null) {
-        loggerWithChild({ email: email }).info(
-          `GetItems data retrieval succeeded but LLM failed to generate answer after retry, falling back to iterative RAG`,
-        )
-        yield { text: METADATA_FALLBACK_TO_RAG }
-        return
-      }
-    }
-    
     return
+    
   } else if (
     isFilteredItemSearch &&
     isValidAppOrEntity &&
@@ -3753,30 +3722,39 @@ export const MessageApi = async (c: Context) => {
             // Extract previous classification for pagination and follow-up queries
             let previousClassification = null
             if (filteredMessages.length >= 1) {
-              const previousUserMessage = filteredMessages[filteredMessages.length - 2]
+              const previousUserMessage =
+                filteredMessages[filteredMessages.length - 2]
               if (previousUserMessage?.queryRouterClassification) {
-                previousClassification = previousUserMessage.queryRouterClassification
+                previousClassification =
+                  previousUserMessage.queryRouterClassification
                 loggerWithChild({ email: email }).info(
-                  `Found previous classification: ${JSON.stringify(previousClassification)}`
+                  `Found previous classification: ${JSON.stringify(previousClassification)}`,
                 )
               }
             }
 
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                agentPrompt: agentPromptValue,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: llmFormattedMessages,
-                // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
-                // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
-                // For this non-agent RAG path, we don't pass an agent prompt.
-              }, undefined, previousClassification)
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  agentPrompt: agentPromptValue,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: llmFormattedMessages,
+                  // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
+                  // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
+                  // For this non-agent RAG path, we don't pass an agent prompt.
+                },
+                undefined,
+                previousClassification,
+              )
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -3955,18 +3933,72 @@ export const MessageApi = async (c: Context) => {
               )
               const understandSpan = ragSpan.startSpan("understand_message")
 
-              // Use LLM-generated classification directly - no more override logic
-              const iterator = UnderstandMessageAndAnswer(
-                email,
-                ctx,
-                message,
-                classification,
-                llmFormattedMessages,
-                0.5,
-                userRequestsReasoning,
-                understandSpan,
-                agentPromptValue,
-              )
+              let iterator:
+                | AsyncIterableIterator<
+                    ConverseResponse & {
+                      citation?: { index: number; item: any }
+                      imageCitation?: ImageCitation
+                    }
+                  >
+                | undefined = undefined
+
+              if (messages.length < 2) {
+                classification.isFollowUp = false // First message or not enough history to be a follow-up
+              } else if (classification.isFollowUp) {
+                // Use the NEW classification that already contains:
+                // - Updated filters (with proper offset calculation)
+                // - Preserved app/entity from previous query
+                // - Updated count/pagination info
+                // - All the smart follow-up logic from the LLM
+                
+                // Only check for fileIds if we need file context
+                const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
+                const parsedMessage = selectMessageSchema.safeParse(lastUserMessage)
+
+                if (parsedMessage.error) {
+                  loggerWithChild({ email: email }).error(
+                    `Error while parsing last user message for file context check`,
+                  )
+                } else if (
+                  parsedMessage.success &&
+                  Array.isArray(parsedMessage.data.fileIds) &&
+                  parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
+                ) {
+                  loggerWithChild({ email: email }).info(
+                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
+                  )
+                  iterator = UnderstandMessageAndAnswerForGivenContext(
+                    email,
+                    ctx,
+                    message,
+                    0.5,
+                    parsedMessage.data.fileIds as string[],
+                    userRequestsReasoning,
+                    understandSpan,
+                  )
+                } else {
+                  loggerWithChild({ email: email }).info(
+                    `Follow-up query detected. Using NEW LLM-generated classification directly: ${JSON.stringify(classification)}`,
+                  )
+                  // Use the new classification directly - it already has all the smart follow-up logic
+                  // No need to reuse old classification, the LLM has generated an updated one
+                }
+              }
+
+              // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
+              if (!iterator) {
+                iterator = UnderstandMessageAndAnswer(
+                  email,
+                  ctx,
+                  message,
+                  classification,
+                  llmFormattedMessages,
+                  0.5,
+                  userRequestsReasoning,
+                  understandSpan,
+                  agentPromptValue,
+                )
+              }
 
               answer = ""
               thinking = ""
@@ -3975,7 +4007,7 @@ export const MessageApi = async (c: Context) => {
               let imageCitations: any[] = []
               citationMap = {}
               let citationValues: Record<number, string> = {}
-              
+
               stream.writeSSE({
                 event: ChatSSEvents.Start,
                 data: "",
@@ -4848,31 +4880,39 @@ export const MessageRetryApi = async (c: Context) => {
             loggerWithChild({ email: email }).info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
-            
+
             // Extract previous classification for pagination and follow-up queries
             let previousClassification = null
             if (conversation.length >= 2) {
               const previousUserMessage = conversation[conversation.length - 2] // In retry context, previous user message is at -2
               if (previousUserMessage?.queryRouterClassification) {
-                previousClassification = previousUserMessage.queryRouterClassification
+                previousClassification =
+                  previousUserMessage.queryRouterClassification
                 loggerWithChild({ email: email }).info(
-                  `Found previous classification for retry: ${JSON.stringify(previousClassification)}`
+                  `Found previous classification for retry: ${JSON.stringify(previousClassification)}`,
                 )
               }
             }
-            
+
             const searchSpan = streamSpan.startSpan("conversation_search")
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: formatMessagesForLLM(topicConversationThread),
-              }, undefined, previousClassification)
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: formatMessagesForLLM(topicConversationThread),
+                },
+                undefined,
+                previousClassification,
+              )
             let currentAnswer = ""
             let answer = ""
             let citations: Citation[] = [] // Changed to Citation[] for consistency
