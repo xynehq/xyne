@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   index,
+  boolean,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -65,6 +66,7 @@ export const messages = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     feedback: messageFeedbackEnum("feedback"),
+    isAgentic: boolean("is_agentic").notNull().default(false),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

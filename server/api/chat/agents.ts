@@ -571,6 +571,10 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
+    // Check if this is a retry request
+    const isRetry = (body as any).retry || false
+    const retryMessageId = (body as any).messageId || null
+
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
@@ -632,7 +636,17 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
-    if (!chatId) {
+
+    // Handle retry case - if it's a retry, we need to handle message updates differently
+    if (isRetry && chatId && retryMessageId) {
+      // For retry, we don't insert a new user message
+      const existingMessages = await getChatMessagesWithAuth(db, chatId, email)
+      messages = existingMessages
+      chat = await getChatByExternalId(db, chatId)
+      if (!chat) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+    } else if (!chatId) {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
@@ -671,6 +685,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             message,
             modelId,
             fileIds: fileIds,
+            isAgentic: isAgentic,
           })
           // Store attachment metadata for user message if attachments exist
           if (attachmentMetadata && attachmentMetadata.length > 0) {
@@ -722,6 +737,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             message,
             modelId,
             fileIds,
+            isAgentic: isAgentic,
           })
           // Store attachment metadata for user message if attachments exist
           if (attachmentMetadata && attachmentMetadata.length > 0) {
@@ -1951,36 +1967,102 @@ export const MessageWithToolsApi = async (c: Context) => {
               .map(convertReasoningStepToText)
               .join("\n")
 
-            const msg = await insertMessage(db, {
-              chatId: chat.id,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              chatExternalId: chat.externalId,
-              messageRole: MessageRole.Assistant,
-              email: user.email,
-              sources: citations,
-              imageCitations: imageCitations,
-              message: processMessage(answer, citationMap),
-              thinking: reasoningLog,
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-            })
-            assistantMessageId = msg.externalId
+            // Handle retry case - follow same pattern as MessageRetryApi
+            if (isRetry && retryMessageId) {
+              // Get the original message being retried
+              const originalMessage = await getMessageByExternalId(
+                db,
+                retryMessageId,
+              )
+              if (!originalMessage) {
+                throw new HTTPException(404, {
+                  message: "Message not found for retry",
+                })
+              }
 
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: msg.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: msg.externalId,
-              traceJson,
-            })
-            loggerWithChild({ email: sub }).info(
-              `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
-            )
+              const isUserMessage =
+                originalMessage.messageRole === MessageRole.User
+
+              if (isUserMessage) {
+                // If retrying a user message, clear its error and insert new assistant message
+                await db.transaction(async (tx) => {
+                  await updateMessage(tx, retryMessageId, { errorMessage: "" })
+                  const msg = await insertMessage(tx, {
+                    chatId: chat.id,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: chat.externalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    imageCitations: imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: reasoningLog,
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                        .modelId,
+                    isAgentic: isAgentic,
+                    createdAt: new Date(
+                      new Date(originalMessage.createdAt).getTime() + 1,
+                    ),
+                  })
+                  assistantMessageId = msg.externalId
+                })
+              } else {
+                // If retrying an assistant message, update it
+                await updateMessage(db, retryMessageId, {
+                  message: processMessage(answer, citationMap),
+                  sources: citations,
+                  imageCitations: imageCitations,
+                  thinking: reasoningLog,
+                  updatedAt: new Date(),
+                  errorMessage: null,
+                })
+                assistantMessageId = retryMessageId
+              }
+            } else {
+              // Normal case - create new message
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                imageCitations: imageCitations,
+                message: processMessage(answer, citationMap),
+                thinking: reasoningLog,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                isAgentic: isAgentic,
+              })
+              assistantMessageId = msg.externalId
+            }
+
+            // Only insert trace for new messages (not retries)
+            if (!isRetry) {
+              const traceJson = tracer.serializeToJson()
+              // Get the message details for trace
+              const messageForTrace = messages.find(
+                (m) => m.externalId === assistantMessageId,
+              )
+              if (messageForTrace) {
+                await insertChatTrace({
+                  workspaceId: workspace.id,
+                  userId: user.id,
+                  chatId: chat.id,
+                  messageId: messageForTrace.id,
+                  chatExternalId: chat.externalId,
+                  email: user.email,
+                  messageExternalId: messageForTrace.externalId,
+                  traceJson,
+                })
+                loggerWithChild({ email: sub }).info(
+                  `[MessageApi] Inserted trace for message ${messageForTrace.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+                )
+              }
+            }
 
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
@@ -2818,6 +2900,8 @@ export const AgentMessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
+    const isRetry = (body as any).retry || false
+    const retryMessageId = (body as any).messageId || null
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
@@ -2888,7 +2972,17 @@ export const AgentMessageApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
 
     let title = ""
-    if (!chatId) {
+
+    // Handle retry case - if it's a retry, we need to handle message updates differently
+    if (isRetry && chatId && retryMessageId) {
+      // For retry, we don't insert a new user message
+      const existingMessages = await getChatMessagesWithAuth(db, chatId, email)
+      messages = existingMessages
+      chat = await getChatByExternalId(db, chatId)
+      if (!chat) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+    } else if (!chatId) {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
@@ -3588,36 +3682,104 @@ export const AgentMessageApi = async (c: Context) => {
               // somehow hide that citation and change
               // the answer to reflect that
 
-              const msg = await insertMessage(db, {
-                chatId: chat.id,
-                userId: user.id,
-                workspaceExternalId: workspace.externalId,
-                chatExternalId: chat.externalId,
-                messageRole: MessageRole.Assistant,
-                email: user.email,
-                sources: citations,
-                imageCitations: imageCitations,
-                message: processMessage(answer, citationMap),
-                thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-              })
-              assistantMessageId = msg.externalId
+              // Handle retry case - follow same pattern as MessageRetryApi
+              if (isRetry && retryMessageId) {
+                // Get the original message being retried
+                const originalMessage = await getMessageByExternalId(
+                  db,
+                  retryMessageId,
+                )
+                if (!originalMessage) {
+                  throw new HTTPException(404, {
+                    message: "Message not found for retry",
+                  })
+                }
 
-              const traceJson = tracer.serializeToJson()
-              await insertChatTrace({
-                workspaceId: workspace.id,
-                userId: user.id,
-                chatId: chat.id,
-                messageId: msg.id,
-                chatExternalId: chat.externalId,
-                email: user.email,
-                messageExternalId: msg.externalId,
-                traceJson,
-              })
-              Logger.info(
-                `[AgentMessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
-              )
+                const isUserMessage =
+                  originalMessage.messageRole === MessageRole.User
+
+                if (isUserMessage) {
+                  // If retrying a user message, clear its error and insert new assistant message
+                  await db.transaction(async (tx) => {
+                    await updateMessage(tx, retryMessageId, {
+                      errorMessage: "",
+                    })
+                    const msg = await insertMessage(tx, {
+                      chatId: chat.id,
+                      userId: user.id,
+                      workspaceExternalId: workspace.externalId,
+                      chatExternalId: chat.externalId,
+                      messageRole: MessageRole.Assistant,
+                      email: user.email,
+                      sources: citations,
+                      imageCitations: imageCitations,
+                      message: processMessage(answer, citationMap),
+                      thinking: thinking,
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                          .modelId,
+                      createdAt: new Date(
+                        new Date(originalMessage.createdAt).getTime() + 1,
+                      ),
+                    })
+                    assistantMessageId = msg.externalId
+                  })
+                } else {
+                  // If retrying an assistant message, update it
+                  await updateMessage(db, retryMessageId, {
+                    message: processMessage(answer, citationMap),
+                    sources: citations,
+                    imageCitations: imageCitations,
+                    thinking: thinking,
+                    updatedAt: new Date(),
+                    errorMessage: null,
+                  })
+                  assistantMessageId = retryMessageId
+                }
+              } else {
+                // Normal case - create new message
+                const msg = await insertMessage(db, {
+                  chatId: chat.id,
+                  userId: user.id,
+                  workspaceExternalId: workspace.externalId,
+                  chatExternalId: chat.externalId,
+                  messageRole: MessageRole.Assistant,
+                  email: user.email,
+                  sources: citations,
+                  imageCitations: imageCitations,
+                  message: processMessage(answer, citationMap),
+                  thinking: thinking,
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                      .modelId,
+                })
+                assistantMessageId = msg.externalId
+              }
+
+              // Only insert trace for new messages (not retries)
+              if (!isRetry) {
+                const traceJson = tracer.serializeToJson()
+                // Get the message details for trace
+                const messageForTrace = await getMessageByExternalId(
+                  db,
+                  assistantMessageId!,
+                )
+                if (messageForTrace) {
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: messageForTrace.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: messageForTrace.externalId,
+                    traceJson,
+                  })
+                  Logger.info(
+                    `[AgentMessageApi] Inserted trace for message ${messageForTrace.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+                  )
+                }
+              }
 
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseMetadata,
