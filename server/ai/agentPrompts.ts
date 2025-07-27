@@ -1216,7 +1216,7 @@ export const agentSearchQueryPrompt = (
        - "type" and "filters" are used for routing and fetching data.
        - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
-       - "apsp" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
+       - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 

@@ -1256,29 +1256,42 @@ export const searchQueryPrompt = (userContext: string): string => {
         - **Subject/Title Extraction**: ONLY extract when specific subject/topic keywords are mentioned:
           - "subject"/"title"/"about" queries with specific content (e.g., "emails about 'meeting notes'", "subject contains 'project update'") → extract the specific keywords to "subject" array
         
-        **CRITICAL RULES for Intent Extraction:**
+          **CRITICAL RULES for Intent Extraction:**
         - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - DO NOT extract intent for queries with only person names: "emails from John", "messages from Sarah", "emails from prateek"
-        - ONLY extract intent when there are ACTUAL EMAIL ADDRESSES like:
-          - Specific email addresses: "emails from john@company.com", "messages from user@domain.com"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
           - Specific subjects: "emails with subject 'meeting'"
-        - If the query contains only person names without email addresses, return empty intent object: {}
         - If the query is asking for ALL items without specific criteria, return empty intent object: {}
         
-        **Email Address Detection Rules:**
-        - ONLY detect valid email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
-        - DO NOT extract person names - these are NOT email addresses
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
         - Extract from phrases like:
           - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
           - "messages from [user@company.com]" → add [user@company.com] to "from" array  
           - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
           - "sent to [team@company.com]" → add [team@company.com] to "to" array
-        - If query contains email addresses but no clear direction indicator, default to "from" array
-        - If query contains only names without @ symbols, DO NOT extract any intent
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
         
         For other apps/entities:
         - Currently no specific intent fields defined
         - Return empty intent object: {}
+
 
     12. Output JSON in the following structure:
        {
