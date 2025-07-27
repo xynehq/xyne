@@ -1118,14 +1118,14 @@ export const searchQueryPrompt = (userContext: string): string => {
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
-    Valid app keywords that map to apps:
+    Valid app keywords that map to apps (can be multiple):
     - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
-    Valid entity keywords that map to entities:
+    Valid entity keywords that map to entities (can be multiple):
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
       MailAttachmentEntity,
     )
@@ -1136,10 +1136,12 @@ export const searchQueryPrompt = (userContext: string): string => {
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
+    **IMPORTANT**: Extract ALL relevant apps and entities mentioned in the query. If multiple apps or entities are detected, include them all in arrays.
+    
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:
     1. **${QueryType.SearchWithoutFilters}**:
-      - The user is referring multiple <app> or <entity>
+      - The user is not referring to any specific <app> or <entity> and wants to search or look up information without precise metadata.
       - The user wants to search or look up contextual information.
       - These are open-ended queries where only time filters might apply.
       - user is asking for a sort of summary or discussion, it could be to summarize emails or files
@@ -1155,38 +1157,40 @@ export const searchQueryPrompt = (userContext: string): string => {
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user is referring to one or more <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
       - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
-      - This can be only classified when <app> and <entity> present
+      - This can be only classified when <app> and <entity> are present
       - Example Queries:
         - "Show me all emails from last week."
         - "List all Google Docs modified in October."
+        - "Get my emails and calendar events from today."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
           }
         }
 
-
     3. **${QueryType.SearchWithFilters}**:
-      - The user is referring to a single <app> or <entity> and wants to search content
+      - The user is referring explicitly to one or more <app> or <entity> and wants to search content within those apps/entities
       - Used for content-based searches including:
         - Person names without email addresses (e.g., "emails from John", "emails from prateek")
         - Topic/subject keywords
         - Any content that needs to be searched rather than precisely matched
-      - Exactly ONE valid app/entity is detected, AND filterQuery contains search keywords
+        - Apps/entities can be single or multiple
+        - Multiple apps/entities should be detected and included in arrays
+      - App/entity is detected, AND filterQuery contains search keywords
        - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithFilters}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "count": "<number of items to list>",
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
@@ -1204,13 +1208,13 @@ export const searchQueryPrompt = (userContext: string): string => {
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
 
-    app (Valid Apps):  
+    app (Valid Apps - can be arrays):  
     - ${Apps.GoogleDrive} 
     - ${Apps.Gmail}  
     - ${Apps.GoogleCalendar} 
     - ${Apps.GoogleWorkspace}
 
-    entity (Valid Entities):  
+    entity (Valid Entities - can be arrays):  
     For ${Apps.Gmail}:  
     - ${MailEntity.Email}  
     - ${MailAttachmentEntity.PDF} (for attachments)  
@@ -1254,35 +1258,23 @@ export const searchQueryPrompt = (userContext: string): string => {
         
         **CRITICAL RULES for Intent Extraction:**
         - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - EXTRACT intent for queries with person names OR email addresses OR organization names:
-          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
-          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
-          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
+        - DO NOT extract intent for queries with only person names: "emails from John", "messages from Sarah", "emails from prateek"
+        - ONLY extract intent when there are ACTUAL EMAIL ADDRESSES like:
+          - Specific email addresses: "emails from john@company.com", "messages from user@domain.com"
           - Specific subjects: "emails with subject 'meeting'"
+        - If the query contains only person names without email addresses, return empty intent object: {}
         - If the query is asking for ALL items without specific criteria, return empty intent object: {}
         
-        **Email Address, Name, and Organization Detection Rules:**
-        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
-          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
-          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
-          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
-        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
-          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
-          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
-          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
+        **Email Address Detection Rules:**
+        - ONLY detect valid email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+        - DO NOT extract person names - these are NOT email addresses
         - Extract from phrases like:
           - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
-          - "emails from [John]" → add [John] to "from" array
-          - "emails from [OpenAI]" → add [OpenAI] to "from" array
-          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
           - "messages from [user@company.com]" → add [user@company.com] to "from" array  
           - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
-          - "emails to [Sarah]" → add [Sarah] to "to" array
-          - "emails to [Linear]" → add [Linear] to "to" array
-          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
           - "sent to [team@company.com]" → add [team@company.com] to "to" array
-        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
-        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
+        - If query contains email addresses but no clear direction indicator, default to "from" array
+        - If query contains only names without @ symbols, DO NOT extract any intent
         
         For other apps/entities:
         - Currently no specific intent fields defined
@@ -1297,9 +1289,10 @@ export const searchQueryPrompt = (userContext: string): string => {
          "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,
+           "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"] or null,
            "count": "<number of items to retrieve or null>",
+           "offset": "<number of items to skip or null>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
@@ -1313,9 +1306,10 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - "intent" is an object that contains specific intent fields based on the app/entity detected. 
-       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
+       - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+       - "offset" is used to skip a certain number of items in the result set, useful for pagination. Set to null if not applicable.
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".

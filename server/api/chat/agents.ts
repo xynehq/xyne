@@ -3340,8 +3340,8 @@ export const AgentMessageApi = async (c: Context) => {
             let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
-              app: "",
-              entity: "",
+              apps: [],
+              entities: [],
               startTime: "",
               endTime: "",
               count: 0,
@@ -3470,8 +3470,8 @@ export const AgentMessageApi = async (c: Context) => {
                 filterQuery: parsed.filter_query,
                 filters: {
                   ...(parsed?.filters ?? {}),
-                  app: parsed.filters?.app as Apps,
-                  entity: parsed.filters?.entity as any,
+                  apps: parsed.filters?.apps || [],
+                  entities: parsed.filters?.entities as any,
                   intent: parsed.intent || {},
                 },
               }

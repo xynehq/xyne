@@ -315,8 +315,8 @@ const handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
 // TODO: it seems the owner part is complicating things
 export const HybridDefaultProfile = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -339,7 +339,19 @@ export const HybridDefaultProfile = (
   // ToDo we have to handle this filter as we are applying multiple times app filtering
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
 
   // Helper function to build exclusion condition
@@ -587,8 +599,8 @@ const buildIntentFilter = (intent: Intent | null) => {
 }
 export const HybridDefaultProfileForAgent = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -610,7 +622,19 @@ export const HybridDefaultProfileForAgent = (
   }
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
   // Helper function to build exclusion condition
   const buildExclusionCondition = () => {
@@ -1229,8 +1253,8 @@ type VespaQueryConfig = {
 export const searchVespa = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = config.page,
@@ -1304,8 +1328,8 @@ export const searchVespa = async (
 async function _searchVespa(
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = config.page,
@@ -1484,8 +1508,8 @@ export const searchVespaThroughAgent = async (
 export const searchVespaAgent = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   Apps: Apps[] | null,
   {
     alpha = 0.5,
@@ -2134,9 +2158,9 @@ const processGmailIntent = (intent: Intent): string[] => {
 // }
 
 interface GetItemsParams {
-  schema: VespaSchema
-  app?: Apps | null
-  entity?: Entity | null
+  schema: VespaSchema | VespaSchema[]
+  app?: Apps | Apps[] | null
+  entity?: Entity | Entity[] | null
   timestampRange: { from: number | null; to: number | null } | null
   limit?: number
   offset?: number
@@ -2162,44 +2186,60 @@ export const getItems = async (
     intent,
   } = params
 
+  const schemas = Array.isArray(schema) ? schema : [schema]
+  const schemasString = schemas.join(", ")
   // Construct conditions based on parameters
   let conditions: string[] = []
 
   // App condition
-  if (app) {
+  if (Array.isArray(app) && app.length > 0) {
+    conditions.push(
+      app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(app) && app) {
     conditions.push(`app contains '${escapeYqlValue(app)}'`)
   }
 
   // Entity condition
-  if (entity) {
+  if (Array.isArray(entity) && entity.length > 0) {
+    conditions.push(
+      entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(entity) && entity) {
     conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
   }
 
   // Permissions or owner condition based on schema
-  if (schema === dataSourceFileSchema) {
+  if (schemas.length === 1 && schemas[0] === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
-  } else if (schema !== userSchema) {
+  } else if (!schemas.includes(userSchema)) {
     conditions.push(`permissions contains '${email}'`)
   } else {
     // For user schema
-    if (app !== Apps.GoogleWorkspace) {
+    if (
+      app !== Apps.GoogleWorkspace ||
+      (Array.isArray(app) && !app.includes(Apps.GoogleWorkspace))
+    ) {
       conditions.push(`owner contains '${email}'`)
     }
   }
 
-  let timestampField = ""
+  let timestampField = []
 
   // Choose appropriate timestamp field based on schema
-  if (schema === mailSchema || schema === mailAttachmentSchema) {
-    timestampField = "timestamp"
-  } else if (schema === fileSchema || schema === chatMessageSchema) {
-    timestampField = "updatedAt"
-  } else if (schema === eventSchema) {
-    timestampField = "startTime"
-  } else if (schema === userSchema) {
-    timestampField = "creationTime"
+  if (schemas.includes(mailSchema) || schemas.includes(mailAttachmentSchema)) {
+    timestampField.push("timestamp")
+  } else if (
+    schemas.includes(fileSchema) ||
+    schemas.includes(chatMessageSchema)
+  ) {
+    timestampField.push("updatedAt")
+  } else if (schemas.includes(eventSchema)) {
+    timestampField.push("startTime")
+  } else if (schemas.includes(userSchema)) {
+    timestampField.push("creationTime")
   } else {
-    timestampField = "updatedAt"
+    timestampField.push("updatedAt")
   }
 
   // Timestamp conditions
@@ -2209,12 +2249,12 @@ export const getItems = async (
 
     if (timestampRange.from) {
       timeConditions.push(
-        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange.map((field) => `${field} >= ${new Date(timestampRange.from!).getTime()}`).join(" or ")}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange.map((field) => `${field} <= ${new Date(timestampRange.to!).getTime()}`).join(" or ")}`,
       )
     }
     if (timeConditions.length > 0) {
@@ -2279,19 +2319,30 @@ export const getItems = async (
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
+  // TODO: Add support for grouping and aggregating results across apps,
+  // so that one app should not overwhelm the results
+  // const group = `| all(
+  //     group(app)
+  //     max(itemPerApp)
+  //     each(
+  //       output(summary())
+  //     )
+  //   `
   // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
+  const yql = `select * from sources ${schemasString} ${whereClause} ${orderByClause}`
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
-  Logger.info(`[getItems] Query Details:`, {
-    schema,
-    app,
-    entity,
-    limit,
-    offset,
-    intentProvided: !!intent,
-    conditions: conditions.length > 0 ? conditions : "none",
-  })
+  Logger.info(
+    `[getItems] Query Details: ${JSON.stringify({
+      schema,
+      app,
+      entity,
+      limit,
+      offset,
+      intentProvided: !!intent,
+      conditions: conditions.length > 0 ? conditions : "none",
+    })}`,
+  )
 
   const searchPayload = {
     yql,
@@ -2316,7 +2367,7 @@ export const getItems = async (
     .catch((error) => {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
-        sources: schema,
+        sources: JSON.stringify(schema),
         message: `getItems failed for schema ${schema}`,
       })
       Logger.error(searchError, "Error in getItems function")
