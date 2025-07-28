@@ -314,7 +314,7 @@ const LogOut = async (c: Context) => {
       Logger.warn("User not found during logout")
     }
   } catch (err) {
-    Logger.error("Error during logout token decode or DB operation", err)
+    Logger.error("Error during logout token verify or DB operation", err)
   } finally {
     clearCookies(c)
     Logger.info("Logged out, redirecting to /auth")
@@ -442,7 +442,7 @@ const handleAppValidation = async (c: Context) => {
     )
     const existingUser = existingUserRes[0]
     const workspaceId = existingUser.workspaceExternalId
-    // todo figure out how to do this for this case
+
     const accessToken = await generateTokens(
       user.email,
       user.role,
@@ -456,16 +456,10 @@ const handleAppValidation = async (c: Context) => {
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
-    const opts = {
-      secure: true,
-      path: "/",
-      httpOnly: true,
-    }
-    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
-    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
 
     return c.json({
-      jwt_token: accessToken,
+      access_token: accessToken,
+      refresh_token: refreshToken,
       workspace_id: workspaceId,
     })
   }
@@ -477,6 +471,76 @@ const handleAppValidation = async (c: Context) => {
     },
     404,
   )
+}
+
+const handleAppRefreshToken = async (c: Context) => {
+  let body
+  try {
+    body = await c.req.json()
+  } catch {
+    Logger.warn("Failed to parse JSON body")
+    return c.json({ msg: "Invalid request" }, 400)
+  }
+
+  const refreshToken =
+    typeof body.refreshToken === "string" ? body.refreshToken : undefined
+
+  if (!refreshToken) {
+    Logger.warn("No refresh token provided")
+    return c.json({ msg: "Missing refresh token" }, 401)
+  }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = await verify(refreshToken, jwtSecret)
+  } catch (err) {
+    Logger.warn("Invalid or expired refresh token", err)
+    return c.json({ msg: "Invalid or expired refresh token" }, 401)
+  }
+
+  const { sub: email, workspaceId } = payload as {
+    sub: string
+    workspaceId: string
+  }
+
+  const uw = await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+  if (!uw?.user || !uw?.workspace) {
+    Logger.warn("No user/workspace for token payload", { email, workspaceId })
+    return c.json({ msg: "Unauthorized" }, 401)
+  }
+  const existingUser = uw.user
+
+  if (existingUser.refreshToken !== refreshToken) {
+    Logger.warn("Refresh token mismatch", { email })
+    return c.json({ msg: "Unauthorized" }, 401)
+  }
+
+  try {
+    const newAccessToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+    const newRefreshToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+      true,
+    )
+
+    await saveRefreshTokenToDB(db, existingUser.email, newRefreshToken)
+    Logger.info("Mobile tokens refreshed", { email })
+    return c.json(
+      {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      },
+      200,
+    )
+  } catch (err) {
+    Logger.error("Error generating tokens", err)
+    return c.json({ msg: "Internal server error" }, 500)
+  }
 }
 
 const getNewAccessRefreshToken = async (c: Context) => {
@@ -497,7 +561,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
   try {
     payload = await verify(refreshToken, jwtSecret)
   } catch (err) {
-    Logger.warn("Failed to decode refresh token", err)
+    Logger.warn("Failed to verify refresh token", err)
     return clearAndRedirect()
   }
 
@@ -554,6 +618,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
+  .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
