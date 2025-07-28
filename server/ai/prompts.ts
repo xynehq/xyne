@@ -988,7 +988,8 @@ export const SearchQueryToolContextPrompt = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
   userContext: string, 
-  previousClassification?: any
+  previousClassification?: any,
+  chainBreakClassifications?: any
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -999,9 +1000,20 @@ export const searchQueryPrompt = (
 
     **User Context:** ${userContext}
 
-    **Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
 
-    NOTE : PREVIOUS QUERY CLASSIFICATION IS FOR REFERENCE ONLY, IF YOU FEEL SOME PARAMETERS NEED TO BE CHANGED, CHANGE THEM ACCORDINGLY.
+    NOTE : PREVIOUS QUERY CLASSIFICATION IS FOR REFERENCE ONLY, IF YOU FEEL SOME PARAMETERS NEED TO BE CHANGED, CHANGE THEM ACCORDINGLY.` : ''}
+
+    ${chainBreakClassifications ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${JSON.stringify(chainBreakClassifications, null, 2)}
+    
+    **IMPORTANT - Chain Context Integration:**
+    The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
+    - If the current query relates to any of these previous chains, use their classifications as reference context
+    - This allows queries to reconnect with earlier conversation threads even after chain breaks
+    - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
+      use Chain 1's classification to understand "him" refers to John and the context is emails
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains` : ''}
 
     **IMPORTANT - For Follow-Up Queries:**
     When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:

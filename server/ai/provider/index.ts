@@ -1423,7 +1423,8 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
   toolContext?: string,
-  previousClassification?: any
+  previousClassification?: any,
+  chainBreakClassifications?: any
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning

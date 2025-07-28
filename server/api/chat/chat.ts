@@ -175,6 +175,10 @@ import {
   getCitationToImage,
   mimeTypeMap,
 } from "./utils"
+import {
+  getRecentChainBreakClassifications,
+  formatChainBreaksForPrompt,
+} from "@/utils/chainUtils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
   getAttachmentsByMessageId,
@@ -3724,14 +3728,44 @@ export const MessageApi = async (c: Context) => {
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
                 filteredMessages[filteredMessages.length - 2]
+              console.log(`Checking message at index ${filteredMessages.length - 2} for previous classification`);
+              
               if (previousUserMessage?.queryRouterClassification) {
-                previousClassification =
-                  previousUserMessage.queryRouterClassification
-                loggerWithChild({ email: email }).info(
-                  `Found previous classification: ${JSON.stringify(previousClassification)}`,
-                )
+                // Parse classification if it's a string
+                if (typeof previousUserMessage.queryRouterClassification === 'string') {
+                  try {
+                    previousClassification = JSON.parse(previousUserMessage.queryRouterClassification);
+                  } catch (error) {
+                    console.warn('Failed to parse previous classification:', error);
+                    previousClassification = null;
+                  }
+                } else {
+                  previousClassification = previousUserMessage.queryRouterClassification;
+                }
+                
+                if (previousClassification) {                  
+                  loggerWithChild({ email: email }).info(
+                    `Found previous classification: ${JSON.stringify(previousClassification)}`,
+                  )
+                }
+              } else {
+                console.log('No previous classification found');
               }
+            } else {
+              console.log('Not enough messages for previous classification');
             }
+
+            // Get chain break classifications for context
+            const chainBreakClassifications = getRecentChainBreakClassifications(filteredMessages)
+            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+            
+            loggerWithChild({ email: email }).info(
+              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? 'YES' : 'NO'}`
+            );
+            
+            loggerWithChild({ email: email }).info(
+              `Found ${chainBreakClassifications.length} chain break classifications for context`,
+            )
 
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
@@ -3754,6 +3788,7 @@ export const MessageApi = async (c: Context) => {
                 },
                 undefined,
                 previousClassification,
+                formattedChainBreaks,
               )
 
             // TODO: for now if the answer is from the conversation itself we don't
