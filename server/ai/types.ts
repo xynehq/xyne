@@ -219,6 +219,7 @@ interface TextQueryItem {
 interface PillValue {
   title: string
   docId: string
+  wholeSheet?: boolean
   threadId?: string
   app?: Apps
 }

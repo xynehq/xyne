@@ -35,6 +35,7 @@ import type {
   ChainBreakClassifications,
   ConverseResponse,
   Cost,
+  Intent,
   LLMProvider,
   ModelParams,
   QueryRouterLLMResponse,
@@ -77,6 +78,7 @@ import {
   userChatSystem,
   withToolQueryPrompt,
   ragOffPromptJson,
+  nameToEmailResolutionPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1636,5 +1638,64 @@ export const generateFallback = async (
   } catch (error) {
     Logger.error(error, "Error in generateFallback")
     throw error
+  }
+}
+
+export const extractEmailsFromContext = async (
+  names: Intent,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ emails: Intent }> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  const intentNames =
+    [
+      ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
+      ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
+      ...(names.cc?.length ? [`CC: ${names.cc.join(", ")}`] : []),
+      ...(names.bcc?.length ? [`BCC: ${names.bcc.join(", ")}`] : []),
+    ].join(" | ") || "No names provided"
+
+  params.systemPrompt = nameToEmailResolutionPrompt(
+    userCtx,
+    retrievedCtx,
+    intentNames,
+    names,
+  )
+  params.json = false
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `Help me find emails for these names: ${intentNames}`,
+      },
+    ],
+  }
+
+  const updatedMessages: Message[] = [baseMessage]
+  const res = await getProviderByModel(params.modelId).converse(
+    updatedMessages,
+    params,
+  )
+
+  let parsedResponse = []
+  if (!res || !res.text) {
+    Logger.error("No response from LLM for email extraction")
+  }
+  if (res.text) {
+    parsedResponse = jsonParseLLMOutput(res.text)
+  }
+  const emails = parsedResponse.emails || {}
+  return {
+    emails: {
+      bcc: emails.bcc || [],
+      cc: emails.cc || [],
+      from: emails.from || [],
+      to: emails.to || [],
+    },
   }
 }

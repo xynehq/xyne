@@ -488,7 +488,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
+      "Retrieves items based on metadata filters (time range, app, entity, email addresses). Use this tool when searching within a specific app/entity with optional keyword filtering. For Gmail queries, supports filtering by sender/recipient email addresses.",
     params: [
       {
         name: "from",
@@ -531,6 +531,19 @@ export const internalTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description: "Keywords to refine the search based on the user's query.",
+      },
+      {
+        name: "intent",
+        type: "object",
+        required: false,
+        description: `
+          Email filtering intent with support for multiple addresses, names, and organizations. 
+            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
+            - Each field is an array of strings containing email addresses, person names, or organization names. 
+            - Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'.
+            - The system will automatically resolve names and organizations to email addresses. 
+            Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}
+          `,
       },
       {
         name: "limit",

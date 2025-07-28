@@ -17,6 +17,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  extractEmailsFromContext,
 } from "@/ai/provider"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -27,6 +28,7 @@ import {
   QueryType,
   type ChainBreakClassifications,
   type ConverseResponse,
+  type Intent,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
@@ -40,6 +42,7 @@ import {
   getChatByExternalIdWithAuth,
   getFavoriteChats,
   getPublicChats,
+  getAllChatsForDashboard,
   insertChat,
   updateChatByExternalIdWithAuth,
   updateChatBookmarkStatus,
@@ -52,6 +55,8 @@ import {
   getChatMessagesBefore,
   updateMessage,
   getChatMessagesWithAuth,
+  getMessageCountsByChats,
+  getMessageFeedbackStats,
 } from "@/db/message"
 import { eq } from "drizzle-orm"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
@@ -154,7 +159,12 @@ import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 // import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalId,
+  getAllAgents,
+  getAgentsAccessibleToUser,
+  type SelectAgent,
+} from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
   ragPipelineConfig,
@@ -175,6 +185,7 @@ import {
   expandEmailThreadsInResults,
   getCitationToImage,
   mimeTypeMap,
+  extractNamesFromIntent,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -190,9 +201,125 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isImageFile } from "@/utils/image"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import {
+  getAgentUsageByUsers,
+  getChatCountsByAgents,
+  getFeedbackStatsByAgents,
+  getMessageCountsByAgents,
+  getPublicAgentsByUser,
+  type SharedAgentUsageData,
+} from "@/db/sharedAgentUsage"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
+
+export async function resolveNamesToEmails(
+  intent: Intent,
+  email: string,
+  userCtx: string,
+  span?: Span,
+): Promise<any> {
+  const resolveSpan = span?.startSpan("resolve_names_to_emails")
+
+  try {
+    const extractedNames = extractNamesFromIntent(intent)
+
+    const allNames = [
+      ...(extractedNames.from || []),
+      ...(extractedNames.to || []),
+      ...(extractedNames.cc || []),
+      ...(extractedNames.bcc || []),
+      ...(extractedNames.subject || []),
+    ]
+
+    if (allNames.length === 0) {
+      resolveSpan?.setAttribute("no_names_found", true)
+      resolveSpan?.end()
+      return intent
+    }
+
+    const isValidEmailAddress = (email: string): boolean => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      return emailRegex.test(email)
+    }
+
+    const allNamesAreEmails = allNames.every((name) =>
+      isValidEmailAddress(name),
+    )
+    if (allNamesAreEmails) {
+      resolveSpan?.setAttribute("all_names_are_emails", true)
+      resolveSpan?.setAttribute("skip_resolution", true)
+      resolveSpan?.end()
+      return intent
+    }
+    resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
+
+    const searchSpan = resolveSpan?.startSpan("search_users")
+    const searchQuery = allNames.join(" ")
+
+    const searchResults = await searchVespa(
+      searchQuery,
+      email,
+      Apps.Gmail,
+      MailEntity.Email,
+      {
+        limit: 50,
+        alpha: 0.5,
+        span: searchSpan,
+        isIntentSearch: true,
+      },
+    )
+
+    searchSpan?.setAttribute("search_query", searchQuery)
+    searchSpan?.setAttribute(
+      "results_count",
+      searchResults.root.children?.length || 0,
+    )
+    searchSpan?.end()
+
+    const resultCount = searchResults.root.children?.length || 0
+
+    if (
+      !searchResults.root.children ||
+      searchResults.root.children.length === 0
+    ) {
+      return intent
+    }
+
+    const searchContext = searchResults.root.children
+      .map((result, index) => {
+        const fields = result.fields as VespaMail
+        const contextLine = `
+        [Index ${index}]: 
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})
+        Subject: ${fields.subject || "Unknown"}
+        From: <${fields.from}>
+        To: <${fields.to}>
+        CC: <${fields.cc}>
+        BCC: <${fields.bcc}>
+        `
+
+        return contextLine
+      })
+      .join("\n")
+
+    let resolvedData: Intent = {}
+    const resolutionResult = await extractEmailsFromContext(
+      extractedNames,
+      userCtx,
+      searchContext,
+      { modelId: config.defaultFastModel, json: false, stream: false },
+    )
+
+    resolvedData = resolutionResult.emails || []
+
+    searchSpan?.end()
+    return resolvedData
+  } catch (error) {
+    resolveSpan?.end()
+    return intent
+  }
+}
 
 const {
   JwtPayloadKey,
@@ -666,9 +793,12 @@ export const ChatHistory = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore
-    const { page } = c.req.valid("query")
+    const { page, from, to } = c.req.valid("query")
     const offset = page * chatHistoryPageSize
-    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
+    const timeRange = from || to ? { from, to } : undefined
+    return c.json(
+      await getPublicChats(db, email, chatHistoryPageSize, offset, timeRange),
+    )
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(
@@ -677,6 +807,197 @@ export const ChatHistory = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Could not get chat history",
+    })
+  }
+}
+
+export const DashboardDataApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Fetch all chats based on time range (no pagination)
+    const chats = await getAllChatsForDashboard(db, email, timeRange)
+
+    // Get message counts for all chats
+    const chatExternalIds = chats.map((chat) => chat.externalId)
+    const messageCounts = await getMessageCountsByChats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Get feedback statistics for all chats
+    const feedbackStats = await getMessageFeedbackStats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Fetch all agents accessible to user
+    const agents = await getAgentsAccessibleToUser(
+      db,
+      user.id,
+      workspace.id,
+      1000, // limit to 1000 agents (increased from 100)
+      0, // offset 0
+    )
+
+    return c.json({
+      chats,
+      agents,
+      messageCounts,
+      feedbackStats,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Dashboard Data Error: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get dashboard data",
+    })
+  }
+}
+
+export const SharedAgentUsageApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Get public agents created by this user
+    const publicAgents = await getPublicAgentsByUser({
+      db,
+      userId: user.id,
+      workspaceId: workspace.id,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    if (publicAgents.length === 0) {
+      return c.json({
+        sharedAgents: [],
+        totalUsage: {
+          totalChats: 0,
+          totalMessages: 0,
+          totalLikes: 0,
+          totalDislikes: 0,
+          uniqueUsers: 0,
+        },
+      })
+    }
+
+    const agentExternalIds = publicAgents.map((agent) => agent.externalId)
+
+    // Get usage statistics for these agents
+    const [chatCounts, messageCounts, feedbackStats, userUsageData] =
+      await Promise.all([
+        getChatCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getMessageCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getFeedbackStatsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getAgentUsageByUsers({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+      ])
+
+    // Transform data into the desired format
+    const sharedAgents: SharedAgentUsageData[] = publicAgents.map((agent) => {
+      const agentId = agent.externalId
+      const userUsage = userUsageData[agentId] || []
+      const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
+
+      return {
+        agentId,
+        agentName: agent.name,
+        agentDescription: agent.description,
+        totalChats: chatCounts[agentId] || 0,
+        totalMessages: messageCounts[agentId] || 0,
+        likes: feedback.likes,
+        dislikes: feedback.dislikes,
+        userUsage,
+      }
+    })
+
+    // Calculate total usage across all shared agents
+    let totalChats = 0
+    let totalMessages = 0
+    let totalLikes = 0
+    let totalDislikes = 0
+    const uniqueUsers = new Set<number>()
+
+    sharedAgents.forEach((agent) => {
+      totalChats += agent.totalChats
+      totalMessages += agent.totalMessages
+      totalLikes += agent.likes
+      totalDislikes += agent.dislikes
+      agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
+    })
+
+    return c.json({
+      sharedAgents: sharedAgents.sort(
+        (a, b) => b.totalMessages - a.totalMessages,
+      ),
+      totalUsage: {
+        totalChats,
+        totalMessages,
+        totalLikes,
+        totalDislikes,
+        uniqueUsers: uniqueUsers.size,
+      },
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Shared Agent Usage Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get shared agent usage data",
     })
   }
 }
@@ -2337,7 +2658,7 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { app, entity, startTime, endTime, sortDirection } =
+  const { app, entity, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
@@ -2470,6 +2791,16 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -2485,6 +2816,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile: SearchModes.GlobalSorted,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -2556,7 +2888,7 @@ async function* generateMetadataQueryAnswer(
           }`,
         )
         pageSpan?.end()
-        yield { text: "null" }
+        yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
 
@@ -2577,7 +2909,7 @@ async function* generateMetadataQueryAnswer(
         pageSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
           pageSpan?.end()
-          yield { text: "null" }
+          yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
           loggerWithChild({ email: email }).info(
@@ -2612,6 +2944,18 @@ async function* generateMetadataQueryAnswer(
     loggerWithChild({ email: email }).info(
       `Search Type : ${QueryType.GetItems}`,
     )
+
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
@@ -2639,7 +2983,7 @@ async function* generateMetadataQueryAnswer(
           limit: userSpecifiedCountLimit,
           offset: classification.filters.offset || 0,
           asc: sortDirection === "asc",
-          intent: classification.filters.intent,
+          intent: resolvedIntent || {},
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -2660,7 +3004,7 @@ async function* generateMetadataQueryAnswer(
         limit: userSpecifiedCountLimit,
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
-        intent: classification.filters.intent,
+        intent: resolvedIntent || {},
       }
 
       loggerWithChild({ email: email }).info(
@@ -2746,12 +3090,24 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
+    let resolvedIntent = {} as Intent
+    if (intent && Object.keys(intent).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     const searchOptions = {
       limit: pageSize,
       alpha: userAlpha,
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {

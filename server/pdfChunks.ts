@@ -180,6 +180,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
     data,
     wasmUrl: openjpegWasmPath,
     iccUrl: qcmsWasmPath,
+    verbosity: PDFJS.VerbosityLevel.ERRORS, // Only show errors, suppress warnings
   })
   let pdfDocument: pdfjsLib.PDFDocumentProxy
   try {
