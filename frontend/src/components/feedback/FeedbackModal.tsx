@@ -44,15 +44,15 @@ const Checkbox = ({
 // Predefined feedback questions for different feedback types
 const FEEDBACK_QUESTIONS = {
   [MessageFeedback.Like]: [
-    "Summarized information was accurate and clear",
-    "Citations were helpful and relevant",
-    "Response were returned quickly",
+    "Response time was quick",
+    "Answer provided was accurate and to the point",
+    "Citations were relevant and added value to the response",
   ],
   [MessageFeedback.Dislike]: [
-    "Didn't receive AI notes",
-    "Summarized information was inaccurate or confusing",
-    "Citations were missing or linked to irrelevant messages",
-    "Took too long to receive response",
+    "No response was received or an error occurred",
+    "Response took too long to load",
+    "Answer was entirely incorrect",
+    "Citations were inaccurate and not relevant to the content",
   ],
 } as const
 
