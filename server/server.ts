@@ -206,7 +206,8 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 const postOauthRedirect = config.postOauthRedirect
 
-const jwtSecret = process.env.JWT_SECRET!
+const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
+const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 
 const AccessTokenCookieName = "access-token"
 const RefreshTokenCookieName = "refresh-token"
@@ -218,7 +219,7 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 const app = new Hono<{ Variables: Variables }>()
 
 const AuthMiddleware = jwt({
-  secret: jwtSecret,
+  secret: accessTokenSecret,
   cookie: AccessTokenCookieName,
 })
 
@@ -300,7 +301,7 @@ const LogOut = async (c: Context) => {
   }
 
   try {
-    const { payload } = await verify(refreshToken, jwtSecret)
+    const { payload } = await verify(refreshToken, refreshTokenSecret)
     const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
     const email = sub
     const userAndWorkspace: PublicUserWorkspace =
@@ -492,7 +493,7 @@ const handleAppRefreshToken = async (c: Context) => {
 
   let payload: Record<string, unknown>
   try {
-    payload = await verify(refreshToken, jwtSecret)
+    payload = await verify(refreshToken, refreshTokenSecret)
   } catch (err) {
     Logger.warn("Invalid or expired refresh token", err)
     return c.json({ msg: "Invalid or expired refresh token" }, 401)
@@ -559,7 +560,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
   let payload
   try {
-    payload = await verify(refreshToken, jwtSecret)
+    payload = await verify(refreshToken, refreshTokenSecret)
   } catch (err) {
     Logger.warn("Failed to verify refresh token", err)
     return clearAndRedirect()
@@ -898,8 +899,10 @@ const generateTokens = async (
         tokenType: "access",
         exp: Math.floor(Date.now() / 1000) + 60 * 1, // Access token expires in 1 hour
       }
-  // todo keeping the secret same for now for AT RT
-  const jwtToken = await sign(payload, jwtSecret)
+  const jwtToken = await sign(
+    payload,
+    forRefreshToken ? refreshTokenSecret : accessTokenSecret,
+  )
   return jwtToken
 }
 // we won't allow user to reach the login page if they are already logged in
