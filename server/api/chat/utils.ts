@@ -39,7 +39,7 @@ import {
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { UserQuery } from "@/ai/types"
+import type { Intent, UserQuery } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
@@ -447,7 +447,41 @@ export const extractFileIdsFromMessage = async (
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
       }
-      //We need to add logic for Slack threads
+
+      const pillValue = obj.value
+      const docId = pillValue.docId
+
+      // Check if this is a Google Sheets reference with wholeSheet: true
+      if (pillValue.wholeSheet === true) {
+        // Extract the base docId (remove the "_X" suffix if present)
+        const baseDocId = docId.replace(/_\d+$/, "")
+
+        // Get the spreadsheet metadata to find all sub-sheets
+        const validFile = await getDocumentOrSpreadsheet(baseDocId)
+        if (validFile) {
+          const fields = validFile?.fields as VespaFile
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            // Add all sub-sheet IDs
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${baseDocId}_${i}`)
+            }
+          } else {
+            // Fallback: just add the docId if it's not a spreadsheet
+            fileIds.push(docId)
+          }
+        } else {
+          // Fallback: just add the docId if we can't get metadata
+          fileIds.push(docId)
+        }
+      } else {
+        // Regular pill behavior: just add the docId
+        fileIds.push(docId)
+      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
@@ -665,4 +699,22 @@ export const getCitationToImage = async (
     )
     return null
   }
+}
+
+export function extractNamesFromIntent(intent: any): Intent {
+  if (!intent || typeof intent !== "object") return {}
+
+  const result: Intent = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+
+  for (const field of fieldsToCheck) {
+    if (Array.isArray(intent[field]) && intent[field].length > 0) {
+      const uniqueValues = [...new Set(intent[field])].filter((v) => v)
+      if (uniqueValues.length > 0) {
+        result[field] = uniqueValues
+      }
+    }
+  }
+
+  return result
 }

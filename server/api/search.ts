@@ -117,6 +117,36 @@ export const chatHistorySchema = z.object({
     .refine((value) => !isNaN(value), {
       message: "Page must be a valid number",
     }),
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+export const dashboardDataSchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+export const sharedAgentUsageSchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
 })
 
 export const messageSchema = z.object({
