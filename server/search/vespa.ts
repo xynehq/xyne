@@ -773,6 +773,13 @@ export const HybridDefaultProfileForAgent = (
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
+  if (channelIds.length > 0) {
+    appQueries.push(buildSlackYQL())
+    if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+    if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
+    if (!sources.includes(chatContainerSchema))
+      sources.push(chatContainerSchema)
+  }
 
   // Combine all queries
   const combinedQuery = appQueries.join("or")

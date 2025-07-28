@@ -292,6 +292,7 @@ const checkAndYieldCitations = async function* (
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
         const item = results[citationIndex - baseIndex]
+        // if(item.fields.sddocname == chatContainerSchema) continue;
         if (item) {
           yield {
             citation: {
@@ -1514,16 +1515,33 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results =
-    fileIds.length > 0
-      ? await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
-      : { root: { children: [] } }
-  if (!results.root.children) {
-    results.root.children = []
+  const combinedSearchResponse: VespaSearchResponse = {
+    root: {
+      id: "root:0",
+      relevance: 1,
+      coverage: {
+        coverage: 100,
+        documents: 0,
+        full: true,
+        nodes: 1,
+        results: 1,
+        resultsFull: 1,
+      },
+      children: [],
+    },
   }
-  //Write code to search for user context in the
+
+  if (fileIds.length > 0) {
+    const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+    if (results.root.children) {
+      combinedSearchResponse.root.children?.push(...results.root.children)
+    }
+  }
+
   loggerWithChild({ email: email }).info(
-    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(
+      threadIds,
+    )}`,
   )
 
   // If we have threadIds, fetch all emails in those threads
@@ -1552,14 +1570,16 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          results.root.children.map((child: any) => child.fields.docId),
+          combinedSearchResponse.root.children?.map(
+            (child: any) => child.fields.docId,
+          ),
         )
 
         // Use the helper function to process thread results
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          results.root.children,
+          combinedSearchResponse.root.children!,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
@@ -1581,7 +1601,6 @@ async function* generateAnswerFromGivenContext(
 
     threadSpan?.end()
   }
-
   // const initialContext = cleanContext(
   //   results?.root?.children
   //     ?.map(
@@ -1594,85 +1613,76 @@ async function* generateAnswerFromGivenContext(
   //     )
   //     ?.join("\n"),
   // )
-  const startIndex = isReasoning ? previousResultsLength : 0
-  const contextPromises = results?.root?.children?.map(async (v, i) => {
-    let content = answerContextMap(
-      v as z.infer<typeof VespaSearchResultsSchema>,
-      0,
-      true,
-    )
+  const initialResults = [...(combinedSearchResponse.root.children || [])]
+  for (const v of initialResults) {
     if (
       v.fields &&
       "sddocname" in v.fields &&
-      v.fields.sddocname === chatContainerSchema &&
-      (v.fields as any).creator
+      v.fields.sddocname === chatContainerSchema
     ) {
-      const creator = await getDocumentOrNull(
-        chatUserSchema,
-        (v.fields as any).creator,
-      )
-      if (creator) {
-        content += `\nCreator: ${(creator.fields as any).name}`
-      }
-    }
-    return `Index ${i + startIndex} \n ${content}`
-  })
+      const channelId = (v.fields as any).docId
+      console.log(`Processing chat container with docId: ${channelId}`)
 
-  const resolvedContexts = contextPromises
-    ? await Promise.all(contextPromises)
-    : []
-
-  const chatContexts: string[] = []
-  const threadContexts: string[] = []
-  if (results?.root?.children) {
-    for (const v of results.root.children) {
-      if (
-        v.fields &&
-        "sddocname" in v.fields &&
-        v.fields.sddocname === chatContainerSchema
-      ) {
-        const channelId = (v.fields as any).docId
-        console.log(`Processing chat container with docId: ${channelId}`)
-
-        if (channelId) {
-          const searchResults = await searchVespaInSlack(
-            messageText,
-            email,
-            {
-              limit: 10,
-              channelIds: [channelId],
-            },
+      if (channelId) {
+        const searchResults = await searchVespaInSlack(messageText, email, {
+          limit: 10,
+          channelIds: [channelId],
+        })
+        if (searchResults.root.children) {
+          combinedSearchResponse.root.children?.push(
+            ...searchResults.root.children,
           )
-          if (searchResults.root.children) {
-            // console.log("searchResults children", searchResults?.root?.children)
-            const chatContext = buildContext(searchResults.root.children, 10)
-            chatContexts.push(chatContext)
-            const threadContext = await getThreadContext(
-              searchResults,
-              email,
-              generateAnswerSpan,
+          const threadMessages = await getThreadContextV2(
+            searchResults,
+            email,
+            generateAnswerSpan,
+          )
+          if (threadMessages?.root?.children) {
+            combinedSearchResponse.root.children?.push(
+              ...threadMessages.root.children,
             )
-            if (threadContext) {
-              threadContexts.push(threadContext)
-            }
           }
         }
       }
     }
   }
 
-  let initialContext = cleanContext(resolvedContexts.join("\n"))
-  if (chatContexts.length > 0) {
-    initialContext += "\n" + chatContexts.join("\n")
-  }
-  if (threadContexts.length > 0) {
-    initialContext += "\n" + threadContexts.join("\n")
-  }
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const contextPromises = combinedSearchResponse.root.children?.map(
+    async (v, i) => {
+      let content = answerContextMap(
+        v as z.infer<typeof VespaSearchResultsSchema>,
+        0,
+        true,
+      )
+      if (
+        v.fields &&
+        "sddocname" in v.fields &&
+        v.fields.sddocname === chatContainerSchema &&
+        (v.fields as any).creator
+      ) {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )
+        if (creator) {
+          content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      }
+      return `Index ${i + startIndex} \n ${content}`
+    },
+  )
+
+  const resolvedContexts = contextPromises
+    ? await Promise.all(contextPromises)
+    : []
+
+  const initialContext = cleanContext(resolvedContexts.join("\n"))
   console.log(`Intial context : ${initialContext}`)
-  console.log("Result children", results?.root?.children)
+  console.log("Result children", combinedSearchResponse.root.children)
   const { imageFileNames } = extractImageFileNames(
     initialContext,
-    results?.root?.children,
+    combinedSearchResponse.root.children,
   )
 
   const finalImageFileNames = imageFileNames || []
@@ -1691,13 +1701,13 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.setAttribute("context", initialContext || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
-    results.root?.children?.length || 0,
+    combinedSearchResponse.root.children?.length || 0,
   )
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
-      results?.root?.children?.length || 0
+      combinedSearchResponse.root.children?.length || 0
     }`,
   )
 
@@ -1721,7 +1731,7 @@ async function* generateAnswerFromGivenContext(
 
   const answer = yield* processIterator(
     iterator,
-    results?.root?.children,
+    combinedSearchResponse.root.children,
     previousResultsLength,
     userRequestsReasoning,
     email,
@@ -1834,7 +1844,7 @@ async function* generateAnswerFromGivenContext(
     }
   }
   if (config.isReasoning && userRequestsReasoning) {
-    previousResultsLength += results?.root?.children?.length || 0
+    previousResultsLength += combinedSearchResponse.root.children?.length || 0
   }
   generateAnswerSpan?.end()
 }
@@ -1874,8 +1884,11 @@ export const parseMessageText = (message: string): string => {
   try {
     const messageArray = JSON.parse(message)
     if (Array.isArray(messageArray)) {
-      const textItem = messageArray.find((item) => item.type === "text")
-      return textItem?.value?.trim() ?? ""
+      return messageArray
+        .filter((item) => item.type === "text")
+        .map((item) => item.value)
+        .join(" ")
+        .trim()
     }
     return message
   } catch (e) {

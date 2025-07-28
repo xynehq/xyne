@@ -47,7 +47,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import { getChannelIdsFromAgent, getChannelIdsFromAgentPrompt, searchToCitation } from "./utils"
+import { getChannelIdsFromAgentPrompt, searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
@@ -394,12 +394,9 @@ export const searchTool: AgentTool = {
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
-      const channelIds = await getChannelIdsFromAgent(
-        // @ts-ignore
-        params.agentId,
-        // @ts-ignore
-        params.workspaceId,
-      )
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
       return await executeVespaSearch({
         email,
         query: queryToUse,
@@ -725,10 +722,11 @@ export const getSlackThreads: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack threads.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack threads.",
           contexts: [],
         }
       }
@@ -990,10 +988,11 @@ export const getSlackMessagesFromUser: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from user.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from user.",
           contexts: [],
         }
       }
@@ -1200,10 +1199,11 @@ export const getSlackRelatedMessages: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve related Slack messages.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve related Slack messages.",
           contexts: [],
         }
       }
@@ -1275,7 +1275,6 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Execute the search
       const searchResponse = await getThreadItems(searchParams)
-      console.log(searchResponse , "Search Response from Vespa")
       const rawItems = searchResponse?.root?.children || []
 
       // Filter and validate results
@@ -1387,10 +1386,11 @@ export const getUserSlackProfile: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack user profile.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack user profile.",
           contexts: [],
         }
       }
@@ -1547,10 +1547,11 @@ export const getSlackMessagesFromChannel: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from channel.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from channel.",
           contexts: [],
         }
       }
@@ -1745,10 +1746,11 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from time range.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from time range.",
           contexts: [],
         }
       }

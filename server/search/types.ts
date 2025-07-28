@@ -654,7 +654,7 @@ export const VespaChatContainerSchema = z.object({
   isGeneral: z.boolean(),
   isIm: z.boolean(),
   isMpim: z.boolean(),
-
+  domain: z.string().optional(), // derived
   permissions: z.array(z.string()),
 
   createdAt: z.number(),
@@ -730,8 +730,7 @@ const SearchMatchFeaturesSchema = z.union([
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
   DataSourceFileMatchFeaturesSchema,
-  //Added chat container match features
-  // ChatContainerMatchFeaturesSchema,
+  ChatContainerMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z

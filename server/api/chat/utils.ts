@@ -2,6 +2,7 @@ import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
   DataSourceEntity,
   dataSourceFileSchema,
@@ -15,9 +16,11 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatContainer,
   type VespaChatMessage,
   type VespaDataSourceFile,
   type VespaEvent,
@@ -53,6 +56,7 @@ import path from "path"
 import { getAgentByExternalId } from "@/db/agent"
 import { db } from "@/db/client"
 import { getWorkspaceByExternalId } from "@/db/workspace"
+
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
@@ -66,42 +70,23 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
     }
     return (
       agent.docIds
-        ?.map((docId: string) => {
-          if (docId.startsWith("slack-channel-")) {
-            return docId.replace("slack-channel-", "")
-          }
-          return ""
-        })
-        .filter((id: string) => id !== "") ?? []
+          ?.map((docId : string) => {
+            if (docId.startsWith("slack-channel-")) {
+              // Extract the part after "slack-channel-"
+              const channelPart = docId.replace("slack-channel-", "")
+              // The channel ID is the first segment before the first "-"
+              const channelId = channelPart.split("-")[0]
+              return channelId
+            }
+            return ""
+          })
+          .filter((id : string) => id !== "") ?? []
     )
   } catch (e) {
     return []
   }
 }
 
-export const getChannelIdsFromAgent = async (
-  agentId: string,
-  workspaceId: string,
-) => {
-  const workspace = await getWorkspaceByExternalId(db, workspaceId)
-  if (!workspace) {
-    return []
-  }
-  const agent = await getAgentByExternalId(db, agentId, workspace.id)
-  if (!agent || !agent.docIds) {
-    return []
-  }
-  return (
-    agent.docIds
-      ?.map((docId) => {
-        if (docId.startsWith("slack-channel-")) {
-          return docId.replace("slack-channel-", "")
-        }
-        return ""
-      })
-      .filter((id) => id !== "") ?? []
-  )
-}
 
 // Interface for email search result fields
 export interface EmailSearchResultFields {
@@ -377,7 +362,17 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
-  } else {
+  } 
+  else if (result.fields.sddocname === chatContainerSchema) {
+    return {
+      docId: (fields as VespaChatContainer).docId,
+      title: (fields as VespaChatContainer).name,
+      url: `https://${result.fields.domain}.slack.com/archives/${result.fields.docId}`,
+      app: (fields as VespaChatContainer).app,
+       entity: SlackEntity.Channel,
+    }
+  } 
+  else {
     throw new Error("Invalid search result type for citation")
   }
 }

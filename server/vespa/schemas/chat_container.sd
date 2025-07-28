@@ -94,7 +94,17 @@ schema chat_container {
         field count type int {
             indexing: attribute | summary
         }
+        field teamRef type reference<chat_team> {
+            indexing: attribute
+        }
     }
+
+    document-summary default {
+        summary domain {}
+    }
+
+    import field teamRef.domain as domain {}
+    import field teamRef.teamName as teamName {}
 
     field name_fuzzy type string {
         indexing: input name | index

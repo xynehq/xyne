@@ -302,7 +302,11 @@ export const SearchApi = async (c:Context) => {
           agent.docIds
             ?.map((docId) => {
               if (docId.startsWith("slack-channel-")) {
-                return docId.replace("slack-channel-", "")
+                // Extract the part after "slack-channel-"
+                const channelPart = docId.replace("slack-channel-", "")
+                // The channel ID is the first segment before the first "-"
+                const channelId = channelPart.split("-")[0]
+                return channelId
               }
               return ""
             })
