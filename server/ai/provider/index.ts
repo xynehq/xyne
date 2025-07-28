@@ -32,10 +32,12 @@ import { parse } from "partial-json"
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
+  ChainBreakClassifications,
   ConverseResponse,
   Cost,
   LLMProvider,
   ModelParams,
+  QueryRouterLLMResponse,
   QueryRouterResponse,
   TemporalClassifier,
 } from "@/ai/types"
@@ -1423,8 +1425,8 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
   toolContext?: string,
-  previousClassification?: any,
-  chainBreakClassifications?: any
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning

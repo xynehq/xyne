@@ -1,11 +1,14 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import {
+  type QueryRouterLLMResponse,
+} from "../ai/types"
 
 const Logger = getLogger(Subsystem.Chat)
 
 export interface ChainBreakClassification {
   messageIndex: number;
-  classification: any;
+  classification: QueryRouterLLMResponse;
   query: string;
 }
 

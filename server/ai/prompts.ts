@@ -1,5 +1,5 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType } from "./types"
+import { QueryType, type QueryRouterLLMResponse, type ChainBreakClassifications } from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -988,8 +988,8 @@ export const SearchQueryToolContextPrompt = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
   userContext: string, 
-  previousClassification?: any,
-  chainBreakClassifications?: any
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 

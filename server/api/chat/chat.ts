@@ -25,6 +25,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import {
   Models,
   QueryType,
+  type ChainBreakClassifications,
   type ConverseResponse,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
@@ -3724,7 +3725,7 @@ export const MessageApi = async (c: Context) => {
             )
 
             // Extract previous classification for pagination and follow-up queries
-            let previousClassification = null
+            let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
                 filteredMessages[filteredMessages.length - 2]
@@ -3740,7 +3741,7 @@ export const MessageApi = async (c: Context) => {
                     previousClassification = null;
                   }
                 } else {
-                  previousClassification = previousUserMessage.queryRouterClassification;
+                  previousClassification = previousUserMessage.queryRouterClassification as QueryRouterLLMResponse;
                 }
                 
                 if (previousClassification) {                  
@@ -4917,12 +4918,12 @@ export const MessageRetryApi = async (c: Context) => {
             )
 
             // Extract previous classification for pagination and follow-up queries
-            let previousClassification = null
+             let previousClassification: QueryRouterLLMResponse | null = null
             if (conversation.length >= 2) {
               const previousUserMessage = conversation[conversation.length - 2] // In retry context, previous user message is at -2
               if (previousUserMessage?.queryRouterClassification) {
                 previousClassification =
-                  previousUserMessage.queryRouterClassification
+                  previousUserMessage.queryRouterClassification as QueryRouterLLMResponse
                 loggerWithChild({ email: email }).info(
                   `Found previous classification for retry: ${JSON.stringify(previousClassification)}`,
                 )
