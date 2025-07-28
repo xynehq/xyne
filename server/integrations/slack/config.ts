@@ -47,5 +47,4 @@ export const ACTION_IDS = {
 export const periodicSaveState = 4000 // 4 seconds  
 
 // Constants from client.ts
-export const EVENT_CACHE_TTL = 30000; // 30 seconds
-
+export const EVENT_CACHE_TTL = 30000 // 30 seconds
