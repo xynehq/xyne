@@ -3,6 +3,7 @@ import { Subsystem } from "@/types"
 import {
   type QueryRouterLLMResponse,
 } from "../ai/types"
+import { type SelectMessage } from "@/db/schema"
 
 const Logger = getLogger(Subsystem.Chat)
 
@@ -12,23 +13,27 @@ export interface ChainBreakClassification {
   query: string;
 }
 
-export function extractChainBreakClassifications(messages: any[]): ChainBreakClassification[] {
+function parseQueryRouterClassification(queryRouterClassification: any, messageIndex: number): QueryRouterLLMResponse | null {
+  if (!queryRouterClassification) return null;
+  
+  try {
+    const parsedClassification = typeof queryRouterClassification === "string"
+      ? JSON.parse(queryRouterClassification)
+      : queryRouterClassification;
+    return parsedClassification as QueryRouterLLMResponse;
+  } catch (error) {
+    Logger.warn(`Failed to parse classification for message ${messageIndex}:`, error);
+    return null;
+  }
+}
+
+ export function extractChainBreakClassifications(messages: SelectMessage[]): ChainBreakClassification[] {
   const chainBreaks: ChainBreakClassification[] = [];
   
   messages.forEach((message, index) => {
     if (message.messageRole === 'user' && message.queryRouterClassification) {
-      let classification;
-      
-      if (typeof message.queryRouterClassification === 'string') {
-        try {
-          classification = JSON.parse(message.queryRouterClassification);
-        } catch (error) {
-          Logger.warn(`Failed to parse classification for message ${index}:`, error);
-          return;
-        }
-      } else {
-        classification = message.queryRouterClassification;
-      }
+      const classification = parseQueryRouterClassification(message.queryRouterClassification, index);
+      if (!classification) return;
     
       // When a chain break is detected (isFollowUp: false) and it's not the first message,
       // store the PREVIOUS message's classification (the last in the broken chain)
@@ -36,18 +41,9 @@ export function extractChainBreakClassifications(messages: any[]): ChainBreakCla
         const previousMessage = messages[index - 1];
         
         if (previousMessage && previousMessage.messageRole === 'user' && previousMessage.queryRouterClassification) {
-          let previousClassification;
+          const previousClassification = parseQueryRouterClassification(previousMessage.queryRouterClassification, index - 1);
+          if (!previousClassification) return;
           
-          if (typeof previousMessage.queryRouterClassification === 'string') {
-            try {
-              previousClassification = JSON.parse(previousMessage.queryRouterClassification);
-            } catch (error) {
-              Logger.warn(`Failed to parse previous classification for message ${index - 1}:`, error);
-              return;
-            }
-          } else {
-            previousClassification = previousMessage.queryRouterClassification;
-          }
           chainBreaks.push({
             messageIndex: index - 1, // Store previous message index
             classification: previousClassification, // Store previous message's classification
@@ -62,7 +58,7 @@ export function extractChainBreakClassifications(messages: any[]): ChainBreakCla
 }
 
 
-export function getRecentChainBreakClassifications(messages: any[]): ChainBreakClassification[] {  
+export function getRecentChainBreakClassifications(messages: SelectMessage[]): ChainBreakClassification[] {  
   const chainBreaks = extractChainBreakClassifications(messages);
   const recentChainBreaks = chainBreaks.slice(0, 2);   // limit to the last 2 chain breaks
   return recentChainBreaks;

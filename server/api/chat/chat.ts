@@ -3728,32 +3728,19 @@ export const MessageApi = async (c: Context) => {
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
-                filteredMessages[filteredMessages.length - 2]
-              console.log(`Checking message at index ${filteredMessages.length - 2} for previous classification`);
-              
-              if (previousUserMessage?.queryRouterClassification) {
-                // Parse classification if it's a string
-                if (typeof previousUserMessage.queryRouterClassification === 'string') {
-                  try {
-                    previousClassification = JSON.parse(previousUserMessage.queryRouterClassification);
-                  } catch (error) {
-                    console.warn('Failed to parse previous classification:', error);
-                    previousClassification = null;
-                  }
-                } else {
-                  previousClassification = previousUserMessage.queryRouterClassification as QueryRouterLLMResponse;
+                filteredMessages[filteredMessages.length - 1]
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification: ${error}`)
                 }
-                
-                if (previousClassification) {                  
-                  loggerWithChild({ email: email }).info(
-                    `Found previous classification: ${JSON.stringify(previousClassification)}`,
-                  )
-                }
-              } else {
-                console.log('No previous classification found');
               }
-            } else {
-              console.log('Not enough messages for previous classification');
             }
 
             // Get chain break classifications for context
@@ -4111,7 +4098,7 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.imageCitation) {
                   // Collect image citation for database persistence
                   imageCitations.push(chunk.imageCitation)
-                  console.log("Found image citation, sending it")
+                  Logger.info("Found image citation, sending it")
                   loggerWithChild({ email: email }).info(
                     `Found image citation, sending it`,
                     { citationKey: chunk.imageCitation.citationKey },
@@ -4539,7 +4526,7 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If retrying an assistant message, get attachments from the previous user message
     if (!isUserMessage && conversation && conversation.length > 0) {
-      const prevUserMessage = conversation[conversation.length - 1]
+      const prevUserMessage = conversation[conversation.length - 1] 
       if (prevUserMessage.messageRole === "user") {
         attachmentMetadata = await getAttachmentsByMessageId(
           db,
@@ -4918,15 +4905,20 @@ export const MessageRetryApi = async (c: Context) => {
             )
 
             // Extract previous classification for pagination and follow-up queries
-             let previousClassification: QueryRouterLLMResponse | null = null
-            if (conversation.length >= 2) {
-              const previousUserMessage = conversation[conversation.length - 2] // In retry context, previous user message is at -2
-              if (previousUserMessage?.queryRouterClassification) {
-                previousClassification =
-                  previousUserMessage.queryRouterClassification as QueryRouterLLMResponse
-                loggerWithChild({ email: email }).info(
-                  `Found previous classification for retry: ${JSON.stringify(previousClassification)}`,
-                )
+            let previousClassification: QueryRouterLLMResponse | null = null
+            if (conversation.length > 0) {
+              const previousUserMessage = conversation[conversation.length - 1] // In retry context, previous user message is at -1
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification in retry: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification in retry: ${error}`)
+                }
               }
             }
 

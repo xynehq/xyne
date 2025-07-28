@@ -3319,14 +3319,20 @@ export const AgentMessageApi = async (c: Context) => {
             const limitedMessages = messagesWithNoErrResponse.slice(-8)
             
             // Extract previous classification for pagination and follow-up queries
-            let previousClassification = null
-            if (messages.length >= 1) {
-              const previousUserMessage = messages[messages.length - 2]
-              if (previousUserMessage?.queryRouterClassification) {
-                previousClassification = previousUserMessage.queryRouterClassification
-                Logger.info(
-                  `Found previous classification in agents: ${JSON.stringify(previousClassification)}`
-                )
+            let previousClassification: QueryRouterLLMResponse | null = null
+            if (messages.length >= 0) {
+              const previousUserMessage = messages[messages.length - 1]
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification in agents: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification in agents: ${error}`)
+                }
               }
             }
             
