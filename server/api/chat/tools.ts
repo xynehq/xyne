@@ -61,6 +61,8 @@ import type {
 } from "./types"
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
+import { resolveNamesToEmails } from "./chat"
+import type { Intent } from "@/ai/types"
 
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -153,7 +155,7 @@ interface UnifiedSearchOptions {
   span?: Span
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
-  intent?: any | null
+  intent?: Intent | null
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -174,6 +176,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     agentAppEnums,
     span,
     schema,
+    intent,
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
@@ -205,6 +208,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       orderDirection === "desc"
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank,
+    intent,
   }
 
   const fromTimestamp = timestampRange?.from
@@ -260,12 +264,6 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         return { result: errorMsg, contexts: [] }
       }
     }
-    console.log("[TOOLS] Calling getItems with intent from filters")
-    console.log(
-      "🔧 [TOOLS] Intent being passed:",
-      JSON.stringify(options.intent, null, 2),
-    )
-    console.log("[TOOLS] App:", app, "Entity:", entity, "Schema:", schema)
 
     searchResults = await getItems({
       email,
@@ -282,11 +280,6 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       excludedIds,
       intent: options.intent || null,
     })
-
-    console.log(
-      "[TOOLS] getItems completed, results count:",
-      searchResults?.root?.children?.length || 0,
-    )
   } else {
     const errorMsg = "No query or schema provided for search."
     execSpan?.setAttribute("error", errorMsg)
@@ -526,6 +519,8 @@ export const metadataRetrievalTool: AgentTool = {
     if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
     if (params.filter_query)
       execSpan?.setAttribute("filter_query", params.filter_query)
+    if (params.intent)
+      execSpan?.setAttribute("intent", JSON.stringify(params.intent))
 
     execSpan?.setAttribute("limit", params.limit || 10)
     execSpan?.setAttribute("offset", params.offset || 0)
@@ -596,6 +591,24 @@ export const metadataRetrievalTool: AgentTool = {
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
 
+      let resolvedIntent = params.intent || {}
+      if (
+        resolvedIntent &&
+        Object.keys(resolvedIntent).length > 0 &&
+        appToUse === Apps.Gmail
+      ) {
+        Logger.info(
+          ` Detected names in intent, resolving to emails: ${JSON.stringify(resolvedIntent)}`,
+        )
+        resolvedIntent = await resolveNamesToEmails(
+          resolvedIntent,
+          email,
+          userCtx ?? "",
+          span,
+        )
+        Logger.info(`Resolved intent: ${JSON.stringify(resolvedIntent)}`)
+      }
+
       return await executeVespaSearch({
         email,
         query: params.filter_query,
@@ -610,6 +623,7 @@ export const metadataRetrievalTool: AgentTool = {
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
         timestampRange: { from: params.from, to: params.to },
+        intent: resolvedIntent,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
