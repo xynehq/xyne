@@ -270,6 +270,12 @@ export const startStream = async (
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
     streamState.thinking += event.data
+    // LOG 3: Raw reasoning data from backend stream
+    console.log("🎯 [useChatStream] Reasoning event data:", {
+      eventData: event.data,
+      accumulatedThinking: streamState.thinking,
+      streamKey,
+    })
     notifySubscribers(streamKey)
   })
 
@@ -795,6 +801,12 @@ export const useChatStream = (
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
         streamState.thinking += event.data
+        // LOG 4: Raw reasoning data during retry
+        console.log("🔄 [useChatStream-retry] Reasoning event data:", {
+          eventData: event.data,
+          accumulatedThinking: streamState.thinking,
+          messageId,
+        })
         patchReasoningContent(event.data)
       })
 

@@ -448,8 +448,25 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
 
+  // LOG 1: Raw content received from backend
+  useEffect(() => {
+    console.log("🔍 [EnhancedReasoning] Raw content from backend:", {
+      content,
+      contentLength: content?.length,
+      isStreaming,
+      citations,
+      citationMap,
+    })
+  }, [content, isStreaming, citations, citationMap])
+
   useEffect(() => {
     const parsedSteps = parseReasoningContent(content)
+    // LOG 2: Parsed steps after processing
+    console.log("📊 [EnhancedReasoning] Parsed steps:", {
+      rawContent: content,
+      parsedSteps,
+      stepsCount: parsedSteps.length,
+    })
     setSteps(parsedSteps)
   }, [content])
 
