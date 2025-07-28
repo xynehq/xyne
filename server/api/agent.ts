@@ -128,7 +128,6 @@ export const CreateAgentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User or workspace not found" })
     }
 
-
     const agentData = {
       name: validatedBody.name,
       description: validatedBody.description,

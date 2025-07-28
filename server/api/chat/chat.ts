@@ -148,9 +148,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-import {
-  SearchVespaThreads,
-} from "@/search/vespa"
+import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -419,7 +417,6 @@ const checkAndYieldCitations = async function* (
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
         const item = results[citationIndex - baseIndex]
-        // if(item.fields.sddocname == chatContainerSchema) continue;
         if (item) {
           yield {
             citation: {
@@ -507,9 +504,7 @@ export const getThreadContext = async (
   if (searchResults.root.children) {
     const threadIds = [
       ...new Set(
-        searchResults.root.children.map(
-          (child: any) => child.fields.threadId,
-        ),
+        searchResults.root.children.map((child: any) => child.fields.threadId),
       ),
     ].filter((id) => id)
     if (threadIds.length > 0) {
@@ -532,9 +527,7 @@ export const getThreadContextV2 = async (
   if (searchResults.root.children) {
     const threadIds = [
       ...new Set(
-        searchResults.root.children.map(
-          (child: any) => child.fields.threadId,
-        ),
+        searchResults.root.children.map((child: any) => child.fields.threadId),
       ),
     ].filter((id) => id)
     if (threadIds.length > 0) {
@@ -1367,8 +1360,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      
-      
+
       let results
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
@@ -1797,8 +1789,10 @@ async function* generateAnswerFromGivenContext(
 > {
   const message = input
   const messageText = parseMessageText(message)
-
-  console.log(`generateAnswerFromGivenContext - input: ${messageText}`)
+  loggerWithChild({ email: email }).info(
+          { email },
+          `generateAnswerFromGivenContext - input: ${messageText}`,
+  )
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1999,8 +1993,6 @@ async function* generateAnswerFromGivenContext(
     : []
 
   const initialContext = cleanContext(resolvedContexts.join("\n"))
-  console.log(`Intial context : ${initialContext}`)
-  console.log("Result children", combinedSearchResponse.root.children)
   const { imageFileNames } = extractImageFileNames(
     initialContext,
     combinedSearchResponse.root.children,
@@ -2534,7 +2526,7 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
-              channelIds : channelIds,
+              channelIds: channelIds,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -3003,7 +2995,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds : channelIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -3279,7 +3271,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds : channelIds,
+            channelIds: channelIds,
           },
         )
       }

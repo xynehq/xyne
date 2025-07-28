@@ -593,7 +593,9 @@ export const metadataRetrievalTool: AgentTool = {
       Logger.debug(
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
-      const channelIds = agentPrompt? await getChannelIdsFromAgentPrompt(agentPrompt) : []
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)

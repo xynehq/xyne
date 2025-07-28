@@ -1107,12 +1107,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                   planningContext = cleanContext(resolvedContexts?.join("\n"))
                   if (chatContexts.length > 0) {
-                    planningContext +=
-                      "\n" + buildContext(chatContexts, 10)
+                    planningContext += "\n" + buildContext(chatContexts, 10)
                   }
                   if (threadContexts.length > 0) {
-                    planningContext +=
-                      "\n" + buildContext(threadContexts, 10)
+                    planningContext += "\n" + buildContext(threadContexts, 10)
                   }
 
                   gatheredFragments = results.root.children.map(
@@ -1424,7 +1422,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                     agentPromptForLLM,
                     message,
                   )
-                  console.log(toolExecutionResponse, "Tool execution response")
                 } catch (error) {
                   const errMessage = getErrorMessage(error)
                   loggerWithChild({ email: sub }).error(
@@ -2957,7 +2954,6 @@ export const AgentMessageApi = async (c: Context) => {
         }
     const fileIds = extractedInfo?.fileIds
     const agentDocs = agentForDb?.docIds || []
-    console.log("Agent docs:", agentDocs)
 
     //add docIds of agents here itself
     const totalValidFileIdsFromLinkCount =

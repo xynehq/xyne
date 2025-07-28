@@ -299,7 +299,6 @@ export const VespaSearchResponseToSearchResult = (
             }
             fields.type = chatContainerSchema
             fields.relevance = child.relevance
-            console.log("ChatContainerResponseSchema", 'received')
             // Ensure fields has the necessary properties
             if (!fields.entity) {
               fields.entity = SlackEntity.Channel
