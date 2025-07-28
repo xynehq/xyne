@@ -64,7 +64,7 @@ export const messages = pgTable(
     queryRouterClassification: jsonb("queryRouterClassification")
       .notNull()
       .default(sql`'[]'::jsonb`),
-    feedback: messageFeedbackEnum("feedback"),
+    feedback: jsonb("feedback"), // Enhanced feedback data in JSON format (supports both legacy enum values and new structure)
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

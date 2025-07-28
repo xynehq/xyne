@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
+import { FeedbackMessagesModal } from "@/components/feedback/FeedbackMessagesModal"
 import { api } from "@/api"
 import {
   XAxis,
@@ -95,10 +96,19 @@ interface AgentUserUsage extends BaseUserData {
   // No additional properties needed
 }
 
+interface FeedbackMessage {
+  messageId: string
+  chatExternalId: string
+  type: "like" | "dislike"
+  feedbackText: string[]
+  timestamp: string
+}
+
 interface FeedbackStats {
   totalLikes: number
   totalDislikes: number
   feedbackByChat: Record<string, { likes: number; dislikes: number }>
+  feedbackMessages: FeedbackMessage[]
 }
 
 interface DashboardStats extends BaseStatsData {
@@ -850,6 +860,7 @@ const UsersAnalyticsTable = ({
   setUserSearchQuery,
   sortBy,
   setSortBy,
+  agentId,
 }: {
   users: AgentUserUsage[] | AgentUserLeaderboard[]
   title?: string
@@ -861,7 +872,13 @@ const UsersAnalyticsTable = ({
   setSortBy: (
     sortBy: "messages" | "chats" | "likes" | "dislikes" | "lastUsed",
   ) => void
+  agentId?: string
 }) => {
+  const [feedbackModalUser, setFeedbackModalUser] = useState<{
+    userId: number
+    userName: string
+    userEmail: string
+  } | null>(null)
   // Filter users based on search query
   const filteredUsers = users.filter(
     (user) =>
@@ -1021,6 +1038,22 @@ const UsersAnalyticsTable = ({
                           <span>{user.dislikes}</span>
                         </div>
                       </div>
+                      {agentId && (user.likes > 0 || user.dislikes > 0) && (
+                        <button
+                          onClick={() =>
+                            setFeedbackModalUser({
+                              userId: user.userId,
+                              userName: user.userName,
+                              userEmail: user.userEmail,
+                            })
+                          }
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                          title="View feedback messages"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          Feedback
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -1043,6 +1076,18 @@ const UsersAnalyticsTable = ({
           </div>
         )}
       </CardContent>
+
+      {/* Feedback Messages Modal */}
+      {feedbackModalUser && agentId && (
+        <FeedbackMessagesModal
+          isOpen={true}
+          onClose={() => setFeedbackModalUser(null)}
+          agentId={agentId}
+          userId={feedbackModalUser.userId}
+          userName={feedbackModalUser.userName}
+          userEmail={feedbackModalUser.userEmail}
+        />
+      )}
     </Card>
   )
 }
@@ -1173,6 +1218,7 @@ const AgentDetailPage = ({
         setUserSearchQuery={setUserSearchQuery}
         sortBy={sortBy}
         setSortBy={setSortBy}
+        agentId={agent.agentId}
       />
     </div>
   )
@@ -1188,6 +1234,36 @@ const AdminUsersLeaderboard = ({
   onUserClick?: (user: AdminUserUsage) => void
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean
+    userId: number
+    userName: string
+    userEmail: string
+  }>({
+    isOpen: false,
+    userId: 0,
+    userName: "",
+    userEmail: "",
+  })
+
+  const handleFeedbackClick = (e: React.MouseEvent, user: AdminUserUsage) => {
+    e.stopPropagation()
+    setFeedbackModal({
+      isOpen: true,
+      userId: user.userId,
+      userName: user.userName,
+      userEmail: user.userEmail,
+    })
+  }
+
+  const closeFeedbackModal = () => {
+    setFeedbackModal({
+      isOpen: false,
+      userId: 0,
+      userName: "",
+      userEmail: "",
+    })
+  }
 
   if (loading) {
     return (
@@ -1313,6 +1389,14 @@ const AdminUsersLeaderboard = ({
                         <span>{user.dislikes}</span>
                       </div>
                     </div>
+                    {(user.likes > 0 || user.dislikes > 0) && (
+                      <button
+                        onClick={(e) => handleFeedbackClick(e, user)}
+                        className="ml-3 px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        See Feedback
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -1335,6 +1419,14 @@ const AdminUsersLeaderboard = ({
           </div>
         )}
       </CardContent>
+      <FeedbackMessagesModal
+        isOpen={feedbackModal.isOpen}
+        onClose={closeFeedbackModal}
+        userId={feedbackModal.userId}
+        userName={feedbackModal.userName}
+        userEmail={feedbackModal.userEmail}
+        isAdminMode={true}
+      />
     </Card>
   )
 }
@@ -1737,6 +1829,7 @@ const AgentAnalysisPage = ({
         setUserSearchQuery={setUserSearchQuery}
         sortBy={sortBy}
         setSortBy={setSortBy}
+        agentId={agent.agentId}
       />
     </div>
   )
@@ -2155,6 +2248,7 @@ export const Dashboard = ({
       totalLikes: 0,
       totalDislikes: 0,
       feedbackByChat: {},
+      feedbackMessages: [],
     },
   })
 
@@ -2196,6 +2290,7 @@ export const Dashboard = ({
       totalLikes: 0,
       totalDislikes: 0,
       feedbackByChat: {},
+      feedbackMessages: [],
     },
   })
   const [adminLoading, setAdminLoading] = useState(false)
@@ -2422,6 +2517,7 @@ export const Dashboard = ({
       totalLikes: 0,
       totalDislikes: 0,
       feedbackByChat: {},
+      feedbackMessages: [],
     },
   ): DashboardStats => {
     const agentMap = new Map(agents.map((a) => [a.externalId, a]))
@@ -3026,7 +3122,12 @@ export const Dashboard = ({
       recentActivity,
       topUsers: userUsage.sort((a, b) => b.messageCount - a.messageCount), // Return ALL users sorted
       agentUsage: allAgentUsage.sort((a, b) => b.chatCount - a.chatCount),
-      feedbackStats: { totalLikes: 0, totalDislikes: 0, feedbackByChat: {} }, // This would need to be calculated if needed
+      feedbackStats: {
+        totalLikes: 0,
+        totalDislikes: 0,
+        feedbackByChat: {},
+        feedbackMessages: [],
+      }, // This would need to be calculated if needed
     }
   }
 
