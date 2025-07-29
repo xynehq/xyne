@@ -496,8 +496,6 @@ export function cleanBuffer(buffer: string): string {
   return parsableBuffer.trim()
 }
 
-
-
 export const getThreadContext = async (
   searchResults: VespaSearchResponse,
   email: string,
@@ -1132,6 +1130,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let channelIds:string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1142,7 +1141,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { error, agentPrompt },
       )
     }
-
+    channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -1288,7 +1287,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
-    const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1348,7 +1346,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: vespaSearchSpan,
         })
       } else {
-        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         results = await searchVespaAgent(
           message,
           email,
@@ -1421,7 +1418,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
-              channelIds: getChannelIdsFromAgentPrompt(agentPrompt),
+              channelIds: channelIds,
             }))
 
         // Expand email threads in the results
@@ -1462,7 +1459,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-          const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
           results = await searchVespaAgent(
             query,
             email,
@@ -1588,7 +1584,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds: getChannelIdsFromAgentPrompt(agentPrompt),
+            channelIds: channelIds,
           },
         )
       }
@@ -1628,7 +1624,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: searchSpan,
         })
       } else {
-        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         results = await searchVespaAgent(
           message,
           email,
@@ -1934,13 +1929,17 @@ async function* generateAnswerFromGivenContext(
       v.fields.sddocname === chatContainerSchema &&
       (v.fields as any).creator
     ) {
-      const creator = await getDocumentOrNull(
-        chatUserSchema,
-        (v.fields as any).creator,
-      )
-      if (creator) {
-        content += `\nCreator: ${(creator.fields as any).name}`
-      }
+      try {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )      
+        if (creator) {
+              content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      } catch (error) {
+          loggerWithChild({ email }).error(error, `Failed to fetch creator for chat container`)
+        }
     }
     return `Index ${i + startIndex} \n ${content}`
   })
