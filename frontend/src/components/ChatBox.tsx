@@ -726,7 +726,7 @@ export const ChatBox = ({
       const storedMcpId = localStorage.getItem(SELECTED_MCP_CONNECTOR_ID_KEY)
       if (storedMcpId && processedConnectors.length > 0) {
         const connectorExists = processedConnectors.find(
-          (c) => c.id === storedMcpId && c.type === ConnectorType.MCP,
+          (c) => c.id === storedMcpId && c.type === "Mcp",
         )
         if (connectorExists) {
           setSelectedConnectorIds(new Set([storedMcpId]))
@@ -753,7 +753,7 @@ export const ChatBox = ({
       (connectorId) => {
         if (allConnectors.length > 0) {
           const connector = allConnectors.find((c) => c.id === connectorId)
-          return connector && connector.type === ConnectorType.MCP
+          return connector && connector.type === "Mcp"
         }
         return false
       },
@@ -1420,33 +1420,39 @@ export const ChatBox = ({
 
     let toolsListToSend: ToolsListItem[] | undefined = undefined
 
-    // Build toolsList from all selected connectors
-    if (selectedConnectorIds.size > 0) {
-      const toolsListArray: ToolsListItem[] = []
+    // Check if selected agent has pre-configured MCP tools
+    if (selectedAgent && selectedAgent.mcpTools && Array.isArray(selectedAgent.mcpTools) && selectedAgent.mcpTools.length > 0) {
+      // Use agent's configured tools
+      toolsListToSend = selectedAgent.mcpTools as ToolsListItem[]
+    } else {
+      // Build toolsList from all selected connectors (current behavior)
+      if (selectedConnectorIds.size > 0) {
+        const toolsListArray: ToolsListItem[] = []
 
-      // Include tools from all selected connectors
-      selectedConnectorIds.forEach((connectorId) => {
-        const toolsSet = selectedConnectorTools[connectorId]
+        // Include tools from all selected connectors
+        selectedConnectorIds.forEach((connectorId) => {
+          const toolsSet = selectedConnectorTools[connectorId]
 
-        if (toolsSet && toolsSet.size > 0) {
-          // Find the connector to get its internal connectorId
-          const connector = allConnectors.find((c) => c.id === connectorId)
-          if (connector) {
-            const toolsArray = Array.from(toolsSet)
-            toolsListArray.push({
-              connectorId: connector.connectorId.toString(), // Use internal DB id
-              tools: toolsArray,
-            })
+          if (toolsSet && toolsSet.size > 0) {
+            // Find the connector to get its internal connectorId
+            const connector = allConnectors.find((c) => c.id === connectorId)
+            if (connector) {
+              const toolsArray = Array.from(toolsSet)
+              toolsListArray.push({
+                connectorId: connector.connectorId.toString(), // Use internal DB id
+                tools: toolsArray,
+              })
+            }
           }
-        }
-      })
+        })
 
-      // Only send toolsList if we actually have tools selected
-      if (
-        toolsListArray.length > 0 &&
-        toolsListArray.some((item) => item.tools.length > 0)
-      ) {
-        toolsListToSend = toolsListArray
+        // Only send toolsList if we actually have tools selected
+        if (
+          toolsListArray.length > 0 &&
+          toolsListArray.some((item) => item.tools.length > 0)
+        ) {
+          toolsListToSend = toolsListArray
+        }
       }
     }
 
@@ -2303,9 +2309,23 @@ export const ChatBox = ({
               />
             </>
           )}
+          
+          {/* Agent MCP Tools Indicator */}
+          {selectedAgent && selectedAgent.mcpTools && Array.isArray(selectedAgent.mcpTools) && selectedAgent.mcpTools.length > 0 && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+              <Gavel size={12} />
+              <span>Agent Tools</span>
+              <span className="bg-blue-200 dark:bg-blue-800 px-1 rounded-full">
+                {selectedAgent.mcpTools.reduce((total: number, item: any) => total + (item.tools?.length || 0), 0)}
+              </span>
+            </div>
+          )}
+          
           {/* Dropdown for All Connectors */}
           {showAdvancedOptions &&
-            (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+            (role === UserRole.SuperAdmin || role === UserRole.Admin) &&
+            // Hide MCP dropdown if agent has pre-configured tools
+            !(selectedAgent && selectedAgent.mcpTools && Array.isArray(selectedAgent.mcpTools) && selectedAgent.mcpTools.length > 0) && (
               <DropdownMenu
                 open={isConnectorsMenuOpen && isAgenticMode}
                 onOpenChange={(open) => {
@@ -2406,9 +2426,9 @@ export const ChatBox = ({
                   <DropdownMenuSeparator className="bg-gray-200 dark:bg-slate-700" />
                   {allConnectors.length > 0 ? (
                     allConnectors
-                      .filter((c) => c.type === ConnectorType.MCP)
+                      .filter((c) => c.type === "Mcp")
                       .map((connector) => {
-                        const isMCP = connector.type === ConnectorType.MCP
+                        const isMCP = connector.type === "Mcp"
 
                         return (
                           <DropdownMenuItem
@@ -2665,7 +2685,7 @@ export const ChatBox = ({
             activeToolConnectorId &&
             toolModalPosition &&
             allConnectors.find((c) => c.id === activeToolConnectorId)?.type ===
-              ConnectorType.MCP && (
+              "Mcp" && (
               <div
                 ref={toolModalRef}
                 className="absolute bg-white dark:bg-slate-800 rounded-lg shadow-xl p-4 z-50 border border-gray-200 dark:border-slate-700"

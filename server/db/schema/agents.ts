@@ -33,6 +33,7 @@ export const agents = pgTable(
     model: text("model").notNull(),
     isPublic: boolean("is_public").default(false).notNull(),
     appIntegrations: jsonb("app_integrations").default(sql`'[]'::jsonb`), // Array of integration IDs/names
+    mcpTools: jsonb("mcp_tools").default(sql`'[]'::jsonb`), // Array of MCP tool configurations
     allowWebSearch: boolean("allow_web_search").default(false),
     isRagOn: boolean("is_rag_on").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -56,6 +57,10 @@ export const agents = pgTable(
 
 export const insertAgentSchema = createInsertSchema(agents, {
   appIntegrations: z.array(z.string()).optional().default([]),
+  mcpTools: z.array(z.object({
+    connectorId: z.string(),
+    tools: z.array(z.string())
+  })).optional().default([]),
 }).omit({
   id: true,
   createdAt: true,
@@ -66,6 +71,10 @@ export type InsertAgent = z.infer<typeof insertAgentSchema>
 
 export const selectAgentSchema = createSelectSchema(agents, {
   appIntegrations: z.array(z.string()).optional().default([]),
+  mcpTools: z.array(z.object({
+    connectorId: z.string(),
+    tools: z.array(z.string())
+  })).optional().default([]),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 

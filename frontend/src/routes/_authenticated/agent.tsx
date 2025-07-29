@@ -68,6 +68,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { MCPToolSelection } from "@/components/MCPToolSelection"
 
 type CurrentResp = {
   resp: string
@@ -225,6 +226,16 @@ function AgentComponent() {
     Record<string, boolean>
   >({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
+  
+  // MCP Tools selection state
+  const [selectedMCPTools, setSelectedMCPTools] = useState<Array<{
+    connectorId: string
+    tools: string[]
+  }>>([])
+  
+  // Agent testing state
+  const [showTestAgent, setShowTestAgent] = useState(false)
+  const [testChatId, setTestChatId] = useState<string | null>(null)
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -697,6 +708,7 @@ function AgentComponent() {
     setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
+    setSelectedMCPTools([])
     setEditingAgent(null)
     setSelectedUsers([])
     setSearchQuery("")
@@ -743,6 +755,13 @@ function AgentComponent() {
       setAgentPrompt(editingAgent.prompt || "")
       setIsPublic(editingAgent.isPublic || false)
       setSelectedModel(editingAgent.model)
+      // Load existing MCP tools if any
+      if (editingAgent.mcpTools) {
+        setSelectedMCPTools(editingAgent.mcpTools as Array<{
+          connectorId: string
+          tools: string[]
+        }>)
+      }
     }
   }, [editingAgent, viewMode])
 
@@ -847,6 +866,7 @@ function AgentComponent() {
       isPublic: isPublic,
       isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
+      mcpTools: selectedMCPTools,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
@@ -1864,6 +1884,60 @@ function AgentComponent() {
                   </div>
                 </div>
 
+                {/* MCP Tools Section */}
+                <div>
+                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
+                    MCP Tools
+                  </Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
+                    Select specific MCP tools for your agent to use.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
+                    {selectedMCPTools.length === 0 ? (
+                      <span className="text-gray-400 dark:text-gray-400 text-sm">
+                        No MCP tools selected
+                      </span>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedMCPTools.map((mcpTool, index) => (
+                          <div key={`${mcpTool.connectorId}-${index}`} className="flex flex-wrap gap-1">
+                            {mcpTool.tools.map((tool) => (
+                              <span
+                                key={`${mcpTool.connectorId}-${tool}`}
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                              >
+                                {tool}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newSelectedTools = selectedMCPTools.map((item) => {
+                                      if (item.connectorId === mcpTool.connectorId) {
+                                        const newTools = item.tools.filter((t) => t !== tool)
+                                        return { ...item, tools: newTools }
+                                      }
+                                      return item
+                                    }).filter(item => item.tools.length > 0)
+                                    setSelectedMCPTools(newSelectedTools)
+                                  }}
+                                  className="ml-1 text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100"
+                                >
+                                  <LucideX size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="ml-auto">
+                      <MCPToolSelection
+                        selectedTools={selectedMCPTools}
+                        onSelectionChange={setSelectedMCPTools}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {!isPublic && (
                   <div>
                     <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
@@ -1983,7 +2057,32 @@ function AgentComponent() {
                     </Card>
                   </div>
                 )}
-                <div className="flex justify-end w-full mt-8 mb-4">
+                <div className="flex justify-end gap-3 w-full mt-8 mb-4">
+                  <Button
+                    onClick={() => {
+                      // Create a temporary agent object for testing
+                      const testAgent: Partial<SelectPublicAgent> = {
+                        name: agentName || "Test Agent",
+                        description: agentDescription,
+                        prompt: agentPrompt,
+                        model: selectedModel,
+                        isRagOn: isRagOn,
+                        mcpTools: selectedMCPTools,
+                        appIntegrations: Object.entries(selectedIntegrations)
+                          .filter(([, isSelected]) => isSelected)
+                          .map(([id]) => id),
+                      }
+                      
+                      // Switch to test mode with current configuration
+                      setSelectedChatAgentExternalId(null)
+                      setTestAgentIsRagOn(isRagOn)
+                      setShowTestAgent(true)
+                    }}
+                    variant="outline"
+                    className="px-6 py-3 text-sm font-medium"
+                  >
+                    Test Agent
+                  </Button>
                   <Button
                     onClick={handleSaveAgent}
                     className="bg-slate-800 dark:bg-blue-600 hover:bg-slate-700 dark:hover:bg-blue-500 text-white rounded-lg px-8 py-3 text-sm font-medium"

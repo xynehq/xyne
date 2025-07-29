@@ -39,6 +39,10 @@ export const createAgentSchema = z.object({
   model: z.string().min(1, "Model is required"),
   isPublic: z.boolean().optional().default(false),
   appIntegrations: z.array(z.string()).optional().default([]),
+  mcpTools: z.array(z.object({
+    connectorId: z.string(),
+    tools: z.array(z.string())
+  })).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),

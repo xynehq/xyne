@@ -848,8 +848,22 @@ export const MessageWithToolsApi = async (c: Context) => {
             type: AgentReasoningStepType.LogMessage,
             message: `Analyzing your query...`,
           })
-          if (toolsList && toolsList.length > 0) {
-            for (const item of toolsList) {
+
+          // If an agent is selected and has configured MCP tools, use those instead of user selection
+          let effectiveToolsList = toolsList
+          if (agentForDb && agentForDb.mcpTools && Array.isArray(agentForDb.mcpTools) && agentForDb.mcpTools.length > 0) {
+            effectiveToolsList = agentForDb.mcpTools as Array<{
+              connectorId: string
+              tools: string[]
+            }>
+            await logAndStreamReasoning({
+              type: AgentReasoningStepType.LogMessage,
+              message: `Using agent's configured MCP tools...`,
+            })
+          }
+
+          if (effectiveToolsList && effectiveToolsList.length > 0) {
+            for (const item of effectiveToolsList) {
               const { connectorId, tools: toolExternalIds } = item
               // Fetch connector info and create client
               const connector = await getConnectorById(

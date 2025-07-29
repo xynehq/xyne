@@ -1,6 +1,6 @@
 import { Card, CardTitle } from "@/components/ui/card"
 import { SelectPublicAgent } from "shared/types"
-import { Star } from "lucide-react"
+import { Star, Gavel } from "lucide-react"
 
 const getIconStyling = (agentName: string) => {
   // Simple hash function to get a color based on agent name
@@ -81,6 +81,16 @@ export function AgentCard({
         <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 line-clamp-2 min-h-10">
           {agent.description || <span className="italic">No description</span>}
         </p>
+        
+        {/* MCP Tools indicator */}
+        {agent.mcpTools && Array.isArray(agent.mcpTools) && agent.mcpTools.length > 0 && (
+          <div className="flex items-center gap-1 mt-2">
+            <Gavel size={14} className="text-blue-600 dark:text-blue-400" />
+            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+              {agent.mcpTools.reduce((total: number, item: any) => total + (item.tools?.length || 0), 0)} MCP tools
+            </span>
+          </div>
+        )}
       </div>
     </Card>
   )
