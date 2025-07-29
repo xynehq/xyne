@@ -1,5 +1,5 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType } from "./types"
+import { QueryType, type QueryRouterLLMResponse, type ChainBreakClassifications } from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -986,7 +986,11 @@ export const SearchQueryToolContextPrompt = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (
+  userContext: string, 
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -995,6 +999,31 @@ export const searchQueryPrompt = (userContext: string): string => {
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
+
+    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+
+    NOTE : PREVIOUS QUERY CLASSIFICATION IS FOR REFERENCE ONLY, IF YOU FEEL SOME PARAMETERS NEED TO BE CHANGED, CHANGE THEM ACCORDINGLY.` : ''}
+
+    ${chainBreakClassifications ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${JSON.stringify(chainBreakClassifications, null, 2)}
+    
+    **IMPORTANT - Chain Context Integration:**
+    The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
+    - If the current query relates to any of these previous chains, use their classifications as reference context
+    - This allows queries to reconnect with earlier conversation threads even after chain breaks
+    - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
+      use Chain 1's classification to understand "him" refers to John and the context is emails
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains` : ''}
+
+    **IMPORTANT - For Follow-Up Queries:**
+    When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
+
+    **OFFSET CALCULATION WILL HAPPEN FOR ${QueryType.GetItems}:**
+    - Formula: newOffset = previousOffset + previousCount
+    - Preserve your app and entity
+    - Current calculation: newOffset = ${previousClassification?.filters?.offset || 0} + ${previousClassification?.filters?.count || 0}
+    - CRITICAL: Use original requested count, NOT actual returned count    
+    
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
@@ -1008,6 +1037,8 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "can you elaborate on [specific content]"
         - "what about the [specific item mentioned before]"
         - "expand on that [specific reference]"
+        - "now tell more from [different source]"
+        - "what about from [different app/source]"
 
       - **Direct Back-References:** Questions referencing specific numbered items, names, or content from previous responses:
         - "the second option you mentioned"
@@ -1015,6 +1046,12 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "the document you found"
 
       - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
+
+      - **Source Transition Patterns:** Queries that request similar information from different sources:
+        - Following a query about emails with "now from slack"
+        - Following a query about one app with "what about [different app]"
+        - Pattern: Previous query about data source A, current query about data source B with similar intent
+        - Temporal continuity words: "now", "then", "next", "also"
 
       **Mandatory Conditions for "isFollowUp": true:**
       1. The current query must contain explicit referential language (as defined above)
@@ -1177,8 +1214,6 @@ export const searchQueryPrompt = (userContext: string): string => {
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring to a single <app> or <entity> and wants to search content
       - Used for content-based searches including:
-        - Person names without email addresses (e.g., "emails from John", "emails from prateek")
-        - Topic/subject keywords
         - Any content that needs to be searched rather than precisely matched
       - Exactly ONE valid app/entity is detected, AND filterQuery contains search keywords
        - **JSON Structure**:
@@ -1300,6 +1335,7 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
+           "offset": "<number for pagination - IMPORTANT: For follow-up queries, use (previousOffset + previousRequestedCount), NOT returned count>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",

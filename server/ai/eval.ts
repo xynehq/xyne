@@ -531,6 +531,7 @@ const endToEndFlow = async (
     startTime: "",
     endTime: "",
     count: 0,
+    offset: 0,
   }
   let parsed = {
     answer: "",
@@ -578,6 +579,7 @@ const endToEndFlow = async (
         ...parsed.filters,
         app: parsed.filters.app as any,
         entity: parsed.filters.entity as any,
+        offset: parsed.filters.offset || 0,
       },
     }
 
