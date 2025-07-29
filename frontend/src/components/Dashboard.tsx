@@ -1047,11 +1047,10 @@ const UsersAnalyticsTable = ({
                               userEmail: user.userEmail,
                             })
                           }
-                          className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-                          title="View feedback messages"
+                          className="ml-3 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
                         >
                           <MessageSquare className="h-3 w-3" />
-                          Feedback
+                          Feedbacks
                         </button>
                       )}
                     </div>
@@ -1392,9 +1391,10 @@ const AdminUsersLeaderboard = ({
                     {(user.likes > 0 || user.dislikes > 0) && (
                       <button
                         onClick={(e) => handleFeedbackClick(e, user)}
-                        className="ml-3 px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        className="ml-3 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
                       >
-                        See Feedback
+                        <MessageSquare className="h-3 w-3" />
+                        Feedbacks
                       </button>
                     )}
                   </div>

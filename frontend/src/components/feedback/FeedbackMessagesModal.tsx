@@ -14,7 +14,7 @@ import { api } from "@/api"
 import { MessageContent } from "@/lib/messageUtils"
 
 interface FeedbackMessage {
-  messageId: number // Should be number as it comes from the database
+  messageId: string // Should be number as it comes from the database
   chatExternalId: string
   agentId?: string | null // Optional for admin mode, can be null for normal chats
   agentName?: string | null // Optional for admin mode, null for normal chats

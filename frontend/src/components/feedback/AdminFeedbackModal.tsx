@@ -90,7 +90,7 @@ export const AdminFeedbackModal: React.FC<AdminFeedbackModalProps> = ({
   }
 
   const handleShareChatClick = (shareToken: string) => {
-    const shareUrl = `/chat?shareToken=${shareToken}`
+    const shareUrl = `/chat?${shareToken}`
     window.open(shareUrl, "_blank")
   }
 

@@ -11,19 +11,15 @@ export type EnhancedFeedback = z.infer<typeof enhancedFeedbackSchema>
 // Predefined feedback questions for different feedback types
 export const FEEDBACK_QUESTIONS = {
   like: [
-    "Summarized information was accurate and clear",
-    "Citations were helpful and relevant",
-    "AI notes were returned quickly",
-    "Transcript was accurate",
-    "Action items were helpful and assigned correctly",
+    "Response time was quick",
+    "Answer provided was accurate and to the point",
+    "Citations were relevant and added value to the response",
   ],
   dislike: [
-    "Didn't receive AI notes",
-    "Summarized information was inaccurate or confusing",
-    "Citations were missing or linked to irrelevant messages",
-    "Took too long to receive AI notes",
-    "Transcript was inaccurate",
-    "Action items were missing or not assigned correctly",
+    "No response was received or an error occurred",
+    "Response took too long to load",
+    "Answer was entirely incorrect",
+    "Citations were inaccurate and not relevant to the content",
   ],
 } as const
 

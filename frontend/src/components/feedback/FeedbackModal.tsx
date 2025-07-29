@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MessageFeedback } from "shared/types"
+import { FEEDBACK_QUESTIONS as SERVER_FEEDBACK_QUESTIONS } from "shared/enhancedFeedback"
 
 // Simple checkbox component
 const Checkbox = ({
@@ -41,19 +42,10 @@ const Checkbox = ({
   </div>
 )
 
-// Predefined feedback questions for different feedback types
+// Map backend keys to front-end enum values
 const FEEDBACK_QUESTIONS = {
-  [MessageFeedback.Like]: [
-    "Response time was quick",
-    "Answer provided was accurate and to the point",
-    "Citations were relevant and added value to the response",
-  ],
-  [MessageFeedback.Dislike]: [
-    "No response was received or an error occurred",
-    "Response took too long to load",
-    "Answer was entirely incorrect",
-    "Citations were inaccurate and not relevant to the content",
-  ],
+  [MessageFeedback.Like]: SERVER_FEEDBACK_QUESTIONS.like,
+  [MessageFeedback.Dislike]: SERVER_FEEDBACK_QUESTIONS.dislike,
 } as const
 
 interface FeedbackModalProps {
@@ -80,7 +72,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 }) => {
   const [customFeedback, setCustomFeedback] = useState("")
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
-  const [_, setIncludeDetails] = useState(false)
   const [shareChat, setShareChat] = useState(false)
 
   const questions = FEEDBACK_QUESTIONS[feedbackType]
@@ -95,11 +86,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   }
 
   const handleSubmit = () => {
-    // At least custom feedback or selected options should be provided
-    if (!customFeedback.trim() && selectedOptions.length === 0) {
-      return
-    }
-
     onSubmit({
       type: feedbackType,
       customFeedback: customFeedback.trim() || undefined,
@@ -110,7 +96,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     // Reset form
     setCustomFeedback("")
     setSelectedOptions([])
-    setIncludeDetails(false)
     setShareChat(false)
     onClose()
   }
@@ -118,7 +103,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   const handleCancel = () => {
     setCustomFeedback("")
     setSelectedOptions([])
-    setIncludeDetails(false)
     setShareChat(false)
     onClose()
   }
@@ -200,12 +184,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
           <Button variant="outline" onClick={handleCancel}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!customFeedback.trim() && selectedOptions.length === 0}
-          >
-            Send
-          </Button>
+          <Button onClick={handleSubmit}>Send</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

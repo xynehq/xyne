@@ -4,7 +4,6 @@ import {
   chats,
   messages,
   users,
-  sharedChats,
   selectAgentSchema,
   selectMessageSchema,
   type SelectAgent,
@@ -864,10 +863,6 @@ export async function getAllUserFeedbackMessages({
     .innerJoin(chats, eq(messages.chatId, chats.id))
     .innerJoin(users, eq(chats.userId, users.id))
     .leftJoin(agents, eq(chats.agentId, agents.externalId)) // Changed to leftJoin to include non-agent chats
-    .leftJoin(
-      sharedChats,
-      sql`${sharedChats.chatId} = ${chats.id} AND ${messages.feedback}->>'share_chat' = ${sharedChats.shareToken}`,
-    )
     .where(
       and(
         eq(users.id, userId),
