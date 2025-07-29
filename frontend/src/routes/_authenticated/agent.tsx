@@ -232,9 +232,13 @@ function AgentComponent() {
     Record<string, boolean>
   >({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
-  const [selectedEntities, setSelectedEntities] = useState<FetchedDataSource[]>([])
+  const [selectedEntities, setSelectedEntities] = useState<FetchedDataSource[]>(
+    [],
+  )
   const [entitySearchQuery, setEntitySearchQuery] = useState("")
-  const [entitySearchResults, setEntitySearchResults] = useState<FetchedDataSource[]>([])
+  const [entitySearchResults, setEntitySearchResults] = useState<
+    FetchedDataSource[]
+  >([])
   const [showEntitySearchResults, setShowEntitySearchResults] = useState(false)
 
   const [query, setQuery] = useState("")
@@ -281,39 +285,40 @@ function AgentComponent() {
     }
 
     const searchEntities = async () => {
-  try {
-    const response = await api.search.$get({
-      query: {
-        query: entitySearchQuery,
-      },
-    });
+      try {
+        const response = await api.search.$get({
+          query: {
+            query: entitySearchQuery,
+          },
+        })
 
-    if (response.ok) {
-      console.log("Entity search response:");
-      const data = await response.json();
-      // @ts-ignore
-      const results = (data.results || []) as FetchedDataSource[];
+        if (response.ok) {
+          console.log("Entity search response:")
+          const data = await response.json()
+          // @ts-ignore
+          const results = (data.results || []) as FetchedDataSource[]
 
-      const selectedEntityIds = new Set(
-        selectedEntities.map((entity) => entity.docId),
-      );
+          const selectedEntityIds = new Set(
+            selectedEntities.map((entity) => entity.docId),
+          )
 
-      const filteredResults = results.filter((r) => {
-        const isAlreadySelected = selectedEntityIds.has(r.docId);
+          const filteredResults = results.filter((r) => {
+            const isAlreadySelected = selectedEntityIds.has(r.docId)
 
-        const isExcluded = AGENT_ENTITY_SEARCH_EXCLUSIONS.some(
-          (exclusion) => exclusion.app === r.app && exclusion.entity === r.entity,
-        );
+            const isExcluded = AGENT_ENTITY_SEARCH_EXCLUSIONS.some(
+              (exclusion) =>
+                exclusion.app === r.app && exclusion.entity === r.entity,
+            )
 
-        return !isAlreadySelected && !isExcluded;
-      });
-      setEntitySearchResults(filteredResults);
-      setShowEntitySearchResults(true);
+            return !isAlreadySelected && !isExcluded
+          })
+          setEntitySearchResults(filteredResults)
+          setShowEntitySearchResults(true)
+        }
+      } catch (error) {
+        console.error("Failed to search entities", error)
+      }
     }
-  } catch (error) {
-    console.error("Failed to search entities", error);
-  }
-};
 
     const debounceSearch = setTimeout(() => {
       searchEntities()
@@ -1937,20 +1942,27 @@ function AgentComponent() {
                     Specific Entites
                   </Label>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
-                    Search for and select specific entities for your agent to use.
+                    Search for and select specific entities for your agent to
+                    use.
                   </p>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
-                    {selectedEntities.map((entity) => (
-                      <CustomBadge
-                        key={entity.docId}
-                        text={entity.name}
-                        onRemove={() =>
-                          setSelectedEntities((prev) =>
-                            prev.filter((c) => c.docId !== entity.docId),
-                          )
-                        }
-                      />
-                    ))}
+                    {selectedEntities.length > 0 ? (
+                      selectedEntities.map((entity) => (
+                        <CustomBadge
+                          key={entity.docId}
+                          text={entity.name}
+                          onRemove={() =>
+                            setSelectedEntities((prev) =>
+                              prev.filter((c) => c.docId !== entity.docId)
+                            )
+                          }
+                        />
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-500 dark:text-gray-300">
+                        Selected entites will be shown here
+                      </span>
+                    )}
                   </div>
                   <div className="relative mt-2">
                     <Input
@@ -1961,20 +1973,23 @@ function AgentComponent() {
                     />
                     {showEntitySearchResults && (
                       <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
-                        <CardContent
-                          className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin"
-                        >
+                        <CardContent className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin">
                           {entitySearchResults.length > 0 ? (
                             entitySearchResults.map((entity) => (
                               <div
                                 key={entity.docId}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
                                 onClick={() => {
-                                  setSelectedEntities((prev) => [...prev, entity])
+                                  setSelectedEntities((prev) => [
+                                    ...prev,
+                                    entity,
+                                  ])
                                   setEntitySearchQuery("")
                                 }}
                               >
-                                <p className="text-sm font-medium">{entity.name}</p>
+                                <p className="text-sm font-medium">
+                                  {entity.name}
+                                </p>
                               </div>
                             ))
                           ) : (
