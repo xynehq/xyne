@@ -62,7 +62,7 @@ import type {
 } from "./types"
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
-import { generatePlotlyCodePrompt } from "@/ai/prompts/plotly"
+import { generatePlotlyCodePrompt } from "@/ai/prompts"
 import { getProviderByModel, jsonParseLLMOutput } from "@/ai/provider"
 
 const { maxDefaultSummary, defaultFastModel } = config
