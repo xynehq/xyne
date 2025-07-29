@@ -1072,9 +1072,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                         v.fields.sddocname === chatContainerSchema
                       ) {
                         const channelId = (v.fields as any).docId
-                        console.log(
-                          `Processing chat container with docId: ${channelId}`,
-                        )
 
                         if (channelId) {
                           const searchResults = await searchSlackInVespa(
