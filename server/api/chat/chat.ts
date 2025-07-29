@@ -789,7 +789,8 @@ export const ChatHistory = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page, from, to } = c.req.valid("query")
-    const offset = page * chatHistoryPageSize
+    const pageNumber = parseInt(page, 10)
+    const offset = (isNaN(pageNumber) ? 0 : pageNumber) * chatHistoryPageSize
     const timeRange = from || to ? { from, to } : undefined
     return c.json(
       await getPublicChats(db, email, chatHistoryPageSize, offset, timeRange),
@@ -822,6 +823,25 @@ export const DashboardDataApi = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace
+
+    if (
+      !user ||
+      !workspace ||
+      typeof user.id !== "number" ||
+      typeof workspace.id !== "number" ||
+      isNaN(user.id) ||
+      isNaN(workspace.id)
+    ) {
+      loggerWithChild({ email: email }).error(
+        `Invalid user or workspace data for dashboard: ${JSON.stringify({
+          user,
+          workspace,
+        })}`,
+      )
+      throw new HTTPException(400, {
+        message: "Invalid user or workspace data for dashboard",
+      })
+    }
 
     // Fetch all chats based on time range (no pagination)
     const chats = await getAllChatsForDashboard(db, email, timeRange)
@@ -886,6 +906,25 @@ export const SharedAgentUsageApi = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace
+
+    if (
+      !user ||
+      !workspace ||
+      typeof user.id !== "number" ||
+      typeof workspace.id !== "number" ||
+      isNaN(user.id) ||
+      isNaN(workspace.id)
+    ) {
+      loggerWithChild({ email: email }).error(
+        `Invalid user or workspace data for agent usage: ${JSON.stringify({
+          user,
+          workspace,
+        })}`,
+      )
+      throw new HTTPException(400, {
+        message: "Invalid user or workspace data for agent usage",
+      })
+    }
 
     // Get public agents created by this user
     const publicAgents = await getPublicAgentsByUser({
@@ -1004,7 +1043,8 @@ export const ChatFavoritesApi = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page } = c.req.valid("query")
-    const offset = page * chatHistoryPageSize
+    const pageNumber = parseInt(page, 10)
+    const offset = (isNaN(pageNumber) ? 0 : pageNumber) * chatHistoryPageSize
     return c.json(
       await getFavoriteChats(db, email, chatHistoryPageSize, offset),
     )
@@ -3525,6 +3565,33 @@ export const MessageApi = async (c: Context) => {
       agentId,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    if (
+      !user ||
+      !workspace ||
+      typeof user.id !== "number" ||
+      typeof workspace.id !== "number" ||
+      isNaN(user.id) ||
+      isNaN(workspace.id)
+    ) {
+      loggerWithChild({ email: email }).error(
+        `Invalid user or workspace data: ${JSON.stringify({
+          user,
+          workspace,
+        })}`,
+      )
+      throw new HTTPException(400, {
+        message: "Invalid user or workspace data",
+      })
+    }
+
     if (isAgentic) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
@@ -3535,27 +3602,37 @@ export const MessageApi = async (c: Context) => {
     )
 
     if (agentPromptValue) {
-      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
-        db,
-        workspaceId,
-        email,
-      )
-      const agentDetails = await getAgentByExternalId(
-        db,
-        agentPromptValue,
-        userAndWorkspaceCheck.workspace.id,
-      )
+      let agentDetails: SelectAgent | null = null
+      try {
+        agentDetails = await getAgentByExternalId(
+          db,
+          agentPromptValue,
+          workspace.id,
+        )
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error in agent routing: ${getErrorMessage(error)}`,
+        )
+        // Continue with default flow if agent routing fails
+      }
+
       if (!isAgentic && agentDetails) {
         // Check if agent has MCP tools configured
-        const hasMCPTools = agentDetails.mcpTools && 
-          Array.isArray(agentDetails.mcpTools) && 
+        const hasMCPTools =
+          agentDetails.mcpTools &&
+          Array.isArray(agentDetails.mcpTools) &&
           agentDetails.mcpTools.length > 0
-        
+
         if (hasMCPTools) {
-          Logger.info(`Routing to MessageWithToolsApi for agent ${agentPromptValue} with MCP tools.`)
+          Logger.info(
+            `Routing to MessageWithToolsApi for agent ${agentPromptValue} with MCP tools.`,
+          )
           return MessageWithToolsApi(c)
         } else {
-          Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
+          Logger.info(
+            `Routing to AgentMessageApi for agent ${agentPromptValue}.`,
+          )
           return AgentMessageApi(c)
         }
       }
@@ -3584,12 +3661,6 @@ export const MessageApi = async (c: Context) => {
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
 
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      email,
-    )
-    const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
@@ -4837,6 +4908,26 @@ export const MessageRetryApi = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace
+
+    if (
+      !user ||
+      !workspace ||
+      typeof user.id !== "number" ||
+      typeof workspace.id !== "number" ||
+      isNaN(user.id) ||
+      isNaN(workspace.id)
+    ) {
+      loggerWithChild({ email: email }).error(
+        `Invalid user or workspace data for retry: ${JSON.stringify({
+          user,
+          workspace,
+        })}`,
+      )
+      throw new HTTPException(400, {
+        message: "Invalid user or workspace data for retry",
+      })
+    }
+
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []

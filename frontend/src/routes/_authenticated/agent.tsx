@@ -232,6 +232,15 @@ function AgentComponent() {
     connectorId: string
     tools: string[]
   }>>([])
+
+  // Debug wrapper for setSelectedMCPTools
+  const updateSelectedMCPTools = (tools: Array<{ connectorId: string; tools: string[] }>) => {
+    console.log("🔧 DEBUG - updateSelectedMCPTools called with:", {
+      toolsCount: tools.length,
+      toolsData: tools
+    })
+    setSelectedMCPTools(tools)
+  }
   
   // Agent testing state
   const [showTestAgent, setShowTestAgent] = useState(false)
@@ -723,10 +732,37 @@ function AgentComponent() {
     setViewMode("create")
   }
 
-  const handleEditAgent = (agent: SelectPublicAgent) => {
+  const handleEditAgent = async (agent: SelectPublicAgent) => {
     resetForm()
-    setEditingAgent(agent)
     setViewMode("create")
+    
+    // Fetch fresh agent data to ensure we have the latest MCP tools
+    try {
+      const response = await api.agent[":agentExternalId"].$get({
+        param: { agentExternalId: agent.externalId },
+      })
+      if (response.ok) {
+        const freshAgentData = (await response.json()) as SelectPublicAgent
+        setEditingAgent(freshAgentData)
+      } else {
+        // Fallback to cached data if API fails
+        setEditingAgent(agent)
+        showToast({
+          title: "Warning",
+          description: "Could not fetch latest agent data. Using cached version.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      // Fallback to cached data if API fails
+      setEditingAgent(agent)
+      showToast({
+        title: "Warning", 
+        description: "Could not fetch latest agent data. Using cached version.",
+        variant: "destructive",
+      })
+      console.error("Failed to fetch fresh agent data:", error)
+    }
   }
 
   const allAvailableIntegrations = useMemo(() => {
@@ -747,6 +783,13 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
+      console.log("🔍 Loading agent for editing:", {
+        agentName: editingAgent.name,
+        mcpTools: editingAgent.mcpTools,
+        mcpToolsType: typeof editingAgent.mcpTools,
+        mcpToolsLength: Array.isArray(editingAgent.mcpTools) ? editingAgent.mcpTools.length : 'not array'
+      })
+      
       const currentAgentIsRagOn = editingAgent.isRagOn === false ? false : true
       setIsRagOn(currentAgentIsRagOn)
       setTestAgentIsRagOn(currentAgentIsRagOn)
@@ -755,12 +798,17 @@ function AgentComponent() {
       setAgentPrompt(editingAgent.prompt || "")
       setIsPublic(editingAgent.isPublic || false)
       setSelectedModel(editingAgent.model)
+      
       // Load existing MCP tools if any
       if (editingAgent.mcpTools) {
+        console.log("📝 Setting MCP tools:", editingAgent.mcpTools)
         setSelectedMCPTools(editingAgent.mcpTools as Array<{
           connectorId: string
           tools: string[]
         }>)
+      } else {
+        console.log("❌ No MCP tools found in agent data")
+        setSelectedMCPTools([])
       }
     }
   }, [editingAgent, viewMode])
@@ -870,6 +918,12 @@ function AgentComponent() {
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
+
+    console.log("💾 Saving agent with payload:", {
+      ...agentPayload,
+      mcpToolsCount: selectedMCPTools.length,
+      mcpToolsData: selectedMCPTools
+    })
 
     try {
       let response
@@ -1932,7 +1986,7 @@ function AgentComponent() {
                     <div className="ml-auto">
                       <MCPToolSelection
                         selectedTools={selectedMCPTools}
-                        onSelectionChange={setSelectedMCPTools}
+                        onSelectionChange={updateSelectedMCPTools}
                       />
                     </div>
                   </div>

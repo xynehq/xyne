@@ -866,9 +866,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             for (const item of effectiveToolsList) {
               const { connectorId, tools: toolExternalIds } = item
               // Fetch connector info and create client
+              const parsedConnectorId = parseInt(connectorId, 10)
+              if (isNaN(parsedConnectorId)) {
+                loggerWithChild({ email: sub }).warn(
+                  `Invalid non-numeric connectorId: ${connectorId}`,
+                )
+                continue
+              }
               const connector = await getConnectorById(
                 db,
-                parseInt(connectorId, 10),
+                parsedConnectorId,
                 user.id,
               )
               if (!connector) {
