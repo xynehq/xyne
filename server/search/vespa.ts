@@ -322,6 +322,7 @@ export const HybridDefaultProfile = (
   excludedIds?: string[],
   notInMailLabels?: string[],
   excludedApps?: Apps[],
+  intent?: Intent | null,
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -352,6 +353,7 @@ export const HybridDefaultProfile = (
     if (!notInMailLabels || notInMailLabels.length === 0) return ""
     return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
+  const intentFilter = intent ? buildIntentFilter(intent) : ""
 
   // App-specific YQL builders
   const buildGoogleWorkspaceYQL = () => {
@@ -361,7 +363,6 @@ export const HybridDefaultProfile = (
     )
     const appOrEntityFilter = buildAppEntityFilter()
     const hasAppOrEntity = !!(app || entity)
-
     return `
       (
         (
@@ -375,6 +376,7 @@ export const HybridDefaultProfile = (
             ? `and app contains "${Apps.GoogleWorkspace}"`
             : `${appOrEntityFilter} and permissions contains @email`
         }
+        ${intentFilter}
       )
       or
       (
@@ -393,7 +395,6 @@ export const HybridDefaultProfile = (
     const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
     const appOrEntityFilter = buildAppEntityFilter()
     const mailLabelQuery = buildMailLabelQuery()
-
     return `
       (
         (
@@ -405,6 +406,7 @@ export const HybridDefaultProfile = (
         and permissions contains @email
         ${mailLabelQuery}
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
 
@@ -421,6 +423,7 @@ export const HybridDefaultProfile = (
       and (permissions contains @email or owner contains @email)
       ${timestamp.length ? `and (${timestamp})` : ""}
       ${appOrEntityFilter}
+      ${intentFilter}
   )
   `
   }
@@ -428,7 +431,6 @@ export const HybridDefaultProfile = (
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-
     return `
       (
         (
@@ -439,13 +441,13 @@ export const HybridDefaultProfile = (
         ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
 
   const buildGoogleCalendarYQL = () => {
     const eventTimestamp = buildTimestampConditions("startTime", "startTime")
     const appOrEntityFilter = buildAppEntityFilter()
-
     return `
       (
         (
@@ -456,6 +458,7 @@ export const HybridDefaultProfile = (
         ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
 
@@ -555,7 +558,33 @@ export const HybridDefaultProfile = (
     `,
   }
 }
-
+// Helper function to build intent filter
+const buildIntentFilter = (intent: Intent | null) => {
+  const intentFilters: string[] = []
+  if (intent?.from && intent.from.length > 0) {
+    intentFilters.push(
+      intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
+    )
+  }
+  if (intent?.to && intent.to.length > 0) {
+    intentFilters.push(
+      intent.to.map((to) => `to contains '${to}'`).join(" or "),
+    )
+  }
+  if (intent?.cc && intent.cc.length > 0) {
+    intentFilters.push(
+      intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
+    )
+  }
+  if (intent?.bcc && intent.bcc.length > 0) {
+    intentFilters.push(
+      intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
+    )
+  }
+  return intentFilters.length > 0
+    ? "and" + " " + intentFilters.join(" and ")
+    : ""
+}
 export const HybridDefaultProfileForAgent = (
   hits: number,
   app: Apps | null,
@@ -566,6 +595,7 @@ export const HybridDefaultProfileForAgent = (
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
   dataSourceIds: string[] = [],
+  intent: Intent | null = null,
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -600,7 +630,7 @@ export const HybridDefaultProfileForAgent = (
     )
     const appOrEntityFilter = buildAppEntityFilter()
     const hasAppOrEntity = !!(app || entity)
-
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         ({targetHits:${hits}} userInput(@query))
@@ -617,13 +647,14 @@ export const HybridDefaultProfileForAgent = (
         and owner contains @email
         ${timestampRange ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
   const buildGmailYQL = () => {
     const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
     const appOrEntityFilter = buildAppEntityFilter()
     const mailLabelQuery = buildMailLabelQuery()
-
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -635,12 +666,13 @@ export const HybridDefaultProfileForAgent = (
         and permissions contains @email
         ${mailLabelQuery}
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -651,13 +683,14 @@ export const HybridDefaultProfileForAgent = (
         ${timestampRange ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${intentFilter}
       )
      `
   }
   const buildGoogleCalendarYQL = () => {
     const eventTimestamp = buildTimestampConditions("startTime", "startTime")
     const appOrEntityFilter = buildAppEntityFilter()
-
+    const intentFilter = buildIntentFilter(intent)
     return `
       (
         (
@@ -668,6 +701,7 @@ export const HybridDefaultProfileForAgent = (
         ${timestampRange ? `and (${eventTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${intentFilter}
       )`
   }
   const buildSlackYQL = () => {
@@ -1188,6 +1222,8 @@ type VespaQueryConfig = {
   maxHits: number
   recencyDecayRate: number
   dataSourceIds?: string[] // Added for agent-specific data source filtering
+  isIntentSearch?: boolean
+  intent?: Intent | null
 }
 
 export const searchVespa = async (
@@ -1207,6 +1243,8 @@ export const searchVespa = async (
     span = null,
     maxHits = 400,
     recencyDecayRate = 0.02,
+    isIntentSearch = false,
+    intent = {},
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   const hasProdConfig = Boolean(
@@ -1235,6 +1273,7 @@ export const searchVespa = async (
         span,
         maxHits,
         recencyDecayRate,
+        intent,
       })
     } catch (err) {
       Logger.warn(
@@ -1258,6 +1297,8 @@ export const searchVespa = async (
     span,
     maxHits,
     recencyDecayRate,
+    isIntentSearch,
+    intent,
   })
 }
 async function _searchVespa(
@@ -1277,6 +1318,8 @@ async function _searchVespa(
     span = null,
     maxHits = 400,
     recencyDecayRate = 0.02,
+    isIntentSearch = false,
+    intent = {},
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1314,6 +1357,7 @@ async function _searchVespa(
     excludedIds,
     notInMailLabels,
     excludedApps,
+    intent,
   )
 
   const hybridDefaultPayload = {
@@ -1324,6 +1368,7 @@ async function _searchVespa(
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
     "input.query(recency_decay_rate)": recencyDecayRate,
+    "input.query(is_intent_search)": isIntentSearch ? 1.0 : 0.0,
     maxHits,
     hits: limit,
     timeout: "30s",
@@ -1455,6 +1500,7 @@ export const searchVespaAgent = async (
     maxHits = 400,
     recencyDecayRate = 0.02,
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
+    intent = null,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1471,6 +1517,7 @@ export const searchVespaAgent = async (
     notInMailLabels,
     Apps,
     dataSourceIds, // Pass dataSourceIds here
+    intent,
   )
 
   const hybridDefaultPayload = {
