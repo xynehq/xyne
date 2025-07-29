@@ -101,11 +101,6 @@ export const isPptxFile = (mimeType: string): boolean => {
   return DATASOURCE_CONFIG.SUPPORTED_PPTX_TYPES.has(baseMimeType)
 }
 
-export const isMarkdownFile = (mimeType: string): boolean => {
-  const baseMimeType = getBaseMimeType(mimeType)
-  return baseMimeType === "text/markdown"
-}
-
 export const getSupportedFileTypes = (): string[] => [
   ...DATASOURCE_CONFIG.SUPPORTED_TEXT_TYPES,
   ...DATASOURCE_CONFIG.SUPPORTED_SHEET_TYPES,

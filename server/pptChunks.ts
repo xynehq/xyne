@@ -676,6 +676,14 @@ export async function extractTextAndImagesWithChunksFromPptx(
     })
 
     for (const slideFile of slideFiles) {
+      // Check if we've already exceeded the text limit before processing this slide
+      if (totalTextLength >= DATASOURCE_CONFIG.MAX_PPTX_TEXT_LEN) {
+        Logger.info(
+          `Text length limit reached (${totalTextLength}/${DATASOURCE_CONFIG.MAX_PPTX_TEXT_LEN}) for ${docid}, stopping slide processing`,
+        )
+        break
+      }
+
       const slideNumber = parseInt(
         slideFile.match(/slide(\d+)\.xml$/)?.[1] || "0",
       )
@@ -719,6 +727,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
       // Process items sequentially, handling overlap properly
       let textBuffer: string[] = []
       let textStartPos = globalSeq
+      let textLimitReached = false
 
       const flushTextBuffer = () => {
         if (textBuffer.length > 0) {
@@ -763,6 +772,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
             Logger.info(
               `Text Length exceeded for ${docid}, indexing with incomplete content`,
             )
+            textLimitReached = true
             break
           }
         } else if (item.type === "image" && item.relId && extractImages) {
@@ -884,6 +894,11 @@ export async function extractTextAndImagesWithChunksFromPptx(
 
       // Flush any remaining text from this slide
       flushTextBuffer()
+
+      // Break out of slide processing if text limit was reached
+      if (textLimitReached) {
+        break
+      }
     }
 
     // Flush any remaining text with cross-image overlap (only if we were extracting images)

@@ -16,7 +16,6 @@ import {
   isDocxFile,
   isPptxFile,
   getSupportedFileTypes,
-  isMarkdownFile,
 } from "./config"
 import {
   FileProcessingError,
