@@ -619,7 +619,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
   extractImages: boolean = false,
 ): Promise<PptxProcessingResult> {
   Logger.info(`Starting PPTX processing for document: ${docid}`)
-
+  let totalTextLength = 0
   // Load the PPTX data directly
   let zip: JSZip
   try {
@@ -753,7 +753,18 @@ export async function extractTextAndImagesWithChunksFromPptx(
             item.type === "notes") &&
           item.content
         ) {
-          textBuffer.push(item.content)
+          if (
+            totalTextLength + item.content.length <=
+            DATASOURCE_CONFIG.MAX_PPTX_TEXT_LEN
+          ) {
+            textBuffer.push(item.content)
+            totalTextLength += item.content.length
+          } else {
+            Logger.info(
+              `Text Length exceeded for ${docid}, indexing with incomplete content`,
+            )
+            break
+          }
         } else if (item.type === "image" && item.relId && extractImages) {
           // Flush any pending text before processing image
           flushTextBuffer()

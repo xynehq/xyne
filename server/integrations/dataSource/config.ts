@@ -14,6 +14,10 @@ export const DATASOURCE_CONFIG = {
     process.env.DATASOURCE_MAX_PPTX_FILE_SIZE_MB || "40",
     10,
   ),
+  MAX_PPTX_TEXT_LEN: parseInt(
+    process.env.DATASOURCE_MAX_PPTX_TEXT_LEN || "300000",
+    10,
+  ),
   MAX_TEXT_FILE_SIZE_MB: parseInt(
     process.env.DATASOURCE_MAX_TEXT_FILE_SIZE_MB || "40",
     10,
@@ -95,6 +99,11 @@ export const isDocxFile = (mimeType: string): boolean => {
 export const isPptxFile = (mimeType: string): boolean => {
   const baseMimeType = getBaseMimeType(mimeType)
   return DATASOURCE_CONFIG.SUPPORTED_PPTX_TYPES.has(baseMimeType)
+}
+
+export const isMarkdownFile = (mimeType: string): boolean => {
+  const baseMimeType = getBaseMimeType(mimeType)
+  return baseMimeType === "text/markdown"
 }
 
 export const getSupportedFileTypes = (): string[] => [

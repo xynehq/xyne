@@ -16,6 +16,7 @@ import {
   isDocxFile,
   isPptxFile,
   getSupportedFileTypes,
+  isMarkdownFile,
 } from "./config"
 import {
   FileProcessingError,
@@ -98,14 +99,12 @@ const createFileMetadata = (
   userEmail: string,
   chunksCount: number,
   processingMethod: string,
-  convertedFrom?: string,
 ): string => {
   const metadata: FileMetadata = {
     originalFileName: fileName,
     uploadedBy: userEmail,
     chunksCount,
     processingMethod,
-    ...(convertedFrom && { convertedFrom }),
   }
   return JSON.stringify(metadata)
 }
@@ -206,7 +205,7 @@ const processPdfContent = async (
   try {
     const docId = `dsf-${createId()}`
     const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDF(pdfBuffer, docId)
+      await extractTextAndImagesWithChunksFromPDF(pdfBuffer, docId, true)
     if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
@@ -237,7 +236,6 @@ const processPdfContent = async (
 const processDocxContent = async (
   docxBuffer: Uint8Array,
   options: ProcessingOptions,
-  extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
   try {
     Logger.info(`Processing DOCX file: ${options.fileName}`)
@@ -246,7 +244,7 @@ const processDocxContent = async (
     const docxResult = await extractTextAndImagesWithChunksFromDocx(
       docxBuffer,
       docId,
-      extractImages,
+      true,
     )
 
     if (
@@ -286,7 +284,6 @@ const processDocxContent = async (
 const processPptxContent = async (
   pptxBuffer: Uint8Array,
   options: ProcessingOptions,
-  extractImages: boolean = true,
 ): Promise<VespaDataSourceFile> => {
   try {
     Logger.info(`Processing PPTX file: ${options.fileName}`)
@@ -295,7 +292,7 @@ const processPptxContent = async (
     const pptxResult = await extractTextAndImagesWithChunksFromPptx(
       pptxBuffer,
       docId,
-      extractImages,
+      true,
     )
 
     if (
@@ -541,6 +538,11 @@ export const handleDataSourceFileUpload = async (
 
     let processedFiles: VespaDataSourceFile[] = []
     if (isImageFile(mimeType)) {
+      if (!process.env.LLM_API_ENDPOINT) {
+        throw new FileProcessingError(
+          `LLM API endpoint is not set. Skipping image: ${options.fileName}`,
+        )
+      }
       checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
       const imageBuffer = Buffer.from(await file.arrayBuffer())
       const type = await imageType(new Uint8Array(imageBuffer))
@@ -583,20 +585,12 @@ export const handleDataSourceFileUpload = async (
       } else if (isDocxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
-        const processedFile = await processDocxContent(
-          fileBuffer,
-          options,
-          true,
-        )
+        const processedFile = await processDocxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isPptxFile(mimeType)) {
         checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
-        const processedFile = await processPptxContent(
-          fileBuffer,
-          options,
-          true,
-        )
+        const processedFile = await processPptxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
         const fileBuffer = Buffer.from(await file.arrayBuffer())
