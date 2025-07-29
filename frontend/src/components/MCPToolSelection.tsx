@@ -31,6 +31,15 @@ interface MCPConnector {
   tools: MCPTool[]
 }
 
+interface ConnectorResponse {
+  id: string
+  connectorId: number
+  externalId: string
+  name: string
+  status: ConnectorStatus
+  type: ConnectorType
+}
+
 interface SelectedMCPTools {
   connectorId: string
   tools: string[]
@@ -77,7 +86,7 @@ export function MCPToolSelection({
         console.log("All connectors:", data)
         
         const mcpConnectors = data.filter(
-          (c: any) => {
+          (c: ConnectorResponse) => {
             console.log(`Connector ${c.name}: type=${c.type}, status=${c.status}`)
             return c.type === "Mcp" && c.status === "connected"
           }
@@ -87,7 +96,7 @@ export function MCPToolSelection({
 
         // Fetch tools for each MCP connector
         const connectorsWithTools = await Promise.all(
-          mcpConnectors.map(async (connector: any) => {
+          mcpConnectors.map(async (connector: ConnectorResponse) => {
             try {
               console.log("Connector object:", connector)
               console.log("Connector id (externalId):", connector.id)
@@ -196,8 +205,10 @@ export function MCPToolSelection({
 
   const handleConnectorToggle = (connector: MCPConnector, selectAll: boolean) => {
     const newSelectedTools = [...selectedTools]
+    // Use the numeric database ID, not the external ID
+    const databaseConnectorId = connector.connectorId.toString()
     const existingConnectorIndex = newSelectedTools.findIndex(
-      (item) => item.connectorId === connector.externalId,
+      (item) => item.connectorId === databaseConnectorId,
     )
 
     if (selectAll) {
@@ -209,7 +220,7 @@ export function MCPToolSelection({
         newSelectedTools[existingConnectorIndex].tools = allToolIds
       } else {
         newSelectedTools.push({
-          connectorId: connector.externalId,
+          connectorId: databaseConnectorId,
           tools: allToolIds,
         })
       }
@@ -227,14 +238,16 @@ export function MCPToolSelection({
   }
 
   const isConnectorSelected = (connector: MCPConnector) => {
-    const connectorTools = selectedToolsMap.get(connector.externalId)
+    const databaseConnectorId = connector.connectorId.toString()
+    const connectorTools = selectedToolsMap.get(databaseConnectorId)
     if (!connectorTools) return false
     const enabledTools = connector.tools.filter((tool) => tool.enabled)
     return enabledTools.length > 0 && enabledTools.every((tool) => connectorTools.has(tool.externalId))
   }
 
   const isConnectorPartiallySelected = (connector: MCPConnector) => {
-    const connectorTools = selectedToolsMap.get(connector.externalId)
+    const databaseConnectorId = connector.connectorId.toString()
+    const connectorTools = selectedToolsMap.get(databaseConnectorId)
     if (!connectorTools) return false
     return connector.tools.some((tool) => tool.enabled && connectorTools.has(tool.externalId))
   }
@@ -331,8 +344,9 @@ export function MCPToolSelection({
                     {isExpanded && (
                       <div className="mt-3 space-y-2 pl-6">
                         {enabledTools.map((tool) => {
+                          const databaseConnectorId = connector.connectorId.toString()
                           const isSelected = selectedToolsMap
-                            .get(connector.externalId)
+                            .get(databaseConnectorId)
                             ?.has(tool.externalId) || false
 
                           return (
@@ -342,7 +356,7 @@ export function MCPToolSelection({
                                 checked={isSelected}
                                 onChange={(e) =>
                                   handleToolSelection(
-                                    connector.externalId,
+                                    connector.connectorId.toString(),
                                     tool.externalId,
                                     e.target.checked,
                                   )

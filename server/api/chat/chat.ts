@@ -3546,8 +3546,18 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
       if (!isAgentic && agentDetails) {
-        Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
-        return AgentMessageApi(c)
+        // Check if agent has MCP tools configured
+        const hasMCPTools = agentDetails.mcpTools && 
+          Array.isArray(agentDetails.mcpTools) && 
+          agentDetails.mcpTools.length > 0
+        
+        if (hasMCPTools) {
+          Logger.info(`Routing to MessageWithToolsApi for agent ${agentPromptValue} with MCP tools.`)
+          return MessageWithToolsApi(c)
+        } else {
+          Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
+          return AgentMessageApi(c)
+        }
       }
     }
 
