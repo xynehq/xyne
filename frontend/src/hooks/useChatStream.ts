@@ -171,29 +171,7 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
-// async function createAuthEventSource(urlString: string): Promise<EventSource> {
-//   // 1) HEAD only pulls headers (no body), so it won't hang or trigger streaming logic.
-//   const pre = await fetch(urlString, {
-//     method: "HEAD",
-//     credentials: "include",
-//   })
-
-//   if (pre.status === 401) {
-//     // 2) Refresh the token
-//     const refresh = await fetch("/api/v1/refresh-token", {
-//       method: "POST",
-//       credentials: "include",
-//     })
-//     if (!refresh.ok) {
-//       throw new Error("Token refresh failed")
-//     }
-//   }
-
-//   // 3) Now open the real SSE connection exactly once
-//   return new EventSource(urlString, { withCredentials: true })
-// }
-
-async function createAuthEventSource(url: string): Promise<EventSource> {
+export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
 
