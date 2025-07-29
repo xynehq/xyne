@@ -175,7 +175,6 @@ import {
   buildUserQuery,
   cleanBuffer,
   getThreadContext,
-  getThreadContextV2,
   isContextSelected,
   textToImageCitationIndex,
   UnderstandMessageAndAnswer,
@@ -1084,7 +1083,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           )
                           if (searchResults.root.children) {
                             chatContexts.push(...searchResults.root.children)
-                            const threadMessages = await getThreadContextV2(
+                            const threadMessages = await getThreadContext(
                               searchResults,
                               email,
                               contextFetchSpan,

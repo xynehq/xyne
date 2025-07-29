@@ -1953,7 +1953,7 @@ function AgentComponent() {
                           text={entity.name}
                           onRemove={() =>
                             setSelectedEntities((prev) =>
-                              prev.filter((c) => c.docId !== entity.docId)
+                              prev.filter((c) => c.docId !== entity.docId),
                             )
                           }
                         />

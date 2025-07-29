@@ -496,30 +496,9 @@ export function cleanBuffer(buffer: string): string {
   return parsableBuffer.trim()
 }
 
-export const getThreadContext = async (
-  searchResults: VespaSearchResponse,
-  email: string,
-  span?: Span,
-) => {
-  if (searchResults.root.children) {
-    const threadIds = [
-      ...new Set(
-        searchResults.root.children.map((child: any) => child.fields.threadId),
-      ),
-    ].filter((id) => id)
-    if (threadIds.length > 0) {
-      const threadSpan = span?.startSpan("fetch_slack_threads")
-      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
-      if (threadMessages.root.children) {
-        const threadContext = buildContext(threadMessages.root.children, 10)
-        return "\n These are other messages in the thread \n" + threadContext
-      }
-    }
-  }
-  return ""
-}
 
-export const getThreadContextV2 = async (
+
+export const getThreadContext = async (
   searchResults: VespaSearchResponse,
   email: string,
   span?: Span,
@@ -1790,8 +1769,8 @@ async function* generateAnswerFromGivenContext(
   const message = input
   const messageText = parseMessageText(message)
   loggerWithChild({ email: email }).info(
-          { email },
-          `generateAnswerFromGivenContext - input: ${messageText}`,
+    { email },
+    `generateAnswerFromGivenContext - input: ${messageText}`,
   )
   let userAlpha = alpha
   try {
@@ -1871,9 +1850,7 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          combinedSearchResponse.map(
-            (child: any) => child.fields.docId,
-          ),
+          combinedSearchResponse.map((child: any) => child.fields.docId),
         )
 
         // Use the helper function to process thread results
@@ -1930,18 +1907,14 @@ async function* generateAnswerFromGivenContext(
           channelIds: [channelId],
         })
         if (searchResults.root.children) {
-          combinedSearchResponse.push(
-            ...searchResults.root.children,
-          )
-          const threadMessages = await getThreadContextV2(
+          combinedSearchResponse.push(...searchResults.root.children)
+          const threadMessages = await getThreadContext(
             searchResults,
             email,
             generateAnswerSpan,
           )
           if (threadMessages?.root?.children) {
-            combinedSearchResponse.push(
-              ...threadMessages.root.children,
-            )
+            combinedSearchResponse.push(...threadMessages.root.children)
           }
         }
       }
@@ -1949,30 +1922,28 @@ async function* generateAnswerFromGivenContext(
   }
 
   const startIndex = isReasoning ? previousResultsLength : 0
-  const contextPromises = combinedSearchResponse?.map(
-    async (v, i) => {
-      let content = answerContextMap(
-        v as z.infer<typeof VespaSearchResultsSchema>,
-        0,
-        true,
+  const contextPromises = combinedSearchResponse?.map(async (v, i) => {
+    let content = answerContextMap(
+      v as z.infer<typeof VespaSearchResultsSchema>,
+      0,
+      true,
+    )
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema &&
+      (v.fields as any).creator
+    ) {
+      const creator = await getDocumentOrNull(
+        chatUserSchema,
+        (v.fields as any).creator,
       )
-      if (
-        v.fields &&
-        "sddocname" in v.fields &&
-        v.fields.sddocname === chatContainerSchema &&
-        (v.fields as any).creator
-      ) {
-        const creator = await getDocumentOrNull(
-          chatUserSchema,
-          (v.fields as any).creator,
-        )
-        if (creator) {
-          content += `\nCreator: ${(creator.fields as any).name}`
-        }
+      if (creator) {
+        content += `\nCreator: ${(creator.fields as any).name}`
       }
-      return `Index ${i + startIndex} \n ${content}`
-    },
-  )
+    }
+    return `Index ${i + startIndex} \n ${content}`
+  })
 
   const resolvedContexts = contextPromises
     ? await Promise.all(contextPromises)
