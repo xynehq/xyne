@@ -2280,21 +2280,17 @@ export const getItems = async (
     : ""
 
   // Construct YQL query with proper clause ordering and spacing
-  let yqlParts = [`select * from sources ${schema}`]
-  
-  yqlParts.push(whereClause)
-  
+  let yql = `select * from sources ${schema} ${whereClause}`
+
   if (orderByClause) {
-    yqlParts.push(orderByClause)
+    yql += ` ${orderByClause}`
   }
-  
-  yqlParts.push(`limit ${limit}`)
-  
+
+  yql += ` limit ${limit}`
+
   if (offset > 0) {
-    yqlParts.push(`offset ${offset}`)
+    yql += ` offset ${offset}`
   }
-  
-  const yql = yqlParts.join(" ")
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
   Logger.info(`[getItems] Query Details:`, {
