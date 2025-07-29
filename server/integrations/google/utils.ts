@@ -164,10 +164,10 @@ export const getFileContent = async (
     let parentId = null
     if (file?.parents) {
       if (file.parents.length > 0) parentId = file.parents[0]
-      for (const parentId of file.parents!) {
-        const parentData = await getFile(client, parentId)
+      for (const pId of file.parents!) {
+        const parentData = await getFile(client, pId)
         const folderName = parentData?.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
+        parentsForMetadata.push({ folderName, folderId: pId })
       }
     }
 
@@ -233,10 +233,10 @@ export const getPDFContent = async (
     let parentId = null
     if (pdfFile?.parents) {
       if (pdfFile.parents.length) parentId = pdfFile.parents[0]
-      for (const parentId of pdfFile.parents!) {
-        const parentData = await getFile(client, parentId)
+      for (const pId of pdfFile.parents!) {
+        const parentData = await getFile(client, pId)
         const folderName = parentData?.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
+        parentsForMetadata.push({ folderName, folderId: pId })
       }
     }
 
@@ -316,10 +316,10 @@ export const driveFileToIndexed = async (
     let parentId = null
     if (file?.parents) {
       if (file.parents.length) parentId = file.parents[0]
-      for (const parentId of file.parents!) {
-        const parentData = await getFile(client, parentId)
+      for (const pId of file.parents!) {
+        const parentData = await getFile(client, pId)
         const folderName = parentData?.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
+        parentsForMetadata.push({ folderName, folderId: pId })
       }
     }
 

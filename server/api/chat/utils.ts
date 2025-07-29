@@ -387,7 +387,7 @@ export const getFileIdFromLink = (link: string) => {
 }
 export const extractFileIdsFromMessage = async (
   message: string,
-  email?:string,
+  email?: string,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -395,18 +395,20 @@ export const extractFileIdsFromMessage = async (
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
-  const driveItem:string[] = []
+  const driveItem: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
-  console.log(jsonMessage)
+
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
-      if(obj?.value && obj?.value?.entity && obj?.value?.entity==DriveEntity.Folder){
+      if (
+        obj?.value &&
+        obj?.value?.entity &&
+        obj?.value?.entity == DriveEntity.Folder
+      ) {
         driveItem.push(obj?.value?.docId)
-      }
-      else
-      fileIds.push(obj?.value?.docId)
+      } else fileIds.push(obj?.value?.docId)
       // Check if this pill has a threadId (for email threads)
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
@@ -441,24 +443,38 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
-  while(driveItem.length){
+  while (driveItem.length) {
     let curr = driveItem.shift()
     // Ensure email is defined before passing it to getFolderItems\
-    if(curr)
-    fileIds.push(curr)
+    if (curr) fileIds.push(curr)
     if (curr && email) {
-      const folderItem = await getFolderItems([curr], fileSchema, DriveEntity.Folder, email)
-      // console.log("printing the folderItem", folderItem)
-      if(folderItem.root && folderItem.root.children && folderItem.root.children.length>0){
-        for(const item of folderItem.root.children){
-          if(item.fields && (item.fields as any).entity === DriveEntity.Folder){
-            driveItem.push((item.fields as any).docId)
-            
-          }
-          else{
-            fileIds.push((item.fields as any).docId)
+      try {
+        const folderItem = await getFolderItems(
+          [curr],
+          fileSchema,
+          DriveEntity.Folder,
+          email,
+        )
+        if (
+          folderItem.root &&
+          folderItem.root.children &&
+          folderItem.root.children.length > 0
+        ) {
+          for (const item of folderItem.root.children) {
+            if (
+              item.fields &&
+              (item.fields as any).entity === DriveEntity.Folder
+            ) {
+              driveItem.push((item.fields as any).docId)
+            } else {
+              fileIds.push((item.fields as any).docId)
+            }
           }
         }
+      } catch (error) {
+        getLoggerWithChild(Subsystem.Chat)({ email }).error(
+          `Falied to fetch the content of Folder`,
+        )
       }
     }
   }

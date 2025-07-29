@@ -1541,10 +1541,10 @@ export const getPresentationToBeIngested = async (
     let parentId = null
     if (presentation?.parents) {
       if (presentation.parents.length > 0) parentId = presentation.parents[0]
-      for (const parentId of presentation.parents!) {
-        const parentData = await getFile(client, parentId)
+      for (const pId of presentation.parents!) {
+        const parentData = await getFile(client, pId)
         const folderName = parentData?.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
+        parentsForMetadata.push({ folderName, folderId: pId })
       }
     }
 
@@ -2263,10 +2263,10 @@ export const getSheetsListFromOneSpreadsheet = async (
       // There can be some files that user has access to may not have parents as they are shared
       if (spreadsheet?.parents) {
         if (spreadsheet.parents.length > 0) parentId = spreadsheet.parents[0]
-        for (const parentId of spreadsheet?.parents!) {
-          const parentData = await getFile(client, parentId)
+        for (const pId of spreadsheet?.parents!) {
+          const parentData = await getFile(client, pId)
           const folderName = parentData?.name!
-          parentsForMetadata.push({ folderName, folderId: parentId })
+          parentsForMetadata.push({ folderName, folderId: pId })
         }
       }
 
@@ -2584,10 +2584,10 @@ export const googlePDFsVespa = async (
         const parentsForMetadata = []
         if (pdf?.parents) {
           if (pdf.parents.length) parentId = pdf.parents[0]
-          for (const parentId of pdf.parents!) {
-            const parentData = await getFile(client, parentId)
+          for (const pId of pdf.parents!) {
+            const parentData = await getFile(client, pId)
             const folderName = parentData?.name!
-            parentsForMetadata.push({ folderName, folderId: parentId })
+            parentsForMetadata.push({ folderName, folderId: pId })
           }
         }
 
@@ -3087,10 +3087,10 @@ export const googleDocsVespa = async (
         let parentId = null
         if (doc?.parents) {
           if (doc.parents.length) parentId = doc.parents[0]
-          for (const parentId of doc?.parents!) {
-            const parentData = await getFile(client, parentId)
+          for (const pId of doc?.parents!) {
+            const parentData = await getFile(client, pId)
             const folderName = parentData?.name!
-            parentsForMetadata.push({ folderName, folderId: parentId })
+            parentsForMetadata.push({ folderName, folderId: pId })
           }
         }
 
