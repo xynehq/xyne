@@ -109,7 +109,7 @@ import {
   searchVespaAgent,
   SearchVespaThreads,
   getAllDocumentsForAgent,
-  searchVespaInSlack,
+  searchSlackInVespa,
 } from "@/search/vespa"
 import {
   Apps,
@@ -1077,7 +1077,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                         )
 
                         if (channelId) {
-                          const searchResults = await searchVespaInSlack(
+                          const searchResults = await searchSlackInVespa(
                             message,
                             email,
                             {

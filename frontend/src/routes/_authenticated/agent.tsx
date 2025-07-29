@@ -27,6 +27,7 @@ import {
   type Citation,
   type SelectPublicAgent,
   type AttachmentMetadata,
+  SlackEntity,
 } from "shared/types"
 import {
   ChevronDown,
@@ -180,6 +181,10 @@ const availableIntegrationsList: IntegrationSource[] = [
   },
 ]
 
+const AGENT_ENTITY_SEARCH_EXCLUSIONS: { app: string; entity: string }[] = [
+  { app: Apps.Slack, entity: SlackEntity.Message },
+]
+
 interface User {
   id: number
   name: string
@@ -276,27 +281,39 @@ function AgentComponent() {
     }
 
     const searchEntities = async () => {
-      try {
-        const response = await api.search.$get({
-          query: { query: entitySearchQuery },
-        })
-        if (response.ok) {
-          const data = await response.json()
-          // @ts-ignore
-          const results = (data.results || []) as FetchedDataSource[]
-          const selectedDocIds = new Set(selectedEntities.map((c) => c.docId))
-          setEntitySearchResults(
-            results.filter((r) => {
-              const compositeId = `${r.app}-${r.entity}-${r.docId}-${r.name}`
-              return !selectedDocIds.has(compositeId)
-            }),
-          )
-          setShowEntitySearchResults(true)
-        }
-      } catch (error) {
-        console.error("Failed to search entities", error)
-      }
+  try {
+    const response = await api.search.$get({
+      query: {
+        query: entitySearchQuery,
+      },
+    });
+
+    if (response.ok) {
+      console.log("Entity search response:");
+      const data = await response.json();
+      // @ts-ignore
+      const results = (data.results || []) as FetchedDataSource[];
+
+      const selectedEntityIds = new Set(
+        selectedEntities.map((entity) => entity.docId),
+      );
+
+      const filteredResults = results.filter((r) => {
+        const isAlreadySelected = selectedEntityIds.has(r.docId);
+
+        const isExcluded = AGENT_ENTITY_SEARCH_EXCLUSIONS.some(
+          (exclusion) => exclusion.app === r.app && exclusion.entity === r.entity,
+        );
+
+        return !isAlreadySelected && !isExcluded;
+      });
+      setEntitySearchResults(filteredResults);
+      setShowEntitySearchResults(true);
     }
+  } catch (error) {
+    console.error("Failed to search entities", error);
+  }
+};
 
     const debounceSearch = setTimeout(() => {
       searchEntities()
@@ -807,19 +824,7 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
-      const agentChannels = (editingAgent.docIds || [])
-        ?.map((docId : string) => {
-            if (docId.startsWith("slack-channel-")) {
-              // Extract the part after "slack-channel-"
-              const channelPart = docId.replace("slack-channel-", "")
-              // The channel ID is the first segment before the first "-"
-              const channelId = channelPart.split("-")[0]
-              return channelId
-            }
-            return ""
-          })
-        .filter(Boolean) as FetchedDataSource[]
-      setSelectedEntities(agentChannels)
+      setSelectedEntities(editingAgent.docIds || [])
     }
   }, [editingAgent, viewMode])
 
@@ -909,7 +914,7 @@ function AgentComponent() {
       isPublic: isPublic,
       isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
-      docIds: selectedEntities.map(c => c.docId),
+      docIds: selectedEntities,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
@@ -1940,7 +1945,9 @@ function AgentComponent() {
                         key={entity.docId}
                         text={entity.name}
                         onRemove={() =>
-                          setSelectedEntities(prev => prev.filter((c) => c.docId !== entity.docId))
+                          setSelectedEntities((prev) =>
+                            prev.filter((c) => c.docId !== entity.docId),
+                          )
                         }
                       />
                     ))}
@@ -1963,7 +1970,7 @@ function AgentComponent() {
                                 key={entity.docId}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
                                 onClick={() => {
-                                  setSelectedEntities(prev => [...prev, { docId: `${entity.app}-${entity.entity}-${entity.docId}-${entity.name}`, name: entity.name, app: entity.app, entity: entity.entity }])
+                                  setSelectedEntities((prev) => [...prev, entity])
                                   setEntitySearchQuery("")
                                 }}
                               >

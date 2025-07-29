@@ -68,20 +68,15 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
     if (!agent || !agent.docIds) {
       return []
     }
-    return (
-      agent.docIds
-        ?.map((docId: string) => {
-          if (docId.startsWith("slack-channel-")) {
-            // Extract the part after "slack-channel-"
-            const channelPart = docId.replace("slack-channel-", "")
-            // The channel ID is the first segment before the first "-"
-            const channelId = channelPart.split("-")[0]
-            return channelId
-          }
-          return ""
-        })
-        .filter((id: string) => id !== "") ?? []
-    )
+    const channelIds = new Set<string>()
+    agent.docIds?.forEach((doc: any) => {
+      if (doc.app === Apps.Slack) {
+        if (doc.entity === SlackEntity.Channel && doc.docId) {
+          channelIds.add(doc.docId)
+        }
+      }
+    })
+    return Array.from(channelIds)
   } catch (e) {
     return []
   }

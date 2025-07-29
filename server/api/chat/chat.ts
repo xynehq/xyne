@@ -104,7 +104,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
-  searchVespaInSlack,
+  searchSlackInVespa,
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
@@ -1830,26 +1830,12 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const combinedSearchResponse: VespaSearchResponse = {
-    root: {
-      id: "root:0",
-      relevance: 1,
-      coverage: {
-        coverage: 100,
-        documents: 0,
-        full: true,
-        nodes: 1,
-        results: 1,
-        resultsFull: 1,
-      },
-      children: [],
-    },
-  }
+  const combinedSearchResponse: VespaSearchResult[] = []
 
   if (fileIds.length > 0) {
     const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
     if (results.root.children) {
-      combinedSearchResponse.root.children?.push(...results.root.children)
+      combinedSearchResponse.push(...results.root.children)
     }
   }
 
@@ -1885,7 +1871,7 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          combinedSearchResponse.root.children?.map(
+          combinedSearchResponse.map(
             (child: any) => child.fields.docId,
           ),
         )
@@ -1894,7 +1880,7 @@ async function* generateAnswerFromGivenContext(
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          combinedSearchResponse.root.children!,
+          combinedSearchResponse,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
@@ -1928,7 +1914,7 @@ async function* generateAnswerFromGivenContext(
   //     )
   //     ?.join("\n"),
   // )
-  const initialResults = [...(combinedSearchResponse.root.children || [])]
+  const initialResults = [...(combinedSearchResponse || [])]
   for (const v of initialResults) {
     if (
       v.fields &&
@@ -1939,12 +1925,12 @@ async function* generateAnswerFromGivenContext(
       console.log(`Processing chat container with docId: ${channelId}`)
 
       if (channelId) {
-        const searchResults = await searchVespaInSlack(messageText, email, {
+        const searchResults = await searchSlackInVespa(messageText, email, {
           limit: 10,
           channelIds: [channelId],
         })
         if (searchResults.root.children) {
-          combinedSearchResponse.root.children?.push(
+          combinedSearchResponse.push(
             ...searchResults.root.children,
           )
           const threadMessages = await getThreadContextV2(
@@ -1953,7 +1939,7 @@ async function* generateAnswerFromGivenContext(
             generateAnswerSpan,
           )
           if (threadMessages?.root?.children) {
-            combinedSearchResponse.root.children?.push(
+            combinedSearchResponse.push(
               ...threadMessages.root.children,
             )
           }
@@ -1963,7 +1949,7 @@ async function* generateAnswerFromGivenContext(
   }
 
   const startIndex = isReasoning ? previousResultsLength : 0
-  const contextPromises = combinedSearchResponse.root.children?.map(
+  const contextPromises = combinedSearchResponse?.map(
     async (v, i) => {
       let content = answerContextMap(
         v as z.infer<typeof VespaSearchResultsSchema>,
@@ -1995,7 +1981,7 @@ async function* generateAnswerFromGivenContext(
   const initialContext = cleanContext(resolvedContexts.join("\n"))
   const { imageFileNames } = extractImageFileNames(
     initialContext,
-    combinedSearchResponse.root.children,
+    combinedSearchResponse,
   )
 
   const finalImageFileNames = imageFileNames || []
@@ -2014,13 +2000,13 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.setAttribute("context", initialContext || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
-    combinedSearchResponse.root.children?.length || 0,
+    combinedSearchResponse?.length || 0,
   )
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
-      combinedSearchResponse.root.children?.length || 0
+      combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -2044,7 +2030,7 @@ async function* generateAnswerFromGivenContext(
 
   const answer = yield* processIterator(
     iterator,
-    combinedSearchResponse.root.children,
+    combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoning,
     email,
@@ -2157,7 +2143,7 @@ async function* generateAnswerFromGivenContext(
     }
   }
   if (config.isReasoning && userRequestsReasoning) {
-    previousResultsLength += combinedSearchResponse.root.children?.length || 0
+    previousResultsLength += combinedSearchResponse?.length || 0
   }
   generateAnswerSpan?.end()
 }

@@ -1535,7 +1535,7 @@ export const searchVespaInFiles = async (
     })
 }
 
-export const searchVespaInSlack = async (
+export const searchSlackInVespa = async (
   query: string,
   email: string,
   {
@@ -1587,7 +1587,7 @@ export const searchVespaInSlack = async (
       if (vespa instanceof ProductionVespaClient) {
         Logger.warn(
           err,
-          "Prod vespa failed in searchVespaInSlack for search, trying fallback",
+          "Prod vespa failed in searchSlackInVespa for search, trying fallback",
         )
         return fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
       }

@@ -14,6 +14,9 @@ import {
 } from "@/db/agent"
 
 import {
+  fetchedDataSourceSchema,
+} from "@/db/schema/agents"
+import {
   syncAgentUserPermissions,
   getAgentUsers,
 } from "@/db/userAgentPermission"
@@ -44,7 +47,7 @@ export const createAgentSchema = z.object({
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
-  docIds: z.array(z.string()).optional().default([]),
+  docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
 

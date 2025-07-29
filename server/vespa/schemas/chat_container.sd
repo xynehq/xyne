@@ -251,4 +251,13 @@ schema chat_container {
             expression: bm25(name_fuzzy)
         }
     }
+
+    rank-profile global_sorted {
+        first-phase {
+            expression: attribute(createdAt)
+        }
+        global-phase {
+            rerank-count: 1000
+        }
+    }
 }

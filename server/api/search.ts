@@ -330,17 +330,13 @@ export const SearchApi = async (c:Context) => {
         }
         const channelIds =
           agent.docIds
-            ?.map((docId) => {
-              if (docId.startsWith("slack-channel-")) {
-                // Extract the part after "slack-channel-"
-                const channelPart = docId.replace("slack-channel-", "")
-                // The channel ID is the first segment before the first "-"
-                const channelId = channelPart.split("-")[0]
-                return channelId
-              }
-              return ""
-            })
-            .filter((id) => id !== "") ?? []
+            ?.filter(
+              (doc) =>
+                doc.app === Apps.Slack &&
+                doc.entity === SlackEntity.Channel &&
+                doc.docId,
+            )
+            .map((doc) => doc.docId) ?? []
 
         loggerWithChild({ email: email }).info(
           `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`,

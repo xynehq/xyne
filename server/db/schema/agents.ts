@@ -55,9 +55,18 @@ export const agents = pgTable(
   }),
 )
 
+export const fetchedDataSourceSchema = z.object({
+  docId: z.string(),
+  name: z.string(),
+  app: z.string(),
+  entity: z.string(),
+})
+
+export type FetchedDataSource = z.infer<typeof fetchedDataSourceSchema>
+
 export const insertAgentSchema = createInsertSchema(agents, {
   appIntegrations: z.array(z.string()).optional().default([]),
-  docIds: z.array(z.string()).optional().default([]),
+  docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 }).omit({
   id: true,
   createdAt: true,
@@ -68,7 +77,7 @@ export type InsertAgent = z.infer<typeof insertAgentSchema>
 
 export const selectAgentSchema = createSelectSchema(agents, {
   appIntegrations: z.array(z.string()).optional().default([]),
-  docIds: z.array(z.string()).optional().default([]),
+  docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 
