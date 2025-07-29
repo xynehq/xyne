@@ -1445,7 +1445,8 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, previousClassification)
+    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications)
+
   }
 
   const baseMessage = {

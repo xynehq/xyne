@@ -190,7 +190,7 @@ import {
 import {
   getRecentChainBreakClassifications,
   formatChainBreaksForPrompt,
-} from "@/utils/chainUtils"
+} from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
   getAttachmentsByMessageId,
@@ -4084,7 +4084,8 @@ export const MessageApi = async (c: Context) => {
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
-                filteredMessages[filteredMessages.length - 1]
+                filteredMessages[filteredMessages.length - 2]
+                console.log('Logged message', filteredMessages)
               if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
                 try {
                   const parsedClassification =
@@ -4100,7 +4101,7 @@ export const MessageApi = async (c: Context) => {
             }
 
             // Get chain break classifications for context
-            const chainBreakClassifications = getRecentChainBreakClassifications(filteredMessages)
+            const chainBreakClassifications = getRecentChainBreakClassifications(messages)
             const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
             
             loggerWithChild({ email: email }).info(
@@ -5278,6 +5279,14 @@ export const MessageRetryApi = async (c: Context) => {
               }
             }
 
+            // Add chain break analysis for retry context
+            const messagesForChainBreak = isUserMessage 
+            ? [...conversation, originalMessage]  // Include the user message being retried
+            : conversation  // For assistant retry, conversation already has the right scope
+          
+            const chainBreakClassifications = getRecentChainBreakClassifications(messagesForChainBreak)
+            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+
             const searchSpan = streamSpan.startSpan("conversation_search")
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
@@ -5296,6 +5305,7 @@ export const MessageRetryApi = async (c: Context) => {
                 },
                 undefined,
                 previousClassification,
+                formattedChainBreaks,
               )
             let currentAnswer = ""
             let answer = ""
