@@ -12,7 +12,7 @@ import {
 import { toast } from "@/hooks/use-toast"
 
 interface PlotlyChartProps {
-  plotlyConfig: string | object
+  plotlyConfig: any
   title?: string
   className?: string
 }
@@ -26,7 +26,7 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({
   const [containerHeight, setContainerHeight] = useState(400)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [config, setConfig] = useState<any>(null)
+  const [config, setConfig] = useState<any | null>(null)
   const plotRef = useRef<any>(null)
 
   // Parse the Plotly configuration
@@ -35,50 +35,70 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({
       setIsLoading(true)
       setError(null)
 
-      let parsedConfig
+      let parsedData
       if (typeof plotlyConfig === "string") {
-        parsedConfig = JSON.parse(plotlyConfig)
+        parsedData = JSON.parse(plotlyConfig)
       } else {
-        parsedConfig = plotlyConfig
+        parsedData = plotlyConfig
       }
 
-      // Validate the config structure
-      if (!parsedConfig.data || !Array.isArray(parsedConfig.data)) {
-        throw new Error(
-          "Invalid Plotly configuration: missing or invalid data array",
-        )
+      let chartConfigs = []
+      if (Array.isArray(parsedData)) {
+        // Handle old format for backward compatibility
+        chartConfigs = parsedData
+      } else if (
+        typeof parsedData === "object" &&
+        parsedData !== null &&
+        Array.isArray(parsedData.charts)
+      ) {
+        // Handle new format
+        chartConfigs = parsedData.charts
+      } else if (typeof parsedData === "object" && parsedData !== null) {
+        // Handle single chart object
+        chartConfigs = [parsedData]
+      } else {
+        throw new Error("Invalid Plotly configuration format")
       }
 
-      // Set default responsive layout if not provided
-      const defaultLayout = {
-        autosize: true,
-        margin: { l: 50, r: 50, t: 50, b: 50 },
-        font: { family: "Inter, system-ui, sans-serif" },
-        ...parsedConfig.layout,
+      if (chartConfigs.length > 0) {
+        const firstConfig = chartConfigs[0]
+        if (!firstConfig.data || !Array.isArray(firstConfig.data)) {
+          throw new Error(
+            "Invalid Plotly configuration: missing or invalid data array",
+          )
+        }
+
+        const defaultLayout = {
+          autosize: true,
+          margin: { l: 50, r: 50, t: 50, b: 50 },
+          font: { family: "Inter, system-ui, sans-serif" },
+          ...firstConfig.layout,
+        }
+
+        const defaultConfig = {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: [
+            "pan2d",
+            "lasso2d",
+            "select2d",
+            "autoScale2d",
+            "hoverClosestCartesian",
+            "hoverCompareCartesian",
+          ],
+          ...firstConfig.config,
+        }
+
+        setConfig({
+          data: firstConfig.data,
+          layout: defaultLayout,
+          config: defaultConfig,
+        })
+      } else {
+        // Handle case where no charts are returned
+        setConfig(null)
       }
-
-      // Set default config options
-      const defaultConfig = {
-        responsive: true,
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: [
-          "pan2d",
-          "lasso2d",
-          "select2d",
-          "autoScale2d",
-          "hoverClosestCartesian",
-          "hoverCompareCartesian",
-        ],
-        ...parsedConfig.config,
-      }
-
-      setConfig({
-        data: parsedConfig.data,
-        layout: defaultLayout,
-        config: defaultConfig,
-      })
-
       setIsLoading(false)
     } catch (err) {
       console.error("Error parsing Plotly configuration:", err)
@@ -270,7 +290,7 @@ export const PlotlyChart: React.FC<PlotlyChartProps> = ({
       className={`relative group border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden ${className}`}
     >
       <PlotlyControls />
-      {title && (
+      {title && !config.layout?.title?.text && (
         <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
             {title}
