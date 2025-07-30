@@ -15,7 +15,6 @@ import {
   Clock,
   Bot,
   Search,
-  X,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { api } from "@/api"
