@@ -57,7 +57,8 @@ import {
   getMessageCountsByChats,
   getMessageFeedbackStats,
 } from "@/db/message"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
+import { nanoid } from "nanoid"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -3563,7 +3564,7 @@ export const MessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -4848,7 +4849,7 @@ export const MessageRetryApi = async (c: Context) => {
       fileIds = fileIdsFromDB
       const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
       const extractedInfo = isMsgWithContext
-        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        ? await extractFileIdsFromMessage(prevUserMessage.message, email)
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
@@ -5761,9 +5762,17 @@ export const MessageFeedbackApi = async (c: Context) => {
       throw new HTTPException(403, { message: "Forbidden" })
     }
 
+    // Convert legacy feedback to new JSON format for consistency
+    const feedbackData = feedback
+      ? {
+          type: feedback,
+          feedback: [""], // Empty array for legacy feedback
+        }
+      : null
+
     await updateMessageByExternalId(db, messageId, {
-      feedback: feedback, // feedback can be 'like', 'dislike', or null
-      updatedAt: new Date(), // Update the updatedAt timestamp
+      feedback: feedbackData,
+      updatedAt: new Date(),
     })
 
     loggerWithChild({ email: email }).info(
@@ -5783,6 +5792,174 @@ export const MessageFeedbackApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: "Could not submit feedback",
+    })
+  }
+}
+
+// New Enhanced Feedback API
+export const EnhancedMessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const requestData = await c.req.valid("json")
+    const { messageId, type, customFeedback, selectedOptions, shareChat } =
+      requestData as {
+        messageId: string
+        type: "like" | "dislike"
+        customFeedback?: string
+        selectedOptions?: string[]
+        shareChat?: boolean
+      }
+
+    // Debug logging
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback request received`,
+      {
+        messageId,
+        type,
+        shareChat,
+        customFeedback: !!customFeedback,
+        selectedOptionsCount: selectedOptions?.length || 0,
+      },
+    )
+
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (
+      message.email !== email ||
+      message.workspaceExternalId !== workspaceId
+    ) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    // Get user and chat info for potential share token generation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user } = userAndWorkspace
+
+    const chat = await getChatByExternalId(db, message.chatExternalId)
+    if (!chat) {
+      throw new HTTPException(404, { message: "Chat not found" })
+    }
+
+    // Create enhanced feedback data
+    const feedbackData: any = {
+      type,
+      feedback: [],
+      share_chat: null,
+    }
+
+    // Add custom feedback as first element if provided
+    if (customFeedback && customFeedback.trim()) {
+      feedbackData.feedback.push(customFeedback.trim())
+    }
+
+    // Add selected predefined options
+    if (selectedOptions && selectedOptions.length > 0) {
+      feedbackData.feedback.push(...selectedOptions)
+    }
+
+    // Ensure at least one feedback item
+    if (feedbackData.feedback.length === 0) {
+      feedbackData.feedback.push("") // Empty string placeholder
+    }
+
+    // Generate share token if user opted to share
+    if (shareChat) {
+      try {
+        // Check if share already exists for this chat+message combination
+        const existingShare = await db
+          .select()
+          .from(sharedChats)
+          .where(
+            and(
+              eq(sharedChats.chatId, chat.id),
+              eq(sharedChats.messageId, message.id),
+            ),
+          )
+          .limit(1)
+
+        let shareToken: string
+
+        if (existingShare.length > 0) {
+          // If it exists but is deleted, reactivate it
+          if (existingShare[0].deletedAt) {
+            await db
+              .update(sharedChats)
+              .set({
+                deletedAt: null,
+                updatedAt: new Date(),
+              })
+              .where(eq(sharedChats.id, existingShare[0].id))
+          }
+          shareToken = existingShare[0].shareToken
+        } else {
+          // Generate unique share token
+          shareToken = nanoid(15)
+
+          // Create shared chat
+          await db.insert(sharedChats).values({
+            chatId: chat.id,
+            messageId: message.id,
+            workspaceId: chat.workspaceId,
+            userId: user.id,
+            shareToken,
+            title: chat.title,
+          })
+        }
+
+        feedbackData.share_chat = shareToken
+
+        loggerWithChild({ email: email }).info(
+          `Share token generated for feedback submission: ${shareToken}`,
+          { messageId, chatId: chat.externalId },
+        )
+      } catch (shareError) {
+        // Log error but don't fail the feedback submission
+        loggerWithChild({ email: email }).error(
+          shareError,
+          `Failed to generate share token for message ${messageId}, continuing with feedback submission`,
+        )
+        // Set share_chat to null if token generation fails
+        feedbackData.share_chat = null
+      }
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedbackData, // Store enhanced feedback with share token
+      updatedAt: new Date(),
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback '${type}' submitted for message ${messageId} by user ${email}`,
+      { feedbackData, shareRequested: shareChat },
+    )
+
+    likeDislikeCount.inc({ email: email, feedback: type })
+    return c.json({
+      success: true,
+      messageId,
+      feedbackData,
+      shareToken: feedbackData.share_chat,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+
+    loggerWithChild({ email: email }).error(
+      error,
+      `Enhanced Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit enhanced feedback",
     })
   }
 }

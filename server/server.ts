@@ -57,6 +57,9 @@ import {
   GetAdminUsers,
   GetUserAgentLeaderboard,
   GetAgentAnalysis,
+  GetAgentFeedbackMessages,
+  GetAgentUserFeedbackMessages,
+  GetAllUserFeedbackMessages,
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
@@ -108,6 +111,7 @@ import {
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
+  EnhancedMessageFeedbackApi,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
@@ -155,7 +159,10 @@ import {
   handleThumbnailServe,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
-import { messageFeedbackSchema } from "@/api/chat/types"
+import {
+  messageFeedbackSchema,
+  enhancedMessageFeedbackSchema,
+} from "@/api/chat/types"
 
 import {
   isSlackEnabled,
@@ -696,6 +703,11 @@ export const AppRoutes = app
     zValidator("json", messageFeedbackSchema),
     MessageFeedbackApi,
   )
+  .post(
+    "/message/feedback/enhanced",
+    zValidator("json", enhancedMessageFeedbackSchema),
+    EnhancedMessageFeedbackApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
@@ -821,6 +833,11 @@ export const AppRoutes = app
   .get("/agents", GetAdminAgents)
   .get("/users", GetAdminUsers)
   .get(
+    "/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
+  .get(
     "/users/:userId/agent-leaderboard",
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
@@ -829,6 +846,21 @@ export const AppRoutes = app
     "/agents/:agentId/analysis",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentAnalysis,
+  )
+  .get(
+    "/agents/:agentId/feedback",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentFeedbackMessages,
+  )
+  .get(
+    "/agents/:agentId/user-feedback/:userId",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentUserFeedbackMessages,
+  )
+  .get(
+    "/admin/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
   )
 
 // Vespa Proxy Routes (for production server proxying)

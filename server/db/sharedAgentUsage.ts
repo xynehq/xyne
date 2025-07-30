@@ -18,6 +18,7 @@ import {
   count,
   inArray,
   isNull,
+  isNotNull,
   desc,
   gte,
   lte,
@@ -219,8 +220,8 @@ export async function getFeedbackStatsByAgents({
   const result = await db
     .select({
       agentId: chats.agentId,
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -303,8 +304,8 @@ export async function getAgentUsageByUsers({
       agentId: chats.agentId,
       userId: users.id,
       messageCount: count(messages.id),
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -417,8 +418,8 @@ export async function getUserAgentLeaderboard({
     .select({
       agentId: agents.externalId,
       messageCount: count(messages.id),
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -581,8 +582,8 @@ export async function getAgentAnalysis({
     .select({
       userId: users.id,
       messageCount: count(messages.id),
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -654,4 +655,241 @@ export async function getAgentAnalysis({
     createdAt: agent.createdAt.toISOString(),
     userLeaderboard,
   }
+}
+
+/**
+ * Get feedback messages for a specific user and agent
+ */
+export async function getAgentUserFeedbackMessages({
+  db,
+  agentId,
+  userId,
+  workspaceExternalId,
+}: {
+  db: TxnOrClient
+  agentId: string
+  userId: number
+  workspaceExternalId?: string // Optional for admin cross-workspace view
+}): Promise<
+  Array<{
+    messageId: string
+    chatExternalId: string
+    type: "like" | "dislike"
+    feedbackText: string[]
+    timestamp: string
+    shareToken?: string
+    messageContent: string // User's original message/query
+  }>
+> {
+  const conditions = [
+    eq(chats.agentId, agentId),
+    eq(chats.userId, userId),
+    isNull(chats.deletedAt),
+    isNull(messages.deletedAt),
+    sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
+    eq(messages.messageRole, MessageRole.Assistant), // Only get feedback from assistant messages
+  ]
+
+  if (workspaceExternalId) {
+    conditions.push(eq(users.workspaceExternalId, workspaceExternalId))
+  }
+
+  const feedbackMessages = await db
+    .select({
+      messageId: messages.externalId,
+      chatExternalId: messages.chatExternalId,
+      feedback: messages.feedback,
+      updatedAt: messages.updatedAt,
+      messageContent: sql<string>`(
+        SELECT m2.message 
+        FROM messages m2 
+        WHERE m2.chat_id = ${messages.chatId} 
+          AND m2.message_role = 'user' 
+          AND m2.created_at < ${messages.createdAt}
+          AND m2.deleted_at IS NULL
+        ORDER BY m2.created_at DESC 
+        LIMIT 1
+      )`, // Get the most recent user message before this assistant message
+      shareToken: sql<string | null>`COALESCE(
+        (SELECT sc.share_token FROM shared_chats sc WHERE sc.chat_id = ${chats.id} LIMIT 1),
+        NULL
+      )`,
+    })
+    .from(messages)
+    .innerJoin(chats, eq(messages.chatId, chats.id))
+    .innerJoin(users, eq(chats.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(messages.updatedAt))
+
+  // Process feedback messages
+  return feedbackMessages.map((msg) => {
+    const feedbackData = msg.feedback as any
+    return {
+      messageId: msg.messageId,
+      chatExternalId: msg.chatExternalId,
+      type: (feedbackData?.type || "like") as "like" | "dislike",
+      feedbackText: Array.isArray(feedbackData?.feedback)
+        ? feedbackData.feedback.filter((text: string) => text && text.trim())
+        : [""],
+      timestamp: msg.updatedAt?.toISOString() || new Date().toISOString(),
+      shareToken: msg.shareToken || undefined,
+      messageContent: msg.messageContent || "", // Include the user's message content
+    }
+  })
+}
+
+/**
+ * Get feedback messages for a specific agent
+ */
+export async function getAgentFeedbackMessages({
+  db,
+  agentId,
+  workspaceExternalId,
+  timeRange,
+}: {
+  db: TxnOrClient
+  agentId: string
+  workspaceExternalId?: string // Optional for admin cross-workspace view
+  timeRange?: { from?: string; to?: string }
+}): Promise<
+  Array<{
+    messageId: string
+    chatExternalId: string
+    userEmail: string
+    userName: string
+    type: "like" | "dislike"
+    feedbackText: string[]
+    timestamp: string
+    shareToken?: string | null
+  }>
+> {
+  const conditions = [
+    eq(chats.agentId, agentId),
+    isNull(chats.deletedAt),
+    isNull(messages.deletedAt),
+    sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
+  ]
+
+  if (timeRange?.from) {
+    conditions.push(gte(messages.createdAt, new Date(timeRange.from)))
+  }
+  if (timeRange?.to) {
+    conditions.push(lte(messages.createdAt, new Date(timeRange.to)))
+  }
+
+  if (workspaceExternalId) {
+    conditions.push(eq(users.workspaceExternalId, workspaceExternalId))
+  }
+
+  const feedbackMessages = await db
+    .select({
+      messageId: messages.externalId,
+      chatExternalId: chats.externalId,
+      userEmail: users.email,
+      userName: users.name,
+      feedback: messages.feedback,
+      updatedAt: messages.updatedAt,
+    })
+    .from(messages)
+    .innerJoin(chats, eq(messages.chatId, chats.id))
+    .innerJoin(users, eq(chats.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(messages.updatedAt))
+
+  // Process and return the feedback messages
+  return feedbackMessages.map((msg) => {
+    const feedbackData = msg.feedback as any
+    return {
+      messageId: msg.messageId,
+      chatExternalId: msg.chatExternalId,
+      userEmail: msg.userEmail,
+      userName: msg.userName || "Unknown User",
+      type: (feedbackData?.type || "like") as "like" | "dislike",
+      feedbackText: Array.isArray(feedbackData?.feedback)
+        ? feedbackData.feedback.filter((text: string) => text && text.trim())
+        : [],
+      timestamp: msg.updatedAt?.toISOString() || new Date().toISOString(),
+      shareToken: feedbackData?.share_chat || null,
+    }
+  })
+}
+
+/**
+ * Get all feedback messages for a specific user across all agents (admin use)
+ */
+export async function getAllUserFeedbackMessages({
+  db,
+  userId,
+}: {
+  db: TxnOrClient
+  userId: number
+}): Promise<
+  Array<{
+    messageId: number
+    chatExternalId: string
+    agentId: string | null // Can be null for normal chats
+    agentName: string
+    userEmail: string
+    userName: string
+    type: "like" | "dislike"
+    feedbackText: string[]
+    timestamp: string
+    shareToken: string | null
+    messageContent: string // User's original message/query
+  }>
+> {
+  const feedbackMessages = await db
+    .select({
+      messageId: messages.id,
+      chatExternalId: chats.externalId,
+      agentId: chats.agentId,
+      agentName: agents.name,
+      userEmail: users.email,
+      userName: users.name,
+      feedback: messages.feedback,
+      updatedAt: messages.updatedAt,
+      messageContent: sql<string>`(
+        SELECT m2.message 
+        FROM messages m2 
+        WHERE m2.chat_id = ${messages.chatId} 
+          AND m2.message_role = 'user' 
+          AND m2.created_at < ${messages.createdAt}
+          AND m2.deleted_at IS NULL
+        ORDER BY m2.created_at DESC 
+        LIMIT 1
+      )`, // Get the most recent user message before this assistant message
+    })
+    .from(messages)
+    .innerJoin(chats, eq(messages.chatId, chats.id))
+    .innerJoin(users, eq(chats.userId, users.id))
+    .leftJoin(agents, eq(chats.agentId, agents.externalId)) // Changed to leftJoin to include non-agent chats
+    .where(
+      and(
+        eq(users.id, userId),
+        isNotNull(messages.feedback),
+        sql`${messages.feedback}->>'type' IS NOT NULL`,
+        eq(messages.messageRole, MessageRole.Assistant), // Only get feedback from assistant messages
+      ),
+    )
+    .orderBy(desc(messages.updatedAt))
+
+  // Process and return the feedback messages
+  return feedbackMessages.map((msg: any) => {
+    const feedbackData = msg.feedback as any
+    return {
+      messageId: msg.messageId,
+      chatExternalId: msg.chatExternalId,
+      agentId: msg.agentId || null, // Can be null for normal chats
+      agentName: msg.agentName || null, // null for non-agent chats, don't show anything
+      userEmail: msg.userEmail,
+      userName: msg.userName || "Unknown User",
+      type: (feedbackData?.type || "like") as "like" | "dislike",
+      feedbackText: Array.isArray(feedbackData?.feedback)
+        ? feedbackData.feedback.filter((text: string) => text && text.trim())
+        : [],
+      timestamp: msg.updatedAt?.toISOString() || new Date().toISOString(),
+      shareToken: feedbackData?.share_chat || null,
+      messageContent: msg.messageContent || "", // Include the user's message content
+    }
+  })
 }
