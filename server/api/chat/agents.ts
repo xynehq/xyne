@@ -852,36 +852,96 @@ export const MessageWithToolsApi = async (c: Context) => {
           // If an agent is selected and has configured MCP tools, use those instead of user selection
           let effectiveToolsList = toolsList
           if (agentForDb && agentForDb.mcpTools && Array.isArray(agentForDb.mcpTools) && agentForDb.mcpTools.length > 0) {
-            effectiveToolsList = agentForDb.mcpTools as Array<{
+            // Validate and filter agent's MCP tools to ensure connectors exist
+            const validMcpTools: Array<{
               connectorId: string
               tools: string[]
-            }>
+            }> = []
+            
+            for (const mcpTool of agentForDb.mcpTools as Array<{
+              connectorId: string
+              tools: string[]
+            }>) {
+              try {
+                const connector = await getConnectorByExternalId(
+                  db,
+                  mcpTool.connectorId,
+                  user.id,
+                )
+                if (connector) {
+                  validMcpTools.push(mcpTool)
+                } else {
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Skipping unavailable connector ${mcpTool.connectorId} from agent configuration`,
+                  })
+                }
+              } catch (error) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Skipping invalid connector ${mcpTool.connectorId} from agent configuration`,
+                })
+              }
+            }
+
+            if (validMcpTools.length > 0) {
+              effectiveToolsList = validMcpTools
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Using agent's configured MCP tools (${validMcpTools.length} of ${agentForDb.mcpTools.length} connectors available)...`,
+              })
+              
+              // Log which specific tools are being used
+              for (const mcpTool of effectiveToolsList) {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Connector ${mcpTool.connectorId}: ${mcpTool.tools.length} tools (${mcpTool.tools.join(', ')})`,
+                })
+              }
+            } else {
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `No valid MCP connectors found in agent configuration. Falling back to user-selected tools.`,
+              })
+              effectiveToolsList = toolsList
+            }
+          } else {
             await logAndStreamReasoning({
               type: AgentReasoningStepType.LogMessage,
-              message: `Using agent's configured MCP tools...`,
+              message: `Using user-selected MCP tools...`,
             })
           }
 
           if (effectiveToolsList && effectiveToolsList.length > 0) {
             for (const item of effectiveToolsList) {
               const { connectorId, tools: toolExternalIds } = item
-              // Fetch connector info and create client
-              const parsedConnectorId = parseInt(connectorId, 10)
-              if (isNaN(parsedConnectorId)) {
-                loggerWithChild({ email: sub }).warn(
-                  `Invalid non-numeric connectorId: ${connectorId}`,
+              // Fetch connector info and create client using external ID
+              let connector
+              try {
+                connector = await getConnectorByExternalId(
+                  db,
+                  connectorId,
+                  user.id,
                 )
+              } catch (error) {
+                loggerWithChild({ email: sub }).warn(
+                  `Failed to fetch connector with externalId: ${connectorId}. Error: ${getErrorMessage(error)}`,
+                )
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Skipping unavailable connector: ${connectorId}`,
+                })
                 continue
               }
-              const connector = await getConnectorById(
-                db,
-                parsedConnectorId,
-                user.id,
-              )
+              
               if (!connector) {
                 loggerWithChild({ email: sub }).warn(
-                  `Connector not found or access denied for connectorId: ${connectorId}`,
+                  `Connector not found or access denied for connectorId (externalId): ${connectorId}`,
                 )
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Connector ${connectorId} is not available or accessible`,
+                })
                 continue
               }
               const client = new Client({
@@ -1246,6 +1306,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               loopWarningPrompt,
               { internal: xyneTools },
               isDebugMode,
+              // Pass information about agent's configured MCP tools
+              !!(agentForDb && agentForDb.mcpTools && Array.isArray(agentForDb.mcpTools) && agentForDb.mcpTools.length > 0),
             )
 
             if (

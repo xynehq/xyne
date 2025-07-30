@@ -833,6 +833,7 @@ export const SearchQueryToolContextPrompt = (
     slack?: Record<string, ToolDefinition>
   },
   isDebugMode?: boolean,
+  hasAgentConfiguredMcpTools?: boolean,
 ): string => {
   const availableApps = agentContext?.prompt.length
     ? `${agentContext.sources.map((v: string) => (v.startsWith("ds-") || v.startsWith("ds_") ? Apps.DataSource : v)).join(", ")}`
@@ -871,12 +872,24 @@ export const SearchQueryToolContextPrompt = (
     You must strictly follow the guidelines provided in the **Agent Context** below.
     Your **tool selection** decisions must align with the **Agent Context**.
     
+    ${
+      hasAgentConfiguredMcpTools
+        ? `**IMPORTANT - Tool Restrictions**: This agent has been configured with specific MCP tools. You can ONLY use the tools that are listed in the **MCP Tool Context** section below. Do NOT attempt to use any tools that are not explicitly listed in the available tools. If you try to use a tool that isn't configured for this agent, the operation will fail.`
+        : ""
+    }
+    
     **Agent Context**:
     ${agentContext.prompt}`
         : `You are an enterprise-grade, permission-aware Retrieval-Augmented Generation (RAG) system.
     You have access to various tools to assist with user queries, such as tools for searching documents, emails, calendar events, and user profiles.
     Your task is to select the most appropriate tool(s) based on the user's query and the surrounding context.
-    Always choose tools that maximize relevance, precision, and user value.`
+    Always choose tools that maximize relevance, precision, and user value.
+    
+    ${
+      hasAgentConfiguredMcpTools
+        ? `**IMPORTANT - Tool Restrictions**: This agent has been configured with specific MCP tools. You can ONLY use the tools that are listed in the **MCP Tool Context** section below. Do NOT attempt to use any tools that are not explicitly listed in the available tools.`
+        : ""
+    }`
     }
     ---
     **User Context:**  
@@ -892,8 +905,17 @@ export const SearchQueryToolContextPrompt = (
     **Tool Calling Principles:**   
     You have tools at your disposal to solve tasks. Follow these principles:  
     1. **Schema Compliance**: Always follow tool call schemas exactly and provide all required parameters.
-    2. **Tool Availability**: Only call tools that are explicitly provided in the tool context.
+    2. **Tool Availability**: Only call tools that are explicitly provided in the tool context.${
+      hasAgentConfiguredMcpTools
+        ? " **CRITICAL**: This agent has pre-configured MCP tools - you cannot use any tools not listed in the MCP Tool Context section."
+        : ""
+    }
     3. **Tool Selection**: Choose the most appropriate tool based on the user's query and available context.
+    ${
+      hasAgentConfiguredMcpTools
+        ? "4. **Agent Tool Restrictions**: You are restricted to using only the MCP tools that were selected during this agent's creation. Do not attempt to use any other tools."
+        : ""
+    }
     
     **Smart Tool Usage Strategy:**
     
