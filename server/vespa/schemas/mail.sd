@@ -184,8 +184,17 @@ schema mail {
         expression: (0.8 * (nativeRank(from))+ 0.4 * (nativeRank(to)) +  0.2 * (nativeRank(cc) + nativeRank(bcc)))
       }
 
+      function simplePeopleRank() {
+        expression: nativeRank(from) + nativeRank(to) +  nativeRank(cc) + nativeRank(bcc)
+      }
+
       function combined_nativeRank() {
-        expression: (nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+        expression {
+          if(query(is_intent_search) == 1.0,
+            simplePeopleRank,
+            ((nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount))
+          )
+        }
       }
 
       function chunk_scores() {

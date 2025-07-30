@@ -9,6 +9,7 @@ import {
   MailEntity,
   SlackEntity,
 } from "@/search/types"
+import config from "@/config"
 // Interface for structured agent prompt data
 interface AgentPromptData {
   name: string
@@ -971,7 +972,7 @@ export const agentSearchQueryPrompt = (
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     3. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -995,13 +996,49 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    6. Extract the main intent or search keywords from the query to create a "filterQuery" field:
+    6. Extract email addresses and main intent from the query:
       
-      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
+      **CRITICAL RULES for Email Intent Extraction:**
+        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
+          - Specific subjects: "emails with subject 'meeting'"
+        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
+        - Extract from phrases like:
+          - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "messages from [user@company.com]" → add [user@company.com] to "from" array  
+          - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
+          - "sent to [team@company.com]" → add [team@company.com] to "to" array
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
+        
+        For other apps/entities:
+        - Currently no specific intent fields defined
+        - Return empty intent object: {}
+
+      **FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
       - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
-      - Person names (e.g., "John", "Sarah", "marketing team")
+      - Person names (e.g., "John", "Sarah", "marketing team") - but NOT email addresses
       - Specific topics or subjects (e.g., "contract", "invoice", "receipt", "proposal")
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
@@ -1013,6 +1050,8 @@ export const agentSearchQueryPrompt = (
       - Quantity terms: "5", "10", "most", "all", "some", "few"
       - Generic item types: "emails", "files", "documents", "meetings", "orders" (when used generically)
       - Structural words: "summary", "details", "info", "information"
+      - Email addresses that have been extracted for metadata filtering
+      - Prepositions related to email metadata: "from", "to", "cc", "bcc"
       
       Step 3: Apply the rule:
       - IF specific content keywords remain after exclusion → set filterQuery to those keywords
@@ -1058,8 +1097,8 @@ export const agentSearchQueryPrompt = (
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>" or null,
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
@@ -1078,8 +1117,8 @@ export const agentSearchQueryPrompt = (
             "app": "<app>",
             "entity": "<entity>",
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
           }
         }
 
@@ -1089,6 +1128,8 @@ export const agentSearchQueryPrompt = (
       - Examples Queries: 
         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+        - "emails from john@company.com" (has 'emails' = gmail, extract email for metadata)
+        - "messages to support@company.com" (has 'emails' = gmail, extract email for metadata)
 
        - **JSON Structure**:
         {
@@ -1097,10 +1138,10 @@ export const agentSearchQueryPrompt = (
             "app": "<app>",
             "entity": "<entity>",
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
             "sortDirection": <boolean or null>,
-            "filterQuery": "<extracted keywords>"
+            "filterQuery": "<extracted keywords>",
           }
         }
 
@@ -1158,9 +1199,10 @@ export const agentSearchQueryPrompt = (
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
+           "sortDirection": "<'asc' | 'desc' | null>",
+           "intent": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1168,6 +1210,7 @@ export const agentSearchQueryPrompt = (
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
+       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
@@ -1222,7 +1265,7 @@ export const agentSearchAgentPrompt = (
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
       - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1389,8 +1432,8 @@ export const agentSearchAgentPrompt = (
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
          }
        }

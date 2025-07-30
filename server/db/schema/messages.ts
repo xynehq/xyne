@@ -48,7 +48,11 @@ export const messages = pgTable(
     modelId: text("modelId").notNull(),
     email: text("email").notNull(),
     sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
+    imageCitations: jsonb("image_citations")
+      .notNull()
+      .default(sql`'[]' ::jsonb`),
     fileIds: jsonb("fileIds").notNull().default(sql`'[]'::jsonb`),
+    attachments: jsonb("attachments").notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),

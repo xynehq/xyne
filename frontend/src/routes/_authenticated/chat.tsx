@@ -75,7 +75,10 @@ mermaid.initialize({
 import {
   SelectPublicMessage,
   Citation,
+  ImageCitation,
   MessageFeedback,
+  AttachmentMetadata,
+  attachmentMetadataSchema,
   // Apps,
   // DriveEntity,
 } from "shared/types"
@@ -93,7 +96,12 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import {
+  fetchChats,
+  pageSize,
+  renameChat,
+  bookmarkChat,
+} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
@@ -109,11 +117,13 @@ import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
+import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
 import { ShareModal } from "@/components/ShareModal"
+import { AttachmentGallery } from "@/components/AttachmentGallery"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -228,6 +238,7 @@ type ParsedMessagePart =
         entity?: string
         pillType?: "citation" | "global"
         imgSrc?: string | null
+        wholeSheet?: boolean
       }
     }
   | { type: "link"; value: string }
@@ -251,8 +262,16 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity, pillType, imgSrc } =
-            part.value
+          const {
+            docId,
+            url,
+            title,
+            app,
+            entity,
+            pillType,
+            imgSrc,
+            wholeSheet,
+          } = part.value
 
           const referenceForPill: Reference = {
             id: docId,
@@ -265,6 +284,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
             // Include imgSrc if available, mapping it to photoLink for the Reference type.
             // The Pill component will need to be able to utilize this.
             ...(imgSrc && { photoLink: imgSrc }),
+            // Include wholeSheet if available
+            ...(wholeSheet !== undefined && { wholeSheet: wholeSheet }),
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
@@ -348,6 +369,7 @@ export const ChatPage = ({
     partial,
     thinking,
     sources,
+    imageCitations,
     citationMap,
     isStreaming,
     messageId: streamInfoMessageId,
@@ -377,6 +399,7 @@ export const ChatPage = ({
         resp: partial,
         thinking,
         sources,
+        imageCitations,
         citationMap,
         messageId: streamInfoMessageId,
         chatId,
@@ -564,6 +587,16 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
+    if (
+      currentChat &&
+      typeof currentChat.isBookmarked === "boolean" &&
+      currentChat.isBookmarked !== bookmark
+    ) {
+      setBookmark(currentChat.isBookmarked)
+    }
+  }, [currentChat, bookmark])
+
+  useEffect(() => {
     if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
@@ -580,6 +613,15 @@ export const ChatPage = ({
       setDots("")
     }
   }, [isStreaming, retryIsStreaming])
+
+  // Cleanup effect to clear failed messages from cache when chatId changes
+  useEffect(() => {
+    // Clear any cached data for null chatId when we have a real chatId
+    // This prevents old failed messages from appearing in new chats
+    if (chatId && chatId !== null) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+  }, [chatId, queryClient])
 
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
@@ -638,6 +680,7 @@ export const ChatPage = ({
       // Call handleSend, passing agentId from chatParams if available
       handleSend(
         messageToSend,
+        chatParams.metadata,
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
@@ -652,6 +695,7 @@ export const ChatPage = ({
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
+          metadata: undefined, // Clear metadata from URL after processing
         }),
         replace: true,
       })
@@ -662,11 +706,13 @@ export const ChatPage = ({
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
+    chatParams.metadata,
     router,
   ])
 
   const handleSend = async (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources: string[] = [],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
@@ -694,14 +740,41 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(
-      messageToSend,
-      selectedSources,
-      isReasoningActive,
-      isAgenticMode,
-      agentIdToUse,
-      toolsList,
-    )
+
+    try {
+      await startStream(
+        messageToSend,
+        selectedSources,
+        isReasoningActive,
+        isAgenticMode,
+        agentIdToUse,
+        toolsList,
+        metadata,
+      )
+    } catch (error) {
+      // If there's an error, clear the optimistically added message from cache
+      // This prevents failed messages from persisting when creating new chats
+      queryClient.setQueryData<any>(
+        ["chatHistory", queryKey],
+        (oldData: any) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            messages:
+              oldData.messages?.filter(
+                (msg: any) => msg.message !== messageToSend,
+              ) || [],
+          }
+        },
+      )
+
+      // Also clear any cached data for null chatId to prevent old failed messages from appearing
+      if (!chatId) {
+        queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+      }
+
+      throw error // Re-throw the error so it can be handled by the calling code
+    }
   }
 
   const handleFeedback = async (
@@ -753,15 +826,51 @@ export const ChatPage = ({
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
+  const bookmarkChatMutation = useMutation<
+    { chatId: string; isBookmarked: boolean },
+    Error,
+    { chatId: string; isBookmarked: boolean }
+  >({
+    mutationFn: async ({ chatId, isBookmarked }) => {
+      return await bookmarkChat(chatId, isBookmarked)
+    },
+    onMutate: async ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((chat) =>
+                chat.externalId === chatId
+                  ? { ...chat, isBookmarked: isBookmarked }
+                  : chat,
+              ),
+            ),
+          }
+        },
+      )
+    },
+    onSuccess: ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+      queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+      queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
+    },
+    onError: (error: Error, variables, context) => {
+      setBookmark(!variables.isBookmarked)
+      console.error("Failed to bookmark chat:", error)
+    },
+  })
+
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
+      bookmarkChatMutation.mutate({
+        chatId: chatId,
+        isBookmarked: !bookmark,
       })
-      setBookmark(!bookmark)
     }
   }
 
@@ -937,20 +1046,6 @@ export const ChatPage = ({
                     onClick={handleChatRename}
                   />
                 )}
-                <Bookmark
-                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-                  fill={
-                    bookmark
-                      ? theme === "dark"
-                        ? "#A0AEC0"
-                        : "#4A4F59"
-                      : "none"
-                  }
-                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
-                  onClick={handleBookmark}
-                  size={18}
-                />
                 {chatId && (
                   <Share2
                     stroke="#4A4F59"
@@ -959,13 +1054,23 @@ export const ChatPage = ({
                     onClick={() => handleShare()}
                   />
                 )}
-                <Ellipsis
-                  stroke="#4A4F59"
-                  className="dark:stroke-gray-400 ml-[20px]"
-                  size={18}
-                />
               </>
             )}
+            <Bookmark
+              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+              className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
+              onClick={handleBookmark}
+              size={18}
+            />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
@@ -995,6 +1100,7 @@ export const ChatPage = ({
                       responseDone={true}
                       thinking={message.thinking}
                       citations={message.sources}
+                      imageCitations={message.imageCitations || []}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
@@ -1022,6 +1128,7 @@ export const ChatPage = ({
                       onFeedback={!isSharedChat ? handleFeedback : undefined}
                       onShare={!isSharedChat ? handleShare : undefined}
                       disableRetry={disableRetry}
+                      attachments={message.attachments || []}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -1035,6 +1142,7 @@ export const ChatPage = ({
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
+                        imageCitations={message.imageCitation || []}
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
@@ -1064,6 +1172,7 @@ export const ChatPage = ({
                         onFeedback={!isSharedChat ? handleFeedback : undefined}
                         onShare={!isSharedChat ? handleShare : undefined}
                         disableRetry={disableRetry}
+                        attachments={message.attachments || []}
                       />
                     )}
                   </Fragment>
@@ -1073,6 +1182,7 @@ export const ChatPage = ({
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
+                  imageCitations={currentResp.imageCitations}
                   thinking={currentResp.thinking || ""}
                   isUser={false}
                   responseDone={false}
@@ -1105,6 +1215,7 @@ export const ChatPage = ({
                   onFeedback={!isSharedChat ? handleFeedback : undefined}
                   onShare={!isSharedChat ? handleShare : undefined}
                   disableRetry={disableRetry}
+                  attachments={[]}
                 />
               )}
             </div>
@@ -1200,10 +1311,7 @@ const MessageCitationList = ({
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
-                      <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
+                      <span className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] font-mono">
                         {index + 1}
                       </span>
                     </div>
@@ -1250,8 +1358,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
-                style={{ fontFamily: "JetBrains Mono" }}
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px] font-mono"
               >
                 {index + 1}
               </a>
@@ -1286,10 +1393,7 @@ const Sources = ({
   return showSources ? (
     <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
       <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
-        <span
-          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
-          style={{ fontFamily: "JetBrains Mono" }}
-        >
+        <span className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em] font-mono">
           SOURCES
         </span>
         <X
@@ -1306,7 +1410,192 @@ const Sources = ({
   ) : null
 }
 
+interface ImageCitationComponentProps {
+  citationKey: string
+  imageCitations?: ImageCitation[] | ImageCitation
+  className?: string
+}
+
+const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+  citationKey,
+  imageCitations,
+  className = "",
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  let imageCitation: ImageCitation | undefined
+  let imageSrc = ""
+
+  try {
+    if (Array.isArray(imageCitations)) {
+      imageCitation = imageCitations.find(
+        (ic) => ic.citationKey === citationKey,
+      )
+    } else if (
+      imageCitations &&
+      typeof imageCitations === "object" &&
+      "citationKey" in imageCitations
+    ) {
+      if ((imageCitations as ImageCitation).citationKey === citationKey) {
+        imageCitation = imageCitations as ImageCitation
+      }
+    }
+    if (!imageCitation) {
+      return null
+    }
+
+    // TODO: Fetch image data from API instead of using base64
+    imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+  } catch (error) {
+    console.error("Error fetching image data:", error)
+    return null
+  }
+
+  const ImageModal = () => {
+    const handleCloseModal = () => {
+      setIsModalOpen(false)
+    }
+
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          handleCloseModal()
+        }
+      }
+
+      if (isModalOpen) {
+        document.addEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "hidden"
+      }
+
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown)
+        document.body.style.overflow = "unset"
+      }
+    }, [isModalOpen])
+
+    if (!isModalOpen) return null
+
+    const Controls = () => {
+      const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+
+      const buttonBaseClass =
+        "bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200"
+
+      const handleResetAndCenter = () => {
+        resetTransform()
+        setTimeout(() => {
+          centerView()
+        }, 10)
+      }
+
+      return (
+        <div className="absolute top-4 left-4 flex space-x-2 z-20">
+          <button
+            onClick={() => zoomIn()}
+            className={buttonBaseClass}
+            title="Zoom In"
+          >
+            <ZoomIn size={20} />
+          </button>
+          <button
+            onClick={() => zoomOut()}
+            className={buttonBaseClass}
+            title="Zoom Out"
+          >
+            <ZoomOut size={20} />
+          </button>
+          <button
+            onClick={handleResetAndCenter}
+            className={buttonBaseClass}
+            title="Reset View"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center"
+        onClick={handleCloseModal}
+      >
+        <div
+          className="relative w-full h-full flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            onClick={handleCloseModal}
+            className="absolute top-4 right-4 bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200 z-20"
+            title="Close (ESC)"
+          >
+            <X size={20} />
+          </button>
+          <TransformWrapper
+            initialScale={1}
+            minScale={0.1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            centerZoomedOut={false}
+            doubleClick={{ disabled: false, step: 2 }}
+            wheel={{ step: 0.1 }}
+            panning={{ velocityDisabled: true }}
+          >
+            <Controls />
+            <TransformComponent
+              wrapperStyle={{
+                width: "100%",
+                height: "100%",
+                cursor: "grab",
+              }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt={`Image from document - ${citationKey}`}
+                className="max-w-none max-h-none object-contain"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  width: "auto",
+                  height: "auto",
+                }}
+                draggable={false}
+              />
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className={`block ${className}`}>
+        <img
+          src={imageSrc}
+          alt={`Image from document - ${citationKey}`}
+          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
+          style={{ maxHeight: "400px" }}
+          onClick={() => setIsModalOpen(true)}
+        />
+      </div>
+
+      {isModalOpen && <ImageModal />}
+    </>
+  )
+}
+
 export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 const renderMarkdownLink = ({
   node,
@@ -1721,9 +2010,8 @@ const Code = ({
   if (!isActuallyInline) {
     return (
       <pre
-        className="text-sm block w-full my-2"
+        className="text-sm block w-full my-2 font-mono"
         style={{
-          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
           whiteSpace: "pre-wrap",
           overflowWrap: "break-word",
           wordBreak: "break-word",
@@ -1765,6 +2053,7 @@ export const ChatMessage = ({
   responseDone,
   isRetrying,
   citations = [],
+  imageCitations = [],
   messageId,
   handleRetry,
   dots = "",
@@ -1778,6 +2067,7 @@ export const ChatMessage = ({
   onFeedback,
   onShare,
   disableRetry = false,
+  attachments = [],
 }: {
   message: string
   thinking: string
@@ -1785,6 +2075,7 @@ export const ChatMessage = ({
   responseDone: boolean
   isRetrying?: boolean
   citations?: Citation[]
+  imageCitations?: ImageCitation[]
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
@@ -1798,12 +2089,17 @@ export const ChatMessage = ({
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void
   onShare?: (messageId: string) => void
   disableRetry?: boolean
+  attachments?: AttachmentMetadata[]
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
   const processMessage = (text: string) => {
     text = splitGroupedCitationsWithSpaces(text)
+
+    text = text.replace(textToImageCitationIndex, (match, citationKey) => {
+      return `![image-citation:${citationKey}](image-citation:${citationKey})`
+    })
 
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
@@ -1821,224 +2117,223 @@ export const ChatMessage = ({
     }
   }
   return (
-    <div
-      className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
-    >
-      {isUser ? (
-        <div
-          className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
-          dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
-        />
-      ) : (
-        <div
-          className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
-        >
-          <div className="flex flex-row w-full max-w-full min-w-0">
-            <img
-              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={logo}
-            />
-            <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
-              {thinking && (
-                <>
-                  <EnhancedReasoning
-                    content={thinking}
-                    isStreaming={!responseDone}
-                    className="mb-4"
-                    citations={citations}
-                    citationMap={citationMap}
-                  />
-                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
-                    <MarkdownPreview
-                      wrapperElement={{
-                        "data-color-mode": theme,
-                      }}
-                      style={{
-                        padding: 0,
-                        backgroundColor: "transparent",
-                        color: theme === "dark" ? "#A0AEC0" : "#627384",
-                        maxWidth: "100%",
-                        overflowWrap: "break-word",
-                        wordBreak: "break-word",
-                        minWidth: 0,
-                      }}
-                      components={{
-                        a: renderMarkdownLink,
-                        code: Code,
-                        ...createTableComponents(), // Use extracted table components
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-              {message === "" && (!responseDone || isRetrying) ? (
-                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                  {`${THINKING_PLACEHOLDER}${dots}`}
-                </div>
-              ) : message !== "" ? (
-                <MarkdownPreview
-                  source={processMessage(message)}
-                  wrapperElement={{
-                    "data-color-mode": theme,
-                  }}
-                  style={{
-                    padding: 0,
-                    backgroundColor: "transparent",
-                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                    maxWidth: "100%",
-                    overflowWrap: "break-word",
-                    wordBreak: "break-word",
-                    minWidth: 0,
-                  }}
-                  components={{
-                    a: renderMarkdownLink,
-                    code: Code,
-                    ...createTableComponents(), // Use extracted table components
-                    h1: ({ node, ...props }) => (
-                      <h1
-                        style={{ fontSize: "1.6em" }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h2: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.2em" }} {...props} />
-                    ),
-                    h3: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1em" }} {...props} />
-                    ),
-                    h4: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.8em" }} {...props} />
-                    ),
-                    h5: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.7em" }} {...props} />
-                    ),
-                    h6: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.68em" }} {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul
-                        style={{
-                          listStyleType: "disc",
-                          paddingLeft: "1.5rem",
-                          marginBottom: "1rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                    ol: ({ node, ...props }) => (
-                      <ol
-                        style={{
-                          listStyleType: "decimal",
-                          paddingLeft: "1.5rem",
-                          marginBottom: "1rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                    li: ({ node, ...props }) => (
-                      <li
-                        style={{
-                          marginBottom: "0.25rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                  }}
-                />
-              ) : null}
-            </div>
-          </div>
-          {responseDone && !isRetrying && (
-            <div className="flex flex-col">
-              {isDebugMode && messageId && (
-                <button
-                  className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
-                  onClick={() => onShowRagTrace(messageId)}
-                >
-                  View RAG Trace #{messageId.slice(-6)}
-                </button>
-              )}
-              <div className="flex ml-[52px] mt-[12px] items-center">
-                <Copy
-                  size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
-                  className={`cursor-pointer`}
-                  onMouseDown={() => setIsCopied(true)}
-                  onMouseUp={() => setIsCopied(false)}
-                  onClick={() =>
-                    navigator.clipboard.writeText(processMessage(message))
-                  }
-                />
-                <img
-                  className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
-                  src={Retry}
-                  onClick={() =>
-                    messageId && !disableRetry && handleRetry(messageId)
-                  }
-                  title="Retry"
-                />
-                {messageId && (
+    <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
+      {/* Render attachments above the message box for user messages */}
+      {isUser && attachments && attachments.length > 0 && (
+        <div className="w-full max-w-full">
+          <AttachmentGallery attachments={attachments} />
+        </div>
+      )}
+
+      <div
+        className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
+      >
+        {isUser ? (
+          <div
+            className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
+            dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
+          />
+        ) : (
+          <div
+            className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
+          >
+            <div className="flex flex-row w-full max-w-full min-w-0">
+              <img
+                className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
+                src={logo}
+              />
+              <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
+                {thinking && (
                   <>
-                    <ThumbsUp
-                      size={16}
-                      stroke={
-                        feedbackStatus === MessageFeedback.Like
-                          ? "#10B981"
-                          : "#B2C3D4"
-                      }
-                      fill="none"
-                      className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                      onClick={() =>
-                        onFeedback &&
-                        onFeedback(messageId, MessageFeedback.Like)
-                      }
-                    />
-                    <ThumbsDown
-                      size={16}
-                      stroke={
-                        feedbackStatus === MessageFeedback.Dislike
-                          ? "#EF4444"
-                          : "#B2C3D4"
-                      }
-                      fill="none"
-                      className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                      onClick={() =>
-                        onFeedback &&
-                        onFeedback(messageId, MessageFeedback.Dislike)
-                      }
+                    <EnhancedReasoning
+                      content={thinking}
+                      isStreaming={!responseDone}
+                      className="mb-4"
+                      citations={citations}
+                      citationMap={citationMap}
                     />
                   </>
                 )}
-                {!!citationUrls.length && (
-                  <div className="ml-auto flex">
-                    <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
-                        SOURCES
-                      </span>
-                      <ChevronDown
-                        size={14}
-                        className="ml-[4px]"
-                        color="#B2C3D4"
-                      />
-                    </div>
+                {message === "" && (!responseDone || isRetrying) ? (
+                  <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                    {`${THINKING_PLACEHOLDER}${dots}`}
                   </div>
-                )}
-              </div>
-
-              <div className="flex flex-row ml-[52px]">
-                <MessageCitationList
-                  citations={citations.slice(0, 3)}
-                  onToggleSources={onToggleSources}
-                />
+                ) : message !== "" ? (
+                  <MarkdownPreview
+                    source={processMessage(message)}
+                    wrapperElement={{
+                      "data-color-mode": theme,
+                    }}
+                    style={{
+                      padding: 0,
+                      backgroundColor: "transparent",
+                      color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
+                      maxWidth: "100%",
+                      overflowWrap: "break-word",
+                      wordBreak: "break-word",
+                      minWidth: 0,
+                    }}
+                    components={{
+                      a: renderMarkdownLink,
+                      code: Code,
+                      img: ({ src, alt, ...props }: any) => {
+                        if (src?.startsWith("image-citation:")) {
+                          const citationKey = src.replace("image-citation:", "")
+                          return (
+                            <ImageCitationComponent
+                              citationKey={citationKey}
+                              imageCitations={imageCitations}
+                              className="flex justify-center"
+                            />
+                          )
+                        }
+                        // Regular image handling
+                        return <img src={src} alt={alt} {...props} />
+                      },
+                      ...createTableComponents(), // Use extracted table components
+                      h1: ({ node, ...props }) => (
+                        <h1
+                          style={{ fontSize: "1.6em" }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h2: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "1.2em" }} {...props} />
+                      ),
+                      h3: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "1em" }} {...props} />
+                      ),
+                      h4: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.8em" }} {...props} />
+                      ),
+                      h5: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.7em" }} {...props} />
+                      ),
+                      h6: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.68em" }} {...props} />
+                      ),
+                      ul: ({ node, ...props }) => (
+                        <ul
+                          style={{
+                            listStyleType: "disc",
+                            paddingLeft: "1.5rem",
+                            marginBottom: "1rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                      ol: ({ node, ...props }) => (
+                        <ol
+                          style={{
+                            listStyleType: "decimal",
+                            paddingLeft: "1.5rem",
+                            marginBottom: "1rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                      li: ({ node, ...props }) => (
+                        <li
+                          style={{
+                            marginBottom: "0.25rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                    }}
+                  />
+                ) : null}
               </div>
             </div>
-          )}
-        </div>
-      )}
+            {responseDone && !isRetrying && (
+              <div className="flex flex-col">
+                {isDebugMode && messageId && (
+                  <button
+                    className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                    onClick={() => onShowRagTrace(messageId)}
+                  >
+                    View RAG Trace #{messageId.slice(-6)}
+                  </button>
+                )}
+                <div className="flex ml-[52px] mt-[12px] items-center">
+                  <Copy
+                    size={16}
+                    stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
+                    className={`cursor-pointer`}
+                    onMouseDown={() => setIsCopied(true)}
+                    onMouseUp={() => setIsCopied(false)}
+                    onClick={() =>
+                      navigator.clipboard.writeText(processMessage(message))
+                    }
+                  />
+                  <img
+                    className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                    src={Retry}
+                    onClick={() =>
+                      messageId && !disableRetry && handleRetry(messageId)
+                    }
+                    title="Retry"
+                  />
+                  {messageId && (
+                    <>
+                      <ThumbsUp
+                        size={16}
+                        stroke={
+                          feedbackStatus === MessageFeedback.Like
+                            ? "#10B981"
+                            : "#B2C3D4"
+                        }
+                        fill="none"
+                        className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                        onClick={() =>
+                          onFeedback &&
+                          onFeedback(messageId, MessageFeedback.Like)
+                        }
+                      />
+                      <ThumbsDown
+                        size={16}
+                        stroke={
+                          feedbackStatus === MessageFeedback.Dislike
+                            ? "#EF4444"
+                            : "#B2C3D4"
+                        }
+                        fill="none"
+                        className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                        onClick={() =>
+                          onFeedback &&
+                          onFeedback(messageId, MessageFeedback.Dislike)
+                        }
+                      />
+                    </>
+                  )}
+                  {!!citationUrls.length && (
+                    <div className="ml-auto flex">
+                      <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
+                        <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
+                          SOURCES
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          className="ml-[4px]"
+                          color="#B2C3D4"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-row ml-[52px]">
+                  <MessageCitationList
+                    citations={citations.slice(0, 3)}
+                    onToggleSources={onToggleSources}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -2104,6 +2399,8 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
+  // @ts-ignore
+  metadata: z.array(attachmentMetadataSchema).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>

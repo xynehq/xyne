@@ -46,6 +46,7 @@ import type {
   SlackThreadsParams,
   SlackUserProfileParams,
 } from "@/api/chat/types"
+import config from "@/config"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -487,21 +488,19 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
+      "Retrieves items based on metadata filters (time range, app, entity, email addresses). Use this tool when searching within a specific app/entity with optional keyword filtering. For Gmail queries, supports filtering by sender/recipient email addresses.",
     params: [
       {
         name: "from",
         type: "string",
         required: false,
-        description:
-          'Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").',
+        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description:
-          'Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").',
+        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").`,
       },
       {
         name: "app",
@@ -532,6 +531,19 @@ export const internalTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description: "Keywords to refine the search based on the user's query.",
+      },
+      {
+        name: "intent",
+        type: "object",
+        required: false,
+        description: `
+          Email filtering intent with support for multiple addresses, names, and organizations. 
+            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
+            - Each field is an array of strings containing email addresses, person names, or organization names. 
+            - Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'.
+            - The system will automatically resolve names and organizations to email addresses. 
+            Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}
+          `,
       },
       {
         name: "limit",
@@ -683,15 +695,13 @@ export const slackTools: Record<string, ToolDefinition> = {
         name: "from",
         type: "string",
         required: false,
-        description:
-          "Specify the start date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}).`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description:
-          "Specify the end date for the search in UTC format (YYYY-MM-DDTHH:mm:ss.SSSZ).",
+        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}).`,
       },
     ],
   },

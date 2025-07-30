@@ -17,7 +17,7 @@ import {
   type ToolDefinition,
 } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
-
+import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
   query: string,
   context: string,
@@ -1050,7 +1050,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1148,20 +1148,19 @@ export const searchQueryPrompt = (userContext: string): string => {
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>" or null,
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
-      - ONLY use this when you have EXACT identifiers like:
-        - Complete email addresses (e.g., "emails from john@company.com")
-        - Exact user IDs or precise metadata that can be matched exactly
-      - DO NOT use this for person names without email addresses or without exact identifiers. 
-      - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
-      - This is for PRECISE metadata filtering, not content search
+      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
+      - This can be only classified when <app> and <entity> present
+      - Example Queries:
+        - "Show me all emails from last week."
+        - "List all Google Docs modified in October."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
@@ -1169,11 +1168,11 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "intent": <intent object with EXACT metadata like complete email addresses>
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
           }
         }
+
 
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring to a single <app> or <entity> and wants to search content
@@ -1189,8 +1188,8 @@ export const searchQueryPrompt = (userContext: string): string => {
             "app": "<app>",
             "entity": "<entity>",
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
             "sortDirection": <boolean or null>,
             "filterQuery": "<search keywords for content search>"
           }
@@ -1255,23 +1254,35 @@ export const searchQueryPrompt = (userContext: string): string => {
         
         **CRITICAL RULES for Intent Extraction:**
         - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - DO NOT extract intent for queries with only person names: "emails from John", "messages from Sarah", "emails from prateek"
-        - ONLY extract intent when there are ACTUAL EMAIL ADDRESSES like:
-          - Specific email addresses: "emails from john@company.com", "messages from user@domain.com"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
           - Specific subjects: "emails with subject 'meeting'"
-        - If the query contains only person names without email addresses, return empty intent object: {}
         - If the query is asking for ALL items without specific criteria, return empty intent object: {}
         
-        **Email Address Detection Rules:**
-        - ONLY detect valid email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
-        - DO NOT extract person names - these are NOT email addresses
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
         - Extract from phrases like:
           - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
           - "messages from [user@company.com]" → add [user@company.com] to "from" array  
           - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
           - "sent to [team@company.com]" → add [team@company.com] to "to" array
-        - If query contains email addresses but no clear direction indicator, default to "from" array
-        - If query contains only names without @ symbols, DO NOT extract any intent
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
         
         For other apps/entities:
         - Currently no specific intent fields defined
@@ -1289,8 +1300,8 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
            "intent": {}
          }
@@ -1898,29 +1909,100 @@ export const synthesisContextPrompt = (
   synthesisContext: string,
 ) => {
   return `You are a helpful AI assistant.
-User Context: ${userCtx}
-Current date for comparison: ${getDateForAI()}
+  User Context: ${userCtx}
+  Current date for comparison: ${getDateForAI()}
 
-Instruction:
-- Analyze the provided "Context Fragments" to answer the current user-query.
-- The "answer" key should have **brief and concise** synthesized answer based strictly on the context. Avoid verbosity. If information is missing, clearly state that.
-- Your response MUST be a JSON object with only one keys: "synthesisState" (string).
-- The "synthesisState" key must be one of the following values:
-    - ${ContextSysthesisState.Complete} : If you are confident that the "Context Fragments" provide sufficient information (80% or more) to answer the "User Query". Even if some details are missing, as long as the core question can be addressed, use this state.
-    - ${ContextSysthesisState.Partial}: If the "Context Fragments" provide some relevant information but less than 80% of what's needed to meaningfully answer the current user-query.
-    - ${ContextSysthesisState.NotFound}: If the "Context Fragments" do not contain the necessary information to answer the current user-query.
+  Instruction:
+  - Analyze the provided "Context Fragments" to answer the current user-query.
+  - The "answer" key should contain a **concise and focused** synthesis grounded only in the context. If relevant information is missing, state that explicitly.
+  - Your response MUST be a JSON object with the following two keys: "synthesisState" (string) and "answer" (string).
 
-- Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
+  - The "synthesisState" must be set to one of the following values:
+     - ${ContextSysthesisState.Complete}:
+       - Use this if the provided Context Fragments include enough information to meaningfully answer the User Query. Some details may be missing, but the main question is clearly addressed.
+       - **For date-based queries**, assume the context has already been filtered to match the requested date range—no need to question whether it's complete.
+       - If even a single relevant item fully satisfies the user's intent mark the state as **Complete**.
+     - ${ContextSysthesisState.Partial}:
+       - Use if the context provides **some** helpful information, but less than 80% of what's required to confidently answer the query.
+     - ${ContextSysthesisState.NotFound}:
+       - Use if the context contains no relevant information to answer the query.
 
-Context Fragments:s
-${synthesisContext}
+  - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
 
-## Response Format
-{
-  "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
-  "answer": "Brief, synthesized answer based only on the context"
+  Context Fragments:
+  ${synthesisContext}
+
+  ## Response Format
+  {
+    "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
+    "answer": "Brief, synthesized answer based only on the context"
+  }
+`
 }
-  `
+
+// Name-to-Email Resolution Prompt
+// This prompt is used to resolve person names to email addresses using search results from user directory
+export const nameToEmailResolutionPrompt = (
+  userContext: string,
+  searchResults: string,
+  names: string,
+  intent?: { from?: string[]; to?: string[]; cc?: string[]; bcc?: string[] },
+) => {
+  const intentFields = intent
+    ? Object.keys(intent).filter(
+        (key) => intent[key as keyof typeof intent]?.length,
+      )
+    : ["from", "to", "cc", "bcc"]
+
+  const responseFormatFields = intentFields
+    .map((field) => `  "${field}": [<emails goes here>]`)
+    .join(",\n")
+
+  return `You are an assistant that resolves person names to their corresponding email addresses using search context provided.
+
+**User Context:**
+${userContext}
+
+**Names to Resolve:**
+${names}
+
+**Search Context**
+${searchResults}
+
+**Intent Fields:**
+Only populate the following fields: ${intentFields.join(", ")}
+
+**Your Task:**
+Analyze the search results and extract the most relevant email addresses for each name. Consider:
+- Exact name matches have highest priority
+- Partial name matches (first name or last name) are acceptable
+- Consider department/role context if available
+- If multiple matches exist, choose the most relevant based on context
+
+**Response Format:**
+Return a JSON object with "emails" field containing ONLY the fields specified in the intent:
+
+**Rules:**
+- Only include email addresses you can confidently match to the provided names
+- Use exact email addresses from the search results
+- Do not guess or fabricate email addresses
+- If no matches found for any names, return empty array: []
+- Return only the email addresses, not the names
+- CRITICAL: ONLY populate the fields that are specified in the intent (${intentFields.join(", ")})
+- Do NOT populate fields that are not in the intent
+- Each field should only contain emails that match the names specified for that field
+
+**Example:**
+If intent is {"from": ["prasad"]} and results show:
+- Prasad Nagarale <prasad.nagarale@juspay.in> - Engineering
+
+Response Format:
+{
+ "emails": {
+${responseFormatFields}
+  }
+}
+`
 }
 
 export const fallbackReasoningGenerationPrompt = (
@@ -2067,4 +2149,80 @@ Bad: "No clear meeting information found" (Use null instead)
 - When both email and calendar info exists, prioritize the most relevant based on query
 - For recurring meetings, focus on the specific occurrence relevant to the query
 - Do not give explanation outside the JSON format, do not explain why you didn't find something.
+`
+
+export const ragOffPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+  agentPromptData?: AgentPromptData,
+) => `
+You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
+Files (documents, spreadsheets, etc.)
+
+The current date for your information is ${getDateForAI()}.
+
+The context provided will be formatted with specific fields for each type:
+## File Context Format
+- App and Entity type
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions, this field just shows who has access to what, nothing more
+- Content chunks
+- Relevance score
+
+
+# Context of the user talking to you
+${userContext}
+
+# Context of the agent
+Name: ${agentPromptData?.name || "Not specified"}
+Description: ${agentPromptData?.description || "Not specified"}
+Prompt: ${agentPromptData?.prompt || ""}
+# Past Messages
+- Use the user's past messages to answer any follow up questions and to understand the context of the conversation.
+
+
+# Retrieved Context
+${retrievedContext}
+
+
+# Guidelines for Response
+1. Data Interpretation:
+   - Consider the relevance scores when weighing information
+   - Pay attention to timestamps for temporal context
+   - Note relationships between different content types
+2. Response Structure:
+   - Begin with the most relevant information
+   - Maintain chronological order when relevant
+   - Every statement should cite its source using [index] format
+3. If the user's query is a greeting, a simple question, a general question or a calculation that doesn't require the retrieved context, answer it directly.
+4. Evaluate query clarity:
+    - Identify ambiguous elements (pronouns like "it", "they", references like "the project")
+    - If the query is ambiguous, rewrite it to be more specific.
+    - Replace ambiguous references with specific entities from conversation history
+    - Preserve original query if already clear and specific
+5. Search conversation context:
+    - Look for direct answers within previous messages only
+    - Consider answers that can be clearly inferred from prior context
+    - Handle conversation meta-queries using available history
+    - Provide natural responses to conversational statements
+6. Quality Assurance:
+   - Verify information across multiple sources when available
+   - Note any inconsistencies in the data
+   - Indicate confidence levels based on relevance scores
+   - Acknowledge any gaps in the available information
+7. Technical Response Guidelines:
+   - When responding to queries involving API details or payload structures, always enclose the content within properly formatted code blocks for clarity and accuracy.
+   - All responses to code-related technical questions must include relevant code snippets or blocks, properly formatted using language-specific syntax highlighting to enhance readability and maintain correctness.
+8. For **any factual statement or information derived from context**, include a **citation** in [index] format for citations, never group indices (e.g., [0] [1], not [0,1]) that corresponds to the source index.
+
+# Important Notes:
+- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+- If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `

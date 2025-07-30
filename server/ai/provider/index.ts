@@ -34,6 +34,7 @@ import type {
   AnswerResponse,
   ConverseResponse,
   Cost,
+  Intent,
   LLMProvider,
   ModelParams,
   QueryRouterResponse,
@@ -74,6 +75,8 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
+  nameToEmailResolutionPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -84,7 +87,7 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
@@ -259,7 +262,7 @@ const initializeProviders = (): void => {
   }
 
   if (GeminiAIModel && GeminiApiKey) {
-    const gemini = new GoogleGenerativeAI(GeminiApiKey)
+    const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
@@ -338,7 +341,7 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
   }
   const provider = ProviderMap[providerType]
   if (!provider) {
-    throw new Error("Invalid provider type")
+    throw new Error("Invalid provider")
   }
   return provider
 }
@@ -689,9 +692,27 @@ export const generateTitleUsingQuery = async (
       text = text?.split(EndThinkingToken)[1]
     }
     if (text) {
-      const jsonVal = jsonParseLLMOutput(text)
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(err, `Failed to parse LLM output for title: ${text}`)
+        jsonVal = undefined
+      }
+      let title = "Untitled"
+      if (
+        jsonVal &&
+        typeof jsonVal.title === "string" &&
+        jsonVal.title.trim()
+      ) {
+        title = jsonVal.title.trim()
+      } else {
+        Logger.error(
+          `LLM output did not contain a valid title. Raw output: ${text}`,
+        )
+      }
       return {
-        title: jsonVal.title,
+        title,
         cost: cost!,
       }
     } else {
@@ -1095,6 +1116,45 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+  messages: Message[],
+  attachmentFileIds?: string[],
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    retrievedCtx,
+    parseAgentPrompt(agentPrompt),
+  )
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
 }
 
 export const temporalPromptJsonStream = (
@@ -1574,5 +1634,64 @@ export const generateFallback = async (
   } catch (error) {
     Logger.error(error, "Error in generateFallback")
     throw error
+  }
+}
+
+export const extractEmailsFromContext = async (
+  names: Intent,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ emails: Intent }> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  const intentNames =
+    [
+      ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
+      ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
+      ...(names.cc?.length ? [`CC: ${names.cc.join(", ")}`] : []),
+      ...(names.bcc?.length ? [`BCC: ${names.bcc.join(", ")}`] : []),
+    ].join(" | ") || "No names provided"
+
+  params.systemPrompt = nameToEmailResolutionPrompt(
+    userCtx,
+    retrievedCtx,
+    intentNames,
+    names,
+  )
+  params.json = false
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `Help me find emails for these names: ${intentNames}`,
+      },
+    ],
+  }
+
+  const updatedMessages: Message[] = [baseMessage]
+  const res = await getProviderByModel(params.modelId).converse(
+    updatedMessages,
+    params,
+  )
+
+  let parsedResponse = []
+  if (!res || !res.text) {
+    Logger.error("No response from LLM for email extraction")
+  }
+  if (res.text) {
+    parsedResponse = jsonParseLLMOutput(res.text)
+  }
+  const emails = parsedResponse.emails || {}
+  return {
+    emails: {
+      bcc: emails.bcc || [],
+      cc: emails.cc || [],
+      from: emails.from || [],
+      to: emails.to || [],
+    },
   }
 }

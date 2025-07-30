@@ -27,8 +27,10 @@ export {
   Apps,
   isMailAttachment,
   SystemEntity,
+  dataSourceFileSchema,
+  DataSourceEntity,
 } from "search/types"
-export type { Entity } from "search/types"
+export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts
 export enum ConnectorType {
@@ -53,7 +55,7 @@ import { z } from "zod"
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore
-export type { Citation } from "@/api/chat"
+export type { Citation, ImageCitation } from "@/api/chat"
 export type {
   SelectPublicMessage,
   PublicUser,
@@ -339,8 +341,10 @@ export enum ChatSSEvents {
   End = "e",
   ChatTitleUpdate = "ct",
   CitationsUpdate = "cu",
+  ImageCitationUpdate = "icu",
   Reasoning = "rz",
   Error = "er",
+  AttachmentUpdate = "au",
 }
 
 const messageMetadataSchema = z.object({
@@ -494,3 +498,22 @@ export enum IngestionType {
   fullIngestion = "full_ingestion",
   partialIngestion = "partial_ingestion",
 }
+
+// Attachment metadata types for enhanced attachment handling
+export const attachmentMetadataSchema = z.object({
+  fileId: z.string(),
+  fileName: z.string(),
+  fileType: z.string(),
+  fileSize: z.number(),
+  isImage: z.boolean(),
+  thumbnailPath: z.string().optional(),
+  createdAt: z.union([z.string(), z.date()]).transform((val) => {
+    if (typeof val === "string") {
+      return new Date(val)
+    }
+    return val
+  }),
+  url: z.string().optional(),
+})
+
+export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>

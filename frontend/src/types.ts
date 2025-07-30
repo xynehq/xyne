@@ -67,6 +67,7 @@ export interface Reference {
   photoLink?: string
   mailId?: string
   userMap?: Record<string, string>
+  wholeSheet?: boolean
   threadId?: string // Optional threadId for chat references
   parentThreadId?: string // Optional parentThreadId for email thread references
 }

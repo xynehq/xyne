@@ -1,6 +1,7 @@
 export const isValidFile = (file: File) => {
-  // Accept only text, image, pdf, docs, sheets, ppts, and check size limits
-  const maxSize = 40 * 1024 * 1024 // 40MB limit
+  // Set size limits
+  const maxGeneralSize = 40 * 1024 * 1024 // 40MB
+  const maxImageSize = 5 * 1024 * 1024 // 5MB
 
   // Allowed MIME types
   const allowedTypes = [
@@ -13,6 +14,7 @@ export const isValidFile = (file: File) => {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/markdown",
   ]
 
   // Allowed extensions (for fallback)
@@ -26,6 +28,7 @@ export const isValidFile = (file: File) => {
     ".xlsx",
     ".ppt",
     ".pptx",
+    ".md",
   ]
 
   const allowedImageTypes = [
@@ -37,10 +40,13 @@ export const isValidFile = (file: File) => {
   ]
 
   // Check by MIME type or extension
+  const isImage = allowedImageTypes.includes(file.type)
   const isAllowedType =
     allowedTypes.includes(file.type) ||
     allowedExtensions.some((ext) => file.name.toLowerCase().endsWith(ext)) ||
-    allowedImageTypes.includes(file.type)
+    isImage
 
-  return file.size <= maxSize && isAllowedType
+  const sizeLimit = isImage ? maxImageSize : maxGeneralSize
+
+  return file.size <= sizeLimit && isAllowedType
 }

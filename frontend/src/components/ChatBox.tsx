@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react" // Ensure React is imported
+import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -24,6 +25,9 @@ import {
   Bot, // Import Bot icon
   PlusCircle,
   Gavel, // For MCP connector tools
+  X,
+  File,
+  Loader2,
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import {
@@ -35,6 +39,8 @@ import {
   AuthType,
   ConnectorStatus,
   UserRole,
+  DataSourceEntity,
+  AttachmentMetadata,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -57,6 +63,28 @@ import { api } from "@/api"
 import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
 import { Reference, ToolsListItem } from "@/types"
+import { useToast } from "@/hooks/use-toast"
+import {
+  generateFileId,
+  createDragHandlers,
+  createFileSelectionHandlers,
+  validateAndDeduplicateFiles,
+  createToastNotifier,
+  createImagePreview,
+  cleanupPreviewUrls,
+} from "@/utils/fileUtils"
+
+interface SelectedFile {
+  file: File
+  id: string
+  metadata?: AttachmentMetadata
+  uploading?: boolean
+  uploadError?: string
+  preview?: string // URL for image preview
+}
+
+// Add attachment limit constant
+const MAX_ATTACHMENTS = 5
 
 interface SourceItem {
   id: string
@@ -96,10 +124,11 @@ interface ChatBoxProps {
   isAgenticMode: boolean
   handleSend: (
     messageToSend: string,
+    metadata?: AttachmentMetadata[],
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-  ) => void // Expects agentId string
+  ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
   handleStop?: () => void
@@ -111,6 +140,7 @@ interface ChatBoxProps {
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
   user: PublicUser // Added user prop
+  overrideIsRagOn?: boolean
 }
 
 const availableSources: SourceItem[] = [
@@ -234,6 +264,7 @@ export const ChatBox = ({
   user, // Destructure user prop
   setIsAgenticMode,
   isAgenticMode = false,
+  overrideIsRagOn,
 }: ChatBoxProps) => {
   // Interface for fetched tools
   interface FetchedTool {
@@ -262,6 +293,7 @@ export const ChatBox = ({
     displayName?: string // For UI
   }
 
+  const { toast } = useToast()
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
   const referenceItemsRef = useRef<
@@ -271,12 +303,88 @@ export const ChatBox = ({
   const referenceSearchInputRef = useRef<HTMLInputElement | null>(null)
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
   const scrollPositionRef = useRef<number>(0)
+  const navigate = useNavigate()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [showReferenceBox, setShowReferenceBox] = useState(false)
   const [searchMode, setSearchMode] = useState<"citations" | "global">(
     "citations",
   )
   const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
+
+  // Unified function to enhance Google Sheets items with dummy "whole sheet" options
+  const enhanceGoogleSheetsResults = useCallback(
+    <
+      T extends {
+        app?: string
+        entity?: string
+        docId: string
+        title?: string
+        name?: string
+        subject?: string
+        filename?: string
+      },
+    >(
+      items: T[],
+    ): (T & { isWholeSheetDummy?: boolean })[] => {
+      const enhanced: (T & { isWholeSheetDummy?: boolean })[] = []
+      const seenWholeSheets = new Set<string>()
+
+      items.forEach((item) => {
+        // If this is a Google Sheet with a specific tab (contains " / " in title)
+        const isGoogleSheet =
+          item.app === Apps.GoogleDrive && item.entity === DriveEntity.Sheets
+        if (isGoogleSheet) {
+          const displayTitle =
+            item.title ||
+            item.name ||
+            item.subject ||
+            item.filename ||
+            "Untitled"
+          const isSpecificSheetTab = displayTitle.includes(" / ")
+
+          if (isSpecificSheetTab) {
+            // Extract the spreadsheet name (before " / ")
+            const sheetName = displayTitle.split(" / ")[0]
+
+            // Extract the base docId (remove the "_X" suffix)
+            const baseDocId = item.docId.replace(/_\d+$/, "")
+
+            // Only add the whole sheet dummy if we haven't seen this spreadsheet yet
+            if (!seenWholeSheets.has(baseDocId)) {
+              seenWholeSheets.add(baseDocId)
+
+              // Create a dummy item for the whole sheet and add it BEFORE the specific tab
+              const wholeSheetItem: T & { isWholeSheetDummy?: boolean } = {
+                ...item,
+                docId: baseDocId,
+                title: sheetName,
+                ...(item.name !== undefined && { name: sheetName }),
+                isWholeSheetDummy: true,
+              }
+
+              // Insert the whole sheet option BEFORE the current item
+              enhanced.push(wholeSheetItem)
+            }
+          }
+        }
+
+        // Add the original item after checking for whole sheet
+        enhanced.push(item)
+      })
+
+      return enhanced
+    },
+    [],
+  )
+
+  // Create enhanced results that include dummy "whole sheet" options for specific sheet tabs
+  const enhancedGlobalResults: (SearchResult & {
+    isWholeSheetDummy?: boolean
+  })[] = useMemo(() => {
+    return enhanceGoogleSheetsResults(globalResults)
+  }, [globalResults, enhanceGoogleSheetsResults])
+
   const [selectedRefIndex, setSelectedRefIndex] = useState(-1)
   const [selectedSources, setSelectedSources] = useState<
     Record<string, boolean>
@@ -293,6 +401,9 @@ export const ChatBox = ({
   const [showSourcesButton, _] = useState(false) // Added this line
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
   const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([])
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
     new Set(),
@@ -313,10 +424,195 @@ export const ChatBox = ({
     left: number
   } | null>(null)
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+  const showAdvancedOptions =
+    overrideIsRagOn ??
+    (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
 
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
   const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
+
+  // File upload utility functions
+  const showToast = createToastNotifier(toast)
+
+  const processFiles = useCallback(
+    (files: FileList | File[]) => {
+      // Check attachment limit
+      if (selectedFiles.length >= MAX_ATTACHMENTS) {
+        showToast(
+          "Attachment limit reached",
+          `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          true,
+        )
+        return
+      }
+
+      const validFiles = validateAndDeduplicateFiles(files, showToast)
+      if (validFiles.length === 0) return
+
+      // Check if adding these files would exceed the limit
+      const remainingSlots = MAX_ATTACHMENTS - selectedFiles.length
+      const filesToAdd = validFiles.slice(0, remainingSlots)
+
+      if (filesToAdd.length < validFiles.length) {
+        showToast(
+          "Some files skipped",
+          `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          false,
+        )
+      }
+
+      const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
+        file,
+        id: generateFileId(),
+        uploading: false,
+        preview: createImagePreview(file),
+      }))
+
+      setSelectedFiles((prev) => {
+        const existingFileNames = new Set(prev.map((f) => f.file.name))
+        const filteredNewFiles = newFiles.filter(
+          (f) => !existingFileNames.has(f.file.name),
+        )
+
+        const filteredCount = newFiles.length - filteredNewFiles.length
+        if (filteredCount > 0) {
+          showToast(
+            "Files already selected",
+            `${filteredCount} file(s) were already selected and skipped.`,
+            false,
+          )
+        }
+
+        return [...prev, ...filteredNewFiles]
+      })
+    },
+    [showToast, selectedFiles.length],
+  )
+
+  const uploadFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      if (files.length === 0) return []
+
+      setIsUploadingFiles(true)
+      const uploadedMetadata: AttachmentMetadata[] = []
+
+      // Set all files to uploading state
+      setSelectedFiles((prev) =>
+        prev.map((f) =>
+          files.some((file) => file.id === f.id)
+            ? { ...f, uploading: true, uploadError: undefined }
+            : f,
+        ),
+      )
+
+      const uploadPromises = files.map(async (selectedFile) => {
+        try {
+          const formData = new FormData()
+          formData.append("attachment", selectedFile.file)
+
+          // Use the new attachment upload endpoint
+          const response = await fetch("/api/v1/files/upload-attachment", {
+            method: "POST",
+            body: formData,
+          })
+
+          if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.message || "Upload failed")
+          }
+
+          const result = await response.json()
+          const metadata = result.attachments?.[0]
+
+          if (metadata) {
+            setSelectedFiles((prev) =>
+              prev.map((f) =>
+                f.id === selectedFile.id
+                  ? { ...f, uploading: false, metadata }
+                  : f,
+              ),
+            )
+            return metadata
+          } else {
+            throw new Error("No document ID returned from upload")
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Upload failed"
+          setSelectedFiles((prev) =>
+            prev.map((f) =>
+              f.id === selectedFile.id
+                ? { ...f, uploading: false, uploadError: errorMessage }
+                : f,
+            ),
+          )
+          showToast(
+            "Upload failed",
+            `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+            true,
+          )
+          return null
+        }
+      })
+
+      const results = await Promise.all(uploadPromises)
+      uploadedMetadata.push(
+        ...results.filter(
+          (metadata): metadata is AttachmentMetadata => metadata !== null,
+        ),
+      )
+
+      setIsUploadingFiles(false)
+      return uploadedMetadata
+    },
+    [showToast],
+  )
+
+  const getExtension = (file: File) => {
+    const name = file.name
+    const ext = name.includes(".") ? name.split(".").pop()?.toLowerCase() : null
+    return ext || "file"
+  }
+
+  const removeFile = useCallback((id: string) => {
+    setSelectedFiles((prev) => {
+      const fileToRemove = prev.find((f) => f.id === id)
+      if (fileToRemove?.preview) {
+        URL.revokeObjectURL(fileToRemove.preview)
+      }
+      return prev.filter((f) => f.id !== id)
+    })
+  }, [])
+
+  const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
+    fileInputRef,
+    processFiles,
+  )
+
+  const { handleDragOver, handleDragLeave } = createDragHandlers()
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) {
+        // Check attachment limit before processing
+        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+          showToast(
+            "Attachment limit reached",
+            `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            true,
+          )
+          return
+        }
+        processFiles(files)
+      }
+    },
+    [processFiles, selectedFiles.length, showToast],
+  )
 
   // Effect to initialize and update persistedAgentId
   useEffect(() => {
@@ -348,22 +644,27 @@ export const ChatBox = ({
             )
             if (currentAgent) {
               setDisplayAgentName(currentAgent.name)
+              setSelectedAgent(currentAgent)
             } else {
               console.error(
                 `Agent with ID ${persistedAgentId} not found for display.`,
               )
               setDisplayAgentName(null)
+              setSelectedAgent(null)
             }
           } else {
             console.error("Failed to load agents for display.")
             setDisplayAgentName(null)
+            setSelectedAgent(null)
           }
         } catch (error) {
           console.error("Error fetching agent details for display:", error)
           setDisplayAgentName(null)
+          setSelectedAgent(null)
         }
       } else {
         setDisplayAgentName(null) // Clear display name if no persistedAgentId
+        setSelectedAgent(null)
       }
     }
 
@@ -700,6 +1001,13 @@ export const ChatBox = ({
     activeAtMentionIndex,
   ])
 
+  // Create enhanced citations that include dummy "whole sheet" options for specific sheet tabs
+  const enhancedDisplayedCitations: (Citation & {
+    isWholeSheetDummy?: boolean
+  })[] = useMemo(() => {
+    return enhanceGoogleSheetsResults(displayedCitations)
+  }, [displayedCitations, enhanceGoogleSheetsResults])
+
   const fetchResults = async (
     searchTermForFetch: string,
     pageToFetch: number,
@@ -826,7 +1134,7 @@ export const ChatBox = ({
     }
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
+      searchMode === "citations" ? enhancedDisplayedCitations : globalResults
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
@@ -836,7 +1144,7 @@ export const ChatBox = ({
     } else {
       const currentMaxIndex =
         searchMode === "citations"
-          ? displayedCitations.length - 1
+          ? enhancedDisplayedCitations.length - 1
           : canLoadMore
             ? globalResults.length
             : globalResults.length - 1
@@ -846,7 +1154,7 @@ export const ChatBox = ({
     }
   }, [
     searchMode,
-    displayedCitations,
+    enhancedDisplayedCitations,
     globalResults,
     showReferenceBox,
     totalCount,
@@ -905,8 +1213,37 @@ export const ChatBox = ({
   // Helper function to parse content and preserve existing pills as spans - THIS WILL BE REPLACED/REMOVED
   // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
-  const handleAddReference = (citation: Citation) => {
+  const handleAddReference = (
+    citation: Citation & { isWholeSheetDummy?: boolean },
+  ) => {
+    // Handle DataSource navigation
+    if (
+      citation.app === Apps.DataSource &&
+      citation.entity === DataSourceEntity.DataSourceFile
+    ) {
+      navigate({ to: `/dataSource/${citation.docId}` })
+      setShowReferenceBox(false)
+      return
+    }
+
     const docId = citation.docId
+
+    // Check if this is a Google Sheet and determine wholeSheet property
+    const isGoogleSheet =
+      citation.app === Apps.GoogleDrive &&
+      citation.entity === DriveEntity.Sheets
+    let wholeSheet: boolean | undefined = undefined
+
+    if (isGoogleSheet) {
+      if (citation.isWholeSheetDummy) {
+        wholeSheet = true
+      } else if (citation.title.includes(" / ")) {
+        wholeSheet = false
+      } else {
+        wholeSheet = true // Default for regular sheets
+      }
+    }
+
     const newRef: Reference = {
       id: docId,
       docId: docId,
@@ -915,6 +1252,7 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
+      wholeSheet: wholeSheet,
       threadId: (citation as any).threadId, // Add threadId if available
       parentThreadId: (citation as any).parentThreadId, // Add parentThreadId if available
     }
@@ -985,7 +1323,9 @@ export const ChatBox = ({
     setSelectedRefIndex(-1)
   }
 
-  const handleSelectGlobalResult = (result: SearchResult) => {
+  const handleSelectGlobalResult = (
+    result: SearchResult & { isWholeSheetDummy?: boolean },
+  ) => {
     let resultUrl = result.url
     if (!resultUrl && result.app === Apps.Gmail) {
       const identifier = result.threadId || result.docId
@@ -1011,19 +1351,62 @@ export const ChatBox = ({
       return
     }
 
-    const newRef: Reference = {
-      id: refId,
-      title: displayTitle,
-      url: resultUrl,
-      docId: result.docId,
-      mailId: result.mailId,
-      threadId: result.threadId, // Add threadId from result
-      parentThreadId: result.parentThreadId, // Add parentThreadId from result
+    // Check if this is a Google Sheet with a specific tab (contains " / " in title)
+    const isGoogleSheet =
+      result.app === Apps.GoogleDrive && result.entity === DriveEntity.Sheets
+    const isSpecificSheetTab =
+      isGoogleSheet && displayTitle.includes(" / ") && !result.isWholeSheetDummy
+    const isWholeSheetDummy = result.isWholeSheetDummy || false
+
+    let newRef: Reference
+
+    if (isSpecificSheetTab) {
+      // For specific sheet tabs, create the reference with wholeSheet: false
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        app: result.app,
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: false,
+      }
+    } else if (isWholeSheetDummy) {
+      // For whole sheet dummy results, create reference with wholeSheet: true
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        app: result.app,
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: true,
+      }
+    } else {
+      // For all other types, create normal reference
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        threadId: result.threadId, // Add threadId from result
+        parentThreadId: result.parentThreadId, // Add parentThreadId from result
       app: result.app,
-      entity: result.entity,
-      type: "global",
-      photoLink: result.photoLink,
-      userMap: result.userMap, // Ensure userMap is passed
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: isGoogleSheet ? true : undefined,
+      }
     }
 
     const input = inputRef.current
@@ -1093,13 +1476,15 @@ export const ChatBox = ({
     if (!showReferenceBox) return
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
+      searchMode === "citations"
+        ? enhancedDisplayedCitations
+        : enhancedGlobalResults
     const totalItemsCount = items.length
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
       !isGlobalLoading
-    const loadMoreIndex = globalResults.length
+    const loadMoreIndex = enhancedGlobalResults.length
 
     if (e.key === "ArrowDown") {
       e.preventDefault()
@@ -1119,12 +1504,12 @@ export const ChatBox = ({
       e.preventDefault()
       if (selectedRefIndex >= 0 && selectedRefIndex < totalItemsCount) {
         if (searchMode === "citations") {
-          if (displayedCitations[selectedRefIndex]) {
-            handleAddReference(displayedCitations[selectedRefIndex])
+          if (enhancedDisplayedCitations[selectedRefIndex]) {
+            handleAddReference(enhancedDisplayedCitations[selectedRefIndex])
           }
         } else {
-          if (globalResults[selectedRefIndex]) {
-            handleSelectGlobalResult(globalResults[selectedRefIndex])
+          if (enhancedGlobalResults[selectedRefIndex]) {
+            handleSelectGlobalResult(enhancedGlobalResults[selectedRefIndex])
           }
         }
       } else if (
@@ -1175,7 +1560,7 @@ export const ChatBox = ({
     return () => document.removeEventListener("mousedown", handleOutsideClick)
   }, [showReferenceBox])
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
@@ -1214,6 +1599,27 @@ export const ChatBox = ({
         toolsListArray.some((item) => item.tools.length > 0)
       ) {
         toolsListToSend = toolsListArray
+      }
+    }
+
+    // Handle Attachments Metadata
+    let attachmentsMetadata: AttachmentMetadata[] = []
+    if (selectedFiles.length > 0) {
+      const filesToUpload = selectedFiles.filter(
+        (f) => !f.metadata && !f.uploading,
+      )
+      const alreadyUploadedMetadata = selectedFiles
+        .map((f) => f.metadata)
+        .filter((m): m is AttachmentMetadata => !!m)
+
+      if (filesToUpload.length > 0) {
+        const newUploadedMetadata = await uploadFiles(filesToUpload)
+        attachmentsMetadata = [
+          ...alreadyUploadedMetadata,
+          ...newUploadedMetadata,
+        ]
+      } else {
+        attachmentsMetadata = alreadyUploadedMetadata
       }
     }
 
@@ -1259,19 +1665,26 @@ export const ChatBox = ({
     })
 
     htmlMessage = tempDiv.innerHTML
-
     handleSend(
       htmlMessage,
+      attachmentsMetadata,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
       persistedAgentId,
       toolsListToSend,
     )
-    // setReferences([]) // This state and its setter are removed.
 
+    // Clear the input and attached files after sending
     if (inputRef.current) {
       inputRef.current.innerHTML = ""
     }
     setQuery("")
+
+    // Cleanup preview URLs before clearing files
+    const previewUrls = selectedFiles
+      .map((f) => f.preview)
+      .filter(Boolean) as string[]
+    cleanupPreviewUrls(previewUrls)
+    setSelectedFiles([])
   }
 
   const handleSourceSelectionChange = (sourceId: string, checked: boolean) => {
@@ -1315,8 +1728,34 @@ export const ChatBox = ({
     adjustInputHeight()
   }, [query, adjustInputHeight])
 
+  // Cleanup preview URLs when component unmounts
+  const selectedFilesRef = useRef(selectedFiles)
+  selectedFilesRef.current = selectedFiles
+
+  useEffect(() => {
+    return () => {
+      const previewUrls = selectedFilesRef.current
+        .map((f) => f.preview)
+        .filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
+    }
+  }, [])
+
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
+      {persistedAgentId && displayAgentName && (
+        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-t-[20px] border-x border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <Bot size={18} className="text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-mono tracking-wider uppercase text-blue-600 dark:text-blue-400">
+              {displayAgentName}
+            </span>
+          </div>
+          <span className="text-sm font-mono tracking-wider uppercase text-blue-600 dark:text-blue-400">
+            ASK AGENT
+          </span>
+        </div>
+      )}
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
@@ -1345,46 +1784,53 @@ export const ChatBox = ({
           >
             {searchMode === "citations" && activeAtMentionIndex !== -1 && (
               <>
-                {displayedCitations.length > 0 ? (
+                {enhancedDisplayedCitations.length > 0 ? (
                   <>
-                    {displayedCitations.map((citation: Citation, index) => {
-                      const citationApp = (citation as any).app
-                      const citationEntity = (citation as any).entity
-                      return (
-                        <div
-                          key={citation?.docId}
-                          ref={(el) => (referenceItemsRef.current[index] = el)}
-                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
-                            index === selectedRefIndex
-                              ? "bg-[#EDF2F7] dark:bg-slate-700"
-                              : ""
-                          }`}
-                          onClick={() => handleAddReference(citation)}
-                          onMouseEnter={() => setSelectedRefIndex(index)}
-                        >
-                          <div className="flex items-center gap-2">
-                            {citationApp && citationEntity ? (
-                              getIcon(citationApp, citationEntity, {
-                                w: 16,
-                                h: 16,
-                                mr: 0,
-                              })
-                            ) : (
-                              <Link
-                                size={16}
-                                className="text-gray-400 dark:text-gray-500"
-                              />
-                            )}
-                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                              {citation.title || citation.name}
+                    {enhancedDisplayedCitations.map(
+                      (
+                        citation: Citation & { isWholeSheetDummy?: boolean },
+                        index,
+                      ) => {
+                        const citationApp = (citation as any).app
+                        const citationEntity = (citation as any).entity
+                        return (
+                          <div
+                            key={citation?.docId}
+                            ref={(el) =>
+                              (referenceItemsRef.current[index] = el)
+                            }
+                            className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                              index === selectedRefIndex
+                                ? "bg-[#EDF2F7] dark:bg-slate-700"
+                                : ""
+                            }`}
+                            onClick={() => handleAddReference(citation)}
+                            onMouseEnter={() => setSelectedRefIndex(index)}
+                          >
+                            <div className="flex items-center gap-2">
+                              {citationApp && citationEntity ? (
+                                getIcon(citationApp, citationEntity, {
+                                  w: 16,
+                                  h: 16,
+                                  mr: 0,
+                                })
+                              ) : (
+                                <Link
+                                  size={16}
+                                  className="text-gray-400 dark:text-gray-500"
+                                />
+                              )}
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {citation.title || citation.name}
+                              </p>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
+                              {citation.url}
                             </p>
                           </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
-                            {citation.url}
-                          </p>
-                        </div>
-                      )
-                    })}
+                        )
+                      },
+                    )}
                   </>
                 ) : derivedReferenceSearch.length > 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
@@ -1431,7 +1877,7 @@ export const ChatBox = ({
                     </p>
                   )}
                 {globalResults.length > 0 &&
-                  globalResults.map((result, index) => {
+                  enhancedGlobalResults.map((result, index) => {
                     const displayTitle =
                       result.name ||
                       result.subject ||
@@ -1485,13 +1931,15 @@ export const ChatBox = ({
                   globalResults.length < totalCount && (
                     <button
                       ref={(el) =>
-                        (referenceItemsRef.current[globalResults.length] = el)
+                        (referenceItemsRef.current[
+                          enhancedGlobalResults.length
+                        ] = el)
                       }
                       onClick={handleLoadMore}
-                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
+                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === enhancedGlobalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
                       disabled={isGlobalLoading}
                       onMouseEnter={() =>
-                        setSelectedRefIndex(globalResults.length)
+                        setSelectedRefIndex(enhancedGlobalResults.length)
                       }
                     >
                       {isGlobalLoading
@@ -1505,7 +1953,14 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        className={`flex flex-col w-full border dark:border-gray-700 ${persistedAgentId && displayAgentName ? "rounded-b-[20px] rounded-t-none !border-t-0" : "rounded-[20px]"} bg-white dark:bg-[#1E1E1E] ${
+          selectedFiles.length >= MAX_ATTACHMENTS
+            ? "border-amber-300 dark:border-amber-600"
+            : ""
+        } ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
@@ -1520,6 +1975,40 @@ export const ChatBox = ({
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] dark:text-[#F1F3F4] placeholder-[#ACBCCC] dark:placeholder-gray-500 pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
+
+              const items = e.clipboardData?.items
+              if (items) {
+                // Handle image paste
+                for (let i = 0; i < items.length; i++) {
+                  const item = items[i]
+                  if (item.type.indexOf("image") !== -1) {
+                    // Check attachment limit before processing
+                    if (selectedFiles.length >= MAX_ATTACHMENTS) {
+                      showToast(
+                        "Attachment limit reached",
+                        `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                        true,
+                      )
+                      return
+                    }
+
+                    const file = item.getAsFile()
+                    if (file) {
+                      // Process the pasted image file directly
+                      // The file will be processed with a default name by the processFiles function
+                      processFiles([file])
+                      showToast(
+                        "Image pasted",
+                        "Image has been added to your message.",
+                        false,
+                      )
+                      return // Exit early since we handled the image
+                    }
+                  }
+                }
+              }
+
+              // Handle text paste (existing logic)
               const pastedText = e.clipboardData?.getData("text/plain")
               const currentInput = inputRef.current
 
@@ -1779,114 +2268,275 @@ export const ChatBox = ({
             }}
           />
         </div>
-        <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-          <Attach className="text-[#464D53] dark:text-gray-400 cursor-pointer" />
-          <Globe
-            size={16}
-            className="text-[#464D53] dark:text-gray-400 cursor-pointer"
-          />
-          <AtSign
-            size={16}
-            className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-            onClick={() => {
-              const input = inputRef.current
-              if (!input) return
 
-              const textContentBeforeAt = input.textContent || ""
-
-              const textToAppend =
-                textContentBeforeAt.length === 0 ||
-                textContentBeforeAt.endsWith(" ") ||
-                textContentBeforeAt.endsWith("\n") ||
-                textContentBeforeAt.endsWith("\u00A0")
-                  ? "@"
-                  : " @"
-
-              const atTextNode = document.createTextNode(textToAppend)
-
-              input.appendChild(atTextNode)
-
-              const newTextContent = input.textContent || ""
-              setQuery(newTextContent)
-              setIsPlaceholderVisible(newTextContent.length === 0)
-
-              const newAtSymbolIndex =
-                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
-              setCaretPosition(input, newTextContent.length)
-
-              setActiveAtMentionIndex(newAtSymbolIndex)
-              setReferenceSearchTerm("")
-              setShowReferenceBox(true)
-              updateReferenceBoxPosition(newAtSymbolIndex)
-              setSearchMode("citations")
-              setGlobalResults([])
-              setGlobalError(null)
-              setPage(1)
-              setTotalCount(0)
-              setSelectedRefIndex(-1)
-
-              input.focus()
-            }}
-          />
-          {/* Dropdown for All Connectors */}
-          {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
-            <DropdownMenu
-              open={isConnectorsMenuOpen && isAgenticMode}
-              onOpenChange={(open) => {
-                if (isAgenticMode) {
-                  setIsConnectorsMenuOpen(open)
-                }
-              }}
-            >
-              <DropdownMenuTrigger asChild>
-                <button
-                  ref={connectorsDropdownTriggerRef}
-                  disabled={!isAgenticMode}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
-                    isAgenticMode
-                      ? "bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-300 cursor-pointer"
-                      : "bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-not-allowed opacity-60"
-                  }`}
-                  title={
-                    !isAgenticMode
-                      ? "Enable Agent mode to use MCP connectors"
-                      : ""
-                  }
-                >
-                  {selectedConnectorIds.size > 0 ? (
-                    selectedConnectorIds.size === 1 ? (
-                      // Single connector selected - show its icon
-                      (() => {
-                        const selectedConnector = allConnectors.find((c) =>
-                          selectedConnectorIds.has(c.id),
-                        )
-                        return selectedConnector ? (
-                          <>
-                            {getIcon(
-                              selectedConnector.app,
-                              selectedConnector.type,
-                              { w: 14, h: 14, mr: 0 },
-                            )}
-                            <span>
-                              {selectedConnector.displayName || "Connector"}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <Gavel
-                              size={14}
-                              className={
-                                isAgenticMode
-                                  ? "text-[#464D53] dark:text-slate-400"
-                                  : "text-gray-400 dark:text-slate-500"
-                              }
+        {/* File Attachments Preview */}
+        {selectedFiles.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Attachments ({selectedFiles.length}/{MAX_ATTACHMENTS})
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedFiles.map((selectedFile) => (
+                <div key={selectedFile.id} className="relative group">
+                  {selectedFile.preview ? (
+                    <div
+                      className="relative w-20 h-20 rounded-lg overflow-hidden bg-center bg-cover border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
+                      style={{
+                        backgroundImage: `url(${selectedFile.preview})`,
+                      }}
+                    >
+                      <div className="absolute top-1 left-1 flex gap-1">
+                        {selectedFile.uploading && (
+                          <div className="bg-black bg-opacity-60 rounded-full p-1">
+                            <Loader2
+                              size={10}
+                              className="text-white animate-spin"
                             />
-                            <span>Mcp</span>
-                          </>
-                        )
-                      })()
+                          </div>
+                        )}
+                        {selectedFile.uploadError && (
+                          <div
+                            className="bg-red-500 bg-opacity-80 rounded-full p-1"
+                            title={selectedFile.uploadError}
+                          >
+                            <span className="text-white text-xs">⚠</span>
+                          </div>
+                        )}
+                        {selectedFile.metadata?.fileId && (
+                          <div className="bg-green-500 bg-opacity-80 rounded-full p-1">
+                            <Check size={10} className="text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeFile(selectedFile.id)}
+                        className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
+                        disabled={selectedFile.uploading}
+                      >
+                        <X size={10} />
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1">
+                        <span
+                          className="text-white text-xs truncate block"
+                          title={selectedFile.file.name}
+                        >
+                          {selectedFile.file.name.length > 12
+                            ? `${selectedFile.file.name.substring(0, 9)}...`
+                            : selectedFile.file.name}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors min-w-0">
+                      <File
+                        size={24}
+                        className="text-gray-500 dark:text-gray-400 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className="text-sm text-gray-700 dark:text-gray-300 truncate block max-w-[120px]"
+                          title={selectedFile.file.name}
+                        >
+                          {selectedFile.file.name}
+                        </span>
+                        <span
+                          className="text-xs text-gray-500 dark:text-gray-400 truncate block max-w-[120px]"
+                          title={getExtension(selectedFile.file)}
+                        >
+                          {getExtension(selectedFile.file)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {selectedFile.uploading && (
+                          <Loader2
+                            size={12}
+                            className="text-blue-500 animate-spin"
+                          />
+                        )}
+                        {selectedFile.uploadError && (
+                          <span
+                            className="text-xs text-red-500"
+                            title={selectedFile.uploadError}
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                        {selectedFile.metadata?.fileId && (
+                          <Check size={12} className="text-green-500" />
+                        )}
+                        <button
+                          onClick={() => removeFile(selectedFile.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                          disabled={selectedFile.uploading}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {isUploadingFiles && (
+              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" />
+                Uploading files...
+              </div>
+            )}
+            {selectedFiles.length >= MAX_ATTACHMENTS && (
+              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <span>⚠️</span>
+                Maximum attachments reached ({MAX_ATTACHMENTS})
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
+          <Attach
+            className={`${
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+            } transition-colors`}
+            onClick={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? undefined
+                : handleFileSelect
+            }
+            title={
+              selectedFiles.length >= MAX_ATTACHMENTS
+                ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                : "Attach files"
+            }
+          />
+          {showAdvancedOptions && (
+            <>
+              <Globe
+                size={16}
+                className="text-[#464D53] dark:text-gray-400 cursor-pointer"
+              />
+              <AtSign
+                size={16}
+                className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                onClick={() => {
+                  const input = inputRef.current
+                  if (!input) return
+
+                  const textContentBeforeAt = input.textContent || ""
+
+                  const textToAppend =
+                    textContentBeforeAt.length === 0 ||
+                    textContentBeforeAt.endsWith(" ") ||
+                    textContentBeforeAt.endsWith("\n") ||
+                    textContentBeforeAt.endsWith("\u00A0")
+                      ? "@"
+                      : " @"
+
+                  const atTextNode = document.createTextNode(textToAppend)
+
+                  input.appendChild(atTextNode)
+
+                  const newTextContent = input.textContent || ""
+                  setQuery(newTextContent)
+                  setIsPlaceholderVisible(newTextContent.length === 0)
+
+                  const newAtSymbolIndex =
+                    textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+                  setCaretPosition(input, newTextContent.length)
+
+                  setActiveAtMentionIndex(newAtSymbolIndex)
+                  setReferenceSearchTerm("")
+                  setShowReferenceBox(true)
+                  updateReferenceBoxPosition(newAtSymbolIndex)
+                  setSearchMode("citations")
+                  setGlobalResults([])
+                  setGlobalError(null)
+                  setPage(1)
+                  setTotalCount(0)
+                  setSelectedRefIndex(-1)
+
+                  input.focus()
+                }}
+              />
+            </>
+          )}
+          {/* Dropdown for All Connectors */}
+          {showAdvancedOptions &&
+            (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+              <DropdownMenu
+                open={isConnectorsMenuOpen && isAgenticMode}
+                onOpenChange={(open) => {
+                  if (isAgenticMode) {
+                    setIsConnectorsMenuOpen(open)
+                  }
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <button
+                    ref={connectorsDropdownTriggerRef}
+                    disabled={!isAgenticMode}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
+                      isAgenticMode
+                        ? "bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-300 cursor-pointer"
+                        : "bg-gray-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-not-allowed opacity-60"
+                    }`}
+                    title={
+                      !isAgenticMode
+                        ? "Enable Agent mode to use MCP connectors"
+                        : ""
+                    }
+                  >
+                    {selectedConnectorIds.size > 0 ? (
+                      selectedConnectorIds.size === 1 ? (
+                        // Single connector selected - show its icon
+                        (() => {
+                          const selectedConnector = allConnectors.find((c) =>
+                            selectedConnectorIds.has(c.id),
+                          )
+                          return selectedConnector ? (
+                            <>
+                              {getIcon(
+                                selectedConnector.app,
+                                selectedConnector.type,
+                                { w: 14, h: 14, mr: 0 },
+                              )}
+                              <span>
+                                {selectedConnector.displayName || "Connector"}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Gavel
+                                size={14}
+                                className={
+                                  isAgenticMode
+                                    ? "text-[#464D53] dark:text-slate-400"
+                                    : "text-gray-400 dark:text-slate-500"
+                                }
+                              />
+                              <span>Mcp</span>
+                            </>
+                          )
+                        })()
+                      ) : (
+                        // Multiple connectors selected
+                        <>
+                          <Gavel
+                            size={14}
+                            className={
+                              isAgenticMode
+                                ? "text-[#464D53] dark:text-slate-400"
+                                : "text-gray-400 dark:text-slate-500"
+                            }
+                          />
+                          <span>{selectedConnectorIds.size} Mcps</span>
+                        </>
+                      )
                     ) : (
-                      // Multiple connectors selected
+                      // No connectors selected
                       <>
                         <Gavel
                           size={14}
@@ -1896,289 +2546,282 @@ export const ChatBox = ({
                               : "text-gray-400 dark:text-slate-500"
                           }
                         />
-                        <span>{selectedConnectorIds.size} Mcps</span>
+                        <span>Mcp</span>
                       </>
-                    )
-                  ) : (
-                    // No connectors selected
-                    <>
-                      <Gavel
-                        size={14}
-                        className={
-                          isAgenticMode
-                            ? "text-[#464D53] dark:text-slate-400"
-                            : "text-gray-400 dark:text-slate-500"
-                        }
-                      />
-                      <span>Mcp</span>
-                    </>
-                  )}
-                  <ChevronDown
-                    size={16}
-                    className={`ml-1 ${isAgenticMode ? "text-gray-500 dark:text-slate-400" : "text-gray-400 dark:text-slate-500"}`}
-                  />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="w-72 relative rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700" // Increased width, added dark mode bg and border
-                align="start"
-                side="top"
-              >
-                <DropdownMenuLabel className="p-2 text-gray-700 dark:text-slate-300">
-                  Select a Connector
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-gray-200 dark:bg-slate-700" />
-                {allConnectors.length > 0 ? (
-                  allConnectors
-                    .filter((c) => c.type === ConnectorType.MCP)
-                    .map((connector) => {
-                      const isMCP = connector.type === ConnectorType.MCP
+                    )}
+                    <ChevronDown
+                      size={16}
+                      className={`ml-1 ${isAgenticMode ? "text-gray-500 dark:text-slate-400" : "text-gray-400 dark:text-slate-500"}`}
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  className="w-72 relative rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700" // Increased width, added dark mode bg and border
+                  align="start"
+                  side="top"
+                >
+                  <DropdownMenuLabel className="p-2 text-gray-700 dark:text-slate-300">
+                    Select a Connector
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-gray-200 dark:bg-slate-700" />
+                  {allConnectors.length > 0 ? (
+                    allConnectors
+                      .filter((c) => c.type === ConnectorType.MCP)
+                      .map((connector) => {
+                        const isMCP = connector.type === ConnectorType.MCP
 
-                      return (
-                        <DropdownMenuItem
-                          key={connector.id}
-                          onSelect={(e) => e.preventDefault()} // Prevent closing on item click if it has a sub-menu
-                          className="p-0" // Remove padding for full-width item
-                        >
-                          <div
-                            className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700"
-                            onClick={() => {
-                              const isCurrentlySelected =
-                                selectedConnectorIds.has(connector.id)
-
-                              if (isCurrentlySelected) {
-                                // If clicking the already selected connector, deselect it
-                                setSelectedConnectorIds((prev) => {
-                                  const newSet = new Set(prev)
-                                  newSet.delete(connector.id)
-                                  return newSet
-                                })
-                                setConnectorTools([]) // Clear any tools
-                                // Close the tool selection modal if it's open for this connector
-                                if (
-                                  isToolSelectionModalOpen &&
-                                  activeToolConnectorId === connector.id
-                                ) {
-                                  setIsToolSelectionModalOpen(false)
-                                  setActiveToolConnectorId(null)
-                                }
-                                // Keep the main dropdown open or close it based on desired UX for deselection.
-                                // For now, let's assume it stays open.
-                              } else {
-                                // Clicking a new connector to add it to selection
-                                setSelectedConnectorIds((prev) => {
-                                  const newSet = new Set(prev)
-                                  newSet.add(connector.id)
-                                  return newSet
-                                })
-                                if (!isMCP) {
-                                  // For non-MCP connectors, preserve existing selections or initialize empty
-                                  setConnectorTools([])
-                                  // Don't override existing selections, they should be preserved from localStorage
-                                  if (!selectedConnectorTools[connector.id]) {
-                                    setSelectedConnectorTools((prev) => ({
-                                      ...prev,
-                                      [connector.id]: new Set(),
-                                    }))
-                                  }
-                                  // Don't close dropdown for multiple selections
-                                } else {
-                                  // For MCP connectors, clear tools from any previously selected MCP.
-                                  setConnectorTools([])
-                                  // Tool fetching for this MCP connector is handled by PlusCircle click.
-                                  // Dropdown stays open.
-                                }
-                              }
-                            }}
+                        return (
+                          <DropdownMenuItem
+                            key={connector.id}
+                            onSelect={(e) => e.preventDefault()} // Prevent closing on item click if it has a sub-menu
+                            className="p-0" // Remove padding for full-width item
                           >
-                            <div className="flex items-center gap-2 flex-grow">
-                              {getIcon(connector.app, connector.type, {
-                                w: 14,
-                                h: 14,
-                                mr: 0,
-                              })}
-                              <span className="truncate text-gray-900 dark:text-slate-100">
-                                {connector.displayName}
-                              </span>
-                            </div>
+                            <div
+                              className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700"
+                              onClick={() => {
+                                const isCurrentlySelected =
+                                  selectedConnectorIds.has(connector.id)
 
-                            {/* Icons container - aligned to the right */}
-                            <div className="flex items-center ml-auto">
-                              {selectedConnectorIds.has(connector.id) && (
-                                <Check
-                                  className={`h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0 ${isMCP ? "mr-1.5" : ""}`}
-                                />
-                              )}
-                              {isMCP && (
-                                <PlusCircle
-                                  size={18}
-                                  className="text-blue-500 dark:text-blue-400 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
-                                  onClick={async (e) => {
-                                    e.stopPropagation() // IMPORTANT: Prevent main item click handler
-
-                                    // Ensure this connector is marked as active if not already
-                                    if (
-                                      !selectedConnectorIds.has(connector.id)
-                                    ) {
-                                      setSelectedConnectorIds((prev) => {
-                                        const newSet = new Set(prev)
-                                        newSet.add(connector.id)
-                                        return newSet
-                                      })
-                                      setConnectorTools([]) // Clear tools if switching to this MCP
-                                    } else if (
-                                      !connectorTools.length &&
-                                      selectedConnectorIds.has(connector.id)
-                                    ) {
-                                      // If it's already selected but tools aren't loaded (e.g. re-opening modal)
-                                      // proceed to load them.
-                                    }
-
-                                    // Set this connector as the active one for tool selection
-                                    setActiveToolConnectorId(connector.id)
-
-                                    if (connectorsDropdownTriggerRef.current) {
-                                      const rect =
-                                        connectorsDropdownTriggerRef.current.getBoundingClientRect()
-                                      const chatBoxContainer =
-                                        inputRef.current?.closest(
-                                          ".relative.flex.flex-col.w-full",
-                                        ) as HTMLElement | null
-                                      const connectorDropdownWidth = 288 // w-72
-                                      const gap = 8
-
-                                      let preliminaryLeftCalc: number
-                                      let preliminaryTopReference: number
-
-                                      if (chatBoxContainer) {
-                                        const containerRect =
-                                          chatBoxContainer.getBoundingClientRect()
-                                        preliminaryLeftCalc =
-                                          rect.left -
-                                          containerRect.left +
-                                          connectorDropdownWidth +
-                                          gap
-                                        preliminaryTopReference =
-                                          rect.top - containerRect.top
-                                      } else {
-                                        preliminaryLeftCalc =
-                                          rect.left +
-                                          connectorDropdownWidth +
-                                          gap
-                                        preliminaryTopReference = rect.top
-                                      }
-                                      setToolModalPosition({
-                                        top: preliminaryTopReference,
-                                        left: preliminaryLeftCalc,
-                                      })
-                                    }
-
-                                    setIsLoadingTools(true)
-                                    setToolSearchTerm("")
-                                    try {
-                                      const response: Response =
-                                        await api.admin.connector[
-                                          connector.id
-                                        ].tools.$get(undefined, {
-                                          credentials: "include",
-                                        })
-                                      const toolsData: FetchedTool[] | any =
-                                        await response.json()
-                                      if (Array.isArray(toolsData)) {
-                                        const enabledTools = toolsData.filter(
-                                          (tool) => tool.enabled,
-                                        )
-                                        setConnectorTools(enabledTools)
-
-                                        // Check if we have existing selections from localStorage for this connector
-                                        const existingSelections =
-                                          selectedConnectorTools[connector.id]
-
-                                        if (
-                                          existingSelections &&
-                                          existingSelections.size > 0
-                                        ) {
-                                          // Use existing selections from localStorage, but only for enabled tools
-                                          const enabledToolExternalIds =
-                                            new Set(
-                                              enabledTools.map(
-                                                (t) => t.externalId,
-                                              ),
-                                            )
-                                          const validSelections = new Set(
-                                            Array.from(
-                                              existingSelections,
-                                            ).filter((toolExternalId) =>
-                                              enabledToolExternalIds.has(
-                                                toolExternalId,
-                                              ),
-                                            ),
-                                          )
-
-                                          setSelectedConnectorTools((prev) => ({
-                                            ...prev,
-                                            [connector.id]: validSelections,
-                                          }))
-                                        } else {
-                                          // No existing selections, default to all enabled tools being selected
-                                          const initiallySelectedEnabledTools =
-                                            new Set(
-                                              enabledTools.map(
-                                                (t) => t.externalId,
-                                              ),
-                                            )
-                                          setSelectedConnectorTools((prev) => ({
-                                            ...prev,
-                                            [connector.id]:
-                                              initiallySelectedEnabledTools,
-                                          }))
-                                        }
-                                      } else {
-                                        setConnectorTools([])
-                                        // Ensure no selections if tools aren't loaded correctly or if data is not an array
-                                        setSelectedConnectorTools((prev) => ({
-                                          ...prev,
-                                          [connector.id]: new Set(),
-                                        }))
-                                      }
-                                    } catch (error) {
-                                      console.error(
-                                        `Error fetching tools for ${connector.id}:`,
-                                        error,
-                                      )
-                                      setConnectorTools([])
-                                      // Clear selections for this connector on error
+                                if (isCurrentlySelected) {
+                                  // If clicking the already selected connector, deselect it
+                                  setSelectedConnectorIds((prev) => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(connector.id)
+                                    return newSet
+                                  })
+                                  setConnectorTools([]) // Clear any tools
+                                  // Close the tool selection modal if it's open for this connector
+                                  if (
+                                    isToolSelectionModalOpen &&
+                                    activeToolConnectorId === connector.id
+                                  ) {
+                                    setIsToolSelectionModalOpen(false)
+                                    setActiveToolConnectorId(null)
+                                  }
+                                  // Keep the main dropdown open or close it based on desired UX for deselection.
+                                  // For now, let's assume it stays open.
+                                } else {
+                                  // Clicking a new connector to add it to selection
+                                  setSelectedConnectorIds((prev) => {
+                                    const newSet = new Set(prev)
+                                    newSet.add(connector.id)
+                                    return newSet
+                                  })
+                                  if (!isMCP) {
+                                    // For non-MCP connectors, preserve existing selections or initialize empty
+                                    setConnectorTools([])
+                                    // Don't override existing selections, they should be preserved from localStorage
+                                    if (!selectedConnectorTools[connector.id]) {
                                       setSelectedConnectorTools((prev) => ({
                                         ...prev,
                                         [connector.id]: new Set(),
                                       }))
-                                    } finally {
-                                      setIsLoadingTools(false)
-                                      setIsToolSelectionModalOpen(true)
-                                      // Main dropdown (isConnectorsMenuOpen) should remain open
                                     }
-                                  }}
-                                />
-                              )}
+                                    // Don't close dropdown for multiple selections
+                                  } else {
+                                    // For MCP connectors, clear tools from any previously selected MCP.
+                                    setConnectorTools([])
+                                    // Tool fetching for this MCP connector is handled by PlusCircle click.
+                                    // Dropdown stays open.
+                                  }
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-2 flex-grow">
+                                {getIcon(connector.app, connector.type, {
+                                  w: 14,
+                                  h: 14,
+                                  mr: 0,
+                                })}
+                                <span className="truncate text-gray-900 dark:text-slate-100">
+                                  {connector.displayName}
+                                </span>
+                              </div>
+
+                              {/* Icons container - aligned to the right */}
+                              <div className="flex items-center ml-auto">
+                                {selectedConnectorIds.has(connector.id) && (
+                                  <Check
+                                    className={`h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0 ${isMCP ? "mr-1.5" : ""}`}
+                                  />
+                                )}
+                                {isMCP && (
+                                  <PlusCircle
+                                    size={18}
+                                    className="text-blue-500 dark:text-blue-400 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
+                                    onClick={async (e) => {
+                                      e.stopPropagation() // IMPORTANT: Prevent main item click handler
+
+                                      // Ensure this connector is marked as active if not already
+                                      if (
+                                        !selectedConnectorIds.has(connector.id)
+                                      ) {
+                                        setSelectedConnectorIds((prev) => {
+                                          const newSet = new Set(prev)
+                                          newSet.add(connector.id)
+                                          return newSet
+                                        })
+                                        setConnectorTools([]) // Clear tools if switching to this MCP
+                                      } else if (
+                                        !connectorTools.length &&
+                                        selectedConnectorIds.has(connector.id)
+                                      ) {
+                                        // If it's already selected but tools aren't loaded (e.g. re-opening modal)
+                                        // proceed to load them.
+                                      }
+
+                                      // Set this connector as the active one for tool selection
+                                      setActiveToolConnectorId(connector.id)
+
+                                      if (
+                                        connectorsDropdownTriggerRef.current
+                                      ) {
+                                        const rect =
+                                          connectorsDropdownTriggerRef.current.getBoundingClientRect()
+                                        const chatBoxContainer =
+                                          inputRef.current?.closest(
+                                            ".relative.flex.flex-col.w-full",
+                                          ) as HTMLElement | null
+                                        const connectorDropdownWidth = 288 // w-72
+                                        const gap = 8
+
+                                        let preliminaryLeftCalc: number
+                                        let preliminaryTopReference: number
+
+                                        if (chatBoxContainer) {
+                                          const containerRect =
+                                            chatBoxContainer.getBoundingClientRect()
+                                          preliminaryLeftCalc =
+                                            rect.left -
+                                            containerRect.left +
+                                            connectorDropdownWidth +
+                                            gap
+                                          preliminaryTopReference =
+                                            rect.top - containerRect.top
+                                        } else {
+                                          preliminaryLeftCalc =
+                                            rect.left +
+                                            connectorDropdownWidth +
+                                            gap
+                                          preliminaryTopReference = rect.top
+                                        }
+                                        setToolModalPosition({
+                                          top: preliminaryTopReference,
+                                          left: preliminaryLeftCalc,
+                                        })
+                                      }
+
+                                      setIsLoadingTools(true)
+                                      setToolSearchTerm("")
+                                      try {
+                                        const response: Response =
+                                          await api.admin.connector[
+                                            connector.id
+                                          ].tools.$get(undefined, {
+                                            credentials: "include",
+                                          })
+                                        const toolsData: FetchedTool[] | any =
+                                          await response.json()
+                                        if (Array.isArray(toolsData)) {
+                                          const enabledTools = toolsData.filter(
+                                            (tool) => tool.enabled,
+                                          )
+                                          setConnectorTools(enabledTools)
+
+                                          // Check if we have existing selections from localStorage for this connector
+                                          const existingSelections =
+                                            selectedConnectorTools[connector.id]
+
+                                          if (
+                                            existingSelections &&
+                                            existingSelections.size > 0
+                                          ) {
+                                            // Use existing selections from localStorage, but only for enabled tools
+                                            const enabledToolExternalIds =
+                                              new Set(
+                                                enabledTools.map(
+                                                  (t) => t.externalId,
+                                                ),
+                                              )
+                                            const validSelections = new Set(
+                                              Array.from(
+                                                existingSelections,
+                                              ).filter((toolExternalId) =>
+                                                enabledToolExternalIds.has(
+                                                  toolExternalId,
+                                                ),
+                                              ),
+                                            )
+
+                                            setSelectedConnectorTools(
+                                              (prev) => ({
+                                                ...prev,
+                                                [connector.id]: validSelections,
+                                              }),
+                                            )
+                                          } else {
+                                            // No existing selections, default to all enabled tools being selected
+                                            const initiallySelectedEnabledTools =
+                                              new Set(
+                                                enabledTools.map(
+                                                  (t) => t.externalId,
+                                                ),
+                                              )
+                                            setSelectedConnectorTools(
+                                              (prev) => ({
+                                                ...prev,
+                                                [connector.id]:
+                                                  initiallySelectedEnabledTools,
+                                              }),
+                                            )
+                                          }
+                                        } else {
+                                          setConnectorTools([])
+                                          // Ensure no selections if tools aren't loaded correctly or if data is not an array
+                                          setSelectedConnectorTools((prev) => ({
+                                            ...prev,
+                                            [connector.id]: new Set(),
+                                          }))
+                                        }
+                                      } catch (error) {
+                                        console.error(
+                                          `Error fetching tools for ${connector.id}:`,
+                                          error,
+                                        )
+                                        setConnectorTools([])
+                                        // Clear selections for this connector on error
+                                        setSelectedConnectorTools((prev) => ({
+                                          ...prev,
+                                          [connector.id]: new Set(),
+                                        }))
+                                      } finally {
+                                        setIsLoadingTools(false)
+                                        setIsToolSelectionModalOpen(true)
+                                        // Main dropdown (isConnectorsMenuOpen) should remain open
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </DropdownMenuItem>
-                      )
-                    })
-                ) : (
-                  <DropdownMenuItem
-                    disabled
-                    className="text-center text-gray-500 dark:text-slate-400"
-                  >
-                    No connectors available
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                          </DropdownMenuItem>
+                        )
+                      })
+                  ) : (
+                    <DropdownMenuItem
+                      disabled
+                      className="text-center text-gray-500 dark:text-slate-400"
+                    >
+                      No connectors available
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
           {/* Tool Selection Modal / Popover */}
-          {isToolSelectionModalOpen &&
+          {showAdvancedOptions &&
+            isToolSelectionModalOpen &&
             activeToolConnectorId &&
             toolModalPosition &&
             allConnectors.find((c) => c.id === activeToolConnectorId)?.type ===
@@ -2444,36 +3087,28 @@ export const ChatBox = ({
                 Reasoning
               </span>
             </button>
-            {displayAgentName && (
-              <div className="flex items-center text-xs text-[#464D53] dark:text-gray-400 ml-2 px-1 py-0.5 cursor-default">
-                <Bot
-                  size={16}
-                  className="mr-1 text-[#464D53] dark:text-gray-400"
-                />
-                <span className="font-medium dark:text-gray-300">
-                  {displayAgentName}
-                </span>
-              </div>
-            )}
           </div>
-          <div
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsAgenticMode(!isAgenticMode)
-            }}
-            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
-          >
-            <Infinity
-              size={14}
-              strokeWidth={2.4}
-              className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
-            />
-            <span
-              className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+          {showAdvancedOptions && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsAgenticMode(!isAgenticMode)
+              }}
+              disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+              className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              Agent
-            </span>
-          </div>
+              <Infinity
+                size={14}
+                strokeWidth={2.4}
+                className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+              />
+              <span
+                className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+              >
+                Agent
+              </span>
+            </button>
+          )}
           {(isStreaming || retryIsStreaming) && chatId ? (
             <button
               onClick={handleStop}
@@ -2484,19 +3119,33 @@ export const ChatBox = ({
             </button>
           ) : (
             <button
-              disabled={isStreaming || retryIsStreaming}
+              disabled={isStreaming || retryIsStreaming || isUploadingFiles}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
               className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
             >
-              <ArrowRight
-                className="text-white dark:text-slate-200"
-                size={16}
-              />
+              {isUploadingFiles ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ArrowRight
+                  className="text-white dark:text-slate-200"
+                  size={16}
+                />
+              )}
             </button>
           )}
         </div>
       </div>
+
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileChange}
+        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+      />
     </div>
   )
 }
