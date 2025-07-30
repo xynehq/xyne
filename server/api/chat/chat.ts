@@ -332,6 +332,39 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
+// Helper function to store trace for a message
+async function storeTraceForMessage(
+  tracer: Tracer,
+  workspace: { id: number; externalId: string },
+  user: { id: number; email: string },
+  chat: { id: number; externalId: string },
+  messageId: number,
+  messageExternalId: string,
+  email: string,
+) {
+  try {
+    const traceJson = tracer.serializeToJson()
+    await insertChatTrace({
+      workspaceId: workspace.id,
+      userId: user.id,
+      chatId: chat.id,
+      messageId: messageId,
+      chatExternalId: chat.externalId,
+      email: email,
+      messageExternalId: messageExternalId,
+      traceJson,
+    })
+    loggerWithChild({ email: email }).info(
+      `[Trace] Stored trace for message ${messageExternalId} in chat ${chat.externalId}`,
+    )
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      `[Trace] Failed to store trace for message ${messageExternalId}: ${getErrorMessage(error)}`,
+    )
+  }
+}
+
 export const GetChatTraceApi = async (c: Context) => {
   let email = ""
   try {
@@ -3948,19 +3981,14 @@ export const MessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
               assistantMessageId = msg.externalId
-              const traceJson = tracer.serializeToJson()
-              await insertChatTrace({
-                workspaceId: workspace.id,
-                userId: user.id,
-                chatId: chat.id,
-                messageId: msg.id,
-                chatExternalId: chat.externalId,
-                email: user.email,
-                messageExternalId: msg.externalId,
-                traceJson,
-              })
-              loggerWithChild({ email: email }).info(
-                `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              await storeTraceForMessage(
+                tracer,
+                workspace,
+                user,
+                chat,
+                msg.id,
+                msg.externalId,
+                email,
               )
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseMetadata,
@@ -3994,17 +4022,15 @@ export const MessageApi = async (c: Context) => {
                 "Can you please make your query more specific?",
               )
 
-              const traceJson = tracer.serializeToJson()
-              await insertChatTrace({
-                workspaceId: workspace.id,
-                userId: user.id,
-                chatId: chat.id,
-                messageId: lastMessage.id,
-                chatExternalId: chat.externalId,
-                email: user.email,
-                messageExternalId: lastMessage.externalId,
-                traceJson,
-              })
+              await storeTraceForMessage(
+                tracer,
+                workspace,
+                user,
+                chat,
+                lastMessage.id,
+                lastMessage.externalId,
+                email,
+              )
               errorSpan.end()
             }
 
@@ -4466,19 +4492,14 @@ export const MessageApi = async (c: Context) => {
               })
               assistantMessageId = msg.externalId
 
-              const traceJson = tracer.serializeToJson()
-              await insertChatTrace({
-                workspaceId: workspace.id,
-                userId: user.id,
-                chatId: chat.id,
-                messageId: msg.id,
-                chatExternalId: chat.externalId,
-                email: user.email,
-                messageExternalId: msg.externalId,
-                traceJson,
-              })
-              loggerWithChild({ email: email }).info(
-                `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              await storeTraceForMessage(
+                tracer,
+                workspace,
+                user,
+                chat,
+                msg.id,
+                msg.externalId,
+                email,
               )
 
               await stream.writeSSE({
@@ -4513,17 +4534,15 @@ export const MessageApi = async (c: Context) => {
                 "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               )
 
-              const traceJson = tracer.serializeToJson()
-              await insertChatTrace({
-                workspaceId: workspace.id,
-                userId: user.id,
-                chatId: chat.id,
-                messageId: lastMessage.id,
-                chatExternalId: chat.externalId,
-                email: user.email,
-                messageExternalId: lastMessage.externalId,
-                traceJson,
-              })
+              await storeTraceForMessage(
+                tracer,
+                workspace,
+                user,
+                chat,
+                lastMessage.id,
+                lastMessage.externalId,
+                email,
+              )
               errorSpan.end()
             }
 
@@ -4563,6 +4582,17 @@ export const MessageApi = async (c: Context) => {
 
           // Add the error message to last user message
           await addErrMessageToMessage(lastMessage, errFomMap)
+
+          // Store trace for error case
+          await storeTraceForMessage(
+            tracer,
+            workspace,
+            user,
+            chat,
+            lastMessage.id,
+            lastMessage.externalId,
+            email,
+          )
 
           await stream.writeSSE({
             data: "",
@@ -4631,6 +4661,23 @@ export const MessageApi = async (c: Context) => {
         })
         await addErrMessageToMessage(lastMessage, errFromMap)
 
+        // Store trace for error case in callback
+        const userAndWorkspace = await getUserAndWorkspaceByEmail(
+          db,
+          workspaceId,
+          email,
+        )
+        const { user, workspace } = userAndWorkspace
+        await storeTraceForMessage(
+          tracer,
+          workspace,
+          user,
+          chat,
+          lastMessage.id,
+          lastMessage.externalId,
+          email,
+        )
+
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
@@ -4682,6 +4729,23 @@ export const MessageApi = async (c: Context) => {
           }),
         })
         await addErrMessageToMessage(lastMessage, errFromMap)
+        
+        // Store trace for error case in top-level catch
+        const userAndWorkspace = await getUserAndWorkspaceByEmail(
+          db,
+          c.get(JwtPayloadKey)?.workspaceId,
+          email,
+        )
+        const { user, workspace } = userAndWorkspace
+        await storeTraceForMessage(
+          tracer,
+          workspace,
+          user,
+          chat,
+          lastMessage.id,
+          lastMessage.externalId,
+          email,
+        )
       }
     }
     if (error instanceof APIError) {
@@ -5594,6 +5658,39 @@ export const MessageRetryApi = async (c: Context) => {
             data: errFromMap,
           })
           await addErrMessageToMessage(originalMessage, errFromMap)
+          
+          // Store/update trace for error case
+          try {
+            const traceJson = tracer.serializeToJson()
+            if (isUserMessage) {
+              // For user message retries that error, we need to store trace for the original user message
+              const chat = await getChatByExternalId(db, originalMessage.chatExternalId)
+              if (chat) {
+                await storeTraceForMessage(
+                  tracer,
+                  workspace,
+                  user,
+                  chat,
+                  originalMessage.id,
+                  originalMessage.externalId,
+                  email,
+                )
+              }
+            } else {
+              // For assistant message retries, update the existing trace
+              await updateChatTrace(
+                originalMessage.chatExternalId,
+                originalMessage.externalId,
+                traceJson,
+              )
+            }
+          } catch (traceError) {
+            loggerWithChild({ email: email }).error(
+              traceError,
+              `Failed to store/update trace in error handler: ${getErrorMessage(traceError)}`,
+            )
+          }
+          
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
@@ -5638,6 +5735,39 @@ export const MessageRetryApi = async (c: Context) => {
           data: errFromMap,
         })
         await addErrMessageToMessage(originalMessage, errFromMap)
+        
+        // Store/update trace for error case in callback
+        try {
+          const traceJson = tracer.serializeToJson()
+          if (isUserMessage) {
+            // For user message retries that error, we need to store trace for the original user message
+            const chat = await getChatByExternalId(db, originalMessage.chatExternalId)
+            if (chat) {
+              await storeTraceForMessage(
+                tracer,
+                workspace,
+                user,
+                chat,
+                originalMessage.id,
+                originalMessage.externalId,
+                email,
+              )
+            }
+          } else {
+            // For assistant message retries, update the existing trace
+            await updateChatTrace(
+              originalMessage.chatExternalId,
+              originalMessage.externalId,
+              traceJson,
+            )
+          }
+        } catch (traceError) {
+          loggerWithChild({ email: email }).error(
+            traceError,
+            `Failed to store/update trace in error callback: ${getErrorMessage(traceError)}`,
+          )
+        }
+        
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
@@ -5667,6 +5797,49 @@ export const MessageRetryApi = async (c: Context) => {
       error,
       `Message Retry Error: ${errMsg} ${(error as Error).stack}`,
     )
+    // Store trace for top-level error in MessageRetryApi
+    try {
+      // @ts-ignore - messageId is from the request body
+      const originalMessage = await getMessageByExternalId(db, body.messageId)
+      if (originalMessage) {
+        const userAndWorkspace = await getUserAndWorkspaceByEmail(
+          db,
+          c.get(JwtPayloadKey)?.workspaceId,
+          email,
+        )
+        const { user, workspace } = userAndWorkspace
+        const chat = await getChatByExternalId(db, originalMessage.chatExternalId)
+        
+        if (chat) {
+          const traceJson = tracer.serializeToJson()
+          if (originalMessage.messageRole === "user") {
+            // For user message retries that error, store trace for the original user message
+            await storeTraceForMessage(
+              tracer,
+              workspace,
+              user,
+              chat,
+              originalMessage.id,
+              originalMessage.externalId,
+              email,
+            )
+          } else {
+            // For assistant message retries, update the existing trace
+            await updateChatTrace(
+              originalMessage.chatExternalId,
+              originalMessage.externalId,
+              traceJson,
+            )
+          }
+        }
+      }
+    } catch (traceError) {
+      loggerWithChild({ email: email }).error(
+        traceError,
+        `Failed to store trace in top-level error handler: ${getErrorMessage(traceError)}`,
+      )
+    }
+    
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
       loggerWithChild({ email: email }).info(
