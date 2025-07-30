@@ -340,7 +340,6 @@ async function storeTraceForMessage(
   chat: { id: number; externalId: string },
   messageId: number,
   messageExternalId: string,
-  email: string,
 ) {
   try {
     const traceJson = tracer.serializeToJson()
@@ -350,15 +349,15 @@ async function storeTraceForMessage(
       chatId: chat.id,
       messageId: messageId,
       chatExternalId: chat.externalId,
-      email: email,
+      email: user.email,
       messageExternalId: messageExternalId,
       traceJson,
     })
-    loggerWithChild({ email: email }).info(
+    loggerWithChild({ email: user.email }).info(
       `[Trace] Stored trace for message ${messageExternalId} in chat ${chat.externalId}`,
     )
   } catch (error) {
-    loggerWithChild({ email: email }).error(
+    loggerWithChild({ email: user.email }).error(
       error,
       `[Trace] Failed to store trace for message ${messageExternalId}: ${getErrorMessage(error)}`,
     )
@@ -3988,7 +3987,6 @@ export const MessageApi = async (c: Context) => {
                 chat,
                 msg.id,
                 msg.externalId,
-                email,
               )
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseMetadata,
@@ -4029,7 +4027,6 @@ export const MessageApi = async (c: Context) => {
                 chat,
                 lastMessage.id,
                 lastMessage.externalId,
-                email,
               )
               errorSpan.end()
             }
@@ -4499,7 +4496,6 @@ export const MessageApi = async (c: Context) => {
                 chat,
                 msg.id,
                 msg.externalId,
-                email,
               )
 
               await stream.writeSSE({
@@ -4541,7 +4537,6 @@ export const MessageApi = async (c: Context) => {
                 chat,
                 lastMessage.id,
                 lastMessage.externalId,
-                email,
               )
               errorSpan.end()
             }
@@ -4591,7 +4586,6 @@ export const MessageApi = async (c: Context) => {
             chat,
             lastMessage.id,
             lastMessage.externalId,
-            email,
           )
 
           await stream.writeSSE({
@@ -4675,7 +4669,6 @@ export const MessageApi = async (c: Context) => {
           chat,
           lastMessage.id,
           lastMessage.externalId,
-          email,
         )
 
         await stream.writeSSE({
@@ -4744,7 +4737,6 @@ export const MessageApi = async (c: Context) => {
           chat,
           lastMessage.id,
           lastMessage.externalId,
-          email,
         )
       }
     }
@@ -5673,7 +5665,6 @@ export const MessageRetryApi = async (c: Context) => {
                   chat,
                   originalMessage.id,
                   originalMessage.externalId,
-                  email,
                 )
               }
             } else {
@@ -5750,7 +5741,6 @@ export const MessageRetryApi = async (c: Context) => {
                 chat,
                 originalMessage.id,
                 originalMessage.externalId,
-                email,
               )
             }
           } else {
@@ -5821,7 +5811,6 @@ export const MessageRetryApi = async (c: Context) => {
               chat,
               originalMessage.id,
               originalMessage.externalId,
-              email,
             )
           } else {
             // For assistant message retries, update the existing trace
