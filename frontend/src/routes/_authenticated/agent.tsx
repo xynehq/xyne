@@ -1012,6 +1012,7 @@ function AgentComponent() {
         })
         return newSelections
       })
+      setSelectedEntities([])
     }
     // Also update the test agent's RAG status when the form's RAG changes,
     // but only if we are testing the current form config.
@@ -1937,10 +1938,11 @@ function AgentComponent() {
                   </div>
                 </div>
 
-                <div>
-                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                    Specific Entites
-                  </Label>
+                {isRagOn && (
+                  <div>
+                    <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
+                      Specific Entites
+                    </Label>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
                     Search for and select specific entities for your agent to
                     use.
@@ -2002,6 +2004,7 @@ function AgentComponent() {
                     )}
                   </div>
                 </div>
+                )}
 
                 {!isPublic && (
                   <div>
