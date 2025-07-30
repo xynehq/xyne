@@ -40,18 +40,18 @@ export const insertAgent = async (
     workspaceId,
   }
 
-  console.log("🗃️ DEBUG - DB insertAgent called with:", {
-    mcpToolsFromAgentData: agentData.mcpTools,
-    mcpToolsInAgentWithIds: agentWithIds.mcpTools,
-    mcpToolsLength: agentWithIds.mcpTools?.length || 0
-  })
+  // console.log("🗃️ DEBUG - DB insertAgent called with:", {
+  //   mcpToolsFromAgentData: agentData.mcpTools,
+  //   mcpToolsInAgentWithIds: agentWithIds.mcpTools,
+  //   mcpToolsLength: agentWithIds.mcpTools?.length || 0
+  // })
 
   const validatedAgentData = insertAgentSchema.parse(agentWithIds)
 
-  console.log("✅ DEBUG - After validation:", {
-    mcpToolsValidated: validatedAgentData.mcpTools,
-    mcpToolsValidatedLength: validatedAgentData.mcpTools?.length || 0
-  })
+  // console.log("✅ DEBUG - After validation:", {
+  //   mcpToolsValidated: validatedAgentData.mcpTools,
+  //   mcpToolsValidatedLength: validatedAgentData.mcpTools?.length || 0
+  // })
 
   // Use transaction to ensure both agent and permission are created atomically
   const result = await trx.transaction(async (tx) => {
@@ -67,11 +67,11 @@ export const insertAgent = async (
 
     const newAgent = selectAgentSchema.parse(agentArr[0])
 
-    console.log("💾 DEBUG - Agent saved to database:", {
-      agentId: newAgent.id,
-      mcpToolsInDatabase: newAgent.mcpTools,
-      mcpToolsLength: newAgent.mcpTools?.length || 0
-    })
+    // console.log("💾 DEBUG - Agent saved to database:", {
+    //   agentId: newAgent.id,
+    //   mcpToolsInDatabase: newAgent.mcpTools,
+    //   mcpToolsLength: newAgent.mcpTools?.length || 0
+    // })
 
     // Grant owner permission to the creator
     await grantUserAgentPermission(tx, {

@@ -235,10 +235,10 @@ function AgentComponent() {
 
   // Debug wrapper for setSelectedMCPTools
   const updateSelectedMCPTools = (tools: Array<{ connectorId: string; tools: string[] }>) => {
-    console.log("🔧 DEBUG - updateSelectedMCPTools called with:", {
-      toolsCount: tools.length,
-      toolsData: tools
-    })
+    // console.log("🔧 DEBUG - updateSelectedMCPTools called with:", {
+    //   toolsCount: tools.length,
+    //   toolsData: tools
+    // })
     setSelectedMCPTools(tools)
   }
   
@@ -783,12 +783,12 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
-      console.log("🔍 Loading agent for editing:", {
-        agentName: editingAgent.name,
-        mcpTools: editingAgent.mcpTools,
-        mcpToolsType: typeof editingAgent.mcpTools,
-        mcpToolsLength: Array.isArray(editingAgent.mcpTools) ? editingAgent.mcpTools.length : 'not array'
-      })
+      // console.log("🔍 Loading agent for editing:", {
+      //   agentName: editingAgent.name,
+      //   mcpTools: editingAgent.mcpTools,
+      //   mcpToolsType: typeof editingAgent.mcpTools,
+      //   mcpToolsLength: Array.isArray(editingAgent.mcpTools) ? editingAgent.mcpTools.length : 'not array'
+      // })
       
       const currentAgentIsRagOn = editingAgent.isRagOn === false ? false : true
       setIsRagOn(currentAgentIsRagOn)
@@ -801,13 +801,13 @@ function AgentComponent() {
       
       // Load existing MCP tools if any
       if (editingAgent.mcpTools) {
-        console.log("📝 Setting MCP tools:", editingAgent.mcpTools)
+        // console.log("📝 Setting MCP tools:", editingAgent.mcpTools)
         setSelectedMCPTools(editingAgent.mcpTools as Array<{
           connectorId: string
           tools: string[]
         }>)
       } else {
-        console.log("❌ No MCP tools found in agent data")
+        // console.log("❌ No MCP tools found in agent data")
         setSelectedMCPTools([])
       }
     }
@@ -919,11 +919,11 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
-    console.log("💾 Saving agent with payload:", {
-      ...agentPayload,
-      mcpToolsCount: selectedMCPTools.length,
-      mcpToolsData: selectedMCPTools
-    })
+    // console.log("💾 Saving agent with payload:", {
+    //   ...agentPayload,
+    //   mcpToolsCount: selectedMCPTools.length,
+    //   mcpToolsData: selectedMCPTools
+    // })
 
     try {
       let response

@@ -893,10 +893,37 @@ export const MessageWithToolsApi = async (c: Context) => {
               
               // Log which specific tools are being used
               for (const mcpTool of effectiveToolsList) {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Connector ${mcpTool.connectorId}: ${mcpTool.tools.length} tools (${mcpTool.tools.join(', ')})`,
-                })
+                try {
+                  const connector = await getConnectorByExternalId(
+                    db,
+                    mcpTool.connectorId,
+                    user.id,
+                  )
+                  if (connector) {
+                    const allConnectorTools = await getToolsByConnectorId(
+                      db,
+                      workspace.id,
+                      connector.id,
+                    )
+                    const selectedToolNames = allConnectorTools
+                      .filter((tool) => mcpTool.tools.includes(tool.externalId!))
+                      .map((tool) => tool.toolName)
+
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message: `Connector ${
+                        connector.name
+                      }: ${selectedToolNames.length} tools (${selectedToolNames.join(
+                        ", ",
+                      )})`,
+                    })
+                  }
+                } catch (error) {
+                  loggerWithChild({ email: sub }).error(
+                    error,
+                    `Failed to log tools for connector ${mcpTool.connectorId}`,
+                  )
+                }
               }
             } else {
               await logAndStreamReasoning({
@@ -2320,11 +2347,11 @@ async function* nonRagIterator(
   userCtx: string,
   context: string,
   results: MinimalAgentFragment[],
-  agentPrompt?: string,
-  messages: Message[] = [],
-  imageFileNames: string[] = [],
-  attachmentFileIds?: string[],
-  email?: string,
+  agentPrompt: string | undefined,
+  messages: Message[],
+  imageFileNames: string[],
+  attachmentFileIds: string[] | undefined,
+  email: string | undefined,
   isReasoning = true,
 ): AsyncIterableIterator<
   ConverseResponse & {

@@ -20,8 +20,7 @@ export const insertTool = async (
   trx: TxnOrClient,
   tool: Omit<InsertTool, "id">,
 ): Promise<SelectTool> => {
-  const toolWithExternalId = { ...tool, externalId: createId() }
-  const toolArr = await trx.insert(tools).values(toolWithExternalId).returning()
+  const toolArr = await trx.insert(tools).values(tool).returning()
 
   if (!toolArr || !toolArr.length) {
     throw new Error('Error in insert of tool "returning"')
@@ -228,7 +227,7 @@ export const upsertTool = async (
     })
   } else {
     // Create new tool
-    return insertTool(trx, { ...tool, externalId: externalId || createId() })
+    return insertTool(trx, { ...tool, externalId: createId() })
   }
 }
 

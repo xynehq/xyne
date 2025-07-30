@@ -90,19 +90,19 @@ export const GetAgentApi = async (c: Context) => {
       return c.json({ message: "Agent not found or access denied" }, 404)
     }
 
-    console.log("📖 DEBUG - Loading agent for editing:", {
-      agentExternalId: agentExternalId,
-      mcpToolsFromDatabase: agent.mcpTools,
-      mcpToolsLength: agent.mcpTools?.length || 0
-    })
+    // console.log("📖 DEBUG - Loading agent for editing:", {
+    //   agentExternalId: agentExternalId,
+    //   mcpToolsFromDatabase: agent.mcpTools,
+    //   mcpToolsLength: agent.mcpTools?.length || 0
+    // })
 
     const publicAgent = selectPublicAgentSchema.parse(agent)
     
-    console.log("📤 DEBUG - Sending to frontend:", {
-      mcpToolsInResponse: publicAgent.mcpTools,
-      mcpToolsLength: publicAgent.mcpTools?.length || 0,
-      hasField: 'mcpTools' in publicAgent
-    })
+    // console.log("📤 DEBUG - Sending to frontend:", {
+    //   mcpToolsInResponse: publicAgent.mcpTools,
+    //   mcpToolsLength: publicAgent.mcpTools?.length || 0,
+    //   hasField: 'mcpTools' in publicAgent
+    // })
 
     return c.json(publicAgent)
   } catch (error) {
@@ -157,11 +157,11 @@ export const CreateAgentApi = async (c: Context) => {
       uploadedFileNames: validatedBody.uploadedFileNames,
     }
 
-    console.log("🔧 DEBUG - Creating agent with data:", {
-      mcpToolsFromBody: validatedBody.mcpTools,
-      mcpToolsInAgentData: agentData.mcpTools,
-      mcpToolsLength: agentData.mcpTools?.length || 0
-    })
+    // console.log("🔧 DEBUG - Creating agent with data:", {
+    //   mcpToolsFromBody: validatedBody.mcpTools,
+    //   mcpToolsInAgentData: agentData.mcpTools,
+    //   mcpToolsLength: agentData.mcpTools?.length || 0
+    // })
 
     // Create agent and sync user permissions in a transaction
     const newAgent = await db.transaction(async (tx) => {

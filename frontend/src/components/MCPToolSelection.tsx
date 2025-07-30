@@ -83,11 +83,11 @@ export function MCPToolSelection({
       const response = await api.admin.connectors.all.$get()
       if (response.ok) {
         const data = await response.json()
-        console.log("All connectors:", data)
+        // console.log("All connectors:", data)
         
         const mcpConnectors = data.filter(
           (c: ConnectorResponse) => {
-            console.log(`Connector ${c.name}: type=${c.type}, status=${c.status}`)
+            // console.log(`Connector ${c.name}: type=${c.type}, status=${c.status}`)
             return c.type === "Mcp" && c.status === "connected"
           }
         )
@@ -98,11 +98,11 @@ export function MCPToolSelection({
         const connectorsWithTools = await Promise.all(
           mcpConnectors.map(async (connector: ConnectorResponse) => {
             try {
-              console.log("Connector object:", connector)
-              console.log("Connector id (externalId):", connector.id)
+              // console.log("Connector object:", connector)
+              // console.log("Connector id (externalId):", connector.id)
               
               const connectorId = connector.id
-              console.log("Using connectorId:", connectorId)
+              // console.log("Using connectorId:", connectorId)
               
               if (!connectorId) {
                 console.error("No valid connector ID found for connector:", connector)
@@ -117,7 +117,7 @@ export function MCPToolSelection({
               })
               if (toolsResponse.ok) {
                 const toolsData = await toolsResponse.json()
-                console.log(`Tools for ${connector.name}:`, toolsData)
+                // console.log(`Tools for ${connector.name}:`, toolsData)
                 return {
                   ...connector,
                   tools: toolsData || [],
