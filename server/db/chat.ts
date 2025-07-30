@@ -14,7 +14,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm"
 
 export const insertChat = async (
   trx: TxnOrClient,
@@ -99,6 +99,22 @@ export const updateChatByExternalIdWithAuth = async (
   return selectChatSchema.parse(chatArr[0])
 }
 
+export const updateChatBookmarkStatus = async (
+  trx: TxnOrClient,
+  chatId: string,
+  isBookmarked: boolean,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .update(chats)
+    .set({ isBookmarked })
+    .where(eq(chats.externalId, chatId))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
 export const deleteChatByExternalIdWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
@@ -150,13 +166,61 @@ export const getPublicChats = async (
   email: string,
   pageSize: number,
   offset: number,
+  timeRange?: { from?: Date; to?: Date },
+): Promise<SelectPublicChat[]> => {
+  const conditions = [eq(chats.email, email), eq(chats.isBookmarked, false)]
+
+  if (timeRange?.from) {
+    conditions.push(gte(chats.createdAt, timeRange.from))
+  }
+  if (timeRange?.to) {
+    conditions.push(lte(chats.createdAt, timeRange.to))
+  }
+
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(and(...conditions))
+    .limit(pageSize)
+    .offset(offset)
+    .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getFavoriteChats = async (
+  trx: TxnOrClient,
+  email: string,
+  pageSize: number,
+  offset: number,
 ): Promise<SelectPublicChat[]> => {
   const chatsArr = await trx
     .select()
     .from(chats)
-    .where(eq(chats.email, email))
+    .where(and(eq(chats.email, email), eq(chats.isBookmarked, true)))
     .limit(pageSize)
     .offset(offset)
     .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getAllChatsForDashboard = async (
+  trx: TxnOrClient,
+  email: string,
+  timeRange?: { from?: Date; to?: Date },
+): Promise<SelectPublicChat[]> => {
+  const conditions = [eq(chats.email, email)]
+
+  if (timeRange?.from) {
+    conditions.push(gte(chats.createdAt, timeRange.from))
+  }
+  if (timeRange?.to) {
+    conditions.push(lte(chats.createdAt, timeRange.to))
+  }
+
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(and(...conditions))
+    .orderBy(desc(chats.createdAt))
   return z.array(selectPublicChatSchema).parse(chatsArr)
 }

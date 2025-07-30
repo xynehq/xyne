@@ -18,6 +18,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  baselineRAGOffJsonStream,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -107,6 +108,7 @@ import {
   searchVespaThroughAgent,
   searchVespaAgent,
   SearchVespaThreads,
+  getAllDocumentsForAgent,
 } from "@/search/vespa"
 import {
   Apps,
@@ -133,7 +135,9 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
-
+import type { AttachmentMetadata } from "@/shared/types"
+import { storeAttachmentMetadata } from "@/db/attachment"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
@@ -146,14 +150,18 @@ import {
   ragPipelineConfig,
   RagPipelineStages,
   type AgentTool,
+  type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
 import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
+  extractImageFileNames,
   flattenObject,
+  getCitationToImage,
   handleError,
   isMessageWithContext,
+  mimeTypeMap,
   processMessage,
   searchToCitation,
 } from "./utils"
@@ -163,6 +171,7 @@ import {
   buildUserQuery,
   cleanBuffer,
   isContextSelected,
+  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
@@ -185,36 +194,117 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
-const checkAndYieldCitationsForAgent = function* (
+const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
   baseIndex: number = 0,
+  yieldedImageCitations?: Set<number>,
+  email: string = "",
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
-  while ((match = textToCitationIndex.exec(text)) !== null) {
-    const citationIndex = parseInt(match[1], 10)
-    if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex - 1]
+  let imgMatch
+  while (
+    (match = textToCitationIndex.exec(text)) !== null ||
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+  ) {
+    if (match) {
+      const citationIndex = parseInt(match[1], 10)
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - 1]
 
-      if (!item?.source?.docId || !item.source?.url) {
-        Logger.info(
-          "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
-        )
-        continue
-      }
+        if (!item?.source?.docId || !item.source?.url) {
+          Logger.info(
+            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+          )
+          continue
+        }
 
-      yield {
-        citation: {
-          index: citationIndex,
-          item: item.source,
-        },
+        yield {
+          citation: {
+            index: citationIndex,
+            item: item.source,
+          },
+        }
+        yieldedCitations.add(citationIndex)
       }
-      yieldedCitations.add(citationIndex)
+    } else if (imgMatch && yieldedImageCitations) {
+      const parts = imgMatch[1].split("_")
+      if (parts.length >= 2) {
+        const docIndex = parseInt(parts[0], 10)
+        const imageIndex = parseInt(parts[1], 10)
+        const citationIndex = docIndex + baseIndex
+        if (!yieldedImageCitations.has(citationIndex)) {
+          const item = results[docIndex]
+          if (item) {
+            try {
+              const imageData = await getCitationToImage(
+                imgMatch[1],
+                {
+                  id: item.id,
+                  relevance: item.confidence,
+                  fields: {
+                    docId: item.source.docId,
+                  } as any,
+                } as VespaSearchResult,
+                email,
+              )
+              if (imageData) {
+                if (!imageData.imagePath || !imageData.imageBuffer) {
+                  loggerWithChild({ email: email }).error(
+                    "Invalid imageData structure returned",
+                    { citationKey: imgMatch[1], imageData },
+                  )
+                  continue
+                }
+                yield {
+                  imageCitation: {
+                    citationKey: imgMatch[1],
+                    imagePath: imageData.imagePath,
+                    imageData: imageData.imageBuffer.toString("base64"),
+                    ...(imageData.extension
+                      ? { mimeType: mimeTypeMap[imageData.extension] }
+                      : {}),
+                    item: item.source,
+                  },
+                }
+              }
+            } catch (error) {
+              loggerWithChild({ email: email }).error(
+                error,
+                "Error processing image citation",
+                { citationKey: imgMatch[1], error: getErrorMessage(error) },
+              )
+            }
+            yieldedImageCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              "Found a citation index but could not find it in the search result ",
+              citationIndex,
+              results.length,
+            )
+            continue
+          }
+        }
+      }
     }
   }
 }
+
+const vespaResultToMinimalAgentFragment = (
+  child: VespaSearchResult,
+  idx: number,
+): MinimalAgentFragment => ({
+  id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
+  content: answerContextMap(
+    child as z.infer<typeof VespaSearchResultsSchema>,
+    0,
+    true,
+  ),
+  source: searchToCitation(child as z.infer<typeof VespaSearchResultsSchema>),
+  confidence: 1.0,
+})
 
 async function* getToolContinuationIterator(
   message: string,
@@ -222,13 +312,39 @@ async function* getToolContinuationIterator(
   toolsPrompt: string,
   toolOutput: string,
   results: MinimalAgentFragment[],
-  agentPrompt?: string, // New optional parameter
+  agentPrompt?: string,
   messages: Message[] = [],
   fallbackReasoning?: string,
+  attachmentFileIds?: string[],
+  email?: string,
 ): AsyncIterableIterator<
-  ConverseResponse & { citation?: { index: number; item: any } }
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
 > {
   const context = answerContextMapFromFragments(results, maxDefaultSummary)
+  const { imageFileNames } = extractImageFileNames(
+    context,
+    results.map(
+      (v) =>
+        ({
+          fields: {
+            docId: v.source.docId,
+            title: v.source.title,
+            url: v.source.url,
+          },
+        }) as any,
+    ),
+  )
+  const finalImageFileNames = imageFileNames || []
+
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
+  }
+
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -238,11 +354,12 @@ async function* getToolContinuationIterator(
       json: true,
       reasoning: false,
       messages,
+      imageFileNames: finalImageFileNames,
     },
     toolsPrompt,
     context ?? "",
-    agentPrompt, // Pass agentPrompt
-    fallbackReasoning, // Pass fallback reasoning
+    agentPrompt,
+    fallbackReasoning,
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -252,6 +369,7 @@ async function* getToolContinuationIterator(
   let thinking = ""
   let reasoning = config.isReasoning
   let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
   const ANSWER_TOKEN = '"answer":'
 
   for await (const chunk of continuationIterator) {
@@ -302,10 +420,12 @@ async function* getToolContinuationIterator(
         yield { text: chunk.text }
 
         yield* checkAndYieldCitationsForAgent(
-          chunk.text,
+          buffer,
           yieldedCitations,
           results,
           previousResultsLength,
+          yieldedImageCitations,
+          email ?? "",
         )
       } catch (e) {
         Logger.error(`Error parsing LLM output: ${e}`)
@@ -335,6 +455,7 @@ async function performSynthesis(
   messagesWithNoErrResponse: Message[],
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
+  attachmentFileIds?: string[],
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -354,6 +475,9 @@ async function performSynthesis(
         json: true,
         reasoning: false,
         messages: messagesWithNoErrResponse,
+        imageFileNames: attachmentFileIds?.map(
+          (fileId, index) => `${index}_${fileId}_${0}`,
+        ),
       },
     )
 
@@ -438,7 +562,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    const isAgentic = c.req.query("agentic") === "true"
+    let isAgentic = c.req.query("agentic") === "true"
     let {
       message,
       chatId,
@@ -447,8 +571,13 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
+    let attachmentStorageError: Error | null = null
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
@@ -496,6 +625,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           message: "Access denied: You don't have permission to use this agent",
         })
       }
+      if (agentForDb.isRagOn === false) {
+        isAgentic = false
+      }
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
@@ -540,6 +672,23 @@ export const MessageWithToolsApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [chat, insertedMsg]
         },
       )
@@ -574,6 +723,23 @@ export const MessageWithToolsApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -630,6 +796,31 @@ export const MessageWithToolsApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
 
           let messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
@@ -789,6 +980,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let answer = ""
           let currentAnswer = ""
           let citations = []
+          let imageCitations: any = []
           let citationMap: Record<number, number> = {}
           let citationValues: Record<number, string> = {}
           let thinking = ""
@@ -871,6 +1063,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     messagesWithNoErrResponse,
                     logAndStreamReasoning,
                     sub,
+                    attachmentFileIds,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1406,13 +1599,37 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
               }
 
+              // if the timestamp range was specified and no results were found
+              // then  that no results were found in this timastamp range
+              const hasTimestampFilter = toolParams?.from || toolParams?.to
+              if (hasTimestampFilter && !gatheredFragments.length) {
+                const fromDate = new Date(
+                  toolParams?.from || 0,
+                ).toLocaleDateString()
+                const toDate = new Date(
+                  toolParams?.to || Date.now(),
+                ).toLocaleDateString()
+
+                const appName = toolParams.app
+                  ? `${toolParams.app} data`
+                  : "content"
+
+                const context = {
+                  id: "",
+                  content: `No ${appName} found within the specified date range (${fromDate} to ${toDate}). No further action needed - this simply means there was no activity during this time period.`,
+                  source: {} as any,
+                  confidence: 0,
+                }
+                gatheredFragments.push(context)
+              }
+
               planningContext = gatheredFragments.length
                 ? gatheredFragments
                     .map(
                       (f, i) =>
                         `[${i + 1}] ${
                           f.source.title || `Source ${f.source.docId}`
-                        }: ${f.content}...`,
+                        }: ${f.content}`,
                     )
                     .join("\n")
                 : ""
@@ -1426,6 +1643,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
 
                 await logAndStreamReasoning({
@@ -1612,6 +1830,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
+                  attachmentFileIds,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -1656,6 +1875,8 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentPromptForLLM,
             messagesWithNoErrResponse,
             fallbackReasoning,
+            attachmentFileIds,
+            email,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -1703,6 +1924,18 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               citationValues[index] = item
             }
+            if (chunk.imageCitation) {
+              loggerWithChild({ email: email }).info(
+                `Found image citation, sending it`,
+                { citationKey: chunk.imageCitation.citationKey },
+              )
+              imageCitations.push(chunk.imageCitation)
+              stream.writeSSE({
+                event: ChatSSEvents.ImageCitationUpdate,
+                data: JSON.stringify(chunk.imageCitation),
+              })
+            }
+
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
@@ -1726,6 +1959,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: citations,
+              imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
               modelId:
@@ -1855,6 +2089,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               )
             }
           }
+
           // Ensure stream is removed from the map on completion or error
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
@@ -1916,6 +2151,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
@@ -1996,9 +2232,571 @@ export const MessageWithToolsApi = async (c: Context) => {
     rootSpan.end()
   }
 }
+async function* nonRagIterator(
+  message: string,
+  userCtx: string,
+  context: string,
+  results: MinimalAgentFragment[],
+  agentPrompt?: string,
+  messages: Message[] = [],
+  imageFileNames: string[] = [],
+  attachmentFileIds?: string[],
+  email?: string,
+  isReasoning = true,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
+> {
+  const ragOffIterator = baselineRAGOffJsonStream(
+    message,
+    userCtx,
+    context,
+    {
+      modelId: defaultBestModel,
+      stream: true,
+      json: false,
+      reasoning: isReasoning,
+      imageFileNames,
+    },
+    agentPrompt ?? "",
+    messages,
+  )
 
-// END OF AgentMessageApi
-// The new CombinedAgentSlackApi function will be inserted after this comment.
+  const previousResultsLength = 0
+  let buffer = ""
+  let thinking = ""
+  let reasoning = isReasoning
+  let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Set<number>()
+
+  for await (const chunk of ragOffIterator) {
+    try {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitationsForAgent(
+              thinking,
+              yieldedCitations,
+              results,
+              previousResultsLength,
+              undefined,
+              email!,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+              yield* checkAndYieldCitationsForAgent(
+                thinking,
+                yieldedCitations,
+                results,
+                previousResultsLength,
+                undefined,
+                email!,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+        if (!reasoning) {
+          buffer += chunk.text
+          yield { text: chunk.text }
+
+          yield* checkAndYieldCitationsForAgent(
+            buffer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+            yieldedImageCitations,
+            email ?? "",
+          )
+        }
+      }
+
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    } catch (e) {
+      Logger.error(`Error processing chunk: ${e}`)
+      continue
+    }
+  }
+}
+
+export const AgentMessageApiRagOff = async (c: Context) => {
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
+
+  let stream: any
+  let chat: SelectChat
+  let assistantMessageId: string | null = null
+  let streamKey: string | null = null
+  let email = ""
+
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    loggerWithChild({ email: email }).info("AgentMessageApiRagOff..")
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+
+    // @ts-ignore
+    const body = c.req.valid("query")
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
+    let {
+      message,
+      chatId,
+      modelId,
+      isReasoningEnabled,
+      agentId,
+    }: MessageReqType = body
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId, // This workspaceId is the externalId from JWT
+      email,
+    )
+    const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
+    let agentPromptForLLM: string | undefined = undefined
+    let agentForDb: SelectAgent | null = null
+    if (agentId && isCuid(agentId)) {
+      // Use the numeric workspace.id for the database query with permission check
+      agentForDb = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        agentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentForDb) {
+        throw new HTTPException(403, {
+          message: "Access denied: You don't have permission to use this agent",
+        })
+      }
+      agentPromptForLLM = JSON.stringify(agentForDb)
+    }
+    const agentIdToStore = agentForDb ? agentForDb.externalId : null
+    const userRequestsReasoning = isReasoningEnabled
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
+    message = decodeURIComponent(message)
+    rootSpan.setAttribute("message", message)
+
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
+
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+
+    const chatCreationSpan = rootSpan.startSpan("chat_creation")
+
+    let title = ""
+    if (!chatId) {
+      const titleSpan = chatCreationSpan.startSpan("generate_title")
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        stream: false,
+      })
+      title = titleResp.title
+      let attachmentStorageError: Error | null = null
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+        titleSpan.setAttribute("cost", cost)
+      }
+      titleSpan.setAttribute("title", title)
+      titleSpan.end()
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+            agentId: agentIdToStore,
+          })
+
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds: fileIds,
+          })
+
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
+
+          return [chat, insertedMsg]
+        },
+      )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+      chatCreationSpan.end()
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
+          // we are updating the chat and getting it's value in one call itself
+
+          let existingChat = await updateChatByExternalIdWithAuth(
+            db,
+            chatId,
+            email,
+            {},
+          )
+          let allMessages = await getChatMessagesWithAuth(tx, chatId, email)
+
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      Logger.info("Existing conversation, fetched previous messages")
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+      chatCreationSpan.end()
+    }
+    return streamSSE(c, async (stream) => {
+      streamKey = `${chat.externalId}` // Create the stream key
+      activeStreams.set(streamKey, stream) // Add stream to the map
+      Logger.info(`Added stream ${streamKey} to active streams map.`)
+      let wasStreamClosedPrematurely = false
+      const streamSpan = rootSpan.startSpan("stream_response")
+      streamSpan.setAttribute("chatId", chat.externalId)
+      const messagesWithNoErrResponse = messages
+        .slice(0, messages.length - 1)
+        .filter((msg) => !msg?.errorMessage)
+        .map((m) => ({
+          role: m.messageRole as ConversationRole,
+          content: [{ text: m.message }],
+        }))
+      try {
+        if (!chatId) {
+          const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+          await stream.writeSSE({
+            data: title,
+            event: ChatSSEvents.ChatTitleUpdate,
+          })
+          titleUpdateSpan.end()
+        }
+
+        Logger.info("Chat stream started")
+        // we do not set the message Id as we don't have it
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+          }),
+        })
+
+        const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
+        const allDataSources = await getAllDocumentsForAgent(
+          [Apps.DataSource],
+          agentForDb?.appIntegrations as string[],
+        )
+        dataSourceSpan.end()
+        loggerWithChild({ email: sub }).info(
+          `Found ${allDataSources?.root?.children?.length} data sources for agent`,
+        )
+
+        let docIds: string[] = []
+        if (
+          allDataSources &&
+          allDataSources.root &&
+          allDataSources.root.children
+        ) {
+          docIds = [
+            ...new Set(
+              allDataSources.root.children
+                .map(
+                  (child: VespaSearchResult) =>
+                    (child.fields as any)?.docId as string,
+                )
+                .filter(Boolean),
+            ),
+          ]
+        }
+
+        let context = ""
+        let finalImageFileNames: string[] = []
+        let fragments: MinimalAgentFragment[] = []
+        if (docIds.length > 0) {
+          let previousResultsLength = 0
+          const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
+          const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
+          // const allChunksCopy
+          chunksSpan.end()
+          if (allChunks?.root?.children) {
+            const startIndex = 0
+            fragments = allChunks.root.children.map((child, idx) =>
+              vespaResultToMinimalAgentFragment(child, idx),
+            )
+            context = answerContextMapFromFragments(
+              fragments,
+              maxDefaultSummary,
+            )
+
+            const { imageFileNames } = extractImageFileNames(
+              context,
+              fragments.map(
+                (v) =>
+                  ({
+                    fields: {
+                      docId: v.source.docId,
+                      title: v.source.title,
+                      url: v.source.url,
+                    },
+                  }) as any,
+              ),
+            )
+            Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
+            finalImageFileNames = imageFileNames || []
+            // context = initialContext;
+          }
+        }
+        if (attachmentFileIds?.length) {
+          finalImageFileNames.push(
+            ...attachmentFileIds.map(
+              (fileid, index) => `${index}_${fileid}_${0}`,
+            ),
+          )
+        }
+
+        const ragOffIterator = nonRagIterator(
+          message,
+          ctx,
+          context,
+          fragments,
+          agentPromptForLLM,
+          messagesWithNoErrResponse,
+          finalImageFileNames,
+          attachmentFileIds,
+          email,
+          isReasoningEnabled,
+        )
+        let answer = ""
+        let citations: any[] = []
+        let imageCitations: any[] = []
+        let citationMap: Record<number, number> = {}
+        let citationValues: Record<number, any> = {}
+        let thinking = ""
+        let reasoning = isReasoningEnabled
+        for await (const chunk of ragOffIterator) {
+          if (stream.closed) {
+            Logger.info("[AgentMessageApiRagOff] Stream closed. Breaking.")
+            wasStreamClosedPrematurely = true
+            break
+          }
+          if (chunk.text) {
+            if (reasoning && chunk.reasoning) {
+              thinking += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: chunk.text,
+              })
+              // reasoningSpan.end()
+            }
+            if (!chunk.reasoning) {
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+          }
+
+          if (chunk.citation) {
+            const { index, item } = chunk.citation
+            citations.push(item)
+            citationMap[index] = citations.length - 1
+            loggerWithChild({ email: sub }).info(
+              `Found citations and sending it, current count: ${citations.length}`,
+            )
+            stream.writeSSE({
+              event: ChatSSEvents.CitationsUpdate,
+              data: JSON.stringify({
+                contextChunks: citations,
+                citationMap,
+              }),
+            })
+            citationValues[index] = item
+          }
+
+          if (chunk.imageCitation) {
+            loggerWithChild({ email: email }).info(
+              `Found image citation, sending it`,
+              { citationKey: chunk.imageCitation.citationKey },
+            )
+            imageCitations.push(chunk.imageCitation)
+            stream.writeSSE({
+              event: ChatSSEvents.ImageCitationUpdate,
+              data: JSON.stringify(chunk.imageCitation),
+            })
+          }
+
+          if (chunk.cost) {
+            costArr.push(chunk.cost)
+          }
+        }
+
+        if (answer) {
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(answer, citationMap),
+            thinking: thinking,
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: assistantMessageId,
+            }),
+          })
+        } else if (wasStreamClosedPrematurely) {
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(answer, citationMap),
+            thinking: thinking,
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+        } else {
+          const errorMessage =
+            "There seems to be an issue on our side. Please try again after some time."
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: citations,
+            imageCitations: imageCitations,
+            message: processMessage(errorMessage, citationMap),
+            thinking: thinking,
+            modelId: defaultBestModel,
+          })
+          assistantMessageId = msg.externalId
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: assistantMessageId,
+            }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseUpdate,
+            data: errorMessage,
+          })
+        }
+
+        const endSpan = streamSpan.startSpan("send_end_event")
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        endSpan.end()
+        streamSpan.end()
+        rootSpan.end()
+      } catch (error) {
+        // ... (error handling as in AgentMessageApi)
+      } finally {
+        if (streamKey && activeStreams.has(streamKey)) {
+          activeStreams.delete(streamKey)
+          Logger.info(`Removed stream ${streamKey} from active streams map.`)
+        }
+      }
+    })
+  } catch (error) {
+    // ... (error handling as in AgentMessageApi)
+  }
+}
 
 export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
@@ -2020,6 +2818,11 @@ export const AgentMessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
+    let attachmentStorageError: Error | null = null
     let {
       message,
       chatId,
@@ -2051,6 +2854,9 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
+      if (config.ragOffFeature && agentForDb.isRagOn === false) {
+        return AgentMessageApiRagOff(c)
+      }
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     const userRequestsReasoning = isReasoningEnabled
@@ -2122,6 +2928,23 @@ export const AgentMessageApi = async (c: Context) => {
             modelId,
             fileIds: fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [chat, insertedMsg]
         },
       )
@@ -2156,10 +2979,29 @@ export const AgentMessageApi = async (c: Context) => {
             modelId,
             fileIds,
           })
+          // Store attachment metadata for user message if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            try {
+              await storeAttachmentMetadata(
+                tx,
+                insertedMsg.externalId,
+                attachmentMetadata,
+                email,
+              )
+            } catch (error) {
+              attachmentStorageError = error as Error
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
+              )
+            }
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      Logger.info("Existing conversation, fetched previous messages")
+      loggerWithChild({ email: sub }).info(
+        "Existing conversation, fetched previous messages",
+      )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
       chatCreationSpan.end()
@@ -2192,12 +3034,41 @@ export const AgentMessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
+          // Send attachment metadata immediately if attachments exist
+          if (attachmentMetadata && attachmentMetadata.length > 0) {
+            const userMessage = messages[messages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.AttachmentUpdate,
+              data: JSON.stringify({
+                messageId: userMessage.externalId,
+                attachments: attachmentMetadata,
+              }),
+            })
+          }
+
+          // Notify client if attachment storage failed
+          if (attachmentStorageError) {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                error: "attachment_storage_failed",
+                message:
+                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+                details: attachmentStorageError.message,
+              }),
+            })
+          }
+
+          if (
+            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (attachmentFileIds && attachmentFileIds?.length > 0)
+          ) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
             let answer = ""
             let citations = []
+            let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
@@ -2220,6 +3091,7 @@ export const AgentMessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               [],
+              attachmentFileIds,
               agentPromptForLLM,
             )
             stream.writeSSE({
@@ -2231,6 +3103,7 @@ export const AgentMessageApi = async (c: Context) => {
             thinking = ""
             reasoning = isReasoning && userRequestsReasoning
             citations = []
+            imageCitations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
             let count = 0
@@ -2288,6 +3161,17 @@ export const AgentMessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              if (chunk.imageCitation) {
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                imageCitations.push(chunk.imageCitation)
+                stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
               count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
@@ -2323,6 +3207,7 @@ export const AgentMessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
                 modelId:
@@ -2452,6 +3337,7 @@ export const AgentMessageApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations = []
+            let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
               app: "",
@@ -2660,6 +3546,17 @@ export const AgentMessageApi = async (c: Context) => {
                   })
                   citationValues[index] = item
                 }
+                if (chunk.imageCitation) {
+                  loggerWithChild({ email: email }).info(
+                    `Found image citation, sending it`,
+                    { citationKey: chunk.imageCitation.citationKey },
+                  )
+                  imageCitations.push(chunk.imageCitation)
+                  stream.writeSSE({
+                    event: ChatSSEvents.ImageCitationUpdate,
+                    data: JSON.stringify(chunk.imageCitation),
+                  })
+                }
               }
               understandSpan.setAttribute("citation_count", citations.length)
               understandSpan.setAttribute(
@@ -2699,6 +3596,7 @@ export const AgentMessageApi = async (c: Context) => {
                 messageRole: MessageRole.Assistant,
                 email: user.email,
                 sources: citations,
+                imageCitations: imageCitations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
                 modelId:

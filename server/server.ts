@@ -9,6 +9,8 @@ import {
   chatRenameSchema,
   chatTraceSchema,
   chatSchema,
+  dashboardDataSchema,
+  sharedAgentUsageSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
@@ -50,6 +52,14 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  GetAdminChats,
+  GetAdminAgents,
+  GetAdminUsers,
+  GetUserAgentLeaderboard,
+  GetAgentAnalysis,
+  adminQuerySchema,
+  userAgentLeaderboardQuerySchema,
+  agentAnalysisQuerySchema,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -79,12 +89,16 @@ import {
   DeleteDocumentApi,
   deleteDocumentSchema,
   GetAgentsForDataSourceApi,
+  GetDataSourceFile,
 } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
+  ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
+  DashboardDataApi,
+  SharedAgentUsageApi,
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
@@ -124,14 +138,24 @@ import {
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
+  GetAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
-import { handleFileUpload } from "@/api/files"
+import {
+  handleAttachmentUpload,
+  handleFileUpload,
+  handleAttachmentServe,
+  handleThumbnailServe,
+} from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import { messageFeedbackSchema } from "@/api/chat/types"
 
-import { isSlackEnabled, startSocketMode, getSocketModeStatus } from "@/integrations/slack/client"
+import {
+  isSlackEnabled,
+  startSocketMode,
+  getSocketModeStatus,
+} from "@/integrations/slack/client"
 
 // Import Vespa proxy handlers
 import {
@@ -142,6 +166,15 @@ import {
   vespaGetItemsProxy,
   vespaChatContainerByChannelProxy,
   vespaChatUserByEmailProxy,
+  vespaGetDocumentProxy,
+  vespaGetDocumentsByIdsProxy,
+  vespaGetUsersByNamesAndEmailsProxy,
+  vespaGetDocumentsByThreadIdProxy,
+  vespaGetEmailsByThreadIdsProxy,
+  vespaGetDocumentsWithFieldProxy,
+  vespaGetRandomDocumentProxy,
+  searchVespaProxy,
+  groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
@@ -329,7 +362,6 @@ const handleAppValidation = async (c: Context) => {
     })
   }
 
-
   const user = await userInfoRes.json()
 
   const email = user?.email
@@ -400,6 +432,9 @@ export const AppRoutes = app
     AutocompleteApi,
   )
   .post("files/upload", handleFileUpload)
+  .post("/files/upload-attachment", handleAttachmentUpload)
+  .get("/attachments/:fileId", handleAttachmentServe)
+  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -410,6 +445,21 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get(
+    "/chat/favorites",
+    zValidator("query", chatHistorySchema),
+    ChatFavoritesApi,
+  )
+  .get(
+    "/chat/dashboard-data",
+    zValidator("query", dashboardDataSchema),
+    DashboardDataApi,
+  )
+  .get(
+    "/chat/shared-agent-usage",
+    zValidator("query", sharedAgentUsageSchema),
+    SharedAgentUsageApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -452,6 +502,7 @@ export const AppRoutes = app
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
+  .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .get("/proxy/:url", ProxyUrl)
@@ -474,6 +525,7 @@ export const AppRoutes = app
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .put(
@@ -567,6 +619,20 @@ export const AppRoutes = app
     AdminDeleteUserData,
   )
   .get("/oauth/global-slack-provider", GetProviders)
+  // Admin Dashboard Routes
+  .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
+  .get("/agents", GetAdminAgents)
+  .get("/users", GetAdminUsers)
+  .get(
+    "/users/:userId/agent-leaderboard",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetUserAgentLeaderboard,
+  )
+  .get(
+    "/agents/:agentId/analysis",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentAnalysis,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app
@@ -581,6 +647,31 @@ app
     vespaChatContainerByChannelProxy,
   )
   .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
+  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
+  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
+  .post(
+    "/get-users-by-names-and-emails",
+    validateApiKey,
+    vespaGetUsersByNamesAndEmailsProxy,
+  )
+  .post(
+    "/get-documents-by-thread-id",
+    validateApiKey,
+    vespaGetDocumentsByThreadIdProxy,
+  )
+  .post(
+    "/get-emails-by-thread-ids",
+    validateApiKey,
+    vespaGetEmailsByThreadIdsProxy,
+  )
+  .post(
+    "/get-documents-with-field",
+    validateApiKey,
+    vespaGetDocumentsWithFieldProxy,
+  )
+  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
+  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
+  .post("/search-vespa", validateApiKey, searchVespaProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -756,6 +847,7 @@ app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
@@ -837,14 +929,16 @@ export const init = async () => {
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
-      const socketStarted = await startSocketMode();
+      const socketStarted = await startSocketMode()
       if (socketStarted) {
-        Logger.info("Slack Socket Mode connection initiated successfully.");
+        Logger.info("Slack Socket Mode connection initiated successfully.")
       } else {
-        Logger.warn("Failed to start Slack Socket Mode - missing configuration.");
+        Logger.warn(
+          "Failed to start Slack Socket Mode - missing configuration.",
+        )
       }
     } catch (error) {
-      Logger.error(error, "Error starting Slack Socket Mode");
+      Logger.error(error, "Error starting Slack Socket Mode")
     }
   } else {
     Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")

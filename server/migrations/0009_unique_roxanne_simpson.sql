@@ -1,2 +1,0 @@
-ALTER TABLE "connectors" DROP CONSTRAINT "connectors_workspace_id_user_id_app_type_auth_type_unique";--> statement-breakpoint
-ALTER TABLE "connectors" ADD CONSTRAINT "connectors_workspace_id_user_id_app_type_auth_type_name_unique" UNIQUE("workspace_id","user_id","app_type","auth_type","name");

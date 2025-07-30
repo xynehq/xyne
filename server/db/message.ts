@@ -6,7 +6,7 @@ import {
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt } from "drizzle-orm"
+import { and, asc, eq, lt, count, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -82,4 +82,123 @@ export const updateMessage = async (
     .update(messages)
     .set(updatedFields)
     .where(and(eq(messages.externalId, messageId)))
+}
+
+export async function getAllMessages({
+  db,
+  externalChatId,
+}: {
+  db: TxnOrClient
+  externalChatId: string
+}): Promise<SelectMessage[]> {
+  const result = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.chatExternalId, externalChatId))
+    .orderBy(asc(messages.createdAt))
+
+  return selectMessageSchema.array().parse(result)
+}
+
+export async function getMessageCountsByChats({
+  db,
+  chatExternalIds,
+  email,
+  workspaceExternalId,
+}: {
+  db: TxnOrClient
+  chatExternalIds: string[]
+  email: string
+  workspaceExternalId: string
+}): Promise<Record<string, number>> {
+  if (chatExternalIds.length === 0) {
+    return {}
+  }
+
+  const result = await db
+    .select({
+      chatExternalId: messages.chatExternalId,
+      messageCount: count(messages.externalId),
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+      ),
+    )
+    .groupBy(messages.chatExternalId)
+
+  return result.reduce(
+    (acc, row) => {
+      acc[row.chatExternalId] = row.messageCount
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+}
+
+export async function getMessageFeedbackStats({
+  db,
+  chatExternalIds,
+  email,
+  workspaceExternalId,
+}: {
+  db: TxnOrClient
+  chatExternalIds: string[]
+  email: string
+  workspaceExternalId: string
+}): Promise<{
+  totalLikes: number
+  totalDislikes: number
+  feedbackByChat: Record<string, { likes: number; dislikes: number }>
+}> {
+  if (chatExternalIds.length === 0) {
+    return {
+      totalLikes: 0,
+      totalDislikes: 0,
+      feedbackByChat: {},
+    }
+  }
+
+  const result = await db
+    .select({
+      chatExternalId: messages.chatExternalId,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)::int`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)::int`,
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+        inArray(messages.feedback, ["like", "dislike"]),
+      ),
+    )
+    .groupBy(messages.chatExternalId)
+
+  let totalLikes = 0
+  let totalDislikes = 0
+  const feedbackByChat: Record<string, { likes: number; dislikes: number }> = {}
+
+  // Initialize all chats with zero feedback
+  chatExternalIds.forEach((chatId) => {
+    feedbackByChat[chatId] = { likes: 0, dislikes: 0 }
+  })
+
+  // Populate with actual feedback counts
+  result.forEach((row) => {
+    feedbackByChat[row.chatExternalId].likes = row.likes
+    feedbackByChat[row.chatExternalId].dislikes = row.dislikes
+    totalLikes += row.likes
+    totalDislikes += row.dislikes
+  })
+
+  return {
+    totalLikes,
+    totalDislikes,
+    feedbackByChat,
+  }
 }

@@ -40,6 +40,7 @@ export const createAgentSchema = z.object({
   isPublic: z.boolean().optional().default(false),
   appIntegrations: z.array(z.string()).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
+  isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
 })
@@ -53,6 +54,48 @@ export const updateAgentSchema = createAgentSchema.partial().extend({
   userEmails: z.array(z.string().email()).optional(),
 })
 export type UpdateAgentPayload = z.infer<typeof updateAgentSchema>
+
+export const GetAgentApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+    const agentExternalId = c.req.param("agentExternalId")
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+      userAndWorkspace.user.id,
+    )
+
+    if (!agent) {
+      return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    return c.json(selectPublicAgentSchema.parse(agent))
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Get Agent Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    return c.json({ message: "Could not fetch agent", detail: errMsg }, 500)
+  }
+}
 
 // Schema for listing agents (query params)
 export const listAgentsSchema = z.object({
@@ -91,6 +134,7 @@ export const CreateAgentApi = async (c: Context) => {
       isPublic: validatedBody.isPublic,
       appIntegrations: validatedBody.appIntegrations,
       allowWebSearch: validatedBody.allowWebSearch,
+      isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
     }
 

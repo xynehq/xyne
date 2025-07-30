@@ -3,6 +3,7 @@ import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  DataSourceEntity,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -18,6 +19,7 @@ import {
   userSchema,
   type Entity,
   type VespaChatMessage,
+  type VespaDataSourceFile,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -34,7 +36,7 @@ import {
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { UserQuery } from "@/ai/types"
+import type { Intent, UserQuery } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
@@ -46,7 +48,8 @@ import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 const { maxValidLinks } = config
-
+import fs from "fs"
+import path from "path"
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
@@ -206,26 +209,50 @@ export async function mergeThreadResults(
 
 export const extractImageFileNames = (
   context: string,
+  results?: VespaSearchResult[],
 ): { imageFileNames: string[] } => {
-  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score"
+  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score:"
   const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score|$)/g
+    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
   const matches = [...context.matchAll(imageContentRegex)]
 
   let imageFileNames: string[] = []
-
   for (const match of matches) {
-    const imageContent = match[1].trim()
-    if (imageContent) {
-      // Split by newlines and filter out empty strings
-      const fileNames = imageContent
-        .split("\n")
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0)
-        // Additional safety: split by spaces and filter out empty strings
-        // in case multiple filenames are on the same line
-        .flatMap((name) => name.split(/\s+/).filter((part) => part.length > 0))
-      imageFileNames.push(...fileNames)
+    let imageContent = match[1].trim()
+    try {
+      if (imageContent) {
+        const docId = imageContent.split("_")[0]
+        // const docIndex =
+        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
+        const docIndex =
+          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+        if (docIndex === -1) {
+          console.warn(
+            `No matching document found for docId: ${docId} in results for image content extraction.`,
+          )
+          continue
+        }
+
+        // Split by newlines and filter out empty strings
+        const fileNames = imageContent
+          .split("\n")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0)
+          // Additional safety: split by spaces and filter out empty strings
+          // in case multiple filenames are on the same line
+          .flatMap((name) =>
+            name.split(/\s+/).filter((part) => part.length > 0),
+          )
+          .map((name) => `${docIndex}_${name}`)
+        imageFileNames.push(...fileNames)
+      }
+    } catch (error) {
+      console.error(
+        `Error processing image content: ${getErrorMessage(error)}`,
+        { imageContent },
+      )
+      continue
     }
   }
   return { imageFileNames }
@@ -294,6 +321,14 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: slackUrl,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
+    }
+  } else if (result.fields.sddocname === dataSourceFileSchema) {
+    return {
+      docId: (fields as VespaDataSourceFile).docId,
+      title: (fields as VespaDataSourceFile).fileName,
+      url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
+      app: (fields as VespaDataSourceFile).app,
+      entity: DataSourceEntity.DataSourceFile,
     }
   } else {
     throw new Error("Invalid search result type for citation")
@@ -369,6 +404,41 @@ export const extractFileIdsFromMessage = async (
       // Check if this pill has a parentThreadId (for email threads)
       if (obj?.value?.parentThreadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.parentThreadId)
+      }
+
+      const pillValue = obj.value
+      const docId = pillValue.docId
+
+      // Check if this is a Google Sheets reference with wholeSheet: true
+      if (pillValue.wholeSheet === true) {
+        // Extract the base docId (remove the "_X" suffix if present)
+        const baseDocId = docId.replace(/_\d+$/, "")
+
+        // Get the spreadsheet metadata to find all sub-sheets
+        const validFile = await getDocumentOrSpreadsheet(baseDocId)
+        if (validFile) {
+          const fields = validFile?.fields as VespaFile
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            // Add all sub-sheet IDs
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${baseDocId}_${i}`)
+            }
+          } else {
+            // Fallback: just add the docId if it's not a spreadsheet
+            fileIds.push(docId)
+          }
+        } else {
+          // Fallback: just add the docId if we can't get metadata
+          fileIds.push(docId)
+        }
+      } else {
+        // Regular pill behavior: just add the docId
+        fileIds.push(docId)
       }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
@@ -469,4 +539,140 @@ export const convertReasoningStepToText = (
     default:
       return "Unknown reasoning step"
   }
+}
+
+export const mimeTypeMap: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+}
+export const getCitationToImage = async (
+  citationIndex: string,
+  doc: VespaSearchResult,
+  email: string,
+): Promise<{
+  imagePath: string
+  imageBuffer: Buffer
+  extension: string | null
+} | null> => {
+  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+  try {
+    // Parse the citation index format: docIndex_imageNumber
+    const parts = citationIndex.split("_")
+    if (parts.length < 2) {
+      loggerWithChild({ email: email }).error(
+        "Invalid citation index format, expected docIndex_imageNumber",
+        citationIndex,
+      )
+      return null
+    }
+
+    const docIndex = parseInt(parts[0], 10)
+    const imageNumber = parseInt(parts[1], 10)
+    if (isNaN(docIndex) || isNaN(imageNumber)) {
+      loggerWithChild({ email: email }).error(
+        "Invalid numeric values in citation index",
+        { citationIndex, docIndex, imageNumber },
+      )
+      return null
+    }
+
+    const document = doc
+    if (!document) {
+      loggerWithChild({ email: email }).error("Document not found at index", {
+        docIndex,
+      })
+      return null
+    }
+
+    const docId = (document.fields as any)?.docId
+    if (!docId) {
+      loggerWithChild({ email: email }).error("DocId not found in document", {
+        docIndex,
+        document,
+      })
+      return null
+    }
+
+    const imageDir = process.env.IMAGE_DIR || "downloads/xyne_images_db"
+    const imagePathProcess = path.join(process.cwd(), imageDir, docId)
+
+    let imagePath: string | null = null
+    let ext: string | null = null
+
+    try {
+      const files = await fs.promises.readdir(imagePathProcess)
+
+      // Find file that matches the pattern: imageNumber.extension
+      const imageFile = files.find((file) => {
+        const nameWithoutExt = path.parse(file).name
+        return nameWithoutExt === imageNumber.toString()
+      })
+
+      if (imageFile) {
+        imagePath = path.join(imagePathProcess, imageFile)
+        ext = path.parse(imageFile).ext
+      }
+    } catch (dirError) {
+      loggerWithChild({ email: email }).error("Error reading image directory", {
+        citationIndex,
+        docId,
+        imageNumber,
+        directory: imagePathProcess,
+        error: getErrorMessage(dirError),
+      })
+      return null
+    }
+
+    if (!imagePath) {
+      loggerWithChild({ email: email }).error(
+        "Image file not found in directory",
+        { citationIndex, docId, imageNumber, directory: imagePathProcess },
+      )
+      return null
+    }
+
+    const imageBuffer = await fs.promises.readFile(imagePath)
+
+    loggerWithChild({ email: email }).info("Successfully retrieved image", {
+      citationIndex,
+      docId,
+      imageNumber,
+      imagePath,
+      extension: ext,
+    })
+
+    return {
+      imagePath,
+      imageBuffer,
+      extension: ext,
+    }
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error retrieving image for citation",
+      { citationIndex, error: getErrorMessage(error) },
+    )
+    return null
+  }
+}
+
+export function extractNamesFromIntent(intent: any): Intent {
+  if (!intent || typeof intent !== "object") return {}
+
+  const result: Intent = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+
+  for (const field of fieldsToCheck) {
+    if (Array.isArray(intent[field]) && intent[field].length > 0) {
+      const uniqueValues = [...new Set(intent[field])].filter((v) => v)
+      if (uniqueValues.length > 0) {
+        result[field] = uniqueValues
+      }
+    }
+  }
+
+  return result
 }

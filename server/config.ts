@@ -35,6 +35,7 @@ let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
+let ragOffFeature = true
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -96,6 +97,10 @@ let EndThinkingToken = "</think>"
 
 if (process.env["REASONING"] === "true") {
   isReasoning = true
+}
+
+if (process.env["RAG_OFF_FEATURE"] === "true") {
+  ragOffFeature = true
 }
 
 if (
@@ -160,4 +165,6 @@ export default {
     .split(",")
     .map((email) => email.trim())
     .filter((email) => email.length > 0),
+  llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
+  ragOffFeature,
 }

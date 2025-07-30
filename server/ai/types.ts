@@ -36,6 +36,8 @@ export enum Models {
 
   DeepSeek_R1 = "us.deepseek.r1-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
+  Gemini_2_5_Flash = "gemini-2.5-flash",
+  Gemini_2_0_Flash_Thinking = "gemini-2.0-flash-thinking-exp",
 }
 
 export enum QueryCategory {
@@ -207,6 +209,8 @@ interface PillValue {
   title: string
   docId: string
   parentThreadId?: string
+  wholeSheet?: boolean
+  threadId?: string
   app?: Apps
 }
 

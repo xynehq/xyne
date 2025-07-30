@@ -19,6 +19,7 @@ const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
 import { findImageByName } from "@/ai/provider/base"
+import { createLabeledImageContent } from "../utils"
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (
@@ -29,22 +30,26 @@ const buildBedrockImageParts = async (
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    //  format: docIndex_docId_imageNumber
+    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
     if (!match) {
-      Logger.error(`Invalid image path: ${imgPath}`)
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
-    // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
+    const absolutePath = findImageByName(imageDir, imageNumber)
     const extension = path.extname(absolutePath).toLowerCase()
 
     // Map file extensions to Bedrock format values
@@ -112,14 +117,55 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
+        return {
+          ...message,
+          content: newContent,
+        }
+      }
+      return message
+    })
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
         {
-          text: modelParams.systemPrompt!,
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
         },
       ],
-      messages,
+      messages: transformedMessages,
       inferenceConfig: {
         maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
@@ -200,10 +246,25 @@ export class BedrockProvider extends BaseProvider {
     // Transform messages to include images only in the last user message
     const transformedMessages = messages.map((message, index) => {
       if (index === lastUserMessageIndex && imageParts.length > 0) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
         return {
           ...message,
-          content: [...message.content!, ...imageParts],
+          content: newContent,
         }
       }
       return message
@@ -212,7 +273,14 @@ export class BedrockProvider extends BaseProvider {
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [{ text: modelParams.systemPrompt! }],
+      system: [
+        {
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
+        },
+      ],
       messages: transformedMessages,
       inferenceConfig,
     })

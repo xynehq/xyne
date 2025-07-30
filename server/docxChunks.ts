@@ -5,10 +5,7 @@ import { XMLParser } from "fast-xml-parser"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import path from "path"
-import {
-  describeImageWithllm,
-  withTempDirectory,
-} from "./lib/describeImageWithllm"
+import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -743,36 +740,35 @@ function processTextItems(
 }
 
 export async function extractTextAndImagesWithChunksFromDocx(
-  docxPath: string,
+  data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
 ): Promise<DocxProcessingResult> {
-  return withTempDirectory(async (tempDir) => {
-    Logger.info(`Starting DOCX processing for: ${docxPath}`)
+  Logger.info(`Starting DOCX processing for document: ${docid}`)
 
-    // Read and unzip the DOCX file
-    let docxBuffer: Buffer
-    try {
-      docxBuffer = await fsPromises.readFile(docxPath)
-    } catch (error) {
-      const { name, message } = error as Error
-      if (
-        message.includes("PasswordException") ||
-        name.includes("PasswordException")
-      ) {
-        Logger.warn("Password protected DOCX, skipping")
-      } else {
-        Logger.error(error, `DOCX load error: ${error}`)
-      }
-      return {
-        text_chunks: [],
-        image_chunks: [],
-        text_chunk_pos: [],
-        image_chunk_pos: [],
-      }
+  // Load the DOCX data directly
+  let zip: JSZip
+  try {
+    zip = await JSZip.loadAsync(data)
+  } catch (error) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected DOCX, skipping")
+    } else {
+      Logger.error(error, `DOCX load error: ${error}`)
     }
-    const zip = await JSZip.loadAsync(new Uint8Array(docxBuffer))
+    return {
+      text_chunks: [],
+      image_chunks: [],
+      text_chunk_pos: [],
+      image_chunk_pos: [],
+    }
+  }
 
+  try {
     // Parse the main document
     const documentXml = await zip.file("word/document.xml")?.async("text")
     if (!documentXml) {
@@ -911,7 +907,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
 
               const imageExtension = path.extname(imagePath).toLowerCase()
               if (
-                !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(imageExtension)
+                !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
+                  `image/${imageExtension.slice(1)}`,
+                )
               ) {
                 Logger.warn(
                   `Unsupported image format: ${imageExtension}. Skipping image: ${imagePath}`,
@@ -932,7 +930,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
                   `Reusing description for repeated image ${imagePath}`,
                 )
               } else {
-                description = await describeImageWithllm(imageBuffer, tempDir)
+                description = await describeImageWithllm(imageBuffer)
                 if (
                   description === "No description returned." ||
                   description === "Image is not worth describing."
@@ -1058,5 +1056,8 @@ export async function extractTextAndImagesWithChunksFromDocx(
       text_chunk_pos,
       image_chunk_pos,
     }
-  })
+  } finally {
+    // @ts-ignore
+    zip = null
+  }
 }
