@@ -9,7 +9,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MessageFeedback } from "shared/types"
-import { FEEDBACK_QUESTIONS as SERVER_FEEDBACK_QUESTIONS } from "shared/enhancedFeedback"
 
 // Simple checkbox component
 const Checkbox = ({
@@ -44,8 +43,17 @@ const Checkbox = ({
 
 // Map backend keys to front-end enum values
 const FEEDBACK_QUESTIONS = {
-  [MessageFeedback.Like]: SERVER_FEEDBACK_QUESTIONS.like,
-  [MessageFeedback.Dislike]: SERVER_FEEDBACK_QUESTIONS.dislike,
+  [MessageFeedback.Like]: [
+    "Response time was quick",
+    "Answer provided was accurate and to the point",
+    "Citations were relevant and added value to the response",
+  ],
+  [MessageFeedback.Dislike]: [
+    "No response was received or an error occurred",
+    "Response took too long to load",
+    "Answer was entirely incorrect",
+    "Citations were inaccurate and not relevant to the content",
+  ],
 } as const
 
 interface FeedbackModalProps {

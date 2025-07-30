@@ -635,7 +635,11 @@ export const AppRoutes = app
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
   .get("/agents", GetAdminAgents)
   .get("/users", GetAdminUsers)
-  .get("/users/:userId/feedback", GetAllUserFeedbackMessages)
+  .get(
+    "/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
   .get(
     "/users/:userId/agent-leaderboard",
     zValidator("query", userAgentLeaderboardQuerySchema),
@@ -656,7 +660,11 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
-  .get("/admin/users/:userId/feedback", GetAllUserFeedbackMessages)
+  .get(
+    "/admin/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app

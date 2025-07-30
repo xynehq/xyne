@@ -18,7 +18,10 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
-import { FeedbackMessagesModal } from "@/components/feedback/FeedbackMessagesModal"
+import {
+  AgentUserFeedbackModal,
+  UserFeedbackModal,
+} from "@/components/feedback/FeedbackViewModal"
 import { api } from "@/api"
 import {
   XAxis,
@@ -861,6 +864,7 @@ const UsersAnalyticsTable = ({
   sortBy,
   setSortBy,
   agentId,
+  agentName,
 }: {
   users: AgentUserUsage[] | AgentUserLeaderboard[]
   title?: string
@@ -873,6 +877,7 @@ const UsersAnalyticsTable = ({
     sortBy: "messages" | "chats" | "likes" | "dislikes" | "lastUsed",
   ) => void
   agentId?: string
+  agentName?: string
 }) => {
   const [feedbackModalUser, setFeedbackModalUser] = useState<{
     userId: number
@@ -1078,10 +1083,11 @@ const UsersAnalyticsTable = ({
 
       {/* Feedback Messages Modal */}
       {feedbackModalUser && agentId && (
-        <FeedbackMessagesModal
+        <AgentUserFeedbackModal
           isOpen={true}
           onClose={() => setFeedbackModalUser(null)}
           agentId={agentId}
+          agentName={agentName || "Unknown Agent"}
           userId={feedbackModalUser.userId}
           userName={feedbackModalUser.userName}
           userEmail={feedbackModalUser.userEmail}
@@ -1218,6 +1224,7 @@ const AgentDetailPage = ({
         sortBy={sortBy}
         setSortBy={setSortBy}
         agentId={agent.agentId}
+        agentName={agent.agentName}
       />
     </div>
   )
@@ -1419,13 +1426,14 @@ const AdminUsersLeaderboard = ({
           </div>
         )}
       </CardContent>
-      <FeedbackMessagesModal
+      <UserFeedbackModal
         isOpen={feedbackModal.isOpen}
         onClose={closeFeedbackModal}
         userId={feedbackModal.userId}
         userName={feedbackModal.userName}
         userEmail={feedbackModal.userEmail}
-        isAdminMode={true}
+        showSearch={true}
+        showAgentFilter={true}
       />
     </Card>
   )
@@ -1830,6 +1838,7 @@ const AgentAnalysisPage = ({
         sortBy={sortBy}
         setSortBy={setSortBy}
         agentId={agent.agentId}
+        agentName={agent.agentName}
       />
     </div>
   )
