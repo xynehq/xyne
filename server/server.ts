@@ -929,7 +929,7 @@ const generateTokens = async (
         role: role,
         workspaceId,
         tokenType: "access",
-        exp: Math.floor(Date.now() / 1000) + 60 * 1, // Access token expires in 1 hour
+        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Access token expires in 1 hour
       }
   const jwtToken = await sign(
     payload,
