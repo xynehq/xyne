@@ -75,7 +75,6 @@ export async function expandEmailThreadsInResults(
 ): Promise<VespaSearchResult[]> {
   // Extract unique thread IDs from email results
   const threadIds = extractThreadIdsFromResults(results)
-  console.log(`Found ${threadIds.length} unique email thread IDs to expand`)
   if (threadIds.length === 0) {
     return results
   }
