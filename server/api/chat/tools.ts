@@ -67,7 +67,7 @@ import { getProviderByModel, jsonParseLLMOutput } from "@/ai/provider"
 
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
-const DEBUG_PLOTLY_OUTPUT = true
+const DEBUG_PLOTLY = true
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
@@ -687,7 +687,7 @@ async function generatePlotlyCodeWithLLM(
     { modelId: defaultFastModel, json: true, stream: false },
   )
 
-  if (DEBUG_PLOTLY_OUTPUT) {
+  if (DEBUG_PLOTLY) {
     console.log("Raw LLM Output for Plotly:", text)
   }
 
@@ -711,6 +711,12 @@ export const generatePlotlyCodeTool: AgentTool = {
         return { result: errorMsg, error: "Missing data" }
       }
 
+      if (DEBUG_PLOTLY) {
+        console.log(
+          "[TOOLS] Data passed to Plotly:",
+          JSON.stringify(params.data, null, 2),
+        )
+      }
       // The new prompt handles multiple chart generation, so we call the LLM once.
       const plotlyResult = await generatePlotlyCodeWithLLM(params)
 

@@ -2237,10 +2237,11 @@ ${JSON.stringify(data, null, 2)}
     *   Use line charts for time-series data.
     *   Use scatter plots for exploring relationships between two numerical variables.
     *   Use pie charts for showing parts of a whole.
-3.  **Generate Configurations:** For the top-ranked chart types (up to a maximum of three), generate a complete and valid Plotly JSON configuration.
+3.  **Generate Configurations:** For the top-ranked chart types (up to a maximum of three unless stated otherwise), generate a complete and valid Plotly JSON configuration.
     *   If the user's request is very specific and only one chart type is appropriate, it is acceptable to return only one configuration.
 4.  **Handle Complex Data:** For multi-dimensional data (e.g., an array of numbers for a single metric), use Plotly's \`transforms\` feature to perform aggregations (e.g., sum, average). Do not perform any calculations yourself; let Plotly handle the data aggregation.
-5.  **Return JSON:** Your final output must be a single, valid JSON object containing the number of charts, a list of chart types, and an array of the generated Plotly configurations. Do not include any other text or explanations.
+5.  **JSON Data Handling:** When the data is in JSON format, first parse it to extract the relevant fields for visualization. If the JSON contains an array of objects, treat each object as a data point and extract the values for the x and y axes. If the data is nested, navigate the structure to find the data to be plotted. always flatten the data structure before plotting.
+6.  **Return JSON:** Your final output must be a single, valid JSON object containing the number of charts, a list of chart types, and an array of the generated Plotly configurations. Do not include any other text or explanations.
 
 **Example Output:**
 \`\`\`json
