@@ -136,7 +136,18 @@ export const FeedbackViewModal: React.FC<FeedbackViewModalProps> = (props) => {
     if (isOpen) {
       fetchFeedbackMessages()
     }
-  }, [isOpen, mode, JSON.stringify(props)])
+  }, [
+    isOpen,
+    mode,
+    ...(mode === "agent" ? [(props as AgentFeedbackProps).agentId] : []),
+    ...(mode === "user" ? [(props as UserFeedbackProps).userId] : []),
+    ...(mode === "agent-user"
+      ? [
+          (props as AgentUserFeedbackProps).agentId,
+          (props as AgentUserFeedbackProps).userId,
+        ]
+      : []),
+  ])
 
   const handleViewSharedChat = (shareToken: string) => {
     const shareUrl = `${window.location.origin}/chat?shareToken=${shareToken}`
@@ -239,12 +250,6 @@ export const FeedbackViewModal: React.FC<FeedbackViewModalProps> = (props) => {
               <MessageSquare className="w-5 h-5" />
               {getModalTitle()}
             </DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="h-8 w-8 p-0"
-            ></Button>
           </div>
           {getModalSubtitle() && (
             <p className="text-sm text-muted-foreground mt-2">
