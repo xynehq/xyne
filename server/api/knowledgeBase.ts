@@ -548,13 +548,13 @@ export const CreateFolderApi = async (c: Context) => {
 
     // Create Vespa document for the folder
     const vespaDocId = generateFolderVespaDocId()
-    
+
     // Store vespaDocId in folder metadata
     const folderMetadata = {
       ...(validatedData.metadata || {}),
       vespaDocId: vespaDocId,
     }
-    
+
     const folder = await createFolder(
       db,
       kbId,
@@ -564,18 +564,18 @@ export const CreateFolderApi = async (c: Context) => {
       user.id,
       user.email,
     )
-    
+
     const vespaDoc = {
       docId: vespaDocId,
       kbId: kbId,
       itemId: folder.id,
       fileName: validatedData.name,
       entity: "folder",
-      storagePath: "", 
+      storagePath: "",
       chunks: [],
-      chunks_pos: [], 
-      image_chunks: [], 
-      image_chunks_pos: [], 
+      chunks_pos: [],
+      image_chunks: [],
+      image_chunks_pos: [],
       description: "",
       metadata: JSON.stringify({
         type: "folder",
@@ -583,9 +583,9 @@ export const CreateFolderApi = async (c: Context) => {
         parentId: validatedData.parentId || null,
       }),
       createdBy: user.email,
-      mimeType: "folder", 
+      mimeType: "folder",
       fileSize: 0,
-      duration: 0, 
+      duration: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -700,13 +700,13 @@ async function ensureFolderPath(
   } else {
     // Create Vespa document for the folder created during file upload
     const vespaDocId = generateFolderVespaDocId()
-    
+
     // Create the folder with vespaDocId in metadata
     const newFolder = await createFolder(db, kbId, parentId, folderName, {
-      vespaDocId: vespaDocId
+      vespaDocId: vespaDocId,
     })
     currentFolderId = newFolder.id
-    
+
     const vespaDoc = {
       docId: vespaDocId,
       kbId: kbId,
@@ -1087,7 +1087,7 @@ export const UploadFilesApi = async (c: Context) => {
           if (baseMimeType === "application/pdf") {
             // Process PDF
             const result = await extractTextAndImagesWithChunksFromPDF(
-              storagePath,
+              new Uint8Array(buffer),
               vespaDocId,
               false,
             )
@@ -1096,7 +1096,7 @@ export const UploadFilesApi = async (c: Context) => {
           } else if (isDocxFile(baseMimeType)) {
             // Process DOCX
             const result = await extractTextAndImagesWithChunksFromDocx(
-              storagePath,
+              new Uint8Array(buffer),
               vespaDocId,
               false,
             )
@@ -1105,7 +1105,7 @@ export const UploadFilesApi = async (c: Context) => {
           } else if (isPptxFile(baseMimeType)) {
             // Process PPTX
             const result = await extractTextAndImagesWithChunksFromPptx(
-              storagePath,
+              new Uint8Array(buffer),
               vespaDocId,
               false,
             )
@@ -1368,7 +1368,7 @@ export const DeleteItemApi = async (c: Context) => {
     // Delete all files and folders from Vespa and storage
     const fileItemIds: string[] = []
     let deletedFoldersCount = 0
-    
+
     for (const { item: itemToDelete, kbFile } of itemsToDelete) {
       if (itemToDelete.type === "file" && kbFile) {
         fileItemIds.push(itemToDelete.id)
@@ -1400,7 +1400,7 @@ export const DeleteItemApi = async (c: Context) => {
         // Delete folder from Vespa
         const folderMetadata = itemToDelete.metadata as Record<string, any>
         const vespaDocId = folderMetadata?.vespaDocId
-        
+
         if (vespaDocId) {
           try {
             await DeleteDocument(vespaDocId, kbFileSchema)
