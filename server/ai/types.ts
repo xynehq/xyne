@@ -209,7 +209,7 @@ interface PillValue {
   title: string
   docId: string
   wholeSheet?: boolean
-  threadId?: string
+  parentThreadId?: string
   app?: Apps
   entity?: string
 }

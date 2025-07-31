@@ -69,4 +69,5 @@ export interface Reference {
   userMap?: Record<string, string>
   wholeSheet?: boolean
   threadId?: string // Optional threadId for chat references
+  parentThreadId?: string // Optional parentThreadId for email thread references
 }

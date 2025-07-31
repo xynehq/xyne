@@ -113,6 +113,7 @@ interface SearchResult {
   email?: string
   photoLink?: string
   userMap?: Record<string, string>
+  parentThreadId?: string
 }
 
 interface ChatBoxProps {
@@ -1253,6 +1254,7 @@ export const ChatBox = ({
       type: "citation",
       wholeSheet: wholeSheet,
       threadId: (citation as any).threadId, // Add threadId if available
+      parentThreadId: (citation as any).parentThreadId, // Add parentThreadId if available
     }
 
     const input = inputRef.current
@@ -1397,7 +1399,8 @@ export const ChatBox = ({
         docId: result.docId,
         mailId: result.mailId,
         threadId: result.threadId, // Add threadId from result
-        app: result.app,
+        parentThreadId: result.parentThreadId, // Add parentThreadId from result
+      app: result.app,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,
