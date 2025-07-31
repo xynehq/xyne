@@ -754,24 +754,24 @@ function AgentComponent() {
     }
     
     // KB integration feature in progress
-    // const knowledgeBaseSources: IntegrationSource[] = fetchedKnowledgeBases.map(
-    //   (kb) => ({
-    //     id: `kb_${kb.id}`,
-    //     name: `KB: ${kb.name}`,
-    //     app: "knowledgebase",
-    //     entity: "kb",
-    //     icon: (
-    //       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
-    //         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-    //         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-    //         <path d="M12 6v8"></path>
-    //         <path d="M8 10h8"></path>
-    //       </svg>
-    //     ),
-    //   }),
-    // )
-    // return [...availableIntegrationsList, ...dynamicDataSources, ...knowledgeBaseSources]
-    return [...availableIntegrationsList, ...dynamicDataSources]
+    const knowledgeBaseSources: IntegrationSource[] = fetchedKnowledgeBases.map(
+      (kb) => ({
+        id: `kb_${kb.id}`,
+        name: `KB: ${kb.name}`,
+        app: "knowledgebase",
+        entity: "kb",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            <path d="M12 6v8"></path>
+            <path d="M8 10h8"></path>
+          </svg>
+        ),
+      }),
+    )
+    return [...availableIntegrationsList, ...dynamicDataSources, ...knowledgeBaseSources]
+    // return [...availableIntegrationsList, ...dynamicDataSources]
   }, [fetchedDataSources, isRagOn, fetchedKnowledgeBases])
 
   useEffect(() => {
