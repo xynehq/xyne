@@ -922,14 +922,14 @@ const generateTokens = async (
         role: role,
         workspaceId,
         tokenType: "refresh",
-        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, // Refresh token expires in 30 days
+        exp: Math.floor(Date.now() / 1000) + config.RefreshTokenTTL,
       }
     : {
         sub: email,
         role: role,
         workspaceId,
         tokenType: "access",
-        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Access token expires in 1 hour
+        exp: Math.floor(Date.now() / 1000) + config.AccessTokenTTL,
       }
   const jwtToken = await sign(
     payload,
