@@ -241,6 +241,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       const renderContext = {
         canvasContext: context,
         viewport: viewport,
+        canvas: canvas,
       }
 
       await page.render(renderContext).promise
@@ -283,6 +284,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       const renderContext = {
         canvasContext: context,
         viewport: viewport,
+        canvas: canvas,
       }
 
       await page.render(renderContext).promise
