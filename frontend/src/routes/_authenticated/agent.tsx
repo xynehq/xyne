@@ -230,11 +230,20 @@ function AgentComponent() {
   // MCP Tools selection state
   const [selectedMCPTools, setSelectedMCPTools] = useState<Array<{
     connectorId: string
-    tools: string[]
+    tools: Array<{
+      externalId: string
+      toolName: string
+    }>
   }>>([])
 
   // Debug wrapper for setSelectedMCPTools
-  const updateSelectedMCPTools = (tools: Array<{ connectorId: string; tools: string[] }>) => {
+  const updateSelectedMCPTools = (tools: Array<{ 
+    connectorId: string
+    tools: Array<{
+      externalId: string
+      toolName: string
+    }>
+  }>) => {
     // console.log("🔧 DEBUG - updateSelectedMCPTools called with:", {
     //   toolsCount: tools.length,
     //   toolsData: tools
@@ -243,8 +252,8 @@ function AgentComponent() {
   }
   
   // Agent testing state
-  const [showTestAgent, setShowTestAgent] = useState(false)
-  const [testChatId, setTestChatId] = useState<string | null>(null)
+  // const [showTestAgent, setShowTestAgent] = useState(false)
+  // const [testChatId, setTestChatId] = useState<string | null>(null)
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -802,10 +811,77 @@ function AgentComponent() {
       // Load existing MCP tools if any
       if (editingAgent.mcpTools) {
         // console.log("📝 Setting MCP tools:", editingAgent.mcpTools)
-        setSelectedMCPTools(editingAgent.mcpTools as Array<{
-          connectorId: string
-          tools: string[]
-        }>)
+        
+        // Convert legacy string format to new object format and fetch tool names
+        const loadMCPToolsWithNames = async () => {
+          try {
+            const convertedMCPTools = await Promise.all(
+              (editingAgent.mcpTools as any[]).map(async (mcpTool: any) => {
+                try {
+                  // Fetch connector tools to get actual tool names
+                  const response = await api.admin.connector[mcpTool.connectorId].tools.$get()
+                  const connectorTools = response.ok ? await response.json() : []
+                  
+                  const toolsWithNames = mcpTool.tools.map((toolId: string) => {
+                    if (typeof toolId === 'string') {
+                      // Find the actual tool name for this external ID
+                      const foundTool = connectorTools.find((tool: any) => tool.externalId === toolId)
+                      return {
+                        externalId: toolId,
+                        toolName: foundTool?.toolName || toolId
+                      }
+                    } else {
+                      // Already in new format
+                      return toolId
+                    }
+                  })
+                  
+                  return {
+                    connectorId: mcpTool.connectorId,
+                    tools: toolsWithNames
+                  }
+                } catch (error) {
+                  console.warn('Failed to fetch tool names for connector:', mcpTool.connectorId, error)
+                  // Fallback to using external IDs as names
+                  return {
+                    connectorId: mcpTool.connectorId,
+                    tools: mcpTool.tools.map((tool: any) => {
+                      if (typeof tool === 'string') {
+                        return {
+                          externalId: tool,
+                          toolName: tool
+                        }
+                      } else {
+                        return tool
+                      }
+                    })
+                  }
+                }
+              })
+            )
+            
+            setSelectedMCPTools(convertedMCPTools)
+          } catch (error) {
+            console.error('Failed to load MCP tools with names:', error)
+            // Fallback to simple conversion
+            const convertedMCPTools = (editingAgent.mcpTools as any[]).map((mcpTool: any) => ({
+              connectorId: mcpTool.connectorId,
+              tools: mcpTool.tools.map((tool: any) => {
+                if (typeof tool === 'string') {
+                  return {
+                    externalId: tool,
+                    toolName: tool
+                  }
+                } else {
+                  return tool
+                }
+              })
+            }))
+            setSelectedMCPTools(convertedMCPTools)
+          }
+        }
+        
+        loadMCPToolsWithNames()
       } else {
         // console.log("❌ No MCP tools found in agent data")
         setSelectedMCPTools([])
@@ -906,6 +982,12 @@ function AgentComponent() {
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
 
+    // Convert MCP tools back to the format expected by the backend
+    const backendMCPTools = selectedMCPTools.map((mcpTool) => ({
+      connectorId: mcpTool.connectorId,
+      tools: mcpTool.tools.map((tool) => tool.externalId)
+    }))
+
     const agentPayload = {
       name: agentName,
       description: agentDescription,
@@ -914,7 +996,7 @@ function AgentComponent() {
       isPublic: isPublic,
       isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
-      mcpTools: selectedMCPTools,
+      mcpTools: backendMCPTools,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
@@ -1957,16 +2039,20 @@ function AgentComponent() {
                           <div key={`${mcpTool.connectorId}-${index}`} className="flex flex-wrap gap-1">
                             {mcpTool.tools.map((tool) => (
                               <span
-                                key={`${mcpTool.connectorId}-${tool}`}
+                                key={`${mcpTool.connectorId}-${tool.externalId || tool}`}
                                 className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                               >
-                                {tool}
+                                {typeof tool === 'object' ? tool.toolName : tool}
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const toolToRemove = typeof tool === 'object' ? tool.externalId : tool
                                     const newSelectedTools = selectedMCPTools.map((item) => {
                                       if (item.connectorId === mcpTool.connectorId) {
-                                        const newTools = item.tools.filter((t) => t !== tool)
+                                        const newTools = item.tools.filter((t) => {
+                                          const tId = typeof t === 'object' ? t.externalId : t
+                                          return tId !== toolToRemove
+                                        })
                                         return { ...item, tools: newTools }
                                       }
                                       return item
@@ -2115,22 +2201,22 @@ function AgentComponent() {
                   <Button
                     onClick={() => {
                       // Create a temporary agent object for testing
-                      const testAgent: Partial<SelectPublicAgent> = {
-                        name: agentName || "Test Agent",
-                        description: agentDescription,
-                        prompt: agentPrompt,
-                        model: selectedModel,
-                        isRagOn: isRagOn,
-                        mcpTools: selectedMCPTools,
-                        appIntegrations: Object.entries(selectedIntegrations)
-                          .filter(([, isSelected]) => isSelected)
-                          .map(([id]) => id),
-                      }
+                      // const testAgent: Partial<SelectPublicAgent> = {
+                      //   name: agentName || "Test Agent",
+                      //   description: agentDescription,
+                      //   prompt: agentPrompt,
+                      //   model: selectedModel,
+                      //   isRagOn: isRagOn,
+                      //   mcpTools: selectedMCPTools,
+                      //   appIntegrations: Object.entries(selectedIntegrations)
+                      //     .filter(([, isSelected]) => isSelected)
+                      //     .map(([id]) => id),
+                      // }
                       
                       // Switch to test mode with current configuration
                       setSelectedChatAgentExternalId(null)
                       setTestAgentIsRagOn(isRagOn)
-                      setShowTestAgent(true)
+                      // setShowTestAgent(true)
                     }}
                     variant="outline"
                     className="px-6 py-3 text-sm font-medium"

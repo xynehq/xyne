@@ -42,7 +42,10 @@ interface ConnectorResponse {
 
 interface SelectedMCPTools {
   connectorId: string
-  tools: string[]
+  tools: Array<{
+    externalId: string
+    toolName: string
+  }>
 }
 
 interface MCPToolSelectionProps {
@@ -68,7 +71,7 @@ export function MCPToolSelection({
   // Convert selectedTools array to a map for easier lookup
   const selectedToolsMap = new Map<string, Set<string>>()
   selectedTools.forEach((item) => {
-    selectedToolsMap.set(item.connectorId, new Set(item.tools))
+    selectedToolsMap.set(item.connectorId, new Set(item.tools.map(tool => tool.externalId)))
   })
 
   useEffect(() => {
@@ -81,70 +84,93 @@ export function MCPToolSelection({
     setLoading(true)
     try {
       const response = await api.admin.connectors.all.$get()
-      if (response.ok) {
-        const data = await response.json()
-        // console.log("All connectors:", data)
-        
-        const mcpConnectors = data.filter(
-          (c: ConnectorResponse) => {
-            // console.log(`Connector ${c.name}: type=${c.type}, status=${c.status}`)
-            return c.type === "Mcp" && c.status === "connected"
+      if (!response.ok) {
+        throw new Error(`Failed to fetch connectors: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      if (!Array.isArray(data)) {
+        console.error("Expected array of connectors, received:", typeof data)
+        throw new Error("Invalid connector data format received")
+      }
+      
+      const mcpConnectors = data.filter(
+        (c: ConnectorResponse) => {
+          // Validate connector object structure
+          if (!c || typeof c !== 'object') {
+            console.warn("Invalid connector object:", c)
+            return false
           }
-        )
-        
-        console.log("Filtered MCP connectors:", mcpConnectors)
-
-        // Fetch tools for each MCP connector
-        const connectorsWithTools = await Promise.all(
-          mcpConnectors.map(async (connector: ConnectorResponse) => {
-            try {
-              // console.log("Connector object:", connector)
-              // console.log("Connector id (externalId):", connector.id)
-              
-              const connectorId = connector.id
-              // console.log("Using connectorId:", connectorId)
-              
-              if (!connectorId) {
-                console.error("No valid connector ID found for connector:", connector)
-                return {
-                  ...connector,
-                  tools: [],
-                }
-              }
-              
-              const toolsResponse = await api.admin.connector[":connectorId"].tools.$get({
-                param: { connectorId: connectorId },
-              })
-              if (toolsResponse.ok) {
-                const toolsData = await toolsResponse.json()
-                // console.log(`Tools for ${connector.name}:`, toolsData)
-                return {
-                  ...connector,
-                  tools: toolsData || [],
-                }
-              }
-              return {
-                ...connector,
-                tools: [],
-              }
-            } catch (error) {
-              const connectorId = connector.externalId || connector.id
-              console.error(`Failed to fetch tools for connector ${connectorId}:`, error)
+          if (!c.id || !c.name || !c.type || !c.status) {
+            console.warn("Connector missing required fields:", c)
+            return false
+          }
+          return c.type === ConnectorType.MCP && c.status === ConnectorStatus.Connected
+        }
+      )
+      
+      // Fetch tools for each MCP connector
+      const connectorsWithTools = await Promise.all(
+        mcpConnectors.map(async (connector: ConnectorResponse) => {
+          try {
+            const connectorId = connector.id
+            
+            if (!connectorId || typeof connectorId !== 'string') {
+              console.error("Invalid connector ID for connector:", connector)
               return {
                 ...connector,
                 tools: [],
               }
             }
-          }),
-        )
+            
+            const toolsResponse = await api.admin.connector[":connectorId"].tools.$get({
+              param: { connectorId: connectorId },
+            })
+            
+            if (!toolsResponse.ok) {
+              console.error(`Failed to fetch tools for connector ${connectorId}: ${toolsResponse.status} ${toolsResponse.statusText}`)
+              return {
+                ...connector,
+                tools: [],
+              }
+            }
+            
+            const toolsData = await toolsResponse.json()
+            
+            // Validate tools data structure
+            const validatedTools = Array.isArray(toolsData) ? toolsData.filter((tool: any) => {
+              if (!tool || typeof tool !== 'object') {
+                console.warn(`Invalid tool object for connector ${connectorId}:`, tool)
+                return false
+              }
+              if (!tool.externalId || !tool.toolName) {
+                console.warn(`Tool missing required fields for connector ${connectorId}:`, tool)
+                return false
+              }
+              return true
+            }) : []
+            
+            return {
+              ...connector,
+              tools: validatedTools,
+            }
+          } catch (error) {
+            const connectorId = connector.externalId || connector.id
+            console.error(`Failed to fetch tools for connector ${connectorId}:`, error)
+            return {
+              ...connector,
+              tools: [],
+            }
+          }
+        }),
+      )
 
-        setConnectors(connectorsWithTools)
-      }
+      setConnectors(connectorsWithTools)
     } catch (error) {
       console.error("Failed to fetch MCP connectors:", error)
       toast({
         title: "Error",
-        description: "Failed to fetch MCP connectors",
+        description: error instanceof Error ? error.message : "Failed to fetch MCP connectors",
         variant: "destructive",
       })
     } finally {
@@ -173,83 +199,192 @@ export function MCPToolSelection({
   const handleToolSelection = (
     connectorId: string,
     toolExternalId: string,
+    toolName: string,
     selected: boolean,
   ) => {
-    const newSelectedTools = [...selectedTools]
-    const existingConnectorIndex = newSelectedTools.findIndex(
-      (item) => item.connectorId === connectorId,
-    )
-
-    if (existingConnectorIndex >= 0) {
-      const existingTools = new Set(newSelectedTools[existingConnectorIndex].tools)
-      if (selected) {
-        existingTools.add(toolExternalId)
-      } else {
-        existingTools.delete(toolExternalId)
-      }
-      
-      if (existingTools.size === 0) {
-        newSelectedTools.splice(existingConnectorIndex, 1)
-      } else {
-        newSelectedTools[existingConnectorIndex].tools = Array.from(existingTools)
-      }
-    } else if (selected) {
-      newSelectedTools.push({
-        connectorId,
-        tools: [toolExternalId],
-      })
+    // Input validation
+    if (!connectorId || typeof connectorId !== 'string') {
+      console.error("Invalid connectorId provided to handleToolSelection:", connectorId)
+      return
+    }
+    if (!toolExternalId || typeof toolExternalId !== 'string') {
+      console.error("Invalid toolExternalId provided to handleToolSelection:", toolExternalId)
+      return
+    }
+    if (!toolName || typeof toolName !== 'string') {
+      console.error("Invalid toolName provided to handleToolSelection:", toolName)
+      return
+    }
+    if (typeof selected !== 'boolean') {
+      console.error("Invalid selected value provided to handleToolSelection:", selected)
+      return
     }
 
-    onSelectionChange(newSelectedTools)
+    try {
+      const newSelectedTools = [...selectedTools]
+      const existingConnectorIndex = newSelectedTools.findIndex(
+        (item) => item.connectorId === connectorId,
+      )
+
+      if (existingConnectorIndex >= 0) {
+        const existingTools = new Set(newSelectedTools[existingConnectorIndex].tools.map(t => t.externalId))
+        if (selected) {
+          existingTools.add(toolExternalId)
+          // Convert back to tool objects
+          const toolObjectsMap = new Map<string, string>()
+          newSelectedTools[existingConnectorIndex].tools.forEach(tool => {
+            toolObjectsMap.set(tool.externalId, tool.toolName)
+          })
+          toolObjectsMap.set(toolExternalId, toolName)
+          
+          newSelectedTools[existingConnectorIndex].tools = Array.from(existingTools).map(externalId => ({
+            externalId,
+            toolName: toolObjectsMap.get(externalId) || externalId
+          }))
+        } else {
+          existingTools.delete(toolExternalId)
+          newSelectedTools[existingConnectorIndex].tools = newSelectedTools[existingConnectorIndex].tools.filter(
+            tool => tool.externalId !== toolExternalId
+          )
+        }
+        
+        if (newSelectedTools[existingConnectorIndex].tools.length === 0) {
+          newSelectedTools.splice(existingConnectorIndex, 1)
+        }
+      } else if (selected) {
+        newSelectedTools.push({
+          connectorId,
+          tools: [{ externalId: toolExternalId, toolName }],
+        })
+      }
+
+      onSelectionChange(newSelectedTools)
+    } catch (error) {
+      console.error("Error in handleToolSelection:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update tool selection",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleConnectorToggle = (connector: MCPConnector, selectAll: boolean) => {
-    const newSelectedTools = [...selectedTools]
-    // Use the external ID string, not the numeric database ID
-    const connectorId = connector.id
-    const existingConnectorIndex = newSelectedTools.findIndex(
-      (item) => item.connectorId === connectorId,
-    )
-
-    if (selectAll) {
-      const allToolIds = connector.tools
-        .filter((tool) => tool.enabled)
-        .map((tool) => tool.externalId)
-      
-      if (existingConnectorIndex >= 0) {
-        newSelectedTools[existingConnectorIndex].tools = allToolIds
-      } else {
-        newSelectedTools.push({
-          connectorId: connectorId,
-          tools: allToolIds,
-        })
-      }
-    } else {
-      if (existingConnectorIndex >= 0) {
-        newSelectedTools.splice(existingConnectorIndex, 1)
-      }
+    // Input validation
+    if (!connector || typeof connector !== 'object') {
+      console.error("Invalid connector provided to handleConnectorToggle:", connector)
+      return
+    }
+    if (!connector.id || typeof connector.id !== 'string') {
+      console.error("Invalid connector.id provided to handleConnectorToggle:", connector.id)
+      return
+    }
+    if (!Array.isArray(connector.tools)) {
+      console.error("Invalid connector.tools provided to handleConnectorToggle:", connector.tools)
+      return
+    }
+    if (typeof selectAll !== 'boolean') {
+      console.error("Invalid selectAll value provided to handleConnectorToggle:", selectAll)
+      return
     }
 
-    onSelectionChange(newSelectedTools)
+    try {
+      const newSelectedTools = [...selectedTools]
+      // Use the external ID string, not the numeric database ID
+      const connectorId = connector.id
+      const existingConnectorIndex = newSelectedTools.findIndex(
+        (item) => item.connectorId === connectorId,
+      )
+
+      if (selectAll) {
+        const allToolObjects = connector.tools
+          .filter((tool) => tool?.enabled && tool?.externalId && tool?.toolName)
+          .map((tool) => ({
+            externalId: tool.externalId,
+            toolName: tool.toolName
+          }))
+        
+        if (existingConnectorIndex >= 0) {
+          newSelectedTools[existingConnectorIndex].tools = allToolObjects
+        } else {
+          newSelectedTools.push({
+            connectorId: connectorId,
+            tools: allToolObjects,
+          })
+        }
+      } else {
+        if (existingConnectorIndex >= 0) {
+          newSelectedTools.splice(existingConnectorIndex, 1)
+        }
+      }
+
+      onSelectionChange(newSelectedTools)
+    } catch (error) {
+      console.error("Error in handleConnectorToggle:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update connector selection",
+        variant: "destructive",
+      })
+    }
   }
 
   const getSelectedToolsCount = () => {
-    return selectedTools.reduce((total, item) => total + item.tools.length, 0)
+    try {
+      if (!Array.isArray(selectedTools)) {
+        console.warn("selectedTools is not an array:", selectedTools)
+        return 0
+      }
+      return selectedTools.reduce((total, item) => {
+        if (!item || !Array.isArray(item.tools)) {
+          console.warn("Invalid item in selectedTools:", item)
+          return total
+        }
+        return total + item.tools.length
+      }, 0)
+    } catch (error) {
+      console.error("Error counting selected tools:", error)
+      return 0
+    }
   }
 
   const isConnectorSelected = (connector: MCPConnector) => {
-    const connectorId = connector.id
-    const connectorTools = selectedToolsMap.get(connectorId)
-    if (!connectorTools) return false
-    const enabledTools = connector.tools.filter((tool) => tool.enabled)
-    return enabledTools.length > 0 && enabledTools.every((tool) => connectorTools.has(tool.externalId))
+    try {
+      if (!connector || !connector.id) {
+        return false
+      }
+      
+      const connectorId = connector.id
+      const connectorTools = selectedToolsMap.get(connectorId)
+      if (!connectorTools) return false
+      
+      const enabledTools = connector.tools?.filter((tool) => tool?.enabled) || []
+      return enabledTools.length > 0 && enabledTools.every((tool) => 
+        tool?.externalId && connectorTools.has(tool.externalId)
+      )
+    } catch (error) {
+      console.error("Error checking if connector is selected:", error)
+      return false
+    }
   }
 
   const isConnectorPartiallySelected = (connector: MCPConnector) => {
-    const connectorId = connector.id
-    const connectorTools = selectedToolsMap.get(connectorId)
-    if (!connectorTools) return false
-    return connector.tools.some((tool) => tool.enabled && connectorTools.has(tool.externalId))
+    try {
+      if (!connector || !connector.id) {
+        return false
+      }
+      
+      const connectorId = connector.id
+      const connectorTools = selectedToolsMap.get(connectorId)
+      if (!connectorTools) return false
+      
+      return (connector.tools || []).some((tool) => 
+        tool?.enabled && tool?.externalId && connectorTools.has(tool.externalId)
+      )
+    } catch (error) {
+      console.error("Error checking if connector is partially selected:", error)
+      return false
+    }
   }
 
   return (
@@ -358,6 +493,7 @@ export function MCPToolSelection({
                                   handleToolSelection(
                                     connector.id,
                                     tool.externalId,
+                                    tool.toolName,
                                     e.target.checked,
                                   )
                                 }

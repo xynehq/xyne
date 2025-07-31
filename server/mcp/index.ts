@@ -5,43 +5,78 @@ import BitbucketClient from "./bitbucketClient.js";
 import KibanaClient from "./kibanaClient.js";
 import { getLogger } from "../logger/index.js";
 import { Subsystem } from "../types.js";
-import { file } from "jszip";
 
 export function startMcpServer() {
   const logger = getLogger(Subsystem.MCP);
+  
+  // Validate required environment variables
+  const requiredEnvVars = {
+    JIRA_BASE_URL: process.env.JIRA_BASE_URL,
+    JIRA_USER_EMAIL: process.env.JIRA_USER_EMAIL,
+    JIRA_API_TOKEN: process.env.JIRA_API_TOKEN,
+    BITBUCKET_BASE_URL: process.env.BITBUCKET_BASE_URL,
+    BITBUCKET_USER_NAME: process.env.BITBUCKET_USER_NAME,
+    BITBUCKET_APP_PASSWORD: process.env.BITBUCKET_APP_PASSWORD,
+    KIBANA_BASE_URL: process.env.KIBANA_BASE_URL,
+    KIBANA_COOKIE: process.env.KIBANA_COOKIE,
+  };
+
+  const missingVars = Object.entries(requiredEnvVars)
+    .filter(([_, value]) => !value)
+    .map(([key, _]) => key);
+
+  if (missingVars.length > 0) {
+    logger.warn(`MCP server starting with missing environment variables: ${missingVars.join(', ')}`);
+  }
+
   const server = new FastMCP({
     name: "xyne-server",
     version: "0.0.1",
   });
 
-  const jira = new JiraClient(
-    process.env.JIRA_BASE_URL!,
-    process.env.JIRA_USER_EMAIL!,
-    process.env.JIRA_API_TOKEN!
-  );
+  // Only initialize clients if their required env vars are present
+  let jira: JiraClient | null = null;
+  let bitbucket: BitbucketClient | null = null;
+  let kibana: KibanaClient | null = null;
 
-  const bitbucket = new BitbucketClient(
-    process.env.BITBUCKET_BASE_URL!,
-    process.env.BITBUCKET_USER_NAME!,
-    process.env.BITBUCKET_APP_PASSWORD!
-  );
+  if (process.env.JIRA_BASE_URL && process.env.JIRA_USER_EMAIL && process.env.JIRA_API_TOKEN) {
+    jira = new JiraClient(
+      process.env.JIRA_BASE_URL,
+      process.env.JIRA_USER_EMAIL,
+      process.env.JIRA_API_TOKEN
+    );
+  }
 
-  const kibana = new KibanaClient(
-    process.env.KIBANA_BASE_URL!,
-    process.env.KIBANA_COOKIE!,
-    process.env.KIBANA_PREFERENCE
-  );
+  if (process.env.BITBUCKET_BASE_URL && process.env.BITBUCKET_USER_NAME && process.env.BITBUCKET_APP_PASSWORD) {
+    bitbucket = new BitbucketClient(
+      process.env.BITBUCKET_BASE_URL,
+      process.env.BITBUCKET_USER_NAME,
+      process.env.BITBUCKET_APP_PASSWORD
+    );
+  }
+
+  if (process.env.KIBANA_BASE_URL && process.env.KIBANA_COOKIE) {
+    kibana = new KibanaClient(
+      process.env.KIBANA_BASE_URL,
+      process.env.KIBANA_COOKIE,
+      process.env.KIBANA_PREFERENCE
+    );
+  }
 
   // -------- Jira tool --------
-  server.addTool({
-    name: "jira_get_issue",
-    description: "Get Jira issue details by issue key",
-    parameters: z.object({
-      issueKey: z.string(),
-    }),
-    execute: async ({ issueKey }: { issueKey: string }) => {
-      try {
-        const issue = await jira.getIssue(issueKey);
+  if (jira) {
+    server.addTool({
+      name: "jira_get_issue",
+      description: "Get Jira issue details by issue key",
+      parameters: z.object({
+        issueKey: z.string(),
+      }),
+      execute: async ({ issueKey }: { issueKey: string }) => {
+        if (!jira) {
+          throw new UserError("Jira client not configured - missing environment variables");
+        }
+        try {
+          const issue = await jira.getIssue(issueKey);
         const issueData = {
           key: issue.key,
           summary: issue.fields.summary,
@@ -64,9 +99,11 @@ export function startMcpServer() {
       }
     },
   });
+  } // End of Jira tools
 
   // -------- Find Code Lines tool --------
-  server.addTool({
+  if (bitbucket) {
+    server.addTool({
     name: "find_code_lines",
     description: "Find the exact line numbers of a code snippet within a file. Gets the whole file content and searches for your code snippet. Use this tool BEFORE using bitbucket_get_git_blame to ensure accurate line numbers.",
     parameters: z.object({
@@ -95,6 +132,9 @@ export function startMcpServer() {
       endLine: number;
       searchAroundLine?: number;
     }) => {
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing environment variables");
+      }
       try {
         // console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
         const fileContent = await bitbucket.getFileContent(projectKey, repoSlug, filePath);
@@ -103,12 +143,13 @@ export function startMcpServer() {
           throw new Error("File content is empty or null");
         }
         
-        const lines = fileContent.split("\n");
+        // Add file size limit to prevent memory issues
+        const MAX_FILE_SIZE = 1000000; // 1MB limit
+        if (fileContent.length > MAX_FILE_SIZE) {
+          throw new UserError(`File too large (${fileContent.length} characters). Maximum size is ${MAX_FILE_SIZE} characters.`);
+        }
         
-        // console.log(`File has ${lines.length} lines`);
-        // console.log(`File size: ${fileContent.length} characters`);
-        // console.log(`First few lines: ${lines.slice(0, 5).join("\\n")}`);
-        // console.log(`Last few lines: ${lines.slice(-5).join("\\n")}`);
+        const lines = fileContent.split("\n");
         
         // Check if file seems truncated
         const lastLine = lines[lines.length - 1];
@@ -404,9 +445,11 @@ export function startMcpServer() {
       }
     },
   });
+  } // End of bitbucket tools
 
-  // -------- Bitbucket tool --------
-  server.addTool({
+  // -------- Bitbucket git blame tool --------
+  if (bitbucket) {
+    server.addTool({
     name: "bitbucket_get_git_blame",
     description: "Get Git blame for a file in Bitbucket with the correct lines the given code covers. After this tool, it is mandatory to call jira_get_issue tool to get the Jira description and link from the Jira ticket. For calling this tool you need to be absolutely be sure about the lines of the code. For each of the Jira ID in the response call the jira_get_issue tool to get the description and link. And provide a super detailed output at the end.",
     parameters: z.object({
@@ -429,6 +472,9 @@ export function startMcpServer() {
       startLine: number;
       endLine: number;
     }) => {
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing environment variables");
+      }
       try {
         const blameResponse = await bitbucket.getGitBlame(
           projectKey,
@@ -476,9 +522,11 @@ export function startMcpServer() {
       }
     },
   });
+  } // End of bitbucket tools
 
   // -------- Kibana Search tool --------
-  server.addTool({
+  if (kibana) {
+    server.addTool({
     name: "kibana_search_logs",
     description: "Search Kibana logs using OpenSearch API with support for AND, OR, and NOT conditions. Includes progressive token counting and result truncation.",
     parameters: z.object({
@@ -510,6 +558,9 @@ export function startMcpServer() {
       response_format?: "concise" | "detailed";
       max_tokens?: number;
     }) => {
+      if (!kibana) {
+        throw new UserError("Kibana client not configured - missing environment variables");
+      }
       try {
         const searchResult = await kibana.searchLogs({
           start_time,
@@ -528,6 +579,7 @@ export function startMcpServer() {
       }
     },
   });
+  } // End of kibana tools
 
   server.start({
     transportType: "httpStream",
@@ -535,5 +587,7 @@ export function startMcpServer() {
       port: 7320,
     },
   });
+
+  
   logger.info("MCP server started on port 7320");
 }

@@ -927,7 +927,13 @@ app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   await initQueue()
-  startMcpServer()
+  try {
+    startMcpServer()
+    Logger.info("MCP server started successfully")
+  } catch (error) {
+    Logger.error("Failed to start MCP server:", error)
+    // Continue without MCP server instead of crashing
+  }
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
