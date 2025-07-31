@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
+
 const {
   AwsAccessKey,
   AwsSecretKey,

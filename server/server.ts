@@ -15,6 +15,7 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
+  SearchSlackChannels,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -512,6 +513,11 @@ export const AppRoutes = app
     EnhancedMessageFeedbackApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
+  .get(
+    "/search/slack-channels",
+    zValidator("query", searchSchema),
+    SearchSlackChannels,
+  )
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)

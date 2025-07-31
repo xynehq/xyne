@@ -105,6 +105,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  searchSlackInVespa,
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
@@ -114,7 +115,9 @@ import {
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
+  chatUserSchema,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -127,6 +130,7 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
@@ -145,6 +149,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
+import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -186,6 +191,7 @@ import {
   getCitationToImage,
   mimeTypeMap,
   extractNamesFromIntent,
+  getChannelIdsFromAgentPrompt,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -489,6 +495,26 @@ export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
+}
+
+export const getThreadContext = async (
+  searchResults: VespaSearchResponse,
+  email: string,
+  span?: Span,
+) => {
+  if (searchResults.root.children) {
+    const threadIds = [
+      ...new Set(
+        searchResults.root.children.map((child: any) => child.fields.threadId),
+      ),
+    ].filter((id) => id)
+    if (threadIds.length > 0) {
+      const threadSpan = span?.startSpan("fetch_slack_threads")
+      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      return threadMessages
+    }
+  }
+  return null
 }
 
 async function* processIterator(
@@ -1053,7 +1079,7 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-function buildContext(
+export function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   startIndex: number = 0,
@@ -1105,6 +1131,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let channelIds:string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1115,7 +1142,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { error, agentPrompt },
       )
     }
-
+    channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -1273,6 +1300,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         timestampRange,
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds: channelIds,
       },
     )
   }
@@ -1310,6 +1338,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+
       let results
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
@@ -1329,6 +1358,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -1389,6 +1419,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
             }))
 
         // Expand email threads in the results
@@ -1442,6 +1473,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 ?.map((v: VespaSearchResult) => (v.fields as any).docId)
                 ?.filter((v) => !!v),
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds,
             },
           )
         }
@@ -1553,6 +1585,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -1604,6 +1637,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
           },
         )
       }
@@ -1729,6 +1763,11 @@ async function* generateAnswerFromGivenContext(
   }
 > {
   const message = input
+  const messageText = parseMessageText(message)
+  loggerWithChild({ email: email }).info(
+    { email },
+    `generateAnswerFromGivenContext - input: ${messageText}`,
+  )
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1766,15 +1805,19 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results =
-    fileIds.length > 0
-      ? await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
-      : { root: { children: [] } }
-  if (!results.root.children) {
-    results.root.children = []
+  const combinedSearchResponse: VespaSearchResult[] = []
+
+  if (fileIds.length > 0) {
+    const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+    if (results.root.children) {
+      combinedSearchResponse.push(...results.root.children)
+    }
   }
+
   loggerWithChild({ email: email }).info(
-    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(
+      threadIds,
+    )}`,
   )
 
   // If we have threadIds, fetch all emails in those threads
@@ -1803,14 +1846,14 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          results.root.children.map((child: any) => child.fields.docId),
+          combinedSearchResponse.map((child: any) => child.fields.docId),
         )
 
         // Use the helper function to process thread results
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          results.root.children,
+          combinedSearchResponse,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
@@ -1832,23 +1875,84 @@ async function* generateAnswerFromGivenContext(
 
     threadSpan?.end()
   }
-  const startIndex = isReasoning ? previousResultsLength : 0
-  const initialContext = cleanContext(
-    results?.root?.children
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as z.infer<typeof VespaSearchResultsSchema>,
-            0,
-            true,
-          )}`,
-      )
-      ?.join("\n"),
-  )
+  // const initialContext = cleanContext(
+  //   results?.root?.children
+  //     ?.map(
+  //       (v, i) =>
+  //         `Index ${i + startIndex} \n ${answerContextMap(
+  //           v as z.infer<typeof VespaSearchResultsSchema>,
+  //           0,
+  //           true,
+  //         )}`,
+  //     )
+  //     ?.join("\n"),
+  // )
+  const initialResults = [...(combinedSearchResponse || [])]
+  for (const v of initialResults) {
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema
+    ) {
+      const channelId = (v.fields as any).docId
+      console.log(`Processing chat container with docId: ${channelId}`)
 
+      if (channelId) {
+        const searchResults = await searchSlackInVespa(messageText, email, {
+          limit: 10,
+          channelIds: [channelId],
+        })
+        if (searchResults.root.children) {
+          combinedSearchResponse.push(...searchResults.root.children)
+          const threadMessages = await getThreadContext(
+            searchResults,
+            email,
+            generateAnswerSpan,
+          )
+          if (threadMessages?.root?.children) {
+            combinedSearchResponse.push(...threadMessages.root.children)
+          }
+        }
+      }
+    }
+  }
+
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const contextPromises = combinedSearchResponse?.map(async (v, i) => {
+    let content = answerContextMap(
+      v as z.infer<typeof VespaSearchResultsSchema>,
+      0,
+      true,
+    )
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema &&
+      (v.fields as any).creator
+    ) {
+      try {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )      
+        if (creator) {
+              content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      } catch (error) {
+          loggerWithChild({ email }).error(error, `Failed to fetch creator for chat container`)
+        }
+    }
+    return `Index ${i + startIndex} \n ${content}`
+  })
+
+  const resolvedContexts = contextPromises
+    ? await Promise.all(contextPromises)
+    : []
+
+  const initialContext = cleanContext(resolvedContexts.join("\n"))
   const { imageFileNames } = extractImageFileNames(
     initialContext,
-    results?.root?.children,
+    combinedSearchResponse,
   )
 
   const finalImageFileNames = imageFileNames || []
@@ -1867,13 +1971,13 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.setAttribute("context", initialContext || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
-    results.root?.children?.length || 0,
+    combinedSearchResponse?.length || 0,
   )
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
-      results?.root?.children?.length || 0
+      combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -1897,7 +2001,7 @@ async function* generateAnswerFromGivenContext(
 
   const answer = yield* processIterator(
     iterator,
-    results?.root?.children,
+    combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoning,
     email,
@@ -2010,7 +2114,7 @@ async function* generateAnswerFromGivenContext(
     }
   }
   if (config.isReasoning && userRequestsReasoning) {
-    previousResultsLength += results?.root?.children?.length || 0
+    previousResultsLength += combinedSearchResponse?.length || 0
   }
   generateAnswerSpan?.end()
 }
@@ -2041,6 +2145,25 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     }
   })
   return builtQuery
+}
+
+export const parseMessageText = (message: string): string => {
+  if (!message.startsWith("[{")) {
+    return message
+  }
+  try {
+    const messageArray = JSON.parse(message)
+    if (Array.isArray(messageArray)) {
+      return messageArray
+        .filter((item) => item.type === "text")
+        .map((item) => item.value)
+        .join(" ")
+        .trim()
+    }
+    return message
+  } catch (e) {
+    return message
+  }
 }
 
 const getSearchRangeSummary = (
@@ -2346,6 +2469,7 @@ async function* generatePointQueryTimeExpansion(
 
     if (agentPrompt) {
       if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         const [agentResults, agentEventResults] = await Promise.all([
           searchVespaAgent(
             message,
@@ -2359,6 +2483,7 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2368,6 +2493,7 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
           }),
         ])
         results.root.children = [
@@ -2814,6 +2940,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
@@ -2825,6 +2952,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -2946,6 +3074,7 @@ async function* generateMetadataQueryAnswer(
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
@@ -2955,6 +3084,7 @@ async function* generateMetadataQueryAnswer(
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
+          channelIds,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3087,6 +3217,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           query,
           email,
@@ -3097,6 +3228,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -3511,7 +3643,7 @@ export const MessageApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
-    loggerWithChild({ email: email }).info("MessageApi..")
+    loggerWithChild({ email: email }).info("MessageApi Chats..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
