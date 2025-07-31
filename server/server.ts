@@ -9,10 +9,13 @@ import {
   chatRenameSchema,
   chatTraceSchema,
   chatSchema,
+  dashboardDataSchema,
+  sharedAgentUsageSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
   chatStopSchema,
+  SearchSlackChannels,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -50,6 +53,17 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  GetAdminChats,
+  GetAdminAgents,
+  GetAdminUsers,
+  GetUserAgentLeaderboard,
+  GetAgentAnalysis,
+  GetAgentFeedbackMessages,
+  GetAgentUserFeedbackMessages,
+  GetAllUserFeedbackMessages,
+  adminQuerySchema,
+  userAgentLeaderboardQuerySchema,
+  agentAnalysisQuerySchema,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -87,9 +101,12 @@ import {
   ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
+  DashboardDataApi,
+  SharedAgentUsageApi,
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
+  EnhancedMessageFeedbackApi,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
@@ -137,7 +154,10 @@ import {
   handleThumbnailServe,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
-import { messageFeedbackSchema } from "@/api/chat/types"
+import {
+  messageFeedbackSchema,
+  enhancedMessageFeedbackSchema,
+} from "@/api/chat/types"
 
 import {
   CreateKnowledgeBaseApi,
@@ -453,6 +473,16 @@ export const AppRoutes = app
     zValidator("query", chatHistorySchema),
     ChatFavoritesApi,
   )
+  .get(
+    "/chat/dashboard-data",
+    zValidator("query", dashboardDataSchema),
+    DashboardDataApi,
+  )
+  .get(
+    "/chat/shared-agent-usage",
+    zValidator("query", sharedAgentUsageSchema),
+    SharedAgentUsageApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // Shared chat routes
   .post(
@@ -492,7 +522,17 @@ export const AppRoutes = app
     zValidator("json", messageFeedbackSchema),
     MessageFeedbackApi,
   )
+  .post(
+    "/message/feedback/enhanced",
+    zValidator("json", enhancedMessageFeedbackSchema),
+    EnhancedMessageFeedbackApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
+  .get(
+    "/search/slack-channels",
+    zValidator("query", searchSchema),
+    SearchSlackChannels,
+  )
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
@@ -627,6 +667,40 @@ export const AppRoutes = app
     AdminDeleteUserData,
   )
   .get("/oauth/global-slack-provider", GetProviders)
+  // Admin Dashboard Routes
+  .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
+  .get("/agents", GetAdminAgents)
+  .get("/users", GetAdminUsers)
+  .get(
+    "/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
+  .get(
+    "/users/:userId/agent-leaderboard",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetUserAgentLeaderboard,
+  )
+  .get(
+    "/agents/:agentId/analysis",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentAnalysis,
+  )
+  .get(
+    "/agents/:agentId/feedback",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentFeedbackMessages,
+  )
+  .get(
+    "/agents/:agentId/user-feedback/:userId",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentUserFeedbackMessages,
+  )
+  .get(
+    "/admin/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app
@@ -841,6 +915,7 @@ app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
   AuthRedirect,

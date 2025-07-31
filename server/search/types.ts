@@ -249,6 +249,7 @@ export const VespaFileSchema = z.object({
   entity: FileEntitySchema,
   title: z.string(),
   url: z.string().nullable(),
+  parentId: z.string().nullable(),
   chunks: z.array(z.string()),
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),
@@ -698,13 +699,13 @@ export const VespaChatContainerSchema = z.object({
   channelName: z.string(),
   creator: z.string(),
   app: z.nativeEnum(Apps),
-
+  entity: z.nativeEnum(SlackEntity),
   isPrivate: z.boolean(),
   isArchived: z.boolean(),
   isGeneral: z.boolean(),
   isIm: z.boolean(),
   isMpim: z.boolean(),
-
+  domain: z.string().optional(), // derived
   permissions: z.array(z.string()),
 
   createdAt: z.number(),
@@ -781,6 +782,7 @@ const SearchMatchFeaturesSchema = z.union([
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
   DataSourceFileMatchFeaturesSchema,
+  ChatContainerMatchFeaturesSchema,
   KbFileMatchFeaturesSchema,
 ])
 

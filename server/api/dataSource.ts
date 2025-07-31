@@ -578,6 +578,45 @@ export const GetDataSourceFile = async (c: Context) => {
     const dataSourceRefId = dataSourceFile.dataSourceRef.split("::").pop()
     const uploadedBy = dataSourceFile.uploadedBy
 
+    // Combine and sort chunks and image_chunks by their respective positions
+    const {
+      chunks = [],
+      image_chunks = [],
+      chunks_pos = [],
+      image_chunks_pos = [],
+    } = dataSourceFile
+
+    const combinedChunks: {
+      content: string
+      type: "text" | "image"
+      pos: number
+    }[] = [
+      ...chunks.map((content, i) => ({
+        content,
+        type: "text" as const,
+        pos: chunks_pos[i] ?? i,
+      })),
+      ...image_chunks.map((content, i) => ({
+        content,
+        type: "image" as const,
+        pos: image_chunks_pos[i] ?? i,
+      })),
+    ].sort((a, b) => a.pos - b.pos)
+
+    // Update vespaResponse.fields.chunks based on presence of chunks
+    if (
+      "chunks" in vespaResponse.fields &&
+      Array.isArray(vespaResponse.fields.chunks)
+    ) {
+      vespaResponse.fields.chunks = combinedChunks.map((chunk) => chunk.content)
+    } else if (
+      "image_chunks" in vespaResponse.fields &&
+      Array.isArray(vespaResponse.fields.image_chunks)
+    ) {
+      vespaResponse.fields.chunks = vespaResponse.fields.image_chunks
+      delete vespaResponse.fields.image_chunks
+    }
+
     // if user is the original uploader
     if (uploadedBy === email) {
       loggerWithChild({ email: email }).info(

@@ -31,6 +31,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx-preview": "^0.3.5",
+    "date-fns": "^4.1.0",
     "hono": "^4.6.15",
     "jszip": "^3.10.1",
     "lucide-react": "^0.475.0",
@@ -42,6 +43,7 @@
     "react-icons": "^5.5.0",
     "react-json-view": "^1.21.3",
     "react-zoom-pan-pinch": "^3.7.0",
+    "recharts": "^3.1.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "3.23.8"

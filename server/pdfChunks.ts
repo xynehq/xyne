@@ -6,10 +6,7 @@ import path from "path"
 import imageType from "image-type"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
-import {
-  describeImageWithllm,
-  withTempDirectory,
-} from "./lib/describeImageWithllm"
+import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 
 const openjpegWasmPath =
@@ -135,7 +132,7 @@ function processTextParagraphs(
   text_chunks: string[],
   text_chunk_pos: number[],
   globalSeq: { value: number },
-  overlapBytes: number = 128,
+  overlapBytes: number = 32,
 ): string {
   if (paragraphs.length === 0) return ""
 
@@ -168,7 +165,7 @@ function processTextParagraphs(
 }
 
 export async function extractTextAndImagesWithChunksFromPDF(
-  pdfPath: string,
+  data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = true,
 ): Promise<{
@@ -177,37 +174,36 @@ export async function extractTextAndImagesWithChunksFromPDF(
   text_chunk_pos: number[]
   image_chunk_pos: number[]
 }> {
-  return withTempDirectory(async (tempDir) => {
-    Logger.info(`Starting PDF processing for: ${pdfPath}`)
+  Logger.info(`Starting PDF processing for: ${docid}`)
 
-    let data: Uint8Array
-    try {
-      const buffer = await fsPromises.readFile(pdfPath)
-      data = new Uint8Array(buffer)
-    } catch (error) {
-      const { name, message } = error as Error
-      if (
-        message.includes("PasswordException") ||
-        name.includes("PasswordException")
-      ) {
-        Logger.warn("Password protected PDF, skipping")
-      } else {
-        Logger.error(error, `PDF load error: ${error}`)
-      }
-      return {
-        text_chunks: [],
-        image_chunks: [],
-        text_chunk_pos: [],
-        image_chunk_pos: [],
-      }
+  const loadingTask = PDFJS.getDocument({
+    data,
+    wasmUrl: openjpegWasmPath,
+    iccUrl: qcmsWasmPath,
+    verbosity: PDFJS.VerbosityLevel.ERRORS, // Only show errors, suppress warnings
+  })
+  let pdfDocument: pdfjsLib.PDFDocumentProxy
+  try {
+    pdfDocument = await loadingTask.promise
+  } catch (error) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected PDF, skipping")
+    } else {
+      Logger.error(error, `PDF load error: ${error}`)
     }
-    const loadingTask = PDFJS.getDocument({
-      data,
-      wasmUrl: openjpegWasmPath,
-      iccUrl: qcmsWasmPath,
-    })
-    const pdfDocument = await loadingTask.promise
+    return {
+      text_chunks: [],
+      image_chunks: [],
+      text_chunk_pos: [],
+      image_chunk_pos: [],
+    }
+  }
 
+  try {
     let text_chunks: string[] = []
     let image_chunks: string[] = []
     let text_chunk_pos: number[] = []
@@ -468,8 +464,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
               }
 
               if (imageProcessed) {
-                const imgBuffer = new Uint8Array(uint8Data.buffer)
-                const type = await imageType(imgBuffer)
+                const buffer = canvas.toBuffer("image/png")
+                // @ts-ignore
+                let type = await imageType(buffer)
+                if (!type) {
+                  Logger.warn(
+                    `Could not determine MIME type for ${imageName}. Defaulting to image/png`,
+                  )
+                  type = { mime: "image/png", ext: "png" }
+                }
                 if (
                   !type ||
                   !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
@@ -480,7 +483,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   continue
                 }
 
-                const buffer = canvas.toBuffer(type.mime as any)
+                // buffer already created above
                 const imageHash = crypto
                   .createHash("md5")
                   .update(new Uint8Array(buffer))
@@ -494,7 +497,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     `Reusing description for repeated image ${imageName} on page ${pageNum}`,
                   )
                 } else {
-                  description = await describeImageWithllm(buffer, tempDir)
+                  description = await describeImageWithllm(buffer)
                   if (
                     description === "No description returned." ||
                     description === "Image is not worth describing."
@@ -583,5 +586,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       text_chunk_pos,
       image_chunk_pos,
     }
-  })
+  } finally {
+    await pdfDocument.destroy()
+  }
 }

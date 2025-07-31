@@ -31,6 +31,12 @@ schema chat_container {
             attribute: fast-search
             match: exact
         }
+        
+        field entity type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
     
         # dm
         field isIm type bool {
@@ -88,7 +94,17 @@ schema chat_container {
         field count type int {
             indexing: attribute | summary
         }
+        field teamRef type reference<chat_team> {
+            indexing: attribute
+        }
     }
+
+    document-summary default {
+        summary domain {}
+    }
+
+    import field teamRef.domain as domain {}
+    import field teamRef.teamName as teamName {}
 
     field name_fuzzy type string {
         indexing: input name | index
@@ -99,7 +115,7 @@ schema chat_container {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[DIMS]) {
+    field chunk_embeddings type tensor<bfloat16>(v[384]) {
         indexing: (input name || "") . " " . (input topic || "") . " " . (input description || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -112,7 +128,7 @@ schema chat_container {
 
     rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[384])
             query(alpha) double 
         }
 
@@ -233,6 +249,15 @@ schema chat_container {
     rank-profile autocomplete inherits default {
         first-phase {
             expression: bm25(name_fuzzy)
+        }
+    }
+
+    rank-profile global_sorted {
+        first-phase {
+            expression: attribute(createdAt)
+        }
+        global-phase {
+            rerank-count: 1000
         }
     }
 }

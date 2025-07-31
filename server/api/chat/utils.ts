@@ -2,6 +2,7 @@ import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
   DataSourceEntity,
   dataSourceFileSchema,
@@ -15,9 +16,11 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatContainer,
   type VespaChatMessage,
   type VespaDataSourceFile,
   type VespaEvent,
@@ -37,23 +40,45 @@ import {
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { UserQuery } from "@/ai/types"
+import type { Intent, UserQuery } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
   type AgentReasoningStep,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
-import { SearchEmailThreads } from "@/search/vespa"
+import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
 import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
+
+
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
+}
+
+export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
+  try {
+    const agent = JSON.parse(agentPrompt)
+    if (!agent || !agent.docIds) {
+      return []
+    }
+    const channelIds = new Set<string>()
+    agent.docIds?.forEach((doc: any) => {
+      if (doc.app === Apps.Slack) {
+        if (doc.entity === SlackEntity.Channel && doc.docId) {
+          channelIds.add(doc.docId)
+        }
+      }
+    })
+    return Array.from(channelIds)
+  } catch (e) {
+    return []
+  }
 }
 
 // Interface for email search result fields
@@ -330,6 +355,14 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
+  } else if (result.fields.sddocname === chatContainerSchema) {
+    return {
+      docId: (fields as VespaChatContainer).docId,
+      title: (fields as VespaChatContainer).name,
+      url: `https://${result.fields.domain}.slack.com/archives/${result.fields.docId}`,
+      app: (fields as VespaChatContainer).app,
+      entity: SlackEntity.Channel,
+    }
   } else {
     throw new Error("Invalid search result type for citation")
   }
@@ -388,6 +421,7 @@ export const getFileIdFromLink = (link: string) => {
 }
 export const extractFileIdsFromMessage = async (
   message: string,
+  email?: string,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -395,15 +429,58 @@ export const extractFileIdsFromMessage = async (
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
+  const driveItem: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
-      fileIds.push(obj?.value?.docId)
+      if (
+        obj?.value &&
+        obj?.value?.entity &&
+        obj?.value?.entity == DriveEntity.Folder
+      ) {
+        driveItem.push(obj?.value?.docId)
+      } else fileIds.push(obj?.value?.docId)
       // Check if this pill has a threadId (for email threads)
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
+      }
+
+      const pillValue = obj.value
+      const docId = pillValue.docId
+
+      // Check if this is a Google Sheets reference with wholeSheet: true
+      if (pillValue.wholeSheet === true) {
+        // Extract the base docId (remove the "_X" suffix if present)
+        const baseDocId = docId.replace(/_\d+$/, "")
+
+        // Get the spreadsheet metadata to find all sub-sheets
+        const validFile = await getDocumentOrSpreadsheet(baseDocId)
+        if (validFile) {
+          const fields = validFile?.fields as VespaFile
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            // Add all sub-sheet IDs
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${baseDocId}_${i}`)
+            }
+          } else {
+            // Fallback: just add the docId if it's not a spreadsheet
+            fileIds.push(docId)
+          }
+        } else {
+          // Fallback: just add the docId if we can't get metadata
+          fileIds.push(docId)
+        }
+      } else {
+        // Regular pill behavior: just add the docId
+        fileIds.push(docId)
       }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
@@ -432,6 +509,41 @@ export const extractFileIdsFromMessage = async (
           }
           validFileIdsFromLinkCount++
         }
+      }
+    }
+  }
+  while (driveItem.length) {
+    let curr = driveItem.shift()
+    // Ensure email is defined before passing it to getFolderItems\
+    if (curr) fileIds.push(curr)
+    if (curr && email) {
+      try {
+        const folderItem = await getFolderItems(
+          [curr],
+          fileSchema,
+          DriveEntity.Folder,
+          email,
+        )
+        if (
+          folderItem.root &&
+          folderItem.root.children &&
+          folderItem.root.children.length > 0
+        ) {
+          for (const item of folderItem.root.children) {
+            if (
+              item.fields &&
+              (item.fields as any).entity === DriveEntity.Folder
+            ) {
+              driveItem.push((item.fields as any).docId)
+            } else {
+              fileIds.push((item.fields as any).docId)
+            }
+          }
+        }
+      } catch (error) {
+        getLoggerWithChild(Subsystem.Chat)({ email }).error(
+          `Falied to fetch the content of Folder`,
+        )
       }
     }
   }
@@ -622,4 +734,22 @@ export const getCitationToImage = async (
     )
     return null
   }
+}
+
+export function extractNamesFromIntent(intent: any): Intent {
+  if (!intent || typeof intent !== "object") return {}
+
+  const result: Intent = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+
+  for (const field of fieldsToCheck) {
+    if (Array.isArray(intent[field]) && intent[field].length > 0) {
+      const uniqueValues = [...new Set(intent[field])].filter((v) => v)
+      if (uniqueValues.length > 0) {
+        result[field] = uniqueValues
+      }
+    }
+  }
+
+  return result
 }

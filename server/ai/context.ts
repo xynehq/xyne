@@ -20,6 +20,8 @@ import {
   type VespaDataSourceFileSearch,
   kbFileSchema,
   type VespaKbFileSearch,
+  chatContainerSchema,
+  type VespaChatContainerSearch,
 } from "@/search/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
@@ -61,7 +63,12 @@ const constructFileContext = (
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-
+  // Handle metadata that might already be an object or a string that needs parsing
+  const parsedMetadata =
+    typeof fields.metadata === "string"
+      ? JSON.parse(fields.metadata)
+      : fields.metadata
+  const folderName = parsedMetadata.parents?.[0]?.folderName || ""
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
     chunks = getSortedScoredChunks(
@@ -97,7 +104,9 @@ const constructFileContext = (
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString()})` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
+${fields.parentId ? `parent FolderId: ${fields.parentId}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
+${fields.metadata ? `parent FolderName: ${folderName}` : ""} 
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
@@ -192,6 +201,38 @@ const constructSlackMessageContext = (
     ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
+}
+
+const constructSlackChannelContext = (
+  fields: VespaChatContainerSearch,
+  relevance: number,
+): string => {
+  let channelCtx = ``
+  if (fields.isIm) {
+    channelCtx = `It's a DM.`
+  } else if (fields.isMpim) {
+    channelCtx = `It's a group DM.`
+  } else if (fields.isPrivate) {
+    channelCtx = `It's a private channel.`
+  } else {
+    channelCtx = `It's a public channel.`
+  }
+
+  return `${channelCtx}
+App: ${fields.app}
+Entity: ${fields.entity ?? "channel"}
+Name: ${fields.name}
+${fields.topic ? `Topic: ${fields.topic}` : ""}
+${fields.description ? `Description: ${fields.description}` : ""}
+${fields.permissions ? `Users in channel: ${fields.permissions.join(", ")}` : ""}
+${
+  typeof fields.createdAt === "number" && isFinite(fields.createdAt)
+    ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(
+        fields.createdAt,
+      ).toLocaleString()})`
+    : ""
+}
+vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (
@@ -307,10 +348,18 @@ const constructFileMetadataContext = (
   fields: VespaFileSearch,
   relevance: number,
 ): string => {
+  const parsedMetadata =
+    typeof fields.metadata === "string"
+      ? JSON.parse(fields.metadata)
+      : fields.metadata
+  const folderName = parsedMetadata.parents?.[0]?.folderName || ""
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
+${fields.parentId ? `Parent FolderId: ${fields.parentId}` : ""}
+${fields.metadata ? `parent FolderName: ${folderName}` : ""} 
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
@@ -652,6 +701,11 @@ export const answerContextMap = (
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
     return constructSlackMessageContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === chatContainerSchema) {
+    return constructSlackChannelContext(
       searchResult.fields,
       searchResult.relevance,
     )

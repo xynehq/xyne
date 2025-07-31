@@ -55,7 +55,6 @@ async function callLLMWithPayload(payload: object): Promise<string> {
 
 export const describeImageWithllm = async (
   image: Buffer,
-  providedTempDir?: string,
   prompt?: string,
 ): Promise<string> => {
   // Check if LLM endpoint is provided in environment variables
@@ -109,29 +108,5 @@ export const describeImageWithllm = async (
   } catch (err) {
     Logger.error(err, "Error calling LLM API for image description")
     return "No description returned."
-  }
-}
-
-// Utility function to create and cleanup temp directory
-export const withTempDirectory = async <T>(
-  callback: (tempDir: string) => Promise<T>,
-): Promise<T> => {
-  const tempDir = path.resolve(__dirname, "../../tmp", `session_${uuidv4()}`)
-
-  try {
-    // Create temp directory
-    await fs.promises.mkdir(tempDir, { recursive: true })
-    Logger.debug(`Created temp directory: ${tempDir}`)
-
-    // Execute callback with temp directory
-    return await callback(tempDir)
-  } finally {
-    // Clean up temp directory and all its contents
-    try {
-      await fs.promises.rm(tempDir, { recursive: true, force: true })
-      Logger.debug(`Cleaned up temp directory: ${tempDir}`)
-    } catch (cleanupError) {
-      Logger.error(cleanupError, `Error cleaning up temp directory: ${tempDir}`)
-    }
   }
 }

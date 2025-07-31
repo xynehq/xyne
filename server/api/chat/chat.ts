@@ -17,6 +17,7 @@ import {
   meetingPromptJsonStream,
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
+  extractEmailsFromContext,
 } from "@/ai/provider"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -26,6 +27,7 @@ import {
   Models,
   QueryType,
   type ConverseResponse,
+  type Intent,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
@@ -39,6 +41,7 @@ import {
   getChatByExternalIdWithAuth,
   getFavoriteChats,
   getPublicChats,
+  getAllChatsForDashboard,
   insertChat,
   updateChatByExternalIdWithAuth,
   updateChatBookmarkStatus,
@@ -51,8 +54,11 @@ import {
   getChatMessagesBefore,
   updateMessage,
   getChatMessagesWithAuth,
+  getMessageCountsByChats,
+  getMessageFeedbackStats,
 } from "@/db/message"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
+import { nanoid } from "nanoid"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -99,6 +105,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  searchSlackInVespa,
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
@@ -108,7 +115,9 @@ import {
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
+  chatUserSchema,
   dataSourceFileSchema,
   kbFileSchema,
   DriveEntity,
@@ -122,6 +131,7 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
@@ -140,6 +150,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
+import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -154,7 +165,12 @@ import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 // import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalId,
+  getAllAgents,
+  getAgentsAccessibleToUser,
+  type SelectAgent,
+} from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
   ragPipelineConfig,
@@ -175,6 +191,8 @@ import {
   expandEmailThreadsInResults,
   getCitationToImage,
   mimeTypeMap,
+  extractNamesFromIntent,
+  getChannelIdsFromAgentPrompt,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -186,9 +204,125 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isImageFile } from "@/utils/image"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import {
+  getAgentUsageByUsers,
+  getChatCountsByAgents,
+  getFeedbackStatsByAgents,
+  getMessageCountsByAgents,
+  getPublicAgentsByUser,
+  type SharedAgentUsageData,
+} from "@/db/sharedAgentUsage"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
+
+export async function resolveNamesToEmails(
+  intent: Intent,
+  email: string,
+  userCtx: string,
+  span?: Span,
+): Promise<any> {
+  const resolveSpan = span?.startSpan("resolve_names_to_emails")
+
+  try {
+    const extractedNames = extractNamesFromIntent(intent)
+
+    const allNames = [
+      ...(extractedNames.from || []),
+      ...(extractedNames.to || []),
+      ...(extractedNames.cc || []),
+      ...(extractedNames.bcc || []),
+      ...(extractedNames.subject || []),
+    ]
+
+    if (allNames.length === 0) {
+      resolveSpan?.setAttribute("no_names_found", true)
+      resolveSpan?.end()
+      return intent
+    }
+
+    const isValidEmailAddress = (email: string): boolean => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      return emailRegex.test(email)
+    }
+
+    const allNamesAreEmails = allNames.every((name) =>
+      isValidEmailAddress(name),
+    )
+    if (allNamesAreEmails) {
+      resolveSpan?.setAttribute("all_names_are_emails", true)
+      resolveSpan?.setAttribute("skip_resolution", true)
+      resolveSpan?.end()
+      return intent
+    }
+    resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
+
+    const searchSpan = resolveSpan?.startSpan("search_users")
+    const searchQuery = allNames.join(" ")
+
+    const searchResults = await searchVespa(
+      searchQuery,
+      email,
+      Apps.Gmail,
+      MailEntity.Email,
+      {
+        limit: 50,
+        alpha: 0.5,
+        span: searchSpan,
+        isIntentSearch: true,
+      },
+    )
+
+    searchSpan?.setAttribute("search_query", searchQuery)
+    searchSpan?.setAttribute(
+      "results_count",
+      searchResults.root.children?.length || 0,
+    )
+    searchSpan?.end()
+
+    const resultCount = searchResults.root.children?.length || 0
+
+    if (
+      !searchResults.root.children ||
+      searchResults.root.children.length === 0
+    ) {
+      return intent
+    }
+
+    const searchContext = searchResults.root.children
+      .map((result, index) => {
+        const fields = result.fields as VespaMail
+        const contextLine = `
+        [Index ${index}]: 
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})
+        Subject: ${fields.subject || "Unknown"}
+        From: <${fields.from}>
+        To: <${fields.to}>
+        CC: <${fields.cc}>
+        BCC: <${fields.bcc}>
+        `
+
+        return contextLine
+      })
+      .join("\n")
+
+    let resolvedData: Intent = {}
+    const resolutionResult = await extractEmailsFromContext(
+      extractedNames,
+      userCtx,
+      searchContext,
+      { modelId: config.defaultFastModel, json: false, stream: false },
+    )
+
+    resolvedData = resolutionResult.emails || []
+
+    searchSpan?.end()
+    return resolvedData
+  } catch (error) {
+    resolveSpan?.end()
+    return intent
+  }
+}
 
 const {
   JwtPayloadKey,
@@ -367,6 +501,26 @@ export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
+}
+
+export const getThreadContext = async (
+  searchResults: VespaSearchResponse,
+  email: string,
+  span?: Span,
+) => {
+  if (searchResults.root.children) {
+    const threadIds = [
+      ...new Set(
+        searchResults.root.children.map((child: any) => child.fields.threadId),
+      ),
+    ].filter((id) => id)
+    if (threadIds.length > 0) {
+      const threadSpan = span?.startSpan("fetch_slack_threads")
+      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      return threadMessages
+    }
+  }
+  return null
 }
 
 async function* processIterator(
@@ -667,9 +821,12 @@ export const ChatHistory = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore
-    const { page } = c.req.valid("query")
+    const { page, from, to } = c.req.valid("query")
     const offset = page * chatHistoryPageSize
-    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
+    const timeRange = from || to ? { from, to } : undefined
+    return c.json(
+      await getPublicChats(db, email, chatHistoryPageSize, offset, timeRange),
+    )
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(
@@ -678,6 +835,197 @@ export const ChatHistory = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Could not get chat history",
+    })
+  }
+}
+
+export const DashboardDataApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Fetch all chats based on time range (no pagination)
+    const chats = await getAllChatsForDashboard(db, email, timeRange)
+
+    // Get message counts for all chats
+    const chatExternalIds = chats.map((chat) => chat.externalId)
+    const messageCounts = await getMessageCountsByChats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Get feedback statistics for all chats
+    const feedbackStats = await getMessageFeedbackStats({
+      db,
+      chatExternalIds,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    // Fetch all agents accessible to user
+    const agents = await getAgentsAccessibleToUser(
+      db,
+      user.id,
+      workspace.id,
+      1000, // limit to 1000 agents (increased from 100)
+      0, // offset 0
+    )
+
+    return c.json({
+      chats,
+      agents,
+      messageCounts,
+      feedbackStats,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Dashboard Data Error: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get dashboard data",
+    })
+  }
+}
+
+export const SharedAgentUsageApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+    const timeRange = from || to ? { from, to } : undefined
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Get public agents created by this user
+    const publicAgents = await getPublicAgentsByUser({
+      db,
+      userId: user.id,
+      workspaceId: workspace.id,
+      email,
+      workspaceExternalId: workspace.externalId,
+    })
+
+    if (publicAgents.length === 0) {
+      return c.json({
+        sharedAgents: [],
+        totalUsage: {
+          totalChats: 0,
+          totalMessages: 0,
+          totalLikes: 0,
+          totalDislikes: 0,
+          uniqueUsers: 0,
+        },
+      })
+    }
+
+    const agentExternalIds = publicAgents.map((agent) => agent.externalId)
+
+    // Get usage statistics for these agents
+    const [chatCounts, messageCounts, feedbackStats, userUsageData] =
+      await Promise.all([
+        getChatCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getMessageCountsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getFeedbackStatsByAgents({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+        getAgentUsageByUsers({
+          db,
+          agentExternalIds,
+          workspaceExternalId: workspace.externalId,
+          timeRange,
+        }),
+      ])
+
+    // Transform data into the desired format
+    const sharedAgents: SharedAgentUsageData[] = publicAgents.map((agent) => {
+      const agentId = agent.externalId
+      const userUsage = userUsageData[agentId] || []
+      const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
+
+      return {
+        agentId,
+        agentName: agent.name,
+        agentDescription: agent.description,
+        totalChats: chatCounts[agentId] || 0,
+        totalMessages: messageCounts[agentId] || 0,
+        likes: feedback.likes,
+        dislikes: feedback.dislikes,
+        userUsage,
+      }
+    })
+
+    // Calculate total usage across all shared agents
+    let totalChats = 0
+    let totalMessages = 0
+    let totalLikes = 0
+    let totalDislikes = 0
+    const uniqueUsers = new Set<number>()
+
+    sharedAgents.forEach((agent) => {
+      totalChats += agent.totalChats
+      totalMessages += agent.totalMessages
+      totalLikes += agent.likes
+      totalDislikes += agent.dislikes
+      agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
+    })
+
+    return c.json({
+      sharedAgents: sharedAgents.sort(
+        (a, b) => b.totalMessages - a.totalMessages,
+      ),
+      totalUsage: {
+        totalChats,
+        totalMessages,
+        totalLikes,
+        totalDislikes,
+        uniqueUsers: uniqueUsers.size,
+      },
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Shared Agent Usage Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not get shared agent usage data",
     })
   }
 }
@@ -737,7 +1085,7 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-function buildContext(
+export function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   startIndex: number = 0,
@@ -790,6 +1138,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
   let agentSpecificKbIds: string[] = []
+  let channelIds:string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -800,7 +1149,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { error, agentPrompt },
       )
     }
-
+    channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -966,6 +1315,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         timestampRange,
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds: channelIds,
         kbIds: agentSpecificKbIds,
       },
     )
@@ -1004,6 +1354,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+
       let results
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
@@ -1023,6 +1374,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
             kbIds: agentSpecificKbIds,
           },
         )
@@ -1084,6 +1436,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
               kbIds: agentSpecificKbIds,
             }))
 
@@ -1138,6 +1491,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.map((v: VespaSearchResult) => (v.fields as any).docId)
               ?.filter((v) => !!v),
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
             kbIds: agentSpecificKbIds,
           }
         )
@@ -1251,6 +1605,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             kbIds: agentSpecificKbIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -1303,6 +1658,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             kbIds: agentSpecificKbIds,
+            channelIds,
           },
         )
       }
@@ -1428,6 +1784,11 @@ async function* generateAnswerFromGivenContext(
   }
 > {
   const message = input
+  const messageText = parseMessageText(message)
+  loggerWithChild({ email: email }).info(
+    { email },
+    `generateAnswerFromGivenContext - input: ${messageText}`,
+  )
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1465,12 +1826,19 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
-  if (!results.root.children) {
-    results.root.children = []
+  const combinedSearchResponse: VespaSearchResult[] = []
+
+  if (fileIds.length > 0) {
+    const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+    if (results.root.children) {
+      combinedSearchResponse.push(...results.root.children)
+    }
   }
+
   loggerWithChild({ email: email }).info(
-    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(
+      threadIds,
+    )}`,
   )
 
   // If we have threadIds, fetch all emails in those threads
@@ -1499,14 +1867,14 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          results.root.children.map((child: any) => child.fields.docId),
+          combinedSearchResponse.map((child: any) => child.fields.docId),
         )
 
         // Use the helper function to process thread results
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          results.root.children,
+          combinedSearchResponse,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
@@ -1528,23 +1896,84 @@ async function* generateAnswerFromGivenContext(
 
     threadSpan?.end()
   }
-  const startIndex = isReasoning ? previousResultsLength : 0
-  const initialContext = cleanContext(
-    results?.root?.children
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as z.infer<typeof VespaSearchResultsSchema>,
-            0,
-            true,
-          )}`,
-      )
-      ?.join("\n"),
-  )
+  // const initialContext = cleanContext(
+  //   results?.root?.children
+  //     ?.map(
+  //       (v, i) =>
+  //         `Index ${i + startIndex} \n ${answerContextMap(
+  //           v as z.infer<typeof VespaSearchResultsSchema>,
+  //           0,
+  //           true,
+  //         )}`,
+  //     )
+  //     ?.join("\n"),
+  // )
+  const initialResults = [...(combinedSearchResponse || [])]
+  for (const v of initialResults) {
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema
+    ) {
+      const channelId = (v.fields as any).docId
+      console.log(`Processing chat container with docId: ${channelId}`)
 
+      if (channelId) {
+        const searchResults = await searchSlackInVespa(messageText, email, {
+          limit: 10,
+          channelIds: [channelId],
+        })
+        if (searchResults.root.children) {
+          combinedSearchResponse.push(...searchResults.root.children)
+          const threadMessages = await getThreadContext(
+            searchResults,
+            email,
+            generateAnswerSpan,
+          )
+          if (threadMessages?.root?.children) {
+            combinedSearchResponse.push(...threadMessages.root.children)
+          }
+        }
+      }
+    }
+  }
+
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const contextPromises = combinedSearchResponse?.map(async (v, i) => {
+    let content = answerContextMap(
+      v as z.infer<typeof VespaSearchResultsSchema>,
+      0,
+      true,
+    )
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema &&
+      (v.fields as any).creator
+    ) {
+      try {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )      
+        if (creator) {
+              content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      } catch (error) {
+          loggerWithChild({ email }).error(error, `Failed to fetch creator for chat container`)
+        }
+    }
+    return `Index ${i + startIndex} \n ${content}`
+  })
+
+  const resolvedContexts = contextPromises
+    ? await Promise.all(contextPromises)
+    : []
+
+  const initialContext = cleanContext(resolvedContexts.join("\n"))
   const { imageFileNames } = extractImageFileNames(
     initialContext,
-    results?.root?.children,
+    combinedSearchResponse,
   )
 
   const finalImageFileNames = imageFileNames || []
@@ -1563,13 +1992,13 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.setAttribute("context", initialContext || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
-    results.root?.children?.length || 0,
+    combinedSearchResponse?.length || 0,
   )
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
-      results?.root?.children?.length || 0
+      combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -1593,7 +2022,7 @@ async function* generateAnswerFromGivenContext(
 
   const answer = yield* processIterator(
     iterator,
-    results?.root?.children,
+    combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoning,
     email,
@@ -1698,7 +2127,7 @@ async function* generateAnswerFromGivenContext(
     }
   }
   if (config.isReasoning && userRequestsReasoning) {
-    previousResultsLength += results?.root?.children?.length || 0
+    previousResultsLength += combinedSearchResponse?.length || 0
   }
   generateAnswerSpan?.end()
 }
@@ -1729,6 +2158,25 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     }
   })
   return builtQuery
+}
+
+export const parseMessageText = (message: string): string => {
+  if (!message.startsWith("[{")) {
+    return message
+  }
+  try {
+    const messageArray = JSON.parse(message)
+    if (Array.isArray(messageArray)) {
+      return messageArray
+        .filter((item) => item.type === "text")
+        .map((item) => item.value)
+        .join(" ")
+        .trim()
+    }
+    return message
+  } catch (e) {
+    return message
+  }
 }
 
 const getSearchRangeSummary = (
@@ -2034,6 +2482,7 @@ async function* generatePointQueryTimeExpansion(
 
     if (agentPrompt) {
       if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         const [agentResults, agentEventResults] = await Promise.all([
           searchVespaAgent(
             message,
@@ -2047,6 +2496,7 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2056,6 +2506,7 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
           }),
         ])
         results.root.children = [
@@ -2321,7 +2772,7 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { app, entity, startTime, endTime, sortDirection } =
+  const { app, entity, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
@@ -2454,6 +2905,16 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -2469,6 +2930,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile: SearchModes.GlobalSorted,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -2491,6 +2953,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
@@ -2502,6 +2965,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -2540,7 +3004,7 @@ async function* generateMetadataQueryAnswer(
           }`,
         )
         pageSpan?.end()
-        yield { text: "null" }
+        yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
 
@@ -2561,7 +3025,7 @@ async function* generateMetadataQueryAnswer(
         pageSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
           pageSpan?.end()
-          yield { text: "null" }
+          yield { text: METADATA_FALLBACK_TO_RAG }
           return
         } else {
           loggerWithChild({ email: email }).info(
@@ -2593,6 +3057,18 @@ async function* generateMetadataQueryAnswer(
     loggerWithChild({ email: email }).info(
       `Search Type : ${QueryType.GetItems}`,
     )
+
+    let resolvedIntent = intent || {}
+    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
@@ -2611,6 +3087,7 @@ async function* generateMetadataQueryAnswer(
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
@@ -2619,7 +3096,8 @@ async function* generateMetadataQueryAnswer(
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
-          intent: classification.filters.intent,
+          intent: resolvedIntent || {},
+          channelIds,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -2639,7 +3117,7 @@ async function* generateMetadataQueryAnswer(
         timestampRange,
         limit: userSpecifiedCountLimit,
         asc: sortDirection === "asc",
-        intent: classification.filters.intent,
+        intent: resolvedIntent || {},
       }
 
       loggerWithChild({ email: email }).info(
@@ -2713,12 +3191,24 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
+    let resolvedIntent = {} as Intent
+    if (intent && Object.keys(intent).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
     const searchOptions = {
       limit: pageSize,
       alpha: userAlpha,
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -2740,6 +3230,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           query,
           email,
@@ -2750,6 +3241,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
           },
         )
       }
@@ -3164,7 +3656,7 @@ export const MessageApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
-    loggerWithChild({ email: email }).info("MessageApi..")
+    loggerWithChild({ email: email }).info("MessageApi Chats..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -3217,7 +3709,7 @@ export const MessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -4498,7 +4990,7 @@ export const MessageRetryApi = async (c: Context) => {
       fileIds = fileIdsFromDB
       const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
       const extractedInfo = isMsgWithContext
-        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        ? await extractFileIdsFromMessage(prevUserMessage.message, email)
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
@@ -5411,9 +5903,17 @@ export const MessageFeedbackApi = async (c: Context) => {
       throw new HTTPException(403, { message: "Forbidden" })
     }
 
+    // Convert legacy feedback to new JSON format for consistency
+    const feedbackData = feedback
+      ? {
+          type: feedback,
+          feedback: [""], // Empty array for legacy feedback
+        }
+      : null
+
     await updateMessageByExternalId(db, messageId, {
-      feedback: feedback, // feedback can be 'like', 'dislike', or null
-      updatedAt: new Date(), // Update the updatedAt timestamp
+      feedback: feedbackData,
+      updatedAt: new Date(),
     })
 
     loggerWithChild({ email: email }).info(
@@ -5433,6 +5933,174 @@ export const MessageFeedbackApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: "Could not submit feedback",
+    })
+  }
+}
+
+// New Enhanced Feedback API
+export const EnhancedMessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const requestData = await c.req.valid("json")
+    const { messageId, type, customFeedback, selectedOptions, shareChat } =
+      requestData as {
+        messageId: string
+        type: "like" | "dislike"
+        customFeedback?: string
+        selectedOptions?: string[]
+        shareChat?: boolean
+      }
+
+    // Debug logging
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback request received`,
+      {
+        messageId,
+        type,
+        shareChat,
+        customFeedback: !!customFeedback,
+        selectedOptionsCount: selectedOptions?.length || 0,
+      },
+    )
+
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (
+      message.email !== email ||
+      message.workspaceExternalId !== workspaceId
+    ) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    // Get user and chat info for potential share token generation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user } = userAndWorkspace
+
+    const chat = await getChatByExternalId(db, message.chatExternalId)
+    if (!chat) {
+      throw new HTTPException(404, { message: "Chat not found" })
+    }
+
+    // Create enhanced feedback data
+    const feedbackData: any = {
+      type,
+      feedback: [],
+      share_chat: null,
+    }
+
+    // Add custom feedback as first element if provided
+    if (customFeedback && customFeedback.trim()) {
+      feedbackData.feedback.push(customFeedback.trim())
+    }
+
+    // Add selected predefined options
+    if (selectedOptions && selectedOptions.length > 0) {
+      feedbackData.feedback.push(...selectedOptions)
+    }
+
+    // Ensure at least one feedback item
+    if (feedbackData.feedback.length === 0) {
+      feedbackData.feedback.push("") // Empty string placeholder
+    }
+
+    // Generate share token if user opted to share
+    if (shareChat) {
+      try {
+        // Check if share already exists for this chat+message combination
+        const existingShare = await db
+          .select()
+          .from(sharedChats)
+          .where(
+            and(
+              eq(sharedChats.chatId, chat.id),
+              eq(sharedChats.messageId, message.id),
+            ),
+          )
+          .limit(1)
+
+        let shareToken: string
+
+        if (existingShare.length > 0) {
+          // If it exists but is deleted, reactivate it
+          if (existingShare[0].deletedAt) {
+            await db
+              .update(sharedChats)
+              .set({
+                deletedAt: null,
+                updatedAt: new Date(),
+              })
+              .where(eq(sharedChats.id, existingShare[0].id))
+          }
+          shareToken = existingShare[0].shareToken
+        } else {
+          // Generate unique share token
+          shareToken = nanoid(15)
+
+          // Create shared chat
+          await db.insert(sharedChats).values({
+            chatId: chat.id,
+            messageId: message.id,
+            workspaceId: chat.workspaceId,
+            userId: user.id,
+            shareToken,
+            title: chat.title,
+          })
+        }
+
+        feedbackData.share_chat = shareToken
+
+        loggerWithChild({ email: email }).info(
+          `Share token generated for feedback submission: ${shareToken}`,
+          { messageId, chatId: chat.externalId },
+        )
+      } catch (shareError) {
+        // Log error but don't fail the feedback submission
+        loggerWithChild({ email: email }).error(
+          shareError,
+          `Failed to generate share token for message ${messageId}, continuing with feedback submission`,
+        )
+        // Set share_chat to null if token generation fails
+        feedbackData.share_chat = null
+      }
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedbackData, // Store enhanced feedback with share token
+      updatedAt: new Date(),
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback '${type}' submitted for message ${messageId} by user ${email}`,
+      { feedbackData, shareRequested: shareChat },
+    )
+
+    likeDislikeCount.inc({ email: email, feedback: type })
+    return c.json({
+      success: true,
+      messageId,
+      feedbackData,
+      shareToken: feedbackData.share_chat,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+
+    loggerWithChild({ email: email }).error(
+      error,
+      `Enhanced Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit enhanced feedback",
     })
   }
 }

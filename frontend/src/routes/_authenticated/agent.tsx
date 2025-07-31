@@ -22,11 +22,12 @@ import { getName } from "@/components/GroupFilter"
 import {
   Apps,
   ChatSSEvents,
-  SelectPublicMessage,
-  Citation,
-  SelectPublicAgent,
   DriveEntity,
-  AttachmentMetadata,
+  type SelectPublicMessage,
+  type Citation,
+  type SelectPublicAgent,
+  type AttachmentMetadata,
+  SlackEntity,
 } from "shared/types"
 import {
   ChevronDown,
@@ -96,6 +97,8 @@ interface CustomBadgeProps {
 interface FetchedDataSource {
   docId: string
   name: string
+  app: string
+  entity: string
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
@@ -178,6 +181,10 @@ const availableIntegrationsList: IntegrationSource[] = [
   },
 ]
 
+const AGENT_ENTITY_SEARCH_EXCLUSIONS: { app: string; entity: string }[] = [
+  { app: Apps.Slack, entity: SlackEntity.Message },
+]
+
 interface User {
   id: number
   name: string
@@ -228,6 +235,14 @@ function AgentComponent() {
     Record<string, boolean>
   >({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
+  const [selectedEntities, setSelectedEntities] = useState<FetchedDataSource[]>(
+    [],
+  )
+  const [entitySearchQuery, setEntitySearchQuery] = useState("")
+  const [entitySearchResults, setEntitySearchResults] = useState<
+    FetchedDataSource[]
+  >([])
+  const [showEntitySearchResults, setShowEntitySearchResults] = useState(false)
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -264,6 +279,56 @@ function AgentComponent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast: showToast } = useToast()
+
+  useEffect(() => {
+    if (entitySearchQuery.trim() === "") {
+      setEntitySearchResults([])
+      setShowEntitySearchResults(false)
+      return
+    }
+
+    const searchEntities = async () => {
+      try {
+        const response = await api.search.$get({
+          query: {
+            query: entitySearchQuery,
+          },
+        })
+
+        if (response.ok) {
+          console.log("Entity search response:")
+          const data = await response.json()
+          // @ts-ignore
+          const results = (data.results || []) as FetchedDataSource[]
+
+          const selectedEntityIds = new Set(
+            selectedEntities.map((entity) => entity.docId),
+          )
+
+          const filteredResults = results.filter((r) => {
+            const isAlreadySelected = selectedEntityIds.has(r.docId)
+
+            const isExcluded = AGENT_ENTITY_SEARCH_EXCLUSIONS.some(
+              (exclusion) =>
+                exclusion.app === r.app && exclusion.entity === r.entity,
+            )
+
+            return !isAlreadySelected && !isExcluded
+          })
+          setEntitySearchResults(filteredResults)
+          setShowEntitySearchResults(true)
+        }
+      } catch (error) {
+        console.error("Failed to search entities", error)
+      }
+    }
+
+    const debounceSearch = setTimeout(() => {
+      searchEntities()
+    }, 300)
+
+    return () => clearTimeout(debounceSearch)
+  }, [entitySearchQuery, selectedEntities])
 
   const [users, setUsers] = useState<User[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -726,6 +791,7 @@ function AgentComponent() {
     setIsGeneratingPrompt(false)
     setShouldHighlightPrompt(false)
     cleanupPromptGenerationEventSource()
+    setSelectedEntities([])
   }
 
   const handleCreateNewAgent = () => {
@@ -801,6 +867,12 @@ function AgentComponent() {
       setSelectedIntegrations(currentIntegrations)
     }
   }, [editingAgent, viewMode, allAvailableIntegrations])
+
+  useEffect(() => {
+    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
+      setSelectedEntities(editingAgent.docIds || [])
+    }
+  }, [editingAgent, viewMode])
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
@@ -888,6 +960,7 @@ function AgentComponent() {
       isPublic: isPublic,
       isRagOn: isRagOn,
       appIntegrations: enabledIntegrations,
+      docIds: selectedEntities,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
@@ -980,6 +1053,7 @@ function AgentComponent() {
         })
         return newSelections
       })
+      setSelectedEntities([])
     }
     // Also update the test agent's RAG status when the form's RAG changes,
     // but only if we are testing the current form config.
@@ -1907,6 +1981,74 @@ function AgentComponent() {
                     Knowledge bases are prefixed with "KB:" to distinguish them from other data sources.
                   </p>
                 </div>
+
+                {isRagOn && (
+                  <div>
+                    <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
+                      Specific Entites
+                    </Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
+                    Search for and select specific entities for your agent to
+                    use.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
+                    {selectedEntities.length > 0 ? (
+                      selectedEntities.map((entity) => (
+                        <CustomBadge
+                          key={entity.docId}
+                          text={entity.name}
+                          onRemove={() =>
+                            setSelectedEntities((prev) =>
+                              prev.filter((c) => c.docId !== entity.docId),
+                            )
+                          }
+                        />
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-500 dark:text-gray-300">
+                        Selected entites will be shown here
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative mt-2">
+                    <Input
+                      placeholder="Search for specific entities..."
+                      value={entitySearchQuery}
+                      onChange={(e) => setEntitySearchQuery(e.target.value)}
+                      className="bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
+                    />
+                    {showEntitySearchResults && (
+                      <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
+                        <CardContent className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin">
+                          {entitySearchResults.length > 0 ? (
+                            entitySearchResults.map((entity) => (
+                              <div
+                                key={entity.docId}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                                onClick={() => {
+                                  setSelectedEntities((prev) => [
+                                    ...prev,
+                                    entity,
+                                  ])
+                                  setEntitySearchQuery("")
+                                }}
+                              >
+                                <p className="text-sm font-medium">
+                                  {entity.name}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-3 text-center text-gray-500">
+                              No entities found.
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+                )}
 
                 {!isPublic && (
                   <div>
