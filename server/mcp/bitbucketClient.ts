@@ -117,7 +117,7 @@ class BitbucketClient {
     }
 
     try {
-      let url = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${encodeURIComponent(filePath)}?blame=true&noContent=true`;
+      let url = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${filePath}?blame=true&noContent=true`;
       const limit = endLine - startLine + 1;
       url += `&start=${startLine - 1}&limit=${limit}`;
       console.log(`Fetching git blame from URL: ${url}`);
@@ -184,7 +184,7 @@ class BitbucketClient {
 
     try {
       // Try to get structured content with pagination
-      const structuredUrl = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${encodeURIComponent(filePath)}`;
+      const structuredUrl = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${filePath}`;
       
       let structuredError: any = null;
     
@@ -234,7 +234,7 @@ class BitbucketClient {
       }
 
       // Fallback: try raw content
-      const rawUrl = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${encodeURIComponent(filePath)}?raw`;
+      const rawUrl = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/browse/${filePath}?raw`;
       
       try {
         const rawResponse = await fetch(rawUrl, {

@@ -57,9 +57,7 @@ export function addTools(
       projectKey: z.string(),
       repoSlug: z.string(),
       filePath: z.string(),
-      codeSnippet: z.string().optional().describe("Code snippet to locate in the file. If not provided, shows file overview"),
-      startLine: z.number().describe("Start line for file overview (default: 1)"),
-      endLine: z.number().describe("End line for file overview (default: 100)"),
+      codeSnippet: z.string().describe("Code snippet to locate in the file."),
       searchAroundLine: z.number().optional().describe("If provided, search for the code snippet around this specific line number")
     }),
     execute: async ({
@@ -67,16 +65,12 @@ export function addTools(
       repoSlug,
       filePath,
       codeSnippet,
-      startLine = 1,
-      endLine = 100,
       searchAroundLine,
     }: {
       projectKey: string;
       repoSlug: string;
       filePath: string;
-      codeSnippet?: string;
-      startLine: number;
-      endLine: number;
+      codeSnippet: string;
       searchAroundLine?: number;
     }) => {
       if (!bitbucket) {
@@ -102,24 +96,6 @@ export function addTools(
         const lastLine = lines[lines.length - 1];
         if (fileContent.length > 50000 && !lastLine.trim()) {
           console.warn("File might be truncated - large size but ends abruptly");
-        }
-        
-        // If no code snippet provided, show file overview
-        if (!codeSnippet) {
-          const actualStartLine = Math.max(1, startLine);
-          const actualEndLine = Math.min(lines.length, endLine);
-          
-          const numberedLines = lines.slice(actualStartLine - 1, actualEndLine).map((line, idx) => 
-            `${actualStartLine + idx}: ${line}`
-          );
-          
-          return JSON.stringify({
-            filePath,
-            totalLines: lines.length,
-            showing: `Lines ${actualStartLine}-${actualEndLine}`,
-            content: numberedLines,
-            tip: "Call this tool again with a codeSnippet parameter to find exact line numbers"
-          }, null, 2);
         }
         
         // Enhanced search for code snippet - process the entire file thoroughly
