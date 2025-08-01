@@ -35,6 +35,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  kbFileSchema,
 } from "@/search/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"

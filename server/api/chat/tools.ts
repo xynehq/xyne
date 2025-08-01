@@ -70,13 +70,15 @@ const Logger = getLogger(Subsystem.Chat)
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
   agentSpecificDataSourceIds: string[]
+  agentSpecificKbIds: string[]
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificKbIds: string[] = []
 
   if (!agentPrompt) {
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds }
   }
 
   let agentPromptData: { appIntegrations?: string[] } = {}
@@ -89,7 +91,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       error,
       agentPrompt,
     })
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds }
   }
 
   if (
@@ -100,7 +102,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       "agentPromptData.appIntegrations is not an array or is missing",
       { agentPromptData },
     )
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds }
   }
 
   for (const integration of agentPromptData.appIntegrations) {
@@ -121,6 +123,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       }
       continue
     }
+    
+    // Handle knowledge base IDs
+    if (integrationApp.startsWith("kb-") || integrationApp.startsWith("kb_")) {
+      // Remove the prefix before storing
+      const kbId = integration.replace(/^kb[-_]/, '')
+      agentSpecificKbIds.push(kbId)
+      continue
+    }
 
     const app = integrationApp as Apps
     if (app) {
@@ -135,7 +145,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   // Remove duplicates
   agentAppEnums = [...new Set(agentAppEnums)]
 
-  return { agentAppEnums, agentSpecificDataSourceIds }
+  return { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds }
 }
 
 interface UnifiedSearchOptions {
@@ -159,7 +169,7 @@ interface UnifiedSearchOptions {
   channelIds?: string[]
 }
 
-async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
+async function executeVespaSearch(options: UnifiedSearchOptions & { kbIds?: string[] }): Promise<{
   result: string
   contexts: MinimalAgentFragment[]
   error?: string
@@ -179,6 +189,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     schema,
     intent,
     channelIds,
+    kbIds,
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
@@ -192,6 +203,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   execSpan?.setAttribute("hasTimestampRange", !!timestampRange)
   execSpan?.setAttribute("hasExcludedIds", (excludedIds?.length || 0) > 0)
   execSpan?.setAttribute("hasAgentAppEnums", (agentAppEnums?.length || 0) > 0)
+  execSpan?.setAttribute("hasKbIds", (kbIds?.length || 0) > 0)
 
   if (!email) {
     const errorMsg = "Email is required for search execution."
@@ -241,6 +253,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
               : undefined,
           dataSourceIds: options.dataSourceIds ?? undefined,
           channelIds,
+          kbIds: kbIds ?? undefined,
         },
       )
     } else {
@@ -385,7 +398,7 @@ export const searchTool: AgentTool = {
         }
       }
 
-      const { agentAppEnums, agentSpecificDataSourceIds } =
+      const { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds } =
         parseAgentAppIntegrations(agentPrompt)
       const channelIds = agentPrompt
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
@@ -399,6 +412,7 @@ export const searchTool: AgentTool = {
         span: execSpan,
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds,
+        kbIds: agentSpecificKbIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -597,7 +611,7 @@ export const metadataRetrievalTool: AgentTool = {
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
         : []
 
-      const { agentAppEnums, agentSpecificDataSourceIds } =
+      const { agentAppEnums, agentSpecificDataSourceIds, agentSpecificKbIds } =
         parseAgentAppIntegrations(agentPrompt)
 
       let resolvedIntent = params.intent || {}
@@ -631,6 +645,7 @@ export const metadataRetrievalTool: AgentTool = {
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
+        kbIds: agentSpecificKbIds,
         timestampRange: { from: params.from, to: params.to },
         intent: resolvedIntent,
         channelIds: channelIds,

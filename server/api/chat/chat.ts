@@ -119,6 +119,7 @@ import {
   chatMessageSchema,
   chatUserSchema,
   dataSourceFileSchema,
+  kbFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -419,7 +420,12 @@ const checkAndYieldCitations = async function* (
       if (!yieldedCitations.has(citationIndex)) {
         const item = results[citationIndex - baseIndex]
         if (item) {
-          yield {
+          // TODO: fix this properly, empty citations making streaming broke
+        if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbFileSchema) {
+          // Skip datasource and KB files from citations
+          continue
+        }
+        yield {
             citation: {
               index: citationIndex,
               item: searchToCitation(item as VespaSearchResults),
@@ -1131,6 +1137,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificKbIds: string[] = []
   let channelIds:string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
@@ -1159,6 +1166,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
+          } else if (
+            lowerIntegration.startsWith("kb-") ||
+            lowerIntegration.startsWith("kb_")
+          ) {
+            // kb- is the prefix for knowledge base externalId
+            // Remove the prefix before storing
+            const kbId = integration.replace(/^kb[-_]/, '')
+            agentSpecificKbIds.push(kbId)
           } else {
             // Handle generic app names
             switch (lowerIntegration) {
@@ -1301,6 +1316,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
+        kbIds: agentSpecificKbIds,
       },
     )
   }
@@ -1359,6 +1375,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            kbIds: agentSpecificKbIds,
           },
         )
       }
@@ -1420,6 +1437,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
+              kbIds: agentSpecificKbIds,
             }))
 
         // Expand email threads in the results
@@ -1460,22 +1478,23 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-          results = await searchVespaAgent(
-            query,
-            email,
-            null,
-            null,
-            agentAppEnums,
-            {
-              limit: pageSize,
-              alpha: userAlpha,
-              excludedIds: latestResults
-                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-                ?.filter((v) => !!v),
-              dataSourceIds: agentSpecificDataSourceIds,
-              channelIds,
-            },
-          )
+        results = await searchVespaAgent(
+          query,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+            dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
+            kbIds: agentSpecificKbIds,
+          }
+        )
         }
 
         // Expand email threads in the results
@@ -1585,6 +1604,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
             channelIds: channelIds,
           },
         )
@@ -1637,6 +1657,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            kbIds: agentSpecificKbIds,
             channelIds,
           },
         )
@@ -1994,7 +2015,7 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames: finalImageFileNames,
+      imageFileNames,
     },
     true,
   )
@@ -2015,13 +2036,10 @@ async function* generateAnswerFromGivenContext(
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    let results =
-      fileIds.length > 0
-        ? await searchVespaInFiles(builtUserQuery, email, fileIds, {
-            limit: fileIds?.length,
-            alpha: userAlpha,
-          })
-        : { root: { children: [] } }
+    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
     searchVespaSpan?.setAttribute("parsed_message", message)
@@ -2066,31 +2084,26 @@ async function* generateAnswerFromGivenContext(
       results.root?.children?.length || 0,
     )
 
-    const iterator =
-      fileIds.length > 0
-        ? baselineRAGJsonStream(
-            builtUserQuery,
-            userCtx,
-            initialContext,
-            {
-              stream: true,
-              modelId: defaultBestModel,
-              reasoning: config.isReasoning && userRequestsReasoning,
-              imageFileNames,
-            },
-            true,
-          )
-        : null
+    const iterator = baselineRAGJsonStream(
+      builtUserQuery,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        imageFileNames,
+      },
+      true,
+    )
 
-    const answer = iterator
-      ? yield* processIterator(
-          iterator,
-          results?.root?.children,
-          previousResultsLength,
-          userRequestsReasoning,
-          email,
-        )
-      : null
+    const answer = yield* processIterator(
+      iterator,
+      results?.root?.children,
+      previousResultsLength,
+      userRequestsReasoning,
+      email,
+    )
     if (answer) {
       searchVespaSpan?.setAttribute("answer_found", true)
       searchVespaSpan?.end()
@@ -3898,7 +3911,6 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           // Notify client if attachment storage failed
           if (attachmentStorageError) {
             await stream.writeSSE({
@@ -3911,14 +3923,11 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)
           ) {
-            loggerWithChild({ email: email }).info(
-              "User has selected some context with query, answering only based on that given context",
-            )
+
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -3940,7 +3949,7 @@ export const MessageApi = async (c: Context) => {
               ctx,
               message,
               0.5,
-              fileIds || [],
+              fileIds,
               userRequestsReasoning,
               understandSpan,
               threadIds,
