@@ -112,6 +112,7 @@ interface SearchResult {
   type?: string
   email?: string
   photoLink?: string
+  itemId?:string
   userMap?: Record<string, string>
 }
 
@@ -1041,6 +1042,7 @@ export const ChatBox = ({
         query: params,
         credentials: "include",
       })
+      
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -1050,7 +1052,7 @@ export const ChatBox = ({
       }
 
       const data = await response.json()
-
+      // console.log("Printing the data of search",data)
       const fetchedTotalCount = data.count || 0
       setTotalCount(fetchedTotalCount)
 
@@ -1251,6 +1253,7 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
+      itemId: citation.itemId,
       wholeSheet: wholeSheet,
       threadId: (citation as any).threadId, // Add threadId if available
     }
@@ -1324,6 +1327,7 @@ export const ChatBox = ({
   const handleSelectGlobalResult = (
     result: SearchResult & { isWholeSheetDummy?: boolean },
   ) => {
+    // console.log("selected item",result)
     let resultUrl = result.url
     if (!resultUrl && result.app === Apps.Gmail) {
       const identifier = result.threadId || result.docId
@@ -1367,6 +1371,7 @@ export const ChatBox = ({
         docId: result.docId,
         mailId: result.mailId,
         app: result.app,
+        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,
@@ -1382,6 +1387,7 @@ export const ChatBox = ({
         docId: result.docId,
         mailId: result.mailId,
         app: result.app,
+        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,
@@ -1398,6 +1404,7 @@ export const ChatBox = ({
         mailId: result.mailId,
         threadId: result.threadId, // Add threadId from result
         app: result.app,
+        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,

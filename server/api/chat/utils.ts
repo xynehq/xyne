@@ -36,6 +36,7 @@ import {
   type VespaSearchResultsSchema,
   type VespaUser,
   kbFileSchema,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
@@ -54,6 +55,8 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
+import { getAllFolderItems, getKbFilesVespaIds } from "@/db/knowledgeBase"
+import { db } from "@/db/client"
 
 
 function slackTs(ts: string | number) {
@@ -430,6 +433,7 @@ export const extractFileIdsFromMessage = async (
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
+  const kbFolderIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
@@ -482,6 +486,17 @@ export const extractFileIdsFromMessage = async (
         // Regular pill behavior: just add the docId
         fileIds.push(docId)
       }
+
+      if (obj?.value?.app == Apps.KnowledgeBase){
+        // now if it is folder then get all the items in it  else if file of kb then add as it is
+        if((obj?.value?.entity == KnowledgeBaseEntity.Folder || obj?.value?.entity == KnowledgeBaseEntity.KnowledgeBase) && obj?.value?.itemId){
+          kbFolderIds.push(obj.value.itemId)
+        }
+        else if(obj?.value?.entity == KnowledgeBaseEntity.File){
+          fileIds.push(obj.value.docId)
+        }
+        
+      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
@@ -511,6 +526,7 @@ export const extractFileIdsFromMessage = async (
         }
       }
     }
+    
   }
   while (driveItem.length) {
     let curr = driveItem.shift()
@@ -547,6 +563,14 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
+
+  const kbfileIds = await getAllFolderItems(kbFolderIds, db)
+
+  if(kbFolderIds.length>0){
+  const ids = await getKbFilesVespaIds(kbfileIds, db)
+  const vespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+  fileIds.push(...vespaIds)}
+
   return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 

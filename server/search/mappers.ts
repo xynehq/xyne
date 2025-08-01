@@ -64,6 +64,7 @@ import {
   ChatContainerResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
+  KbFileResponseSchema,
 } from "@/shared/types"
 import type { z } from "zod"
 import type { AppEntityCounts } from "@/search/vespa"
@@ -358,8 +359,8 @@ export const VespaSearchResponseToSearchResult = (
             const mappedResult = {
               docId: kbFields.docId,
               type: kbFileSchema,
-              app: "knowledgebase" as any,
-              entity: "kb_file",
+              app: Apps.KnowledgeBase,
+              entity: kbFields.entity,
               title: kbFields.fileName,
               fileName: kbFields.fileName,
               url: null,
@@ -367,13 +368,16 @@ export const VespaSearchResponseToSearchResult = (
               createdAt: kbFields.createdAt,
               mimeType: kbFields.mimeType,
               size: kbFields.fileSize,
+              ownerEmail: kbFields.createdBy,
               owner: kbFields.createdBy,
+              photoLink:"abcd.com",
               relevance: child.relevance,
               chunks_summary: processedChunks,
               matchfeatures: kbFields.matchfeatures,
               kbId: kbFields.kbId,
+              itemId:kbFields.itemId,
             }
-            return FileResponseSchema.parse(mappedResult)
+            return KbFileResponseSchema.parse(mappedResult)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,

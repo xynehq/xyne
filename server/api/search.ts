@@ -405,7 +405,7 @@ export const SearchApi = async (c:Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
-    })
+    },true)
   }
 
   // TODO: deduplicate for google admin and contacts

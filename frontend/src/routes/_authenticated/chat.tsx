@@ -35,7 +35,7 @@ import {
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
 import mermaid from "mermaid"
-
+import { Pill } from "@/components/Pill"
 // Initialize mermaid with secure configuration to prevent syntax errors
 mermaid.initialize({
   startOnLoad: false,
@@ -116,14 +116,15 @@ import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import React from "react"
-import { jsonToHtmlMessage } from "@/lib/messageUtils"
+// import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
-import { ToolsListItem, toolsListItemSchema } from "@/types"
+import {Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
 import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { renderToStaticMarkup } from "react-dom/server"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -223,6 +224,83 @@ interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
   agentWhiteList: boolean
+}
+
+// Define the structure for parsed message parts, including app, entity, and pillType for pills
+type ParsedMessagePart =
+  | { type: "text"; value: string }
+  | {
+      type: "pill"
+      value: {
+        docId: string
+        url: string | null
+        title: string | null
+        app?: string
+        entity?: string
+        pillType?: "citation" | "global"
+        imgSrc?: string | null
+      }
+    }
+  | { type: "link"; value: string }
+
+// Helper function to convert JSON message parts back to HTML using Pill component
+const jsonToHtmlMessage = (jsonString: string): string => {
+  try {
+    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
+    if (!Array.isArray(parts)) {
+      // If not our specific JSON structure, treat as plain HTML/text string
+      return jsonString
+    }
+
+    return parts
+      .map((part, index) => {
+        let htmlPart = ""
+        if (part.type === "text") {
+          htmlPart = part.value
+        } else if (
+          part.type === "pill" &&
+          part.value &&
+          typeof part.value === "object"
+        ) {
+          const { docId, url, title, app, entity, pillType, imgSrc } =
+            part.value
+
+          const referenceForPill: Reference = {
+            id: docId,
+            docId: docId,
+            title: title || docId,
+            url: url || undefined,
+            app: app,
+            entity: entity,
+            type: pillType || "global",
+            // Include imgSrc if available, mapping it to photoLink for the Reference type.
+            // The Pill component will need to be able to utilize this.
+            ...(imgSrc && { photoLink: imgSrc }),
+          }
+          htmlPart = renderToStaticMarkup(
+            React.createElement(Pill, { newRef: referenceForPill }),
+          )
+        } else if (part.type === "link" && typeof part.value === "string") {
+          const url = part.value
+          // Create a simple anchor tag string for links
+          // Ensure it has similar styling to how it's created in ChatBox
+          // The text of the link will be the URL itself
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer">${url}</a>`
+        }
+        // Add a space only if the part is not the last one, or if the next part is text.
+        // This avoids trailing spaces or double spaces between elements.
+        if (htmlPart.length > 0 && index < parts.length - 1) {
+          // Add space if current part is not empty and it's not the last part.
+          // More sophisticated logic might be needed if consecutive non-text elements occur.
+          htmlPart += " "
+        }
+        return htmlPart
+      })
+      .join("")
+      .trimEnd()
+  } catch (error) {
+    return jsonString
+  }
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"

@@ -93,8 +93,11 @@ export const getAllFolderItems = async (
   parentId: string[],
   trx: TxnOrClient,
 ) => {
-  const res = []
+  const res:string[] = []
   let queue: any[] = []
+  if(parentId.length==0){
+    return res
+  }
   for (const id of parentId) {
     queue.push(id)
   }
@@ -109,6 +112,7 @@ export const getAllFolderItems = async (
     for (const item of resp) {
       if (item.type == "folder" || item.type == "knowledge_base") {
         queue.push(item.id)
+        res.push(item.id)
       } else if (item.type == "file") {
         res.push(item.id)
       }

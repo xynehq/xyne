@@ -36,7 +36,7 @@ import type { KnowledgeBase, KbItem, KbFile } from "@/db/schema"
 import { kbItems, kbFiles } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
-import { kbFileSchema } from "@/search/types"
+import { Apps, kbFileSchema, KnowledgeBaseEntity } from "@/search/types"
 import crypto from "crypto"
 import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
@@ -569,8 +569,9 @@ export const CreateFolderApi = async (c: Context) => {
       docId: vespaDocId,
       kbId: kbId,
       itemId: folder.id,
+      app: Apps.KnowledgeBase,
       fileName: validatedData.name,
-      entity: "folder",
+      entity: KnowledgeBaseEntity.Folder,
       storagePath: "",
       chunks: [],
       chunks_pos: [],
@@ -712,7 +713,8 @@ async function ensureFolderPath(
       kbId: kbId,
       itemId: newFolder.id,
       fileName: folderName, // Use folder name as fileName
-      entity: "folder", // Mark as folder
+      app:Apps.KnowledgeBase,
+      entity: KnowledgeBaseEntity.Folder, // Mark as folder
       storagePath: "", // Folders don't have storage path
       chunks: [], // Folders don't have chunks
       chunks_pos: [], // Folders don't have chunk positions
@@ -1191,7 +1193,8 @@ export const UploadFilesApi = async (c: Context) => {
           kbId: kbId,
           itemId: item.id,
           fileName: file.name,
-          entity: "file", // Always "file" for files being uploaded
+          app:Apps.KnowledgeBase,
+          entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
           storagePath: storagePath,
           chunks: chunks,
           chunks_pos: chunks_pos,

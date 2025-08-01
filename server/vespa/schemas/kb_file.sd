@@ -17,7 +17,13 @@ schema kb_file {
       attribute: fast-search
       # Database item ID linking to kb_items table
     }
-    
+    # knowledge-base
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
     field fileName type string {
       indexing: attribute | summary | index
       attribute: fast-search

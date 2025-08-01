@@ -63,6 +63,7 @@ import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { ProductionVespaClient } from "./productionVespaClient"
+import { getAllFolderItems, getKbFilesVespaIds } from "@/db/knowledgeBase"
 
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
@@ -323,11 +324,13 @@ export const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: SearchModes = SearchModes.NativeRank,
+  isAtSearch:boolean=false,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
   excludedApps?: Apps[],
   intent?: Intent | null,
+ 
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -483,8 +486,26 @@ export const HybridDefaultProfile = (
       )`
   }
 
+// buildKBYQL
+const buildKBYQL = () => {
+  const appOrEntityFilter = buildAppEntityFilter()
+  // const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
+  return `
+    (
+      (
+        ({targetHits:${hits}} userInput(@query))
+        or
+        ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+      )
+      ${appOrEntityFilter}
+    )`
+}
+
   // Start with AllSources and filter out excluded app schemas
   let newSources = AllSources
+  if(isAtSearch){
+    newSources=newSources + `, ${kbFileSchema}`
+  }
   if (excludedApps && excludedApps.length > 0) {
     let sourcesToExclude: string[] = []
 
@@ -505,6 +526,8 @@ export const HybridDefaultProfile = (
         case Apps.GoogleWorkspace:
           sourcesToExclude.push(userSchema)
           break
+        case Apps.KnowledgeBase:
+          sourcesToExclude.push(kbFileSchema)
       }
     })
     newSources = AllSources.split(", ")
@@ -539,6 +562,9 @@ export const HybridDefaultProfile = (
         appQueries.push(buildSlackYQL())
         break
       case Apps.DataSource:
+        break
+      case Apps.KnowledgeBase:
+        appQueries.push(buildKBYQL())
         break
       default:
         appQueries.push(buildDefaultYQL())
@@ -590,7 +616,7 @@ const buildIntentFilter = (intent: Intent | null) => {
     ? "and" + " " + intentFilters.join(" and ")
     : ""
 }
-export const HybridDefaultProfileForAgent = (
+export const HybridDefaultProfileForAgent =  (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
@@ -603,6 +629,7 @@ export const HybridDefaultProfileForAgent = (
   intent: Intent | null = null,
   channelIds: string[] = [],
   kbIds: string[] = [],
+  driveIds:string[] = [],
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -679,7 +706,12 @@ export const HybridDefaultProfileForAgent = (
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter(intent)
+    // if we have some DriveIds then we are going to fetch all the items in that folder
+         const intentFilter = buildIntentFilter(intent)
+    const driveIdConditions =
+    driveIds && driveIds.length > 0
+      ? `(${driveIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")})`
+      : "false"
     return `
       (
         (
@@ -690,6 +722,7 @@ export const HybridDefaultProfileForAgent = (
         ${timestampRange ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        and ${driveIdConditions}
         ${intentFilter}
       )
      `
@@ -753,14 +786,26 @@ export const HybridDefaultProfileForAgent = (
       )`
   }
 
-  const buildKbFileYQL = () => {
+  const buildKbFileYQL = async () => {
     // For KB files, similar to DataSourceFile
     // Only build query if we have KB IDs
     if (!kbIds || kbIds.length === 0) {
       return null // Return null if no KB IDs
     }
+    const kbfileIds = await getAllFolderItems(kbIds, db)
+
+    let kbvespaIds:string[]=[]
+    if(kbfileIds.length>0){
+      const ids = await getKbFilesVespaIds(kbfileIds, db)
+       kbvespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+      
+    }
+    const kbIdConditions =
+    kbvespaIds && kbvespaIds.length > 0
+      ? `(${kbvespaIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")})`
+      : "false"
     
-    const kbIdConditions = `(${kbIds.map((id) => `kbId contains '${id.trim()}'`).join(" or ")})`
+   
 
     // KB files use kbId for filtering
     return `
@@ -1380,7 +1425,8 @@ type VespaQueryConfig = {
   isIntentSearch?: boolean
   intent?: Intent | null
   channelIds?: string[]
-  kbIds?: string[] // Added for agent-specific knowledge base filtering
+  kbIds?: string[] // Added for agent-specific knowledge base docIds filtering
+  driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
 }
 
 export const searchVespa = async (
@@ -1403,6 +1449,7 @@ export const searchVespa = async (
     isIntentSearch = false,
     intent = {},
   }: Partial<VespaQueryConfig>,
+   isAtsearch?:boolean,
 ): Promise<VespaSearchResponse> => {
   const hasProdConfig = Boolean(
     process.env.PRODUCTION_SERVER_URL && process.env.API_KEY,
@@ -1430,6 +1477,7 @@ export const searchVespa = async (
         span,
         maxHits,
         recencyDecayRate,
+        isAtsearch,
         intent,
       })
     } catch (err) {
@@ -1456,7 +1504,7 @@ export const searchVespa = async (
     recencyDecayRate,
     isIntentSearch,
     intent,
-  })
+  },isAtsearch)
 }
 async function _searchVespa(
   query: string,
@@ -1478,6 +1526,7 @@ async function _searchVespa(
     isIntentSearch = false,
     intent = {},
   }: Partial<VespaQueryConfig>,
+   isAtsearch?:boolean,
 ): Promise<VespaSearchResponse> {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
@@ -1507,14 +1556,16 @@ async function _searchVespa(
 
   let { yql, profile } = HybridDefaultProfile(
     limit,
-    app,
+    app, 
     entity,
     rankProfile,
+    isAtsearch|| false,
     timestampRange,
     excludedIds,
-    notInMailLabels,
+    notInMailLabels, 
     excludedApps,
     intent,
+    
   )
 
   const hybridDefaultPayload = {
@@ -1726,6 +1777,7 @@ export const searchVespaAgent = async (
     intent = null,
     channelIds = [],
     kbIds = [], // Ensure kbIds is destructured here
+    driveIds = [], // docIds
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1745,6 +1797,7 @@ export const searchVespaAgent = async (
     intent,
     channelIds,
     kbIds, // Pass kbIds here
+    driveIds, 
   )
 
   const hybridDefaultPayload = {

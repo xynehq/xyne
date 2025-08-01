@@ -167,6 +167,11 @@ export enum MailAttachmentEntity {
   Text = "text",
   NotValid = "notvalid",
 }
+export enum KnowledgeBaseEntity {
+  File = "file",
+  Folder = 'folder',
+  KnowledgeBase = 'knowledgebase'
+}
 
 export const isMailAttachment = (entity: Entity): boolean =>
   Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
@@ -396,6 +401,8 @@ export const VespaKbFileSchemaBase = z.object({
   docId: z.string(),
   kbId: z.string(),
   itemId: z.string(),
+  app:z.nativeEnum(Apps),
+  entity: z.nativeEnum(KnowledgeBaseEntity),
   fileName: z.string(),
   storagePath: z.string(),
   chunks: z.array(z.string()),
@@ -407,6 +414,26 @@ export const VespaKbFileSchemaBase = z.object({
   createdAt: z.number(),
   updatedAt: z.number(),
 })
+export const VespaKbFileSchema = z.object({
+  docId: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(KnowledgeBaseEntity),
+  kbId: z.string(),
+  itemId: z.string(),
+  title: z.string(),
+  url: z.string().nullable(),
+  chunks: z.array(z.string()),
+  owner: z.string().nullable(),
+  ownerEmail: z.string().nullable(),
+  photoLink: z.string().nullable(),
+  permissions: z.array(z.string()),
+  mimeType: z.string().nullable(),
+  metadata: Metadata,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+})
+
+
 export type VespaKbFile = z.infer<typeof VespaKbFileSchemaBase>
 
 // KB File Match Features
