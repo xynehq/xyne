@@ -7,6 +7,7 @@ import crypto from "crypto"
 import path from "path"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
+import { chunkTextByParagraph } from "./chunks"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "docxChunks",
@@ -63,65 +64,6 @@ const postProcessText = (text: string): string => {
   })
 
   return processedLines.join("\n")
-}
-
-/**
- * Chunk text by paragraphs with byte-based sizing and overlap.
- * Reusing the same logic as PDF processing for consistency.
- */
-function chunkTextByParagraph(
-  text: string,
-  maxChunkBytes = 512,
-  overlapBytes = 128,
-): string[] {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  const chunks: string[] = []
-
-  for (let p of paragraphs) {
-    const pBytes = Buffer.byteLength(p, "utf8")
-    if (pBytes <= maxChunkBytes) {
-      chunks.push(p)
-    } else {
-      // Fallback to sentences
-      const sentences = p.match(/[^\.!\?]+[\.!\?]+(\s|$)/g) || [p]
-      let buffer = ""
-      for (let sentence of sentences) {
-        const sentenceTrim = sentence.trim()
-        if (!sentenceTrim) continue
-        const sentenceBytes = Buffer.byteLength(sentenceTrim, "utf8")
-        const bufferBytes = Buffer.byteLength(buffer, "utf8")
-        if (bufferBytes + sentenceBytes + 1 <= maxChunkBytes) {
-          buffer = buffer ? buffer + " " + sentenceTrim : sentenceTrim
-        } else {
-          if (buffer) {
-            chunks.push(buffer)
-            // Overlap: take last overlapBytes from buffer as start for next chunk
-            let overlapStr = ""
-            let overlapLen = 0
-            for (let i = buffer.length - 1; i >= 0; i--) {
-              const charBytes = Buffer.byteLength(buffer[i], "utf8")
-              if (overlapLen + charBytes > overlapBytes) break
-              overlapStr = buffer[i] + overlapStr
-              overlapLen += charBytes
-            }
-            buffer = overlapStr + " " + sentenceTrim
-          } else {
-            // Sentence longer than maxChunkBytes, push as is
-            chunks.push(sentenceTrim)
-            buffer = ""
-          }
-        }
-      }
-      if (buffer) {
-        chunks.push(buffer)
-      }
-    }
-  }
-
-  return chunks
 }
 
 interface DocxContentItem {
@@ -260,16 +202,222 @@ function extractMathFromParagraph(paragraph: any): string {
 }
 
 /**
+ * Check if a paragraph style indicates a code block
+ */
+function isCodeBlockStyle(paragraph: any): boolean {
+  const pStyle = paragraph["w:pPr"]?.["w:pStyle"]?.["@_w:val"]
+  if (!pStyle) return false
+
+  // Common code block style names
+  const codeStylePatterns = [
+    /code/i,
+    /source/i,
+    /program/i,
+    /console/i,
+    /terminal/i,
+    /mono/i,
+    /pre/i,
+    /listing/i,
+    /verbatim/i,
+  ]
+
+  return codeStylePatterns.some((pattern) => pattern.test(pStyle))
+}
+
+/**
+ * Check if paragraph has code-like formatting (background color, borders, etc)
+ */
+function hasCodeFormatting(paragraph: any): boolean {
+  const pPr = paragraph["w:pPr"]
+  if (!pPr) return false
+
+  // Check for shading (background color)
+  const shading = pPr["w:shd"]
+  if (shading && shading["@_w:fill"] && shading["@_w:fill"] !== "auto") {
+    // Common code block background colors
+    const codeColors = [
+      "F5F5F5",
+      "F0F0F0",
+      "E8E8E8",
+      "EEEEEE",
+      "F8F8F8",
+      "FAFAFA",
+    ]
+    const fill = shading["@_w:fill"].toUpperCase()
+    if (codeColors.includes(fill)) return true
+  }
+
+  // Check for borders
+  const borders = pPr["w:pBdr"]
+  if (borders) return true
+
+  // Check if all runs have monospace font
+  const runs = paragraph["w:r"] || []
+  const runsArray = Array.isArray(runs) ? runs : [runs]
+  if (runsArray.length > 0) {
+    const allMonospace = runsArray.every((run) => {
+      if (!run) return true
+      return isCodeFormatting(run)
+    })
+    if (allMonospace) return true
+  }
+
+  return false
+}
+
+/**
+ * Check if run formatting indicates code (monospace font)
+ */
+function isCodeFormatting(run: any): boolean {
+  const rFonts = run["w:rPr"]?.["w:rFonts"]
+  if (!rFonts) return false
+
+  const fontNames = [
+    rFonts["@_w:ascii"],
+    rFonts["@_w:hAnsi"],
+    rFonts["@_w:cs"],
+    rFonts["@_w:eastAsia"],
+  ].filter(Boolean)
+
+  const monospaceFonts = [
+    /consolas/i,
+    /courier/i,
+    /monaco/i,
+    /monospace/i,
+    /terminal/i,
+    /fixed/i,
+  ]
+
+  return fontNames.some((font) =>
+    monospaceFonts.some((pattern) => pattern.test(font)),
+  )
+}
+
+/**
+ * Extract complete text from paragraph including embedded text boxes in order
+ */
+function extractCompleteTextFromParagraph(
+  paragraph: any,
+  documentData?: any,
+): string {
+  if (!paragraph) return ""
+
+  // First get the basic paragraph text
+  const paragraphText = extractTextFromParagraph(paragraph, documentData)
+
+  // Now we need to find text boxes and their positions within the paragraph
+  const contentParts: { text: string }[] = []
+
+  // Add the main paragraph text at position 0
+  if (paragraphText.trim()) {
+    contentParts.push({ text: paragraphText })
+  }
+
+  // Check for text boxes in various locations and try to determine their position
+  // Check for VML shapes with textboxes in w:pict
+  if (paragraph["w:pict"]) {
+    const pict = paragraph["w:pict"]
+
+    // Check v:shape
+    if (pict["v:shape"]) {
+      const shapes = Array.isArray(pict["v:shape"])
+        ? pict["v:shape"]
+        : [pict["v:shape"]]
+      for (const shape of shapes) {
+        if (shape["v:textbox"]) {
+          const textBoxContent = extractTextFromTextBox(shape, documentData)
+          if (textBoxContent) {
+            // Text boxes typically appear after the paragraph text
+            contentParts.push({ text: textBoxContent })
+          }
+        }
+      }
+    }
+
+    // Check v:rect
+    if (pict["v:rect"]) {
+      const rects = Array.isArray(pict["v:rect"])
+        ? pict["v:rect"]
+        : [pict["v:rect"]]
+      for (const rect of rects) {
+        if (rect["v:textbox"]) {
+          const textBoxContent = extractTextFromTextBox(rect, documentData)
+          if (textBoxContent) {
+            contentParts.push({ text: textBoxContent })
+          }
+        }
+      }
+    }
+
+    // Check v:roundrect
+    if (pict["v:roundrect"]) {
+      const roundrects = Array.isArray(pict["v:roundrect"])
+        ? pict["v:roundrect"]
+        : [pict["v:roundrect"]]
+      for (const roundrect of roundrects) {
+        if (roundrect["v:textbox"]) {
+          const textBoxContent = extractTextFromTextBox(roundrect, documentData)
+          if (textBoxContent) {
+            contentParts.push({ text: textBoxContent })
+          }
+        }
+      }
+    }
+  }
+
+  // Check for AlternateContent which might contain text boxes
+  if (paragraph["mc:AlternateContent"]) {
+    const altContent = paragraph["mc:AlternateContent"]
+    const fallback = altContent["mc:Fallback"]
+    if (fallback && fallback["w:pict"]) {
+      const pict = fallback["w:pict"]
+      // Process shapes in fallback
+      const shapes = []
+      if (pict["v:shape"])
+        shapes.push(
+          ...(Array.isArray(pict["v:shape"])
+            ? pict["v:shape"]
+            : [pict["v:shape"]]),
+        )
+      if (pict["v:rect"])
+        shapes.push(
+          ...(Array.isArray(pict["v:rect"])
+            ? pict["v:rect"]
+            : [pict["v:rect"]]),
+        )
+      if (pict["v:roundrect"])
+        shapes.push(
+          ...(Array.isArray(pict["v:roundrect"])
+            ? pict["v:roundrect"]
+            : [pict["v:roundrect"]]),
+        )
+
+      for (const shape of shapes) {
+        if (shape["v:textbox"]) {
+          const textBoxContent = extractTextFromTextBox(shape, documentData)
+          if (textBoxContent) {
+            contentParts.push({ text: textBoxContent })
+          }
+        }
+      }
+    }
+  }
+
+  return contentParts.map((part) => part.text).join("\n\n")
+}
+
+/**
  * Extract text content from a paragraph element with enhanced formatting support
  * Now also extracts Office Math equations as [MATH: ...] placeholders.
+ * Enhanced to handle mixed content (runs and breaks) in proper order.
  */
 function extractTextFromParagraph(paragraph: any, documentData?: any): string {
   let text = ""
   if (!paragraph) return text
 
-  // --- Removed explicit page break detection ---
-  const runs = paragraph["w:r"] || paragraph.r || []
-  const runsArray = Array.isArray(runs) ? runs : [runs]
+  // Check if this is a code block paragraph
+  const isCodeBlock =
+    isCodeBlockStyle(paragraph) || hasCodeFormatting(paragraph)
 
   // Hyperlink handling
   if (paragraph["w:hyperlink"]) {
@@ -286,9 +434,20 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
         const hyperlinkText = hyperlinkRunsArray
           .map((r) => {
             const textEl = r["w:t"]
-            return typeof textEl === "string" ? textEl : textEl?.["#text"] || ""
+            // Check for space preservation
+            let preserveSpace = false
+            if (
+              textEl &&
+              typeof textEl === "object" &&
+              textEl["@_xml:space"] === "preserve"
+            ) {
+              preserveSpace = true
+            }
+            const text =
+              typeof textEl === "string" ? textEl : textEl?.["#text"] || ""
+            return text
           })
-          .join(" ")
+          .join("") // Don't add spaces between runs - preserve original spacing
         if (
           relId &&
           documentData?.__rels &&
@@ -313,17 +472,111 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     listLevel = parseInt(numPr["w:ilvl"]?.["@_w:val"] || "0")
   }
 
-  // Handle different paragraph structures
+  // Process mixed content (runs and breaks) in order
+  // We need to handle the case where breaks are interspersed with runs
+  let codeFragments: string[] = []
+  let contentParts: string[] = []
+
+  // Get all runs
+  const runs = paragraph["w:r"] || paragraph.r || []
+  const runsArray = Array.isArray(runs) ? runs : [runs]
+
+  // Get all paragraph-level breaks
+  const breaks = paragraph["w:br"] || []
+  const breaksArray = Array.isArray(breaks) ? breaks : [breaks]
+
+  // Process runs and collect their text
   for (const run of runsArray) {
     if (!run) continue
 
-    // Extract text from run
-    const textElement = run["w:t"] || run.t
-    if (textElement) {
+    // Check if this run has code formatting
+    const isCode = isCodeFormatting(run)
+
+    // Process all child elements of the run in order
+    // A run can contain multiple w:t elements with w:br elements between them
+    const runParts: string[] = []
+
+    // Get all text elements (w:t) - could be multiple
+    const textElements = run["w:t"] || run.t || []
+    const textElementsArray = Array.isArray(textElements)
+      ? textElements
+      : [textElements]
+
+    // Get all break elements (w:br) - could be multiple
+    const breakElements = run["w:br"] || run.br || []
+    const breakElementsArray = Array.isArray(breakElements)
+      ? breakElements
+      : [breakElements]
+
+    // Process text elements
+    for (const textElement of textElementsArray) {
+      if (!textElement) continue
+
+      let runText = ""
+      // Check for space preservation
+      let preserveSpace = false
+      if (
+        textElement &&
+        typeof textElement === "object" &&
+        textElement["@_xml:space"] === "preserve"
+      ) {
+        preserveSpace = true
+      }
+
       if (typeof textElement === "string") {
-        text += textElement
+        runText = textElement
       } else if (textElement["#text"]) {
-        text += textElement["#text"]
+        runText = textElement["#text"]
+      }
+
+      if (runText) {
+        runParts.push(runText)
+      }
+    }
+
+    // If we have multiple text elements, we need to add breaks between them
+    // The breaks are typically interspersed with the text elements
+    if (textElementsArray.length > 1 && breakElementsArray.length > 0) {
+      // Reconstruct with breaks
+      const reconstructed: string[] = []
+      let textIndex = 0
+
+      // Process in order - typically alternating text and breaks
+      for (let i = 0; i < textElementsArray.length; i++) {
+        const textElement = textElementsArray[i]
+        if (!textElement) continue
+
+        let runText = ""
+        if (typeof textElement === "string") {
+          runText = textElement
+        } else if (textElement["#text"]) {
+          runText = textElement["#text"]
+        }
+
+        if (runText) {
+          reconstructed.push(runText)
+          // Add a break after each text element except the last
+          if (i < textElementsArray.length - 1) {
+            reconstructed.push("\n")
+          }
+        }
+      }
+
+      const fullRunText = reconstructed.join("")
+      if (isCode && !isCodeBlock) {
+        // Inline code
+        codeFragments.push("`" + fullRunText + "`")
+      } else {
+        contentParts.push(fullRunText)
+      }
+    } else if (runParts.length > 0) {
+      // Single text element or no breaks
+      const fullRunText = runParts.join("")
+      if (isCode && !isCodeBlock) {
+        // Inline code
+        codeFragments.push("`" + fullRunText + "`")
+      } else {
+        contentParts.push(fullRunText)
       }
     }
 
@@ -332,7 +585,16 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     if (footnoteRef) {
       const footnoteId = footnoteRef["@_w:id"]
       if (footnoteId) {
-        text += `[^${footnoteId}]`
+        contentParts.push(`[^${footnoteId}]`)
+      }
+    }
+
+    // Handle endnote references
+    const endnoteRef = run["w:endnoteReference"]
+    if (endnoteRef) {
+      const endnoteId = endnoteRef["@_w:id"]
+      if (endnoteId) {
+        contentParts.push(`[^endnote-${endnoteId}]`)
       }
     }
 
@@ -341,17 +603,33 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     if (commentRef) {
       const commentId = commentRef["@_w:id"]
       if (commentId && documentData?.__comments?.has(commentId)) {
-        text += ` [^comment-${commentId}]`
+        contentParts.push(` [^comment-${commentId}]`)
       }
     }
 
-    // Handle tabs and breaks
+    // Handle tabs (but not breaks - we handle those with text elements)
     if (run["w:tab"] || run.tab) {
-      text += "\t"
+      contentParts.push("\t")
     }
-    if (run["w:br"] || run.br) {
-      text += "\n"
+  }
+
+  // Add paragraph-level breaks (like textWrapping breaks)
+  // These breaks are typically between runs, so we add them as line breaks
+  if (breaksArray.length > 0 && breaksArray[0]) {
+    // For each break, add a newline
+    for (const br of breaksArray) {
+      if (br && typeof br === "object") {
+        contentParts.push("\n")
+      }
     }
+  }
+
+  // Join content parts preserving the structure
+  text = contentParts.join("")
+
+  // Add inline code fragments
+  if (codeFragments.length > 0) {
+    text += " " + codeFragments.join(" ")
   }
 
   // Extract math equations and append as placeholders
@@ -364,14 +642,20 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     }
   }
 
+  // Apply code block formatting
+  if (isCodeBlock && text.trim()) {
+    // Wrap in code block markers
+    text = "```\n" + text.trim() + "\n```"
+  }
+
   // Apply list formatting
-  if (isListItem && text.trim()) {
+  if (isListItem && text.trim() && !isCodeBlock) {
     const indent = "  ".repeat(listLevel)
     text = indent + "- " + text.trim()
   }
 
   // Apply heading formatting
-  if (!isListItem && text.trim()) {
+  if (!isListItem && !isCodeBlock && text.trim()) {
     const headingPrefix = getHeadingPrefix(paragraph)
     text = headingPrefix + text.trim()
   }
@@ -409,6 +693,206 @@ function extractTextFromTable(table: any, documentData?: any): string {
       })
       .join("\n") + "\n\n"
   ) // Newline-separated rows with extra spacing
+}
+
+/**
+ * Extract text from text boxes and shapes with enhanced debugging and deep extraction
+ */
+function extractTextFromTextBox(textBox: any, documentData?: any): string {
+  if (!textBox) return ""
+
+  Logger.debug("Processing textBox:", JSON.stringify(textBox, null, 2))
+
+  let text = ""
+
+  // Look for txbxContent (text box content) - modern format
+  const txbxContent =
+    textBox["w:txbxContent"] || textBox["v:textbox"]?.["w:txbxContent"]
+  if (txbxContent) {
+    Logger.debug("Found w:txbxContent:", JSON.stringify(txbxContent, null, 2))
+
+    const paragraphs = txbxContent["w:p"] || []
+    const paragraphsArray = Array.isArray(paragraphs)
+      ? paragraphs
+      : [paragraphs]
+
+    Logger.debug(`Processing ${paragraphsArray.length} paragraphs in textbox`)
+
+    text = paragraphsArray
+      .map((p, index) => {
+        const paragraphText = extractTextFromParagraph(p, documentData)
+        Logger.debug(`Paragraph ${index} text:`, paragraphText)
+        return paragraphText
+      })
+      .join("\n")
+  }
+
+  // Also check for direct text content in VML textboxes
+  if (!text && textBox["v:textbox"]) {
+    const vTextbox = textBox["v:textbox"]
+    Logger.debug("Found v:textbox:", JSON.stringify(vTextbox, null, 2))
+
+    // Check for direct paragraphs
+    if (vTextbox["w:p"]) {
+      const paragraphs = Array.isArray(vTextbox["w:p"])
+        ? vTextbox["w:p"]
+        : [vTextbox["w:p"]]
+      text = paragraphs
+        .map((p) => extractTextFromParagraph(p, documentData))
+        .join("\n")
+    }
+    // Check for text content
+    else if (vTextbox["#text"]) {
+      text = vTextbox["#text"]
+    }
+    // Check for nested txbxContent inside v:textbox
+    else if (vTextbox["w:txbxContent"]) {
+      const nestedTxbxContent = vTextbox["w:txbxContent"]
+      const nestedParagraphs = nestedTxbxContent["w:p"] || []
+      const nestedParagraphsArray = Array.isArray(nestedParagraphs)
+        ? nestedParagraphs
+        : [nestedParagraphs]
+
+      text = nestedParagraphsArray
+        .map((p) => extractTextFromParagraph(p, documentData))
+        .join("\n")
+    }
+  }
+
+  // Check for text in shape text paths
+  if (!text && textBox["v:textpath"]) {
+    const textPath = textBox["v:textpath"]
+    if (textPath["@_string"]) {
+      text = textPath["@_string"]
+    }
+  }
+
+  // Deep recursive extraction for any missed content
+  if (!text) {
+    text = extractTextRecursively(textBox)
+  }
+
+  Logger.debug("Final extracted text from textbox:", text)
+
+  // If we found text and it looks like code (has common code indicators), wrap it
+  if (text.trim()) {
+    const codeIndicators = [
+      /^\/\//m, // Comments
+      /import\s+/, // Import statements
+      /\bclass\s+/, // Class definitions
+      /\bfunction\s+/, // Function definitions
+      /\bconst\s+/, // Const declarations
+      /\blet\s+/, // Let declarations
+      /\bvar\s+/, // Var declarations
+      /[{};]/, // Code syntax
+      /\(\s*\)/, // Function calls
+      /=\s*new\s+/, // Object instantiation
+      /<[^>]+>/, // XML/HTML tags
+      /<\/[^>]+>/, // XML/HTML closing tags
+      /<dependency[\s>]/i, // Maven dependency
+      /<groupId>/i, // Maven groupId
+      /<artifactId>/i, // Maven artifactId
+      /<version>/i, // Maven version
+      /<scope>/i, // Maven scope
+      /<systemPath>/i, // Maven systemPath
+      /\$\{[^}]+\}/, // Maven properties like ${project.basedir}
+      /xmlns:/, // XML namespaces
+      /\w+:\w+/, // Namespaced elements
+      /<dependency[\s\S]*?<\/dependency>/i, // Full dependency block
+      /<pre[\s>]/i, // Pre blocks
+      /<\/pre>/i, // Pre closing tags
+    ]
+
+    const isLikelyCode = codeIndicators.some((pattern) => pattern.test(text))
+
+    Logger.debug("Is likely code:", isLikelyCode)
+
+    if (isLikelyCode) {
+      return "```\n" + text.trim() + "\n```"
+    }
+
+    return `[TEXTBOX: ${text}]`
+  }
+
+  return ""
+}
+
+/**
+ * Recursively extract text from any object structure
+ */
+function extractTextRecursively(obj: any): string {
+  if (!obj || typeof obj !== "object") return ""
+
+  let texts: string[] = []
+
+  // Look for text nodes
+  if (typeof obj["w:t"] === "string") {
+    texts.push(obj["w:t"])
+  } else if (obj["w:t"] && obj["w:t"]["#text"]) {
+    texts.push(obj["w:t"]["#text"])
+  }
+
+  if (typeof obj["#text"] === "string") {
+    texts.push(obj["#text"])
+  }
+
+  // Recursively search all properties
+  for (const key in obj) {
+    if (typeof obj[key] === "object") {
+      const nestedText = extractTextRecursively(obj[key])
+      if (nestedText) texts.push(nestedText)
+    } else if (Array.isArray(obj[key])) {
+      for (const item of obj[key]) {
+        const nestedText = extractTextRecursively(item)
+        if (nestedText) texts.push(nestedText)
+      }
+    }
+  }
+
+  return texts.join(" ")
+}
+
+/**
+ * Extract text from shapes (including SmartArt)
+ */
+function extractTextFromShape(shape: any, documentData?: any): string {
+  if (!shape) return ""
+
+  let texts: string[] = []
+
+  // Recursive function to find text in shape structures
+  function findTextInShape(obj: any) {
+    if (!obj || typeof obj !== "object") return
+
+    // Look for text elements
+    if (obj["a:t"] || obj["w:t"]) {
+      const text = obj["a:t"] || obj["w:t"]
+      if (typeof text === "string") {
+        texts.push(text)
+      } else if (text["#text"]) {
+        texts.push(text["#text"])
+      }
+    }
+
+    // Look for paragraphs in shapes
+    if (obj["a:p"]) {
+      const paragraphs = Array.isArray(obj["a:p"]) ? obj["a:p"] : [obj["a:p"]]
+      for (const p of paragraphs) {
+        findTextInShape(p)
+      }
+    }
+
+    // Recursively search all properties
+    for (const key in obj) {
+      if (typeof obj[key] === "object") {
+        findTextInShape(obj[key])
+      }
+    }
+  }
+
+  findTextInShape(shape)
+
+  return texts.length > 0 ? `[SHAPE: ${texts.join(" ")}]` : ""
 }
 
 /**
@@ -497,7 +981,6 @@ function extractImageRelId(element: any): string | null {
  */
 function processDocumentContent(documentData: any): DocxContentItem[] {
   const items: DocxContentItem[] = []
-  let globalSeq = 0
 
   if (!documentData?.["w:document"]?.["w:body"]) {
     Logger.warn("No document body found in DOCX")
@@ -505,59 +988,339 @@ function processDocumentContent(documentData: any): DocxContentItem[] {
   }
 
   const body = documentData["w:document"]["w:body"]
+  const bodyXml = documentData.__bodyXml
 
-  // Process paragraphs first
-  const paragraphs = body["w:p"] || []
-  const paragraphsArray = Array.isArray(paragraphs) ? paragraphs : [paragraphs]
+  // Process body elements in their natural order
+  // DOCX stores elements as either single objects or arrays
+  // We need to maintain the document order by processing them sequentially
+  const processBodyElement = (
+    elementType: string,
+    element: any,
+    position: number,
+  ) => {
+    if (!element) return
 
-  // Process tables
-  const tables = body["w:tbl"] || []
-  const tablesArray = Array.isArray(tables) ? tables : [tables]
+    switch (elementType) {
+      case "w:p": // Paragraph
+        // Check for images first
+        const imageRelId = extractImageRelId(element)
+        if (imageRelId) {
+          Logger.debug(`Found image with relationship ID: ${imageRelId}`)
+          items.push({
+            type: "image",
+            relId: imageRelId,
+            pos: position,
+          })
+          return
+        }
 
-  Logger.debug(
-    `Found ${paragraphsArray.length} paragraphs and ${tablesArray.length} tables to process`,
-  )
+        // Extract all content from paragraph including text boxes in order
+        const paragraphContent = extractCompleteTextFromParagraph(
+          element,
+          documentData,
+        )
 
-  // Process paragraphs (which may contain images and math)
-  for (const element of paragraphsArray) {
-    if (!element) continue
+        if (paragraphContent.trim()) {
+          items.push({
+            type: "text",
+            content: cleanText(paragraphContent),
+            pos: position,
+          })
+        }
+        break
 
-    // Check for images first
-    const imageRelId = extractImageRelId(element)
-    if (imageRelId) {
-      Logger.debug(`Found image with relationship ID: ${imageRelId}`)
-      items.push({
-        type: "image",
-        relId: imageRelId,
-        pos: globalSeq++,
-      })
-      continue
+      case "w:tbl": // Table
+        const tableText = extractTextFromTable(element, documentData)
+        if (tableText.trim()) {
+          items.push({
+            type: "text",
+            content: cleanText(tableText),
+            pos: position,
+          })
+        }
+        break
+
+      case "w:sdt": // Structured Document Tag (can contain various content)
+        const sdtContent = element["w:sdtContent"]
+        if (sdtContent) {
+          // Recursively process SDT content
+          const sdtItems = processDocumentContent({
+            "w:document": { "w:body": sdtContent },
+          })
+          for (const item of sdtItems) {
+            item.pos = position
+            items.push(item)
+          }
+        }
+        break
+
+      case "mc:AlternateContent": // Alternative content (often contains drawings/shapes)
+        const choice = element["mc:Choice"]
+        const fallback = element["mc:Fallback"]
+
+        // Try choice first, then fallback
+        const content = choice || fallback
+        if (content) {
+          // Look for drawings, shapes, etc.
+          const drawing = content["w:drawing"]
+          if (drawing) {
+            const imageId = extractImageRelId({ "w:drawing": drawing })
+            if (imageId) {
+              items.push({
+                type: "image",
+                relId: imageId,
+                pos: position,
+              })
+            } else {
+              // Try to extract text from shapes
+              const shapeText = extractTextFromShape(drawing, documentData)
+              if (shapeText) {
+                items.push({
+                  type: "text",
+                  content: cleanText(shapeText),
+                  pos: position,
+                })
+              }
+            }
+          }
+        }
+        break
+
+      case "w:txbxContent": // Standalone text box content
+        // Process paragraphs within the text box content
+        const paragraphs = element["w:p"] || []
+        const paragraphsArray = Array.isArray(paragraphs)
+          ? paragraphs
+          : [paragraphs]
+
+        const textBoxText = paragraphsArray
+          .map((p: any) => extractTextFromParagraph(p, documentData))
+          .filter((text: string) => text.trim())
+          .join("\n")
+
+        if (textBoxText) {
+          // Check if it looks like code
+          const codeIndicators = [
+            /^\/\//m,
+            /import\s+/,
+            /\bclass\s+/,
+            /\bfunction\s+/,
+            /\bconst\s+/,
+            /\blet\s+/,
+            /\bvar\s+/,
+            /[{};]/,
+            /\(\s*\)/,
+            /=\s*new\s+/,
+            /<[^>]+>/, // XML/HTML tags
+            /<\/[^>]+>/, // XML/HTML closing tags
+            /<dependency>/i, // Maven dependency
+            /<groupId>/i, // Maven groupId
+            /<artifactId>/i, // Maven artifactId
+            /<version>/i, // Maven version
+            /<scope>/i, // Maven scope
+            /<systemPath>/i, // Maven systemPath
+            /\$\{[^}]+\}/, // Maven properties like ${project.basedir}
+            /xmlns:/, // XML namespaces
+            /\w+:\w+/, // Namespaced elements
+            /<dependency[\s\S]*?<\/dependency>/i, // Full dependency block
+            /<pre[\s>]/i, // Pre blocks
+            /<\/pre>/i, // Pre closing tags
+          ]
+
+          const isLikelyCode = codeIndicators.some((pattern) =>
+            pattern.test(textBoxText),
+          )
+
+          const formattedText = isLikelyCode
+            ? "```\n" + textBoxText.trim() + "\n```"
+            : `[TEXTBOX: ${textBoxText}]`
+
+          items.push({
+            type: "text",
+            content: cleanText(formattedText),
+            pos: position,
+          })
+        }
+        break
+    }
+  }
+
+  // If we have the raw XML, parse it to maintain order
+  if (bodyXml) {
+    // We need to process elements in the exact order they appear in the XML
+    // This includes text boxes that are embedded within paragraphs
+
+    // First, let's find all content-bearing elements and their positions
+    const contentElements: Array<{
+      type: string
+      position: number
+      element: any
+    }> = []
+
+    // Find paragraphs and their positions
+    const paragraphRegex = /<w:p[\s>]/g
+    let match
+    let pIndex = 0
+    const paragraphs = body["w:p"]
+      ? Array.isArray(body["w:p"])
+        ? body["w:p"]
+        : [body["w:p"]]
+      : []
+
+    while ((match = paragraphRegex.exec(bodyXml)) !== null) {
+      if (pIndex < paragraphs.length) {
+        contentElements.push({
+          type: "w:p",
+          position: match.index,
+          element: paragraphs[pIndex++],
+        })
+      }
     }
 
-    // Extract text content (including math equations)
-    const textContent = extractTextFromParagraph(element, documentData)
-    // Removed explicit page break marker logic
-    if (textContent.trim()) {
-      items.push({
-        type: "text",
-        content: cleanText(textContent),
-        pos: globalSeq++,
+    // Find tables and their positions
+    const tableRegex = /<w:tbl[\s>]/g
+    let tblIndex = 0
+    const tables = body["w:tbl"]
+      ? Array.isArray(body["w:tbl"])
+        ? body["w:tbl"]
+        : [body["w:tbl"]]
+      : []
+
+    while ((match = tableRegex.exec(bodyXml)) !== null) {
+      if (tblIndex < tables.length) {
+        contentElements.push({
+          type: "w:tbl",
+          position: match.index,
+          element: tables[tblIndex++],
+        })
+      }
+    }
+
+    // Find SDTs and their positions
+    const sdtRegex = /<w:sdt[\s>]/g
+    let sdtIndex = 0
+    const sdts = body["w:sdt"]
+      ? Array.isArray(body["w:sdt"])
+        ? body["w:sdt"]
+        : [body["w:sdt"]]
+      : []
+
+    while ((match = sdtRegex.exec(bodyXml)) !== null) {
+      if (sdtIndex < sdts.length) {
+        contentElements.push({
+          type: "w:sdt",
+          position: match.index,
+          element: sdts[sdtIndex++],
+        })
+      }
+    }
+
+    // Find AlternateContent and their positions
+    const altContentRegex = /<mc:AlternateContent[\s>]/g
+    let altIndex = 0
+    const altContents = body["mc:AlternateContent"]
+      ? Array.isArray(body["mc:AlternateContent"])
+        ? body["mc:AlternateContent"]
+        : [body["mc:AlternateContent"]]
+      : []
+
+    while ((match = altContentRegex.exec(bodyXml)) !== null) {
+      if (altIndex < altContents.length) {
+        contentElements.push({
+          type: "mc:AlternateContent",
+          position: match.index,
+          element: altContents[altIndex++],
+        })
+      }
+    }
+
+    // Find standalone text box content
+    const txbxContentRegex = /<w:txbxContent[\s>]/g
+    let txbxIndex = 0
+    const txbxContents = body["w:txbxContent"]
+      ? Array.isArray(body["w:txbxContent"])
+        ? body["w:txbxContent"]
+        : [body["w:txbxContent"]]
+      : []
+
+    while ((match = txbxContentRegex.exec(bodyXml)) !== null) {
+      if (txbxIndex < txbxContents.length) {
+        contentElements.push({
+          type: "w:txbxContent",
+          position: match.index,
+          element: txbxContents[txbxIndex++],
+        })
+      }
+    }
+
+    // Sort all elements by their position in the XML
+    contentElements.sort((a, b) => a.position - b.position)
+
+    // Process elements in their XML order
+    Logger.debug(`Processing ${contentElements.length} elements in XML order`)
+
+    // Also look for text boxes within the XML that might not be captured as separate elements
+    // Text boxes can be embedded within paragraphs as w:pict/v:shape/v:textbox
+    const textBoxRegex = /<v:textbox[\s>][\s\S]*?<\/v:textbox>/g
+    let textBoxMatches = []
+    let tbMatch
+    while ((tbMatch = textBoxRegex.exec(bodyXml)) !== null) {
+      Logger.debug(`Found textbox at position ${tbMatch.index}`)
+      textBoxMatches.push({
+        position: tbMatch.index,
+        xml: tbMatch[0],
+      })
+    }
+
+    contentElements.forEach((item, index) => {
+      Logger.debug(
+        `Processing element ${index}: type=${item.type}, position=${item.position}`,
+      )
+      processBodyElement(item.type, item.element, index)
+    })
+  } else {
+    // Fallback to the old method if we don't have XML
+    const elementsByType: { [key: string]: any[] } = {
+      "w:p": body["w:p"]
+        ? Array.isArray(body["w:p"])
+          ? body["w:p"]
+          : [body["w:p"]]
+        : [],
+      "w:tbl": body["w:tbl"]
+        ? Array.isArray(body["w:tbl"])
+          ? body["w:tbl"]
+          : [body["w:tbl"]]
+        : [],
+      "w:sdt": body["w:sdt"]
+        ? Array.isArray(body["w:sdt"])
+          ? body["w:sdt"]
+          : [body["w:sdt"]]
+        : [],
+      "mc:AlternateContent": body["mc:AlternateContent"]
+        ? Array.isArray(body["mc:AlternateContent"])
+          ? body["mc:AlternateContent"]
+          : [body["mc:AlternateContent"]]
+        : [],
+    }
+
+    let position = 0
+
+    // Process all elements
+    for (const type in elementsByType) {
+      const elements = elementsByType[type]
+      elements.forEach((element: any) => {
+        processBodyElement(type, element, position++)
       })
     }
   }
 
-  // Process tables
-  for (const table of tablesArray) {
-    if (!table) continue
-    const tableText = extractTextFromTable(table, documentData)
-    if (tableText.trim()) {
-      items.push({
-        type: "text",
-        content: cleanText(tableText),
-        pos: globalSeq++,
-      })
-    }
-  }
+  // Sort items by position to ensure correct order
+  items.sort((a, b) => a.pos - b.pos)
+
+  // Reassign sequential positions
+  items.forEach((item, index) => {
+    item.pos = index
+  })
 
   Logger.debug(
     `Processed ${items.length} content items, ${items.filter((i) => i.type === "image").length} images`,
@@ -611,6 +1374,48 @@ async function extractFootnotes(
 }
 
 /**
+ * Extract endnotes from DOCX document
+ */
+async function extractEndnotes(zip: JSZip, parser: XMLParser): Promise<string> {
+  try {
+    const endnotesXml = zip.file("word/endnotes.xml")
+    if (!endnotesXml) return ""
+
+    const endnotesText = await endnotesXml.async("text")
+    const endnotesData = parser.parse(endnotesText)
+    if (!endnotesData?.["w:endnotes"]?.["w:endnote"]) return ""
+
+    const endnotes = endnotesData["w:endnotes"]["w:endnote"]
+    const endnotesArray = Array.isArray(endnotes) ? endnotes : [endnotes]
+
+    return endnotesArray
+      .map((endnote) => {
+        const id = endnote["@_w:id"]
+        if (!id || id === "-1" || id === "0") return "" // Skip separator and continuation endnotes
+
+        const paragraphs = endnote["w:p"] || []
+        const paragraphsArray = Array.isArray(paragraphs)
+          ? paragraphs
+          : [paragraphs]
+
+        const content = paragraphsArray
+          .map((p) => extractTextFromParagraph(p))
+          .join(" ")
+          .trim()
+
+        return content ? `[^endnote-${id}]: ${content}` : ""
+      })
+      .filter((f) => f)
+      .join("\n")
+  } catch (error) {
+    Logger.warn(
+      `Could not extract endnotes: ${error instanceof Error ? error.message : error}`,
+    )
+    return ""
+  }
+}
+
+/**
  * Extract headers and footers from DOCX document
  */
 async function extractHeadersAndFooters(
@@ -626,19 +1431,36 @@ async function extractHeadersAndFooters(
       if (headerFile) {
         const headerText = await headerFile.async("text")
         const headerData = parser.parse(headerText)
-        if (headerData?.["w:hdr"]?.["w:p"]) {
-          const paragraphs = headerData["w:hdr"]["w:p"]
-          const paragraphsArray = Array.isArray(paragraphs)
-            ? paragraphs
-            : [paragraphs]
+        if (headerData?.["w:hdr"]) {
+          const hdr = headerData["w:hdr"]
 
-          const content = paragraphsArray
-            .map((p) => extractTextFromParagraph(p))
-            .join(" ")
-            .trim()
+          // Process all elements in header
+          const headerContent: string[] = []
 
-          if (content) {
-            headerFooter += `Header (${i}):\n${content}\n\n`
+          // Process paragraphs
+          if (hdr["w:p"]) {
+            const paragraphs = Array.isArray(hdr["w:p"])
+              ? hdr["w:p"]
+              : [hdr["w:p"]]
+            for (const p of paragraphs) {
+              const text = extractTextFromParagraph(p)
+              if (text.trim()) headerContent.push(text)
+            }
+          }
+
+          // Process tables
+          if (hdr["w:tbl"]) {
+            const tables = Array.isArray(hdr["w:tbl"])
+              ? hdr["w:tbl"]
+              : [hdr["w:tbl"]]
+            for (const tbl of tables) {
+              const text = extractTextFromTable(tbl)
+              if (text.trim()) headerContent.push(text)
+            }
+          }
+
+          if (headerContent.length > 0) {
+            headerFooter += `Header (${i}):\n${headerContent.join("\n")}\n\n`
           }
         }
       }
@@ -650,19 +1472,36 @@ async function extractHeadersAndFooters(
       if (footerFile) {
         const footerText = await footerFile.async("text")
         const footerData = parser.parse(footerText)
-        if (footerData?.["w:ftr"]?.["w:p"]) {
-          const paragraphs = footerData["w:ftr"]["w:p"]
-          const paragraphsArray = Array.isArray(paragraphs)
-            ? paragraphs
-            : [paragraphs]
+        if (footerData?.["w:ftr"]) {
+          const ftr = footerData["w:ftr"]
 
-          const content = paragraphsArray
-            .map((p) => extractTextFromParagraph(p))
-            .join(" ")
-            .trim()
+          // Process all elements in footer
+          const footerContent: string[] = []
 
-          if (content) {
-            headerFooter += `Footer (${i}):\n${content}\n\n`
+          // Process paragraphs
+          if (ftr["w:p"]) {
+            const paragraphs = Array.isArray(ftr["w:p"])
+              ? ftr["w:p"]
+              : [ftr["w:p"]]
+            for (const p of paragraphs) {
+              const text = extractTextFromParagraph(p)
+              if (text.trim()) footerContent.push(text)
+            }
+          }
+
+          // Process tables
+          if (ftr["w:tbl"]) {
+            const tables = Array.isArray(ftr["w:tbl"])
+              ? ftr["w:tbl"]
+              : [ftr["w:tbl"]]
+            for (const tbl of tables) {
+              const text = extractTextFromTable(tbl)
+              if (text.trim()) footerContent.push(text)
+            }
+          }
+
+          if (footerContent.length > 0) {
+            headerFooter += `Footer (${i}):\n${footerContent.join("\n")}\n\n`
           }
         }
       }
@@ -743,6 +1582,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
+  simpleExtraction: boolean = false,
 ): Promise<DocxProcessingResult> {
   Logger.info(`Starting DOCX processing for document: ${docid}`)
 
@@ -775,13 +1615,20 @@ export async function extractTextAndImagesWithChunksFromDocx(
       throw new Error("Could not find word/document.xml in DOCX file")
     }
 
+    // Extract the body content directly from XML to maintain order
+    const bodyMatch = documentXml.match(/<w:body[^>]*>([\s\S]*?)<\/w:body>/)
+    const bodyXml = bodyMatch ? bodyMatch[1] : ""
+
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
       textNodeName: "#text",
+      trimValues: false, // Don't trim whitespace
     })
 
     const documentData = parser.parse(documentXml)
+    // Store the raw body XML for order preservation
+    documentData.__bodyXml = bodyXml
 
     let relationships: Map<string, string> | null = null
     // Always parse relationships for hyperlinks
@@ -803,7 +1650,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       const comments = commentsData?.["w:comments"]?.["w:comment"]
       const commentsArray = Array.isArray(comments) ? comments : [comments]
       for (const comment of commentsArray) {
-        const id = comment["@_w:cid"]
+        const id = comment["@_w:id"]
         const commentParas = comment["w:p"] || []
         const commentParasArray = Array.isArray(commentParas)
           ? commentParas
@@ -822,8 +1669,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
     // Extract content items in order
     const contentItems = processDocumentContent(documentData)
 
-    // Extract footnotes, headers, and footers
+    // Extract footnotes, endnotes, headers, and footers
     const footnotes = await extractFootnotes(zip, parser)
+    const endnotes = await extractEndnotes(zip, parser)
     const headerFooter = await extractHeadersAndFooters(zip, parser)
 
     let text_chunks: string[] = []
@@ -1006,25 +1854,24 @@ export async function extractTextAndImagesWithChunksFromDocx(
       }
     }
 
-    // Add footnotes and headers/footers to the end if they exist
-    if (footnotes || headerFooter) {
-      const additionalContent = [footnotes, headerFooter]
-        .filter(Boolean)
-        .join("\n\n")
-      if (additionalContent.trim()) {
-        const postProcessedContent = postProcessText(additionalContent)
-        const finalContent = crossImageOverlap
-          ? crossImageOverlap + " " + postProcessedContent
-          : postProcessedContent
-        const { nextPos, overlapText } = processTextItems(
-          [finalContent],
-          text_chunks,
-          text_chunk_pos,
-          globalSeq,
-        )
-        globalSeq = nextPos
-        crossImageOverlap = "" // Clear after final processing
-      }
+    // Add footnotes, endnotes, and headers/footers to the end if they exist
+    const additionalContent = [footnotes, endnotes, headerFooter]
+      .filter(Boolean)
+      .join("\n\n")
+
+    if (additionalContent.trim()) {
+      const postProcessedContent = postProcessText(additionalContent)
+      const finalContent = crossImageOverlap
+        ? crossImageOverlap + " " + postProcessedContent
+        : postProcessedContent
+      const { nextPos, overlapText } = processTextItems(
+        [finalContent],
+        text_chunks,
+        text_chunk_pos,
+        globalSeq,
+      )
+      globalSeq = nextPos
+      crossImageOverlap = "" // Clear after final processing
     }
 
     // Add comments as footnotes
