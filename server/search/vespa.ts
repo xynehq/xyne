@@ -616,7 +616,8 @@ const buildIntentFilter = (intent: Intent | null) => {
     ? "and" + " " + intentFilters.join(" and ")
     : ""
 }
-export const HybridDefaultProfileForAgent =  (
+export const HybridDefaultProfileForAgent =  async(
+  email:string,
   hits: number,
   app: Apps | null,
   entity: Entity | null,
@@ -630,7 +631,9 @@ export const HybridDefaultProfileForAgent =  (
   channelIds: string[] = [],
   kbIds: string[] = [],
   driveIds:string[] = [],
-): YqlProfile => {
+  selectedItem:{} = {},
+): Promise<YqlProfile> => {
+  console.log("Printing the selected Item",selectedItem)
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -642,6 +645,15 @@ export const HybridDefaultProfileForAgent =  (
     }
     return conditions.join(" and ")
   }
+
+  // helper function to build docId inclusion condition
+  const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
+    if (!ids || ids.length === 0) return ""
+    
+    const conditions = ids.map((id) => `${fieldName} contains '${id.trim()}'`)
+    return conditions.join(" or ")
+  }
+
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
     return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
@@ -703,15 +715,50 @@ export const HybridDefaultProfileForAgent =  (
         ${intentFilter}
       )`
   }
-  const buildGoogleDriveYQL = () => {
+  const buildGoogleDriveYQL = async () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
+    // let driveItem:string [] = []
     // if we have some DriveIds then we are going to fetch all the items in that folder
          const intentFilter = buildIntentFilter(intent)
-    const driveIdConditions =
-    driveIds && driveIds.length > 0
-      ? `(${driveIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")})`
-      : "false"
+         const driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+        const driveIds = []
+       
+       while (driveItem.length) {
+           let curr = driveItem.shift()
+           // Ensure email is defined before passing it to getFolderItems\
+           if (curr) driveIds.push(curr)
+           if (curr && email) {
+             try {
+               const folderItem = await getFolderItems(
+                 [curr],
+                 fileSchema,
+                 DriveEntity.Folder,
+                 email,
+               )
+               if (
+                 folderItem.root &&
+                 folderItem.root.children &&
+                 folderItem.root.children.length > 0
+               ) {
+                 for (const item of folderItem.root.children) {
+                   if (
+                     item.fields &&
+                     (item.fields as any).entity === DriveEntity.Folder
+                   ) {
+                     driveItem.push((item.fields as any).docId)
+                   } else {
+                    driveIds.push((item.fields as any).docId)
+                   }
+                 }
+               }
+             } catch (error) {
+               Logger.error("failed to fetch drive items")
+             }
+           }
+         }
+         const driveIdConditions = buildDocsInclusionCondition('docId',driveIds)
+         console.log(driveIdConditions)
     return `
       (
         (
@@ -722,7 +769,7 @@ export const HybridDefaultProfileForAgent =  (
         ${timestampRange ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
-        and ${driveIdConditions}
+        ${driveIdConditions ? `and ${driveIdConditions}` : ""}
         ${intentFilter}
       )
      `
@@ -746,10 +793,14 @@ export const HybridDefaultProfileForAgent =  (
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-    const channelIdConditions =
-      channelIds && channelIds.length > 0
-        ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
-        : ""
+    let channelIds:string [] = []
+    // if we have some DriveIds then we are going to fetch all the items in that folder
+         const intentFilter = buildIntentFilter(intent)
+         channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
+    const channelIdConditions = buildDocsInclusionCondition("docId" ,channelIds)
+    //   channelIds && channelIds.length > 0
+    //     ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
+    //     : ""
 
     return `
       (
@@ -787,14 +838,20 @@ export const HybridDefaultProfileForAgent =  (
   }
 
   const buildKbFileYQL = async () => {
-    // For KB files, similar to DataSourceFile
-    // Only build query if we have KB IDs
-    if (!kbIds || kbIds.length === 0) {
-      return null // Return null if no KB IDs
-    }
-    const kbfileIds = await getAllFolderItems(kbIds, db)
-
     let kbvespaIds:string[]=[]
+    let kbId: string[] = []
+    
+    if(selectedItem && 
+       typeof selectedItem === 'object' && 
+       Apps.KnowledgeBase in selectedItem && 
+       Array.isArray((selectedItem as Record<string, unknown>)[Apps.KnowledgeBase]) && 
+       ((selectedItem as Record<string, unknown>)[Apps.KnowledgeBase] as unknown[]).length > 0) {
+      kbId = (selectedItem as Record<string, unknown>)[Apps.KnowledgeBase] as string[]
+    }
+
+    const kbfileIds = await getAllFolderItems(kbId, db)
+
+    
     if(kbfileIds.length>0){
       const ids = await getKbFilesVespaIds(kbfileIds, db)
        kbvespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
@@ -803,7 +860,7 @@ export const HybridDefaultProfileForAgent =  (
     const kbIdConditions =
     kbvespaIds && kbvespaIds.length > 0
       ? `(${kbvespaIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")})`
-      : "false"
+      : "true"
     
    
 
@@ -835,7 +892,7 @@ export const HybridDefaultProfileForAgent =  (
           if (!sources.includes(mailSchema)) sources.push(mailSchema)
           break
         case Apps.GoogleDrive:
-          appQueries.push(buildGoogleDriveYQL())
+          appQueries.push(await buildGoogleDriveYQL())
           if (!sources.includes(fileSchema)) sources.push(fileSchema)
           break
         case Apps.GoogleCalendar:
@@ -871,20 +928,10 @@ export const HybridDefaultProfileForAgent =  (
         case Apps.KnowledgeBase:
           // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
           // The actual filtering by specific kbIds happens in buildKbFileYQL.
-          if (kbIds && kbIds.length > 0) {
-            const kbQuery = buildKbFileYQL()
-            if (kbQuery) {
-              appQueries.push(kbQuery)
+          
+            const kbQuery = await buildKbFileYQL()
+            appQueries.push(kbQuery)
               if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
-            }
-          } else {
-            // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search
-            // across all accessible knowledge bases. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic KB search.
-            Logger.warn(
-              "Apps.KnowledgeBase specified for agent, but no specific kbIds provided. Skipping generic KnowledgeBase search part.",
-            )
-          }
           break
       }
     }
@@ -895,22 +942,22 @@ export const HybridDefaultProfileForAgent =  (
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
-  if (channelIds.length > 0) {
-    appQueries.push(buildSlackYQL())
-    if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
-    if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
-    if (!sources.includes(chatContainerSchema))
-      sources.push(chatContainerSchema)
-  }
+  // if (channelIds.length > 0) {
+  //   appQueries.push(buildSlackYQL())
+  //   if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+  //   if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
+  //   if (!sources.includes(chatContainerSchema))
+  //     sources.push(chatContainerSchema)
+  // }
 
-  // Handle knowledge base IDs
-  if (kbIds && kbIds.length > 0) {
-    const kbQuery = buildKbFileYQL()
-    if (kbQuery) {
-      appQueries.push(kbQuery)
-      if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
-    }
-  }
+  // // Handle knowledge base IDs
+  // if (kbIds && kbIds.length > 0) {
+  //   const kbQuery =await buildKbFileYQL()
+  //   if (kbQuery) {
+  //     appQueries.push(kbQuery)
+  //     if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
+  //   }
+  // }
 
   // Debug logging
   Logger.debug(`Agent search configuration:`, {
@@ -1427,6 +1474,7 @@ type VespaQueryConfig = {
   channelIds?: string[]
   kbIds?: string[] // Added for agent-specific knowledge base docIds filtering
   driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
+  selectedItem?:{}
 }
 
 export const searchVespa = async (
@@ -1778,13 +1826,15 @@ export const searchVespaAgent = async (
     channelIds = [],
     kbIds = [], // Ensure kbIds is destructured here
     driveIds = [], // docIds
+    selectedItem = {}
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
-  let { yql, profile } = HybridDefaultProfileForAgent(
+  let { yql, profile } = await HybridDefaultProfileForAgent(
+    email,
     limit,
     app,
     entity,
@@ -1798,7 +1848,10 @@ export const searchVespaAgent = async (
     channelIds,
     kbIds, // Pass kbIds here
     driveIds, 
+    selectedItem,
+    
   )
+  console.log("printing the yql ",yql)
 
   const hybridDefaultPayload = {
     yql,

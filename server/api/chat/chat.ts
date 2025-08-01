@@ -193,6 +193,8 @@ import {
   mimeTypeMap,
   extractNamesFromIntent,
   getChannelIdsFromAgentPrompt,
+  parseAppSelections,
+  isAppSelectionMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -1139,6 +1141,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   let agentSpecificDataSourceIds: string[] = []
   let agentSpecificKbIds: string[] = []
   let channelIds:string[] = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1150,6 +1153,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+
+    // This is how we are parsing currently
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -1224,6 +1229,16 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         "agentPromptData.appIntegrations is not an array or is missing",
         { agentPromptData },
       )
+    }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp); 
+      agentAppEnums =[... new Set(selectedApps)]
+      // Handle selectedItems logic...
     }
   }
 
@@ -1317,6 +1332,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         kbIds: agentSpecificKbIds,
+        selectedItem:selectedItem
       },
     )
   }
@@ -1376,6 +1392,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             kbIds: agentSpecificKbIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1438,6 +1455,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
               kbIds: agentSpecificKbIds,
+              selectedItem:selectedItem
             }))
 
         // Expand email threads in the results
@@ -1493,6 +1511,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds,
             kbIds: agentSpecificKbIds,
+            selectedItem:selectedItem
           }
         )
         }
@@ -1606,6 +1625,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             dataSourceIds: agentSpecificDataSourceIds,
             kbIds: agentSpecificKbIds,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1658,7 +1678,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             kbIds: agentSpecificKbIds,
-            channelIds,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -2281,6 +2302,7 @@ async function* generatePointQueryTimeExpansion(
 
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2357,6 +2379,18 @@ async function* generatePointQueryTimeExpansion(
         { agentPromptData },
       )
     }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      // Handle selectedItems logic...
+    }
+
+
   }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
@@ -2497,6 +2531,7 @@ async function* generatePointQueryTimeExpansion(
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
+              selectedItem:selectedItem,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2506,7 +2541,8 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           }),
         ])
         results.root.children = [
@@ -2783,6 +2819,7 @@ async function* generateMetadataQueryAnswer(
     isValidApp(app as Apps) || isValidEntity(entity as any)
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2859,6 +2896,17 @@ async function* generateMetadataQueryAnswer(
         { agentPromptData },
       )
     }
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      // Handle selectedItems logic...
+    }
+
+
   }
 
   // Process timestamp
@@ -2966,6 +3014,7 @@ async function* generateMetadataQueryAnswer(
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -3242,6 +3291,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }

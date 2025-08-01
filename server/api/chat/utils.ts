@@ -84,6 +84,76 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
   }
 }
 
+export interface AppSelection {
+  itemIds: string[];
+  selectedAll: boolean;
+}
+
+export interface AppSelectionMap {
+  [appName: string]: AppSelection;
+}
+
+export interface ParsedResult {
+  selectedApps: Apps[];
+  selectedItems: { [app: string]: string[] };
+}
+
+
+export function parseAppSelections(input: AppSelectionMap): ParsedResult {
+  console.log("Printing the input",input)
+  const selectedApps: Apps[] = [];
+  const selectedItems: { [app: string]: string[] } = {};
+
+  for (let [appName, selection] of Object.entries(input)) {
+    let appN: Apps 
+    // Add app to selectedApps list
+    if(appName=='googledrive'){
+      appN= Apps.GoogleDrive
+    }
+    else if(appName=='googlesheets'){
+      appN=Apps.GoogleDrive
+    }
+    else if(appName=='gmail'){
+      appN=Apps.Gmail
+    }
+    else if(appName=='googlecalendar'){
+      appN=Apps.GoogleCalendar
+    }
+    else if(appName=='DataSource'){
+      appN=Apps.DataSource
+    }
+    else if(appName=='knowledge-base'){
+      appN=Apps.KnowledgeBase
+    }
+    else if(appName=='slack'){
+      appN=Apps.Slack
+    }
+    else if(appName == 'google-workspace')
+      appN=Apps.GoogleWorkspace
+    else {
+      appN = appName as unknown as Apps
+    }
+    
+    selectedApps.push(appN)
+    // If selectedAll is true or itemIds is empty, we infer "all selected"
+    // So we don't add anything to selectedItems (empty means all)
+    if (!selection.selectedAll && selection.itemIds && selection.itemIds.length > 0) {
+      // Only add specific itemIds when selectedAll is false and there are specific items
+      if (selectedItems[appN]) {
+        selectedItems[appN] = [...new Set([...selectedItems[appN], ...selection.itemIds])];
+      } else {
+        selectedItems[appN] = selection.itemIds;
+      }
+    }
+   
+  }
+
+  return {
+    selectedApps,
+    selectedItems
+  };
+}
+
 // Interface for email search result fields
 export interface EmailSearchResultFields {
   app: Apps
@@ -528,6 +598,7 @@ export const extractFileIdsFromMessage = async (
     }
     
   }
+
   while (driveItem.length) {
     let curr = driveItem.shift()
     // Ensure email is defined before passing it to getFolderItems\
@@ -776,4 +847,43 @@ export function extractNamesFromIntent(intent: any): Intent {
   }
 
   return result
+}
+
+export function isAppSelectionMap(value: any): value is AppSelectionMap {
+  console.log("i am at line 853")
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  console.log("i am at line 857")
+  // Check if it's an empty object (valid case)
+  if (Object.keys(value).length === 0) {
+    return true;
+  }
+  console.log("i am at line 862")
+  console.log(value)
+  // Check if all properties are valid AppSelection objects
+  for (const [appName, selection] of Object.entries(value)) {
+    // Optionally validate app name is a valid app
+    // if (!isValidApp(appName)) {
+    //   return false;
+    // }
+
+    if (!isValidAppSelection(selection)) {
+      return false;
+    }
+  }
+  console.log("i am at line 874")
+
+
+  return true;
+}
+
+function isValidAppSelection(value: any): value is AppSelection {
+  return (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray(value.itemIds) &&
+    value.itemIds.every((id: any) => typeof id === 'string') &&
+    typeof value.selectedAll === 'boolean'
+  );
 }
