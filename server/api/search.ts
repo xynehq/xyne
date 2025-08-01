@@ -392,7 +392,6 @@ export const SearchApi = async (c:Context) => {
         timestampRange,
       }),
     ]
-
     // ensure only update when query is typed
     if (isQueryTyped) {
       tasks.push(updateUserQueryHistory(decodedQuery, email))
@@ -405,6 +404,7 @@ export const SearchApi = async (c:Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      rankProfile: SearchModes.BoostTitle,
     })
   }
 
