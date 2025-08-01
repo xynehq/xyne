@@ -8,6 +8,7 @@ import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
+import { chunkTextByParagraph } from "./chunks"
 
 const openjpegWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
@@ -28,65 +29,6 @@ const cleanText = (str: string): string => {
     /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
     "",
   )
-}
-
-/**
- * Chunk text by paragraphs with byte-based sizing and overlap.
- * If a paragraph is too long, fallback to sentence splitting.
- */
-function chunkTextByParagraph(
-  text: string,
-  maxChunkBytes = 512,
-  overlapBytes = 128,
-): string[] {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  const chunks: string[] = []
-
-  for (let p of paragraphs) {
-    const pBytes = Buffer.byteLength(p, "utf8")
-    if (pBytes <= maxChunkBytes) {
-      chunks.push(p)
-    } else {
-      // Fallback to sentences
-      const sentences = p.match(/[^\.!\?]+[\.!\?]+(\s|$)/g) || [p]
-      let buffer = ""
-      for (let sentence of sentences) {
-        const sentenceTrim = sentence.trim()
-        if (!sentenceTrim) continue
-        const sentenceBytes = Buffer.byteLength(sentenceTrim, "utf8")
-        const bufferBytes = Buffer.byteLength(buffer, "utf8")
-        if (bufferBytes + sentenceBytes + 1 <= maxChunkBytes) {
-          buffer = buffer ? buffer + " " + sentenceTrim : sentenceTrim
-        } else {
-          if (buffer) {
-            chunks.push(buffer)
-            // Overlap: take last overlapBytes from buffer as start for next chunk
-            let overlapStr = ""
-            let overlapLen = 0
-            for (let i = buffer.length - 1; i >= 0; i--) {
-              const charBytes = Buffer.byteLength(buffer[i], "utf8")
-              if (overlapLen + charBytes > overlapBytes) break
-              overlapStr = buffer[i] + overlapStr
-              overlapLen += charBytes
-            }
-            buffer = overlapStr + " " + sentenceTrim
-          } else {
-            // Sentence longer than maxChunkBytes, push as is
-            chunks.push(sentenceTrim)
-            buffer = ""
-          }
-        }
-      }
-      if (buffer) {
-        chunks.push(buffer)
-      }
-    }
-  }
-
-  return chunks
 }
 
 /**

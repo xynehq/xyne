@@ -7,6 +7,7 @@ import crypto from "crypto"
 import path from "path"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
+import { chunkTextByParagraph } from "./chunks"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pptChunks",
@@ -19,109 +20,6 @@ const cleanText = (str: string): string => {
     /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
     "",
   )
-}
-
-/**
- * Post-processes the extracted text to normalize whitespace and handle newlines intelligently.
- * Reusing the same logic as DOCX processing for consistency.
- */
-const postProcessText = (text: string): string => {
-  const lines = text.split("\n")
-  const processedLines: string[] = []
-  let previousLine = ""
-  let consecutiveNewlines = 0
-
-  const isListItem = (line: string): boolean => /^[\s]*[-*+] /.test(line)
-
-  lines.forEach((line, index) => {
-    const trimmedLine = line.trim()
-
-    if (trimmedLine === "") {
-      consecutiveNewlines++
-      if (consecutiveNewlines <= 2) {
-        processedLines.push("") // Keep up to two empty lines
-      }
-    } else {
-      if (
-        consecutiveNewlines >= 2 ||
-        index === 0 ||
-        trimmedLine.startsWith("#")
-      ) {
-        // Start of a new paragraph or heading
-        processedLines.push(trimmedLine)
-      } else if (previousLine !== "" && !isListItem(previousLine)) {
-        // Continuation of the previous paragraph (not a list item)
-        processedLines[processedLines.length - 1] += " " + trimmedLine
-      } else {
-        // Single line paragraph or list item
-        processedLines.push(trimmedLine)
-      }
-      consecutiveNewlines = 0
-    }
-
-    previousLine = trimmedLine
-  })
-
-  return processedLines.join("\n")
-}
-
-/**
- * Chunk text by paragraphs with byte-based sizing and overlap.
- * Reusing the same logic as DOCX and PDF processing for consistency.
- */
-function chunkTextByParagraph(
-  text: string,
-  maxChunkBytes = 512,
-  overlapBytes = 128,
-): string[] {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  const chunks: string[] = []
-
-  for (let p of paragraphs) {
-    const pBytes = Buffer.byteLength(p, "utf8")
-    if (pBytes <= maxChunkBytes) {
-      chunks.push(p)
-    } else {
-      // Fallback to sentences
-      const sentences = p.match(/[^\.!\?]+[\.!\?]+(\s|$)/g) || [p]
-      let buffer = ""
-      for (let sentence of sentences) {
-        const sentenceTrim = sentence.trim()
-        if (!sentenceTrim) continue
-        const sentenceBytes = Buffer.byteLength(sentenceTrim, "utf8")
-        const bufferBytes = Buffer.byteLength(buffer, "utf8")
-        if (bufferBytes + sentenceBytes + 1 <= maxChunkBytes) {
-          buffer = buffer ? buffer + " " + sentenceTrim : sentenceTrim
-        } else {
-          if (buffer) {
-            chunks.push(buffer)
-            // Overlap: take last overlapBytes from buffer as start for next chunk
-            let overlapStr = ""
-            let overlapLen = 0
-            for (let i = buffer.length - 1; i >= 0; i--) {
-              const charBytes = Buffer.byteLength(buffer[i], "utf8")
-              if (overlapLen + charBytes > overlapBytes) break
-              overlapStr = buffer[i] + overlapStr
-              overlapLen += charBytes
-            }
-            buffer = overlapStr + " " + sentenceTrim
-          } else {
-            // Sentence longer than maxChunkBytes, push as is
-            chunks.push(sentenceTrim)
-            buffer = ""
-          }
-        }
-      }
-      if (buffer) {
-        chunks.push(buffer)
-      }
-    }
-  }
-
-  return chunks
 }
 
 interface PptxContentItem {
