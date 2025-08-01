@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { Copy, Key, Loader2, Clock, Calendar, ChevronDown } from "lucide-react"
 import { errorComponent } from "@/components/error"
+import { authFetch } from "@/utils/authFetch"
 
 interface ApiKeyResponse {
   apiKey: string
@@ -96,7 +97,7 @@ const ApiKeyGenerator = () => {
           break
       }
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/v1/auth/generate-api-key?expirationDays=${expirationDays}`,
       )
       const data = await response.json()

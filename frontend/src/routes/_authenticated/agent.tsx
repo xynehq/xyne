@@ -69,6 +69,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { createAuthEventSource } from "@/hooks/useChatStream"
 
 type CurrentResp = {
   resp: string
@@ -642,11 +643,21 @@ function AgentComponent() {
       url.searchParams.set("requirements", requirements)
 
       // Create EventSource connection following the existing pattern
-      promptGenerationEventSourceRef.current = new EventSource(url.toString(), {
-        withCredentials: true,
-      })
+      try {
+        promptGenerationEventSourceRef.current = await createAuthEventSource(
+          url.toString(),
+        )
+      } catch (err) {
+        console.error("Failed to create EventSource:", err)
+        toast({
+          title: "Failed to create EventSource",
+          description: "Failed to create EventSource",
+          variant: "destructive",
+        })
+        return
+      }
 
-      promptGenerationEventSourceRef.current.addEventListener(
+      promptGenerationEventSourceRef?.current?.addEventListener(
         ChatSSEvents.ResponseUpdate,
         (event) => {
           generatedPrompt += event.data
@@ -1113,9 +1124,17 @@ function AgentComponent() {
       url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
     }
 
-    eventSourceRef.current = new EventSource(url.toString(), {
-      withCredentials: true,
-    })
+    try {
+      eventSourceRef.current = await createAuthEventSource(url.toString())
+    } catch (err) {
+      console.error("Failed to create EventSource:", err)
+      toast({
+        title: "Failed to create EventSource",
+        description: "Failed to create EventSource",
+        variant: "destructive",
+      })
+      return
+    }
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.CitationsUpdate,

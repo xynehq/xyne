@@ -167,4 +167,6 @@ export default {
     .filter((email) => email.length > 0),
   llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
   ragOffFeature,
+  AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
+  RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
 }
