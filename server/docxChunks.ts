@@ -434,15 +434,6 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
         const hyperlinkText = hyperlinkRunsArray
           .map((r) => {
             const textEl = r["w:t"]
-            // Check for space preservation
-            let preserveSpace = false
-            if (
-              textEl &&
-              typeof textEl === "object" &&
-              textEl["@_xml:space"] === "preserve"
-            ) {
-              preserveSpace = true
-            }
             const text =
               typeof textEl === "string" ? textEl : textEl?.["#text"] || ""
             return text
@@ -513,15 +504,6 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
       if (!textElement) continue
 
       let runText = ""
-      // Check for space preservation
-      let preserveSpace = false
-      if (
-        textElement &&
-        typeof textElement === "object" &&
-        textElement["@_xml:space"] === "preserve"
-      ) {
-        preserveSpace = true
-      }
 
       if (typeof textElement === "string") {
         runText = textElement
@@ -539,7 +521,6 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     if (textElementsArray.length > 1 && breakElementsArray.length > 0) {
       // Reconstruct with breaks
       const reconstructed: string[] = []
-      let textIndex = 0
 
       // Process in order - typically alternating text and breaks
       for (let i = 0; i < textElementsArray.length; i++) {
@@ -1259,19 +1240,6 @@ function processDocumentContent(documentData: any): DocxContentItem[] {
     // Process elements in their XML order
     Logger.debug(`Processing ${contentElements.length} elements in XML order`)
 
-    // Also look for text boxes within the XML that might not be captured as separate elements
-    // Text boxes can be embedded within paragraphs as w:pict/v:shape/v:textbox
-    const textBoxRegex = /<v:textbox[\s>][\s\S]*?<\/v:textbox>/g
-    let textBoxMatches = []
-    let tbMatch
-    while ((tbMatch = textBoxRegex.exec(bodyXml)) !== null) {
-      Logger.debug(`Found textbox at position ${tbMatch.index}`)
-      textBoxMatches.push({
-        position: tbMatch.index,
-        xml: tbMatch[0],
-      })
-    }
-
     contentElements.forEach((item, index) => {
       Logger.debug(
         `Processing element ${index}: type=${item.type}, position=${item.position}`,
@@ -1582,7 +1550,6 @@ export async function extractTextAndImagesWithChunksFromDocx(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
-  simpleExtraction: boolean = false,
 ): Promise<DocxProcessingResult> {
   Logger.info(`Starting DOCX processing for document: ${docid}`)
 
