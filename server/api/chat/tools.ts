@@ -1980,4 +1980,5 @@ export const agentTools: Record<string, AgentTool> = {
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
   fall_back: fallbackTool,
+  
 }

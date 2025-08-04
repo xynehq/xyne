@@ -15,9 +15,9 @@
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "scripts": {
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
+    "scripts": {
+      "generate": "drizzle-kit generate",
+      "migrate": "drizzle-kit migrate",
     "migrate:trace": "bun run migrations/migrate_tracejson_to_bytea.ts",
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
@@ -27,6 +27,7 @@
     "prepare": "cd .. && husky .husky"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.57.0",
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
     "@google/genai": "^1.9.0",
@@ -58,6 +59,7 @@
     "html-to-text": "^9.0.5",
     "i": "^0.3.7",
     "image-type": "^6.0.0",
+    "js-rouge": "^3.0.0",
     "jszip": "^3.10.1",
     "libreoffice": "^0.4.5",
     "llama3-tokenizer-js": "^1.2.0",

@@ -1,0 +1,544 @@
+[
+  {
+    "input": "Show me recent emails about the quarterly review from Ravi",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "quarterly review",
+        "intent": {
+          "from": [
+            "ravi"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Find all emails from HR about the appraisal policy",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "appraisal policy",
+        "intent": {
+          "from": [
+            "hr"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Search for marketing documents about campaign Q3 in Drive",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "docs",
+        "filter_query": "campaign Q3",
+        "intent": {
+          "from": [
+            "marketing@acmeinc.com"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Get me Slack messages from #team-updates mentioning budget approval",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "channel_name": "team-updates",
+        "filter_query": "budget approval",
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Find all emails from Jessica about onboarding process",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "onboarding process",
+        "intent": {
+          "from": [
+            "jessica"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Get emails about onboarding from hr@company.com",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "onboarding",
+        "intent": {
+          "from": [
+            "hr@company.com"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "What's the oldest PDF I have in my Google Drive?",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "pdf",
+        "intent": {},
+        "limit": 1,
+        "order_direction": "asc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Find documents that mention 'compliance report' in Google Drive",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "docs",
+        "filter_query": "compliance report",
+        "intent": {},
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Show me the email from saheb where prasad is in cc",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "intent": {
+          "from": [
+            "saheb"
+          ],
+          "cc": [
+            "prasad"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "And what about those received after July 1st?",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "intent": {},
+        "from": "2025-07-01T00:00:00.000Z",
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": "What items or documents were received after July 1st?",
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Find emails from anyone at juspay.in",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "intent": {
+          "from": [
+            "@juspay.in"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Search for PDFs related to tax filings in my Drive",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "pdf",
+        "filter_query": "tax filings",
+        "intent": {},
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Get emails where ankit was in bcc",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "intent": {
+          "bcc": [
+            "ankit"
+          ]
+        },
+        "limit": 10,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "Show top 5 documents about mergers",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "docs",
+        "filter_query": "mergers",
+        "intent": {},
+        "limit": 5,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  },
+  {
+    "input": "What’s the latest email I’ve received from prasad.nagrale@juspay.in?",
+    "expected": {
+      "queryRewrite": "",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "intent": {
+          "from": [
+            "prasad.nagrale@juspay.in"
+          ]
+        },
+        "limit": 1,
+        "order_direction": "desc"
+      },
+      "reasoning": null
+    },
+    "output": {
+      "queryRewrite": null,
+      "reasoning": null,
+      "arguments": {
+        "app": null,
+        "entity": null,
+        "filter_query": null,
+        "intent": {
+          "from": null,
+          "cc": null,
+          "bcc": null
+        },
+        "limit": null,
+        "order_direction": null,
+        "startTime": null,
+        "channel_name": null
+      }
+    },
+    "score": 20
+  }
+]

@@ -488,6 +488,7 @@ export const analyzeQueryMetadata = async (
 const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
+  console.log('--------------------------------------------------------------------------------------')
   console.log(text)
   try {
     text = text.trim()
@@ -613,6 +614,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // throw parseError
     }
   }
+  console.log("jsonVal", jsonVal)
   return jsonVal
 }
 

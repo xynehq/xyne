@@ -999,7 +999,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           }[] = []
           const MAX_CONSECUTIVE_TOOL_FAILURES = 2
 
-          while (iterationCount <= maxIterations && !answered) {
+          while (iterationCount <= maxIterations && !answered) { //loop start
             if (stream.closed) {
               loggerWithChild({ email: sub }).info(
                 "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
