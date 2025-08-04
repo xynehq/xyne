@@ -39,13 +39,144 @@ interface PptxProcessingResult {
 
 /**
  * Extract text content from PowerPoint text elements
- * Looks for <a:t> elements within text shapes
+ * Enhanced to handle paragraph structure, text runs, and line breaks like node-pptx-parser
  */
 function extractTextFromTextElements(element: any): string {
-  let text = ""
-  if (!element) return text
+  if (!element) return ""
 
-  // Helper function to recursively search for <a:t> elements
+  // First try the enhanced paragraph-aware extraction
+  const paragraphText = extractTextFromParagraphs(element)
+  if (paragraphText) return paragraphText
+
+  // Fallback to the original recursive approach for other structures
+  return extractTextRecursively(element)
+}
+
+/**
+ * Extract text with proper paragraph and line break handling
+ * Based on node-pptx-parser's approach but enhanced for our structure
+ */
+function extractTextFromParagraphs(element: any): string {
+  const paragraphs: string[] = []
+
+  // Look for text body elements that contain paragraphs
+  const searchForTextBodies = (obj: any): any[] => {
+    const textBodies: any[] = []
+    if (!obj || typeof obj !== "object") return textBodies
+
+    // Check for text body elements
+    if (obj["p:txBody"] || obj["a:txBody"]) {
+      const txBodies = obj["p:txBody"] || obj["a:txBody"]
+      const bodiesArray = Array.isArray(txBodies) ? txBodies : [txBodies]
+      textBodies.push(...bodiesArray)
+    }
+
+    // Recursively search for text bodies
+    for (const key in obj) {
+      if (typeof obj[key] === "object") {
+        if (Array.isArray(obj[key])) {
+          for (const item of obj[key]) {
+            textBodies.push(...searchForTextBodies(item))
+          }
+        } else {
+          textBodies.push(...searchForTextBodies(obj[key]))
+        }
+      }
+    }
+
+    return textBodies
+  }
+
+  const textBodies = searchForTextBodies(element)
+
+  for (const textBody of textBodies) {
+    if (textBody["a:p"]) {
+      const paragraphElements = Array.isArray(textBody["a:p"])
+        ? textBody["a:p"]
+        : [textBody["a:p"]]
+
+      for (const paragraph of paragraphElements) {
+        const paragraphText = extractTextFromSingleParagraph(paragraph)
+        if (paragraphText.trim()) {
+          paragraphs.push(paragraphText)
+        }
+      }
+    }
+  }
+
+  return paragraphs.length > 0 ? paragraphs.join("\n") : ""
+}
+
+/**
+ * Extract text from a single paragraph with proper run and line break handling
+ * Mirrors node-pptx-parser's paragraph processing logic
+ */
+function extractTextFromSingleParagraph(paragraph: any): string {
+  if (!paragraph) return ""
+
+  const textParts: string[] = []
+
+  // Process text runs (a:r elements)
+  if (paragraph["a:r"]) {
+    const runs = Array.isArray(paragraph["a:r"])
+      ? paragraph["a:r"]
+      : [paragraph["a:r"]]
+
+    for (const run of runs) {
+      if (run["a:t"]) {
+        let textContent = ""
+        if (typeof run["a:t"] === "string") {
+          textContent = run["a:t"]
+        } else if (Array.isArray(run["a:t"])) {
+          textContent = run["a:t"].join("")
+        } else if (run["a:t"]["#text"]) {
+          textContent = run["a:t"]["#text"]
+        } else if (typeof run["a:t"] === "object") {
+          // Handle case where a:t is an object with text content
+          textContent = String(run["a:t"])
+        }
+
+        if (textContent) {
+          textParts.push(textContent)
+        }
+      }
+    }
+  }
+
+  // Handle explicit line breaks (a:br elements)
+  if (paragraph["a:br"]) {
+    textParts.push("\n")
+  }
+
+  // Handle paragraph end markers (a:endParaRPr) - indicates paragraph break
+  if (paragraph["a:endParaRPr"]) {
+    // If we have no text content but have end paragraph marker, add line break
+    if (textParts.length === 0) {
+      textParts.push("\n")
+    }
+  }
+
+  // Handle direct text content in paragraph (fallback)
+  if (textParts.length === 0 && paragraph["a:t"]) {
+    let textContent = ""
+    if (typeof paragraph["a:t"] === "string") {
+      textContent = paragraph["a:t"]
+    } else if (paragraph["a:t"]["#text"]) {
+      textContent = paragraph["a:t"]["#text"]
+    }
+    if (textContent) {
+      textParts.push(textContent)
+    }
+  }
+
+  return textParts.join("")
+}
+
+/**
+ * Fallback recursive text extraction for non-standard structures
+ * This is the original approach, kept for compatibility
+ */
+function extractTextRecursively(element: any): string {
   const searchForText = (obj: any): string[] => {
     const textElements: string[] = []
     if (!obj || typeof obj !== "object") return textElements
@@ -55,6 +186,8 @@ function extractTextFromTextElements(element: any): string {
       const textContent = obj["a:t"]
       if (typeof textContent === "string") {
         textElements.push(textContent)
+      } else if (Array.isArray(textContent)) {
+        textElements.push(...textContent.map(String))
       } else if (textContent["#text"]) {
         textElements.push(textContent["#text"])
       }
