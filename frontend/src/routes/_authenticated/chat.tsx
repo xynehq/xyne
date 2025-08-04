@@ -112,6 +112,7 @@ import {
 } from "@/components/ui/tooltip"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
 import { Tip } from "@/components/Tooltip"
+import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
@@ -779,6 +780,7 @@ export const ChatPage = ({
 
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
+    setRetryIsStreaming(true)
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
@@ -844,6 +846,12 @@ export const ChatPage = ({
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
     setUserHasScrolled(!isAtBottom)
+  }
+
+  const scrollToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container || userHasScrolled) return
+    container.scrollTop = container.scrollHeight
   }
 
   useEffect(() => {
@@ -1131,6 +1139,22 @@ export const ChatPage = ({
                         attachments={message.attachments || []}
                       />
                     )}
+                    {/* Show follow-up questions only for the latest assistant message */}
+                    {message.messageRole === "assistant" &&
+                      !isStreaming &&
+                      !retryIsStreaming &&
+                      !isSharedChat &&
+                      message.externalId &&
+                      index === messages.length - 1 && (
+                        <FollowUpQuestions
+                          chatId={chatId}
+                          messageId={message.externalId}
+                          onQuestionClick={handleSend}
+                          isVisible={!isStreaming && !retryIsStreaming}
+                          isStreaming={isStreaming || retryIsStreaming}
+                          onQuestionsLoaded={scrollToBottom}
+                        />
+                      )}
                   </Fragment>
                 )
               })}

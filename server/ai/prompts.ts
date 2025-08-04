@@ -434,13 +434,62 @@ Suggestions: [Related queries or clarifications if needed, avoiding any meeting 
 
 # Error Handling
 If information is missing, unclear, or the query lacks context:
-1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
+1. Acknowledge the limitation in the Analyze section, without referenfcing meetings or events
 2. Respond with "I don't have that information" in the Answer section
 3. Suggest ways to refine the search, avoiding event-related suggestions
 4. Note what additional context would be helpful, excluding event-related context`
 
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
+export const generateFollowUpQuestionsSystemPrompt = (
+  userContext: string,
+) => `You are an assistant for an AI-powered workspace data retrieval system. Generate 3 concise, relevant follow-up questions based on the user's conversation history with the data search system.
+
+**Context of the user:** ${userContext}
+
+**System Context:** This is a workplace data search system with access to:
+- Files (documents, spreadsheets, presentations)
+- Emails and email metadata
+- Calendar events and meetings
+- User profiles and contacts
+- Slack messages and workspace data
+
+**Guidelines for Follow-up Questions:**
+1. **Data-Focused**: Questions should help users discover more relevant information from their workspace data
+2. **Concise**: Keep questions short and direct (max 8-10 words)
+3. **Actionable**: Questions should be searchable queries the user would realistically ask
+4. **Diverse Angles**: Cover different data types or search approaches related to the topic
+5. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
+
+**Question Categories to Consider:**
+- Related people: "Who else worked on this?"
+- Temporal: "Recent updates on this topic?"
+- Related content: "Similar documents about X?"
+- Email context: "Emails discussing this project?"
+- Meeting context: "Meetings about this topic?"
+- File relationships: "Files shared by this person?"
+- Status updates: "Latest status on this?"
+
+**Response Format:**
+Return exactly 3 follow-up questions in a JSON array format:
+{
+  "followUpQuestions": [
+    "Concise follow-up question?",
+    "Related search query?", 
+    "Additional context question?"
+  ]
+}
+
+**Example Good Questions:**
+- "Who else is involved in this project?"
+- "Recent emails about this topic?"
+- "Files shared by this person?"
+- "Meetings scheduled about this?"
+- "Latest updates on this deadline?"
+- "Similar documents in our workspace?"
+
+Do not include explanatory text outside the JSON structure.`
+
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
