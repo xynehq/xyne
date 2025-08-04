@@ -269,13 +269,23 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
-    streamState.thinking += event.data
-    // LOG 3: Raw reasoning data from backend stream
-    console.log("🎯 [useChatStream] Reasoning event data:", {
-      eventData: event.data,
-      accumulatedThinking: streamState.thinking,
-      streamKey,
-    })
+    
+    // Try to parse individual reasoning step
+    try {
+      const stepData = JSON.parse(event.data)
+      
+      // If this is a valid reasoning step, add it as a new line
+      if (stepData.step || stepData.text) {
+        streamState.thinking += event.data + '\n'
+      } else {
+        // Fallback to simple text accumulation
+        streamState.thinking += event.data
+      }
+    } catch (e) {
+      // Not JSON, just add as text
+      streamState.thinking += event.data
+    }
+    
     notifySubscribers(streamKey)
   })
 
@@ -800,13 +810,28 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        streamState.thinking += event.data
         // LOG 4: Raw reasoning data during retry
         console.log("🔄 [useChatStream-retry] Reasoning event data:", {
           eventData: event.data,
-          accumulatedThinking: streamState.thinking,
           messageId,
         })
+        
+        // Try to parse individual reasoning step
+        try {
+          const stepData = JSON.parse(event.data)
+          
+          // If this is a valid reasoning step, add it as a new line
+          if (stepData.step || stepData.text) {
+            streamState.thinking += event.data + '\n'
+          } else {
+            // Fallback to simple text accumulation
+            streamState.thinking += event.data
+          }
+        } catch (e) {
+          // Not JSON, just add as text
+          streamState.thinking += event.data
+        }
+        
         patchReasoningContent(event.data)
       })
 
