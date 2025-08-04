@@ -8,7 +8,6 @@ import path from "path"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 import { chunkTextByParagraph } from "./chunks"
-import { text } from "stream/consumers"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "docxChunks",
@@ -753,15 +752,18 @@ function hasCodeFormatting(paragraph: any): boolean {
   const borders = pPr["w:pBdr"]
   if (borders) return true
 
-  // Check if all runs have monospace font
+  // Check if runs have monospace font
   const runs = paragraph["w:r"] || []
   const runsArray = Array.isArray(runs) ? runs : [runs]
   if (runsArray.length > 0) {
-    const allMonospace = runsArray.every((run) => {
-      if (!run) return true
-      return isCodeFormatting(run)
-    })
-    if (allMonospace) return true
+    // Filter out null/undefined runs and check if any valid runs have monospace formatting
+    const validRuns = runsArray.filter(
+      (run) => run !== null && run !== undefined,
+    )
+    if (validRuns.length > 0) {
+      const hasMonospaceRun = validRuns.some((run) => isCodeFormatting(run))
+      if (hasMonospaceRun) return true
+    }
   }
 
   return false
@@ -1126,6 +1128,21 @@ function readInstrText(element: any, currentInstrText: string[]): string {
 }
 
 /**
+ * Extract text from a text element, handling both string and object formats
+ */
+function extractTextFromElement(textElement: any): string {
+  if (!textElement) return ""
+
+  if (typeof textElement === "string") {
+    return textElement
+  } else if (textElement["#text"]) {
+    return textElement["#text"]
+  }
+
+  return ""
+}
+
+/**
  * Extract complete text from paragraph including embedded text boxes in order
  */
 function extractCompleteTextFromParagraph(
@@ -1344,13 +1361,7 @@ function extractTextFromParagraph(
     for (const textElement of textElementsArray) {
       if (!textElement) continue
 
-      let runText = ""
-
-      if (typeof textElement === "string") {
-        runText = textElement
-      } else if (textElement["#text"]) {
-        runText = textElement["#text"]
-      }
+      const runText = extractTextFromElement(textElement)
 
       if (runText) {
         runParts.push(runText)
@@ -1397,12 +1408,7 @@ function extractTextFromParagraph(
         const textElement = textElementsArray[i]
         if (!textElement) continue
 
-        let runText = ""
-        if (typeof textElement === "string") {
-          runText = textElement
-        } else if (textElement["#text"]) {
-          runText = textElement["#text"]
-        }
+        const runText = extractTextFromElement(textElement)
 
         if (runText) {
           reconstructed.push(runText)
@@ -2407,6 +2413,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
+  logWarnings: boolean = false,
 ): Promise<DocxProcessingResult> {
   Logger.info(`Starting DOCX processing for document: ${docid}`)
 
@@ -2736,7 +2743,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
     )
 
     // Log processing summary with warnings
-    warningCollector.logSummary()
+    if (logWarnings) {
+      warningCollector.logSummary()
+    }
 
     return {
       text_chunks,
