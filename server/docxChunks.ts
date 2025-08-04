@@ -8,10 +8,512 @@ import path from "path"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 import { chunkTextByParagraph } from "./chunks"
+import { text } from "stream/consumers"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "docxChunks",
 })
+
+// Warning system for comprehensive error reporting
+interface ProcessingWarning {
+  type:
+    | "unsupported_element"
+    | "symbol_conversion"
+    | "field_processing"
+    | "table_structure"
+    | "general"
+  message: string
+  element?: string
+  context?: any
+}
+
+class WarningCollector {
+  private warnings: ProcessingWarning[] = []
+  private stats = {
+    elementsProcessed: 0,
+    elementsSkipped: 0,
+    symbolsConverted: 0,
+    fieldsProcessed: 0,
+    tablesProcessed: 0,
+    unsupportedElements: new Set<string>(),
+  }
+
+  addWarning(warning: ProcessingWarning) {
+    this.warnings.push(warning)
+    if (warning.type === "unsupported_element" && warning.element) {
+      this.stats.unsupportedElements.add(warning.element)
+    }
+  }
+
+  incrementStat(stat: keyof typeof this.stats) {
+    if (typeof this.stats[stat] === "number") {
+      ;(this.stats[stat] as number)++
+    }
+  }
+
+  getWarnings(): ProcessingWarning[] {
+    return this.warnings
+  }
+
+  getStats() {
+    return {
+      ...this.stats,
+      unsupportedElements: Array.from(this.stats.unsupportedElements),
+    }
+  }
+
+  logSummary() {
+    const stats = this.getStats()
+    Logger.info("DOCX Processing Summary:", {
+      elementsProcessed: stats.elementsProcessed,
+      elementsSkipped: stats.elementsSkipped,
+      symbolsConverted: stats.symbolsConverted,
+      fieldsProcessed: stats.fieldsProcessed,
+      tablesProcessed: stats.tablesProcessed,
+      warningsCount: this.warnings.length,
+      unsupportedElements: stats.unsupportedElements,
+    })
+
+    if (this.warnings.length > 0) {
+      Logger.warn(`Found ${this.warnings.length} processing warnings:`)
+      this.warnings.forEach((warning, index) => {
+        Logger.warn(
+          `Warning ${index + 1}: [${warning.type}] ${warning.message}`,
+          warning.context,
+        )
+      })
+    }
+  }
+}
+
+// Symbol character mapping for special fonts
+const SYMBOL_MAPPINGS: { [font: string]: { [char: string]: string } } = {
+  Wingdings: {
+    "21": "☎", // Phone
+    "22": "✉", // Envelope
+    "23": "📁", // Folder
+    "24": "📂", // Open folder
+    "25": "🗂", // File folder
+    "26": "⌚", // Watch
+    "27": "⏰", // Alarm clock
+    "28": "📞", // Telephone receiver
+    "29": "📠", // Fax
+    "2A": "💻", // Computer
+    "2B": "🖱", // Computer mouse
+    "2C": "⌨", // Keyboard
+    "2D": "🖨", // Printer
+    "2E": "📧", // Email
+    "2F": "🌐", // Globe
+    "30": "🔒", // Lock
+    "31": "🔓", // Unlock
+    "32": "🔑", // Key
+    "33": "✂", // Scissors
+    "34": "✏", // Pencil
+    "35": "✒", // Pen
+    "36": "📝", // Memo
+    "37": "📋", // Clipboard
+    "38": "📌", // Pushpin
+    "39": "📎", // Paperclip
+    "3A": "🔗", // Link
+    "3B": "⚡", // Lightning
+    "3C": "☀", // Sun
+    "3D": "☁", // Cloud
+    "3E": "☂", // Umbrella
+    "3F": "❄", // Snowflake
+    "40": "⭐", // Star
+    "41": "🌙", // Moon
+    "42": "🔥", // Fire
+    "43": "💧", // Water drop
+    "44": "🌍", // Earth
+    "45": "🌱", // Seedling
+    "46": "🌳", // Tree
+    "47": "🌸", // Cherry blossom
+    "48": "🌺", // Hibiscus
+    "49": "🍀", // Four leaf clover
+    "4A": "🐝", // Bee
+    "4B": "🦋", // Butterfly
+    "4C": "🐛", // Bug
+    "4D": "🐾", // Paw prints
+    "4E": "👤", // Person
+    "4F": "👥", // People
+    "50": "👨", // Man
+    "51": "👩", // Woman
+    "52": "👶", // Baby
+    "53": "👴", // Old man
+    "54": "👵", // Old woman
+    "55": "💼", // Briefcase
+    "56": "🎓", // Graduation cap
+    "57": "🏠", // House
+    "58": "🏢", // Office building
+    "59": "🏥", // Hospital
+    "5A": "🏫", // School
+    "5B": "🏪", // Store
+    "5C": "🚗", // Car
+    "5D": "✈", // Airplane
+    "5E": "🚢", // Ship
+    "5F": "🚂", // Train
+    "60": "🚲", // Bicycle
+    "61": "⚽", // Soccer ball
+    "62": "🏀", // Basketball
+    "63": "🎾", // Tennis
+    "64": "⚾", // Baseball
+    "65": "🏈", // Football
+    "66": "🎯", // Target
+    "67": "🎮", // Video game
+    "68": "🎲", // Dice
+    "69": "🃏", // Joker
+    "6A": "🎭", // Theater masks
+    "6B": "🎨", // Artist palette
+    "6C": "🎵", // Musical note
+    "6D": "🎶", // Musical notes
+    "6E": "📻", // Radio
+    "6F": "📺", // Television
+    "70": "📷", // Camera
+    "71": "📹", // Video camera
+    "72": "💿", // CD
+    "73": "💾", // Floppy disk
+    "74": "💽", // Minidisc
+    "75": "📀", // DVD
+    "76": "🔊", // Speaker
+    "77": "🔇", // Muted speaker
+    "78": "📢", // Megaphone
+    "79": "📣", // Cheering megaphone
+    "7A": "🔔", // Bell
+    "7B": "🔕", // Bell with slash
+    "7C": "📯", // Horn
+    "7D": "🎺", // Trumpet
+    "7E": "🎸", // Guitar
+    "7F": "🎹", // Piano
+    "80": "🥁", // Drum
+    "81": "🎤", // Microphone
+    "82": "🎧", // Headphones
+    "83": "📱", // Mobile phone
+    "84": "☎", // Telephone
+    "85": "📞", // Telephone receiver
+    "86": "📟", // Pager
+    "87": "📠", // Fax machine
+    "88": "💻", // Laptop computer
+    "89": "🖥", // Desktop computer
+    "8A": "⌨", // Keyboard
+    "8B": "🖱", // Computer mouse
+    "8C": "🖨", // Printer
+    "8D": "💾", // Floppy disk
+    "8E": "💿", // Optical disc
+    "8F": "📀", // DVD
+    "90": "💽", // Minidisc
+    "91": "💾", // Floppy disk
+    "92": "🗃", // Card file box
+    "93": "🗂", // Card index dividers
+    "94": "📋", // Clipboard
+    "95": "📊", // Bar chart
+    "96": "📈", // Chart increasing
+    "97": "📉", // Chart decreasing
+    "98": "📇", // Card index
+    "99": "🗃", // Card file box
+    "9A": "🗄", // File cabinet
+    "9B": "📁", // File folder
+    "9C": "📂", // Open file folder
+    "9D": "🗂", // Card index dividers
+    "9E": "📑", // Bookmark tabs
+    "9F": "📄", // Page facing up
+    A0: "📃", // Page with curl
+    A1: "📜", // Scroll
+    A2: "📰", // Newspaper
+    A3: "🗞", // Rolled-up newspaper
+    A4: "📓", // Notebook
+    A5: "📔", // Notebook with decorative cover
+    A6: "📒", // Ledger
+    A7: "📕", // Closed book
+    A8: "📗", // Green book
+    A9: "📘", // Blue book
+    AA: "📙", // Orange book
+    AB: "📚", // Books
+    AC: "📖", // Open book
+    AD: "🔖", // Bookmark
+    AE: "🏷", // Label
+    AF: "💰", // Money bag
+    B0: "💴", // Yen banknote
+    B1: "💵", // Dollar banknote
+    B2: "💶", // Euro banknote
+    B3: "💷", // Pound banknote
+    B4: "💸", // Money with wings
+    B5: "💳", // Credit card
+    B6: "💎", // Gem stone
+    B7: "⚖", // Balance scale
+    B8: "🔧", // Wrench
+    B9: "🔨", // Hammer
+    BA: "⚒", // Hammer and pick
+    BB: "🛠", // Hammer and wrench
+    BC: "⛏", // Pick
+    BD: "🔩", // Nut and bolt
+    BE: "⚙", // Gear
+    BF: "⚗", // Alembic
+    C0: "🔬", // Microscope
+    C1: "🔭", // Telescope
+    C2: "📡", // Satellite antenna
+    C3: "💉", // Syringe
+    C4: "💊", // Pill
+    C5: "🩹", // Adhesive bandage
+    C6: "🩺", // Stethoscope
+    C7: "🔬", // Microscope
+    C8: "🧪", // Test tube
+    C9: "🧬", // DNA
+    CA: "🦠", // Microbe
+    CB: "💀", // Skull
+    CC: "☠", // Skull and crossbones
+    CD: "👻", // Ghost
+    CE: "👽", // Alien
+    CF: "🤖", // Robot
+    D0: "🎃", // Jack-o-lantern
+    D1: "😈", // Smiling face with horns
+    D2: "👿", // Angry face with horns
+    D3: "👹", // Ogre
+    D4: "👺", // Goblin
+    D5: "💩", // Pile of poo
+    D6: "🤡", // Clown face
+    D7: "👻", // Ghost
+    D8: "💀", // Skull
+    D9: "☠", // Skull and crossbones
+    DA: "👽", // Alien
+    DB: "🤖", // Robot
+    DC: "🎭", // Performing arts
+    DD: "🎨", // Artist palette
+    DE: "🎪", // Circus tent
+    DF: "🎢", // Roller coaster
+    E0: "🎡", // Ferris wheel
+    E1: "🎠", // Carousel horse
+    E2: "🎪", // Circus tent
+    E3: "🎭", // Performing arts
+    E4: "🎨", // Artist palette
+    E5: "🎬", // Clapper board
+    E6: "🎤", // Microphone
+    E7: "🎧", // Headphones
+    E8: "🎼", // Musical score
+    E9: "🎵", // Musical note
+    EA: "🎶", // Musical notes
+    EB: "🎹", // Musical keyboard
+    EC: "🥁", // Drum
+    ED: "🎷", // Saxophone
+    EE: "🎺", // Trumpet
+    EF: "🎸", // Guitar
+    F0: "🎻", // Violin
+    F1: "🎲", // Game die
+    F2: "🎯", // Direct hit
+    F3: "🎳", // Bowling
+    F4: "🎮", // Video game
+    F5: "🕹", // Joystick
+    F6: "🎰", // Slot machine
+    F7: "🃏", // Playing card black joker
+    F8: "🀄", // Mahjong red dragon
+    F9: "🎴", // Flower playing cards
+    FA: "🎊", // Confetti ball
+    FB: "🎉", // Party popper
+    FC: "🎈", // Balloon
+    FD: "🎁", // Wrapped gift
+    FE: "🎀", // Ribbon
+    FF: "🎗", // Reminder ribbon
+  },
+  Symbol: {
+    "21": "!", // Exclamation mark
+    "22": "∀", // For all
+    "23": "#", // Number sign
+    "24": "∃", // There exists
+    "25": "%", // Percent sign
+    "26": "&", // Ampersand
+    "27": "∋", // Such that
+    "28": "(", // Left parenthesis
+    "29": ")", // Right parenthesis
+    "2A": "∗", // Asterisk operator
+    "2B": "+", // Plus sign
+    "2C": ",", // Comma
+    "2D": "−", // Minus sign
+    "2E": ".", // Full stop
+    "2F": "/", // Solidus
+    "30": "0", // Digit zero
+    "31": "1", // Digit one
+    "32": "2", // Digit two
+    "33": "3", // Digit three
+    "34": "4", // Digit four
+    "35": "5", // Digit five
+    "36": "6", // Digit six
+    "37": "7", // Digit seven
+    "38": "8", // Digit eight
+    "39": "9", // Digit nine
+    "3A": ":", // Colon
+    "3B": ";", // Semicolon
+    "3C": "<", // Less-than sign
+    "3D": "=", // Equals sign
+    "3E": ">", // Greater-than sign
+    "3F": "?", // Question mark
+    "40": "≅", // Approximately equal to
+    "41": "Α", // Greek capital letter alpha
+    "42": "Β", // Greek capital letter beta
+    "43": "Χ", // Greek capital letter chi
+    "44": "Δ", // Greek capital letter delta
+    "45": "Ε", // Greek capital letter epsilon
+    "46": "Φ", // Greek capital letter phi
+    "47": "Γ", // Greek capital letter gamma
+    "48": "Η", // Greek capital letter eta
+    "49": "Ι", // Greek capital letter iota
+    "4A": "ϑ", // Greek theta symbol
+    "4B": "Κ", // Greek capital letter kappa
+    "4C": "Λ", // Greek capital letter lambda
+    "4D": "Μ", // Greek capital letter mu
+    "4E": "Ν", // Greek capital letter nu
+    "4F": "Ο", // Greek capital letter omicron
+    "50": "Π", // Greek capital letter pi
+    "51": "Θ", // Greek capital letter theta
+    "52": "Ρ", // Greek capital letter rho
+    "53": "Σ", // Greek capital letter sigma
+    "54": "Τ", // Greek capital letter tau
+    "55": "Υ", // Greek capital letter upsilon
+    "56": "ς", // Greek small letter final sigma
+    "57": "Ω", // Greek capital letter omega
+    "58": "Ξ", // Greek capital letter xi
+    "59": "Ψ", // Greek capital letter psi
+    "5A": "Ζ", // Greek capital letter zeta
+    "5B": "[", // Left square bracket
+    "5C": "∴", // Therefore
+    "5D": "]", // Right square bracket
+    "5E": "⊥", // Up tack
+    "5F": "_", // Low line
+    "60": "‾", // Overline
+    "61": "α", // Greek small letter alpha
+    "62": "β", // Greek small letter beta
+    "63": "χ", // Greek small letter chi
+    "64": "δ", // Greek small letter delta
+    "65": "ε", // Greek small letter epsilon
+    "66": "φ", // Greek small letter phi
+    "67": "γ", // Greek small letter gamma
+    "68": "η", // Greek small letter eta
+    "69": "ι", // Greek small letter iota
+    "6A": "ϕ", // Greek phi symbol
+    "6B": "κ", // Greek small letter kappa
+    "6C": "λ", // Greek small letter lambda
+    "6D": "μ", // Greek small letter mu
+    "6E": "ν", // Greek small letter nu
+    "6F": "ο", // Greek small letter omicron
+    "70": "π", // Greek small letter pi
+    "71": "θ", // Greek small letter theta
+    "72": "ρ", // Greek small letter rho
+    "73": "σ", // Greek small letter sigma
+    "74": "τ", // Greek small letter tau
+    "75": "υ", // Greek small letter upsilon
+    "76": "ϖ", // Greek pi symbol
+    "77": "ω", // Greek small letter omega
+    "78": "ξ", // Greek small letter xi
+    "79": "ψ", // Greek small letter psi
+    "7A": "ζ", // Greek small letter zeta
+    "7B": "{", // Left curly bracket
+    "7C": "|", // Vertical line
+    "7D": "}", // Right curly bracket
+    "7E": "∼", // Tilde operator
+    A0: "€", // Euro sign
+    A1: "ϒ", // Greek upsilon with hook symbol
+    A2: "′", // Prime
+    A3: "≤", // Less-than or equal to
+    A4: "⁄", // Fraction slash
+    A5: "∞", // Infinity
+    A6: "ƒ", // Latin small letter f with hook
+    A7: "♣", // Black club suit
+    A8: "♦", // Black diamond suit
+    A9: "♥", // Black heart suit
+    AA: "♠", // Black spade suit
+    AB: "↔", // Left right arrow
+    AC: "←", // Leftwards arrow
+    AD: "↑", // Upwards arrow
+    AE: "→", // Rightwards arrow
+    AF: "↓", // Downwards arrow
+    B0: "°", // Degree sign
+    B1: "±", // Plus-minus sign
+    B2: "″", // Double prime
+    B3: "≥", // Greater-than or equal to
+    B4: "×", // Multiplication sign
+    B5: "∝", // Proportional to
+    B6: "∂", // Partial differential
+    B7: "•", // Bullet
+    B8: "÷", // Division sign
+    B9: "≠", // Not equal to
+    BA: "≡", // Identical to
+    BB: "≈", // Almost equal to
+    BC: "…", // Horizontal ellipsis
+    BD: "⏐", // Vertical line extension
+    BE: "⏐", // Vertical line extension
+    BF: "↵", // Downwards arrow with corner leftwards
+    C0: "ℵ", // Alef symbol
+    C1: "ℑ", // Black-letter capital I
+    C2: "ℜ", // Black-letter capital R
+    C3: "℘", // Weierstrass elliptic function
+    C4: "⊗", // Circled times
+    C5: "⊕", // Circled plus
+    C6: "∅", // Empty set
+    C7: "∩", // Intersection
+    C8: "∪", // Union
+    C9: "⊃", // Superset of
+    CA: "⊇", // Superset of or equal to
+    CB: "⊄", // Not a subset of
+    CC: "⊂", // Subset of
+    CD: "⊆", // Subset of or equal to
+    CE: "∈", // Element of
+    CF: "∉", // Not an element of
+    D0: "∠", // Angle
+    D1: "∇", // Nabla
+    D2: "®", // Registered sign
+    D3: "©", // Copyright sign
+    D4: "™", // Trade mark sign
+    D5: "∏", // N-ary product
+    D6: "√", // Square root
+    D7: "⋅", // Dot operator
+    D8: "¬", // Not sign
+    D9: "∧", // Logical and
+    DA: "∨", // Logical or
+    DB: "⇔", // Left right double arrow
+    DC: "⇐", // Leftwards double arrow
+    DD: "⇑", // Upwards double arrow
+    DE: "⇒", // Rightwards double arrow
+    DF: "⇓", // Downwards double arrow
+    E0: "◊", // Lozenge
+    E1: "〈", // Left-pointing angle bracket
+    E2: "®", // Registered sign
+    E3: "©", // Copyright sign
+    E4: "™", // Trade mark sign
+    E5: "∑", // N-ary summation
+    E6: "⎛", // Left parenthesis upper hook
+    E7: "⎜", // Left parenthesis extension
+    E8: "⎝", // Left parenthesis lower hook
+    E9: "⎡", // Left square bracket upper corner
+    EA: "⎢", // Left square bracket extension
+    EB: "⎣", // Left square bracket lower corner
+    EC: "⎧", // Left curly bracket upper hook
+    ED: "⎨", // Left curly bracket middle piece
+    EE: "⎩", // Left curly bracket lower hook
+    EF: "⎪", // Curly bracket extension
+    F0: "⎫", // Right curly bracket upper hook
+    F1: "⎬", // Right curly bracket middle piece
+    F2: "⎭", // Right curly bracket lower hook
+    F3: "⎤", // Right square bracket upper corner
+    F4: "⎥", // Right square bracket extension
+    F5: "⎦", // Right square bracket lower corner
+    F6: "⎞", // Right parenthesis upper hook
+    F7: "⎟", // Right parenthesis extension
+    F8: "⎠", // Right parenthesis lower hook
+    F9: "〉", // Right-pointing angle bracket
+    FA: "∫", // Integral
+    FB: "⌠", // Top half integral
+    FC: "⌡", // Bottom half integral
+    FD: "⎮", // Integral extension
+    FE: "⎯", // Horizontal line extension
+    FF: "⎰", // Upper right or lower left integral
+  },
+}
+
+// Field character stack for form field processing
+interface ComplexField {
+  type: "begin" | "hyperlink" | "checkbox" | "unknown"
+  fldChar?: any
+  options?: any
+  checked?: boolean
+}
 
 // Utility function to clean text consistent with PDF processing
 const cleanText = (str: string): string => {
@@ -294,6 +796,336 @@ function isCodeFormatting(run: any): boolean {
 }
 
 /**
+ * Convert symbol characters using font-specific mappings
+ */
+function readSymbol(element: any, warningCollector?: WarningCollector): string {
+  const font = element.attributes?.["@_w:font"] || element["@_w:font"]
+  const char = element.attributes?.["@_w:char"] || element["@_w:char"]
+
+  if (!font || !char) {
+    warningCollector?.addWarning({
+      type: "symbol_conversion",
+      message: "Symbol element missing font or char attribute",
+      context: { element },
+    })
+    return ""
+  }
+
+  // Normalize character code - remove 'F0' prefix if present
+  let normalizedChar = char.toUpperCase()
+  if (normalizedChar.startsWith("F0") && normalizedChar.length === 4) {
+    normalizedChar = normalizedChar.substring(2)
+  }
+
+  // Look up in symbol mappings
+  const fontMappings = SYMBOL_MAPPINGS[font]
+  if (fontMappings && fontMappings[normalizedChar]) {
+    warningCollector?.incrementStat("symbolsConverted")
+    return fontMappings[normalizedChar]
+  }
+
+  // Try alternative font names
+  const alternativeFonts = ["Wingdings", "Symbol"]
+  for (const altFont of alternativeFonts) {
+    if (
+      altFont !== font &&
+      SYMBOL_MAPPINGS[altFont] &&
+      SYMBOL_MAPPINGS[altFont][normalizedChar]
+    ) {
+      warningCollector?.incrementStat("symbolsConverted")
+      return SYMBOL_MAPPINGS[altFont][normalizedChar]
+    }
+  }
+
+  // Fallback: try to convert hex to Unicode
+  try {
+    const codePoint = parseInt(normalizedChar, 16)
+    if (codePoint > 0 && codePoint <= 0x10ffff) {
+      const unicodeChar = String.fromCodePoint(codePoint)
+      warningCollector?.incrementStat("symbolsConverted")
+      return unicodeChar
+    }
+  } catch (error) {
+    // Ignore conversion errors
+  }
+
+  warningCollector?.addWarning({
+    type: "symbol_conversion",
+    message: `Unsupported symbol character: char ${char} in font ${font}`,
+    context: { font, char, normalizedChar },
+  })
+
+  return `[SYMBOL:${font}:${char}]`
+}
+
+/**
+ * Process field characters for form fields and complex fields
+ */
+function readFldChar(
+  element: any,
+  complexFieldStack: ComplexField[],
+  currentInstrText: string[],
+  warningCollector?: WarningCollector,
+): string {
+  const type =
+    element.attributes?.["@_w:fldCharType"] || element["@_w:fldCharType"]
+
+  if (type === "begin") {
+    complexFieldStack.push({ type: "begin", fldChar: element })
+    currentInstrText.length = 0 // Clear instruction text
+    warningCollector?.incrementStat("fieldsProcessed")
+  } else if (type === "end") {
+    const complexFieldEnd = complexFieldStack.pop()
+    if (complexFieldEnd?.type === "begin") {
+      const parsedField = parseInstrText(
+        currentInstrText.join(""),
+        complexFieldEnd.fldChar || {},
+      )
+      if (parsedField.type === "checkbox") {
+        return `[CHECKBOX:${parsedField.checked ? "CHECKED" : "UNCHECKED"}]`
+      }
+    }
+    warningCollector?.incrementStat("fieldsProcessed")
+  } else if (type === "separate") {
+    const complexFieldSeparate = complexFieldStack.pop()
+    if (complexFieldSeparate?.type === "begin") {
+      const parsedField = parseInstrText(
+        currentInstrText.join(""),
+        complexFieldSeparate.fldChar || {},
+      )
+      complexFieldStack.push(parsedField)
+    }
+  }
+
+  return ""
+}
+
+/**
+ * Parse instruction text for field types
+ */
+function parseInstrText(instrText: string, fldChar: any): ComplexField {
+  // External hyperlink
+  const externalLinkResult = /\s*HYPERLINK\s+"([^"]*)"/.exec(instrText)
+  if (externalLinkResult) {
+    return { type: "hyperlink", options: { href: externalLinkResult[1] } }
+  }
+
+  // Internal hyperlink
+  const internalLinkResult = /\s*HYPERLINK\s+\\l\s+"([^"]*)"/.exec(instrText)
+  if (internalLinkResult) {
+    return { type: "hyperlink", options: { anchor: internalLinkResult[1] } }
+  }
+
+  // Form checkbox
+  const checkboxResult = /\s*FORMCHECKBOX\s*/.exec(instrText)
+  if (checkboxResult) {
+    const checkboxElement = fldChar?.["w:ffData"]?.["w:checkBox"]
+    if (checkboxElement) {
+      const checkedElement = checkboxElement["w:checked"]
+      const defaultElement = checkboxElement["w:default"]
+
+      let checked = false
+      if (checkedElement) {
+        const val =
+          checkedElement.attributes?.["@_w:val"] || checkedElement["@_w:val"]
+        checked = val !== "false" && val !== "0"
+      } else if (defaultElement) {
+        const val =
+          defaultElement.attributes?.["@_w:val"] || defaultElement["@_w:val"]
+        checked = val !== "false" && val !== "0"
+      }
+
+      return { type: "checkbox", checked }
+    }
+    return { type: "checkbox", checked: false }
+  }
+
+  // Form text field
+  const textFieldResult = /\s*FORMTEXT\s*/.exec(instrText)
+  if (textFieldResult) {
+    return { type: "unknown", options: { fieldType: "text" } }
+  }
+
+  // Form dropdown
+  const dropdownResult = /\s*FORMDROPDOWN\s*/.exec(instrText)
+  if (dropdownResult) {
+    return { type: "unknown", options: { fieldType: "dropdown" } }
+  }
+
+  return { type: "unknown" }
+}
+
+/**
+ * Enhanced table processing with cell merging detection
+ */
+function extractTextFromTableWithMerging(
+  table: any,
+  documentData?: any,
+  warningCollector?: WarningCollector,
+): string {
+  if (!table) return ""
+
+  const rows = table["w:tr"] || []
+  const rowsArray = Array.isArray(rows) ? rows : [rows]
+
+  // First pass: collect all cells with their properties
+  const tableData: Array<
+    Array<{
+      content: string
+      colSpan: number
+      vMerge: boolean | null
+      rowSpan?: number
+    }>
+  > = []
+
+  for (const row of rowsArray) {
+    const cells = row["w:tc"] || []
+    const cellsArray = Array.isArray(cells) ? cells : [cells]
+
+    const rowData = cellsArray.map((cell) => {
+      const paragraphs = cell["w:p"] || []
+      const paragraphsArray = Array.isArray(paragraphs)
+        ? paragraphs
+        : [paragraphs]
+
+      const content = paragraphsArray
+        .map((p) => extractTextFromParagraph(p, documentData))
+        .join("\n")
+
+      // Get cell properties
+      const properties = cell["w:tcPr"] || {}
+      const gridSpan =
+        properties["w:gridSpan"]?.["@_w:val"] ||
+        properties["w:gridSpan"]?.attributes?.["@_w:val"]
+      const colSpan = gridSpan ? parseInt(gridSpan, 10) : 1
+
+      // Get vertical merge information
+      const vMergeElement = properties["w:vMerge"]
+      let vMerge: boolean | null = null
+      if (vMergeElement) {
+        const val =
+          vMergeElement.attributes?.["@_w:val"] || vMergeElement["@_w:val"]
+        vMerge = val === "continue" || !val // No val means restart, continue means continuation
+      }
+
+      return { content, colSpan, vMerge }
+    })
+
+    tableData.push(rowData)
+  }
+
+  // Second pass: calculate row spans
+  const processedTable = calculateRowSpans(tableData, warningCollector)
+
+  // Third pass: generate output
+  const result =
+    processedTable
+      .map((row) => {
+        return row
+          .filter((cell) => cell.rowSpan !== 0) // Filter out continuation cells
+          .map((cell) => cell.content)
+          .join("\t") // Tab-separated cells
+      })
+      .join("\n") + "\n\n" // Newline-separated rows with extra spacing
+
+  warningCollector?.incrementStat("tablesProcessed")
+  return result
+}
+
+/**
+ * Calculate row spans for merged table cells
+ */
+function calculateRowSpans(
+  tableData: Array<
+    Array<{
+      content: string
+      colSpan: number
+      vMerge: boolean | null
+      rowSpan?: number
+    }>
+  >,
+  warningCollector?: WarningCollector,
+): Array<
+  Array<{
+    content: string
+    colSpan: number
+    vMerge: boolean | null
+    rowSpan: number
+  }>
+> {
+  // Track column merge state
+  const columnMergeState: {
+    [colIndex: number]: { rowSpan: number; sourceRow: number }
+  } = {}
+
+  const processedTable = tableData.map((row, rowIndex) => {
+    let colIndex = 0
+
+    return row.map((cell) => {
+      // Skip columns that are part of ongoing merges
+      while (
+        columnMergeState[colIndex] &&
+        columnMergeState[colIndex].rowSpan > 0
+      ) {
+        columnMergeState[colIndex].rowSpan--
+        if (columnMergeState[colIndex].rowSpan === 0) {
+          delete columnMergeState[colIndex]
+        }
+        colIndex++
+      }
+
+      const currentColIndex = colIndex
+      let rowSpan = 1
+
+      if (cell.vMerge === true) {
+        // This is a continuation cell - it should be hidden
+        rowSpan = 0
+      } else if (cell.vMerge === false || cell.vMerge === null) {
+        // This starts a new merge or is a standalone cell
+        // Look ahead to count merged cells
+        let lookAheadRow = rowIndex + 1
+        while (lookAheadRow < tableData.length) {
+          const nextRowCell = tableData[lookAheadRow][currentColIndex]
+          if (nextRowCell && nextRowCell.vMerge === true) {
+            rowSpan++
+            lookAheadRow++
+          } else {
+            break
+          }
+        }
+
+        // Set up merge state for this column
+        if (rowSpan > 1) {
+          columnMergeState[currentColIndex] = {
+            rowSpan: rowSpan - 1,
+            sourceRow: rowIndex,
+          }
+        }
+      }
+
+      // Advance column index by the column span
+      colIndex += cell.colSpan
+
+      return {
+        ...cell,
+        rowSpan,
+      }
+    })
+  })
+
+  return processedTable
+}
+
+/**
+ * Process instruction text elements for field processing
+ */
+function readInstrText(element: any, currentInstrText: string[]): string {
+  const text = element.text?.() || element["#text"] || ""
+  currentInstrText.push(text)
+  return ""
+}
+
+/**
  * Extract complete text from paragraph including embedded text boxes in order
  */
 function extractCompleteTextFromParagraph(
@@ -410,10 +1242,19 @@ function extractCompleteTextFromParagraph(
  * Extract text content from a paragraph element with enhanced formatting support
  * Now also extracts Office Math equations as [MATH: ...] placeholders.
  * Enhanced to handle mixed content (runs and breaks) in proper order.
+ * Includes symbol character handling and form field processing.
  */
-function extractTextFromParagraph(paragraph: any, documentData?: any): string {
+function extractTextFromParagraph(
+  paragraph: any,
+  documentData?: any,
+  warningCollector?: WarningCollector,
+): string {
   let text = ""
   if (!paragraph) return text
+
+  // Initialize field processing state
+  const complexFieldStack: ComplexField[] = []
+  const currentInstrText: string[] = []
 
   // Check if this is a code block paragraph
   const isCodeBlock =
@@ -516,6 +1357,35 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
       }
     }
 
+    // Handle symbol characters
+    const symbolElement = run["w:sym"]
+    if (symbolElement) {
+      const symbolText = readSymbol(symbolElement, warningCollector)
+      if (symbolText) {
+        runParts.push(symbolText)
+      }
+    }
+
+    // Handle field characters
+    const fldCharElement = run["w:fldChar"]
+    if (fldCharElement) {
+      const fieldText = readFldChar(
+        fldCharElement,
+        complexFieldStack,
+        currentInstrText,
+        warningCollector,
+      )
+      if (fieldText) {
+        runParts.push(fieldText)
+      }
+    }
+
+    // Handle instruction text
+    const instrTextElement = run["w:instrText"]
+    if (instrTextElement) {
+      readInstrText(instrTextElement, currentInstrText)
+    }
+
     // If we have multiple text elements, we need to add breaks between them
     // The breaks are typically interspersed with the text elements
     if (textElementsArray.length > 1 && breakElementsArray.length > 0) {
@@ -592,6 +1462,8 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
     if (run["w:tab"] || run.tab) {
       contentParts.push("\t")
     }
+
+    warningCollector?.incrementStat("elementsProcessed")
   }
 
   // Add paragraph-level breaks (like textWrapping breaks)
@@ -645,35 +1517,17 @@ function extractTextFromParagraph(paragraph: any, documentData?: any): string {
 }
 
 /**
- * Extract text from table elements
+ * Extract text from table elements with enhanced cell merging support
  */
-function extractTextFromTable(table: any, documentData?: any): string {
+function extractTextFromTable(
+  table: any,
+  documentData?: any,
+  warningCollector?: WarningCollector,
+): string {
   if (!table) return ""
 
-  const rows = table["w:tr"] || []
-  const rowsArray = Array.isArray(rows) ? rows : [rows]
-
-  return (
-    rowsArray
-      .map((row) => {
-        const cells = row["w:tc"] || []
-        const cellsArray = Array.isArray(cells) ? cells : [cells]
-
-        return cellsArray
-          .map((cell) => {
-            const paragraphs = cell["w:p"] || []
-            const paragraphsArray = Array.isArray(paragraphs)
-              ? paragraphs
-              : [paragraphs]
-
-            return paragraphsArray
-              .map((p) => extractTextFromParagraph(p, documentData))
-              .join("\n")
-          })
-          .join("\t") // Tab-separated cells
-      })
-      .join("\n") + "\n\n"
-  ) // Newline-separated rows with extra spacing
+  // Use enhanced table processing with merging detection
+  return extractTextFromTableWithMerging(table, documentData, warningCollector)
 }
 
 /**
@@ -960,7 +1814,10 @@ function extractImageRelId(element: any): string | null {
 /**
  * Process DOCX content and extract text/image items in order with enhanced support
  */
-function processDocumentContent(documentData: any): DocxContentItem[] {
+function processDocumentContent(
+  documentData: any,
+  warningCollector?: WarningCollector,
+): DocxContentItem[] {
   const items: DocxContentItem[] = []
 
   if (!documentData?.["w:document"]?.["w:body"]) {
@@ -1553,6 +2410,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
 ): Promise<DocxProcessingResult> {
   Logger.info(`Starting DOCX processing for document: ${docid}`)
 
+  // Initialize warning collector for comprehensive error reporting
+  const warningCollector = new WarningCollector()
+
   // Load the DOCX data directly
   let zip: JSZip
   try {
@@ -1564,9 +2424,20 @@ export async function extractTextAndImagesWithChunksFromDocx(
       name.includes("PasswordException")
     ) {
       Logger.warn("Password protected DOCX, skipping")
+      warningCollector.addWarning({
+        type: "general",
+        message: "Password protected DOCX file",
+        context: { error: message },
+      })
     } else {
       Logger.error(error, `DOCX load error: ${error}`)
+      warningCollector.addWarning({
+        type: "general",
+        message: "Failed to load DOCX file",
+        context: { error: message },
+      })
     }
+    warningCollector.logSummary()
     return {
       text_chunks: [],
       image_chunks: [],
@@ -1634,7 +2505,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
     documentData.__comments = commentsMap
 
     // Extract content items in order
-    const contentItems = processDocumentContent(documentData)
+    const contentItems = processDocumentContent(documentData, warningCollector)
 
     // Extract footnotes, endnotes, headers, and footers
     const footnotes = await extractFootnotes(zip, parser)
@@ -1863,6 +2734,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
     Logger.info(
       `DOCX processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
     )
+
+    // Log processing summary with warnings
+    warningCollector.logSummary()
 
     return {
       text_chunks,
