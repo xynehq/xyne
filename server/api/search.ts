@@ -89,6 +89,7 @@ export const chatSchema = z.object({
 export const followUpQuestionsSchema = z.object({
   chatId: z.string().min(1),
   messageId: z.string().min(1),
+  userTimezone: z.string().optional(),
 })
 
 export const chatBookmarkSchema = z.object({

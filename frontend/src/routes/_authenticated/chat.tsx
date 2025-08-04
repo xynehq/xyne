@@ -1150,7 +1150,6 @@ export const ChatPage = ({
                           chatId={chatId}
                           messageId={message.externalId}
                           onQuestionClick={handleSend}
-                          isVisible={!isStreaming && !retryIsStreaming}
                           isStreaming={isStreaming || retryIsStreaming}
                           onQuestionsLoaded={scrollToBottom}
                         />

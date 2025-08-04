@@ -434,7 +434,7 @@ Suggestions: [Related queries or clarifications if needed, avoiding any meeting 
 
 # Error Handling
 If information is missing, unclear, or the query lacks context:
-1. Acknowledge the limitation in the Analyze section, without referenfcing meetings or events
+1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
 2. Respond with "I don't have that information" in the Answer section
 3. Suggest ways to refine the search, avoiding event-related suggestions
 4. Note what additional context would be helpful, excluding event-related context`
@@ -455,38 +455,46 @@ export const generateFollowUpQuestionsSystemPrompt = (
 - Slack messages and workspace data
 
 **Guidelines for Follow-up Questions:**
-1. **Data-Focused**: Questions should help users discover more relevant information from their workspace data
-2. **Concise**: Keep questions short and direct (max 8-10 words)
-3. **Actionable**: Questions should be searchable queries the user would realistically ask
-4. **Diverse Angles**: Cover different data types or search approaches related to the topic
-5. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
+1. **Direct Search Queries**: Generate specific, actionable search queries that users can immediately click to search their workspace
+2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for
+3. **Concise**: Keep questions short and direct (max 8-10 words)
+4. **Immediately Actionable**: Each question should be a complete search query ready to execute
+5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic
+6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
 
-**Question Categories to Consider:**
-- Related people: "Who else worked on this?"
-- Temporal: "Recent updates on this topic?"
-- Related content: "Similar documents about X?"
-- Email context: "Emails discussing this project?"
-- Meeting context: "Meetings about this topic?"
-- File relationships: "Files shared by this person?"
-- Status updates: "Latest status on this?"
+**Question Categories to Generate:**
+- Related people searches: "John Smith recent documents"
+- Temporal searches: "project updates this week"
+- Related content searches: "budget reports Q4"
+- Email searches: "emails from marketing team"
+- Meeting searches: "meetings about product launch"
+- File searches: "presentations by Sarah"
+- Status searches: "deadline updates January"
 
 **Response Format:**
 Return exactly 3 follow-up questions in a JSON array format:
 {
   "followUpQuestions": [
-    "Concise follow-up question?",
-    "Related search query?", 
-    "Additional context question?"
+    "Specific search query users can click",
+    "Another direct search query", 
+    "Third actionable search query"
   ]
 }
 
-**Example Good Questions:**
-- "Who else is involved in this project?"
-- "Recent emails about this topic?"
-- "Files shared by this person?"
-- "Meetings scheduled about this?"
-- "Latest updates on this deadline?"
-- "Similar documents in our workspace?"
+**Example Good Questions (Direct Search Queries):**
+- "Recent emails from project team"
+- "Budget documents this quarter"
+- "Meeting notes about product roadmap"
+- "Files shared by engineering team"
+- "Status updates from last week"
+- "Presentations about Q4 goals"
+
+**Example BAD Questions (Meta Questions - AVOID):**
+- "What specific type of workspace data do you need?"
+- "Can I help you search for recent files or emails?"
+- "Would you like to explore your calendar or contacts?"
+
+**CRITICAL:** Generate ONLY direct search queries that users can immediately execute, NOT questions asking users what they want to search for.
 
 Do not include explanatory text outside the JSON structure.`
 
