@@ -23,6 +23,9 @@ const {
   GeminiAIModel,
   GeminiApiKey,
   aiProviderBaseUrl,
+  VertexProjectId,
+  VertexRegion,
+  VertexAIModel,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -90,6 +93,7 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
+import { VertexAiProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -199,6 +203,7 @@ let ollamaProvider: LLMProvider | null = null
 let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
+let vertexProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -267,6 +272,13 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if (VertexProjectId && VertexRegion) {
+    vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+    })
+  }
+
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
     Logger.warn(
       `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
@@ -282,6 +294,7 @@ const getProviders = (): {
   [AIProviders.Together]: LLMProvider | null
   [AIProviders.Fireworks]: LLMProvider | null
   [AIProviders.GoogleAI]: LLMProvider | null
+  [AIProviders.VertexAI]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -290,7 +303,8 @@ const getProviders = (): {
     !ollamaProvider &&
     !togetherProvider &&
     !fireworksProvider &&
-    !geminiProvider
+    !geminiProvider &&
+    !vertexProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -302,6 +316,7 @@ const getProviders = (): {
     [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
+    [AIProviders.VertexAI]: vertexProvider,
   }
 }
 
@@ -335,7 +350,9 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : null
+            : VertexAIModel
+              ? AIProviders.VertexAI
+              : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
