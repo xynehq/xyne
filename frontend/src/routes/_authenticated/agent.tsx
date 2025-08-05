@@ -33,7 +33,6 @@ import {
   ChevronDown,
   ChevronUp,
   X as LucideX,
-  Check,
   RotateCcw,
   RefreshCw,
   PlusCircle,
@@ -257,7 +256,8 @@ function AgentComponent() {
   const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'kb-root' | 'kb' | 'folder'}>>([])
   const [currentItems, setCurrentItems] = useState<any[]>([])
   const [isLoadingItems, setIsLoadingItems] = useState(false)
-  const [kbSearchQuery, setKbSearchQuery] = useState("")
+  // const [kbSearchQuery, setKbSearchQuery] = useState("")
+  const [kbSearchQuery] = useState("")
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
