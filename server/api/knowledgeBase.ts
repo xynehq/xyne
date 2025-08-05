@@ -1260,7 +1260,7 @@ export const UploadFilesApi = async (c: Context) => {
           docId: vespaDocId,
           kbId: kbId,
           itemId: item.id,
-          fileName: file.name,
+          fileName: targetPath === '/' ? kb.name + targetPath + filePath : kb.name + targetPath + fileName,
           app:Apps.KnowledgeBase,
           entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
           storagePath: storagePath,

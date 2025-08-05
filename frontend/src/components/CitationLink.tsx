@@ -41,7 +41,7 @@ export const createCitationLink =
           ? citations.find((c) => c.url === href)
           : undefined
 
-    if (citation) {
+    if (citation && citation.kbId && citation.itemId) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
@@ -127,15 +127,23 @@ export const createCitationLink =
     }
 
     // Regular link for non-citation URLs
+    const isNumericChild =
+      typeof children === "string" &&
+      !isNaN(parseInt(children)) &&
+      parseInt(children).toString() === children.trim()
+
     return (
-      <a
-        {...linkProps}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-black-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
-      >
-        {children}
+      <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
+        {isNumericChild ? (
+          <span
+            className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
+            style={{ textDecoration: "none" }}
+          >
+            {children}
+          </span>
+        ) : (
+          children
+        )}
       </a>
     )
   }
