@@ -115,7 +115,7 @@ schema chat_container {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[384]) {
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS]) {
         indexing: (input name || "") . " " . (input topic || "") . " " . (input description || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -128,7 +128,7 @@ schema chat_container {
 
     rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
         }
 
