@@ -422,6 +422,18 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
+  } else if (result.fields.sddocname === kbFileSchema) {
+    // Handle KB files - include the actual file and KB UUIDs for direct access
+    const kbFields = fields as any // Type as VespaKbFileSearch when types are available
+    return {
+      docId: kbFields.docId,
+      title: kbFields.fileName || "KB File",
+      url: `/kb/${kbFields.kbId}`,
+      app: Apps.KnowledgeBase,
+      entity: SystemEntity.SystemInfo,
+      itemId: kbFields.itemId,
+      kbId: kbFields.kbId,
+    }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
       docId: (fields as VespaChatContainer).docId,

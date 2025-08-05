@@ -423,7 +423,7 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbFileSchema) {
+        if (item.fields.sddocname === dataSourceFileSchema) {
           // Skip datasource and KB files from citations
           continue
         }

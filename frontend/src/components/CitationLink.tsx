@@ -29,8 +29,17 @@ export const createCitationLink =
   }) => {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
-    // Identify if this link matches one of our citations by URL
-    const citation = href ? citations.find((c) => c.url === href) : undefined
+    // Extract citation index from children (which should be the citation number like "1", "2", etc.)
+    const citationIndex =
+      typeof children === "string" ? parseInt(children) - 1 : -1
+
+    // Get citation by index if valid, otherwise fall back to URL matching
+    const citation =
+      citationIndex >= 0 && citationIndex < citations.length
+        ? citations[citationIndex]
+        : href
+          ? citations.find((c) => c.url === href)
+          : undefined
 
     if (citation) {
       return (
@@ -40,6 +49,14 @@ export const createCitationLink =
               <span
                 {...linkProps}
                 className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-black-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (onCitationClick) {
+                    onCitationClick(citation)
+                  }
+                  setIsTooltipOpen(false)
+                }}
               >
                 {children}
               </span>

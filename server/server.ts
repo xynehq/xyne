@@ -918,6 +918,7 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
