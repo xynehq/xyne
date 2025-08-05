@@ -721,7 +721,10 @@ export const HybridDefaultProfileForAgent =  async(
     // let driveItem:string [] = []
     // if we have some DriveIds then we are going to fetch all the items in that folder
          const intentFilter = buildIntentFilter(intent)
-         const driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+        let driveItem: string[] = []
+         if((selectedItem as any)[Apps.GoogleDrive]){
+          driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+         }
         const driveIds = []
        
        while (driveItem.length) {
@@ -910,20 +913,20 @@ export const HybridDefaultProfileForAgent =  async(
         case Apps.DataSource:
           // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
           // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
-          if (dataSourceIds && dataSourceIds.length > 0) {
+          // if (dataSourceIds && dataSourceIds.length > 0) {
             appQueries.push(buildDataSourceFileYQL())
             if (!sources.includes(dataSourceFileSchema))
               sources.push(dataSourceFileSchema)
-          } else {
-            // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
-            // across all accessible data sources. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic DataSource search.
-            // This means an agent configured with "data-source" but no specific IDs won't search them
-            // unless other app types are also specified.
-            Logger.warn(
-              "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
-            )
-          }
+          // } else {
+          //   // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
+          //   // across all accessible data sources. This might be too broad or not the intended behavior.
+          //   // For now, if no specific IDs, we don't add a query part for generic DataSource search.
+          //   // This means an agent configured with "data-source" but no specific IDs won't search them
+          //   // unless other app types are also specified.
+          //   Logger.warn(
+          //     "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
+          //   )
+          // }
           break
         case Apps.KnowledgeBase:
           // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.

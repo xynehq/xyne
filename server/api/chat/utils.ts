@@ -114,7 +114,7 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       app = Apps.GoogleCalendar
     } else if (appName == "DataSource") {
       app = Apps.DataSource
-    } else if (appName == "knowledge-base") {
+    } else if (appName == "knowledge_base") {
       app = Apps.KnowledgeBase
     } else if (appName == "slack") {
       app = Apps.Slack
@@ -141,7 +141,7 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       }
     }
   }
-
+  console.log(selectedApps.join(", "))
   return {
     selectedApps,
     selectedItems,
