@@ -49,8 +49,9 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  BookOpen,
 } from "lucide-react"
-import { useState, useMemo, useEffect, useRef } from "react"
+import React, { useState, useMemo, useEffect, useRef } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
@@ -243,6 +244,20 @@ function AgentComponent() {
     FetchedDataSource[]
   >([])
   const [showEntitySearchResults, setShowEntitySearchResults] = useState(false)
+  const [selectedItemsInKb, setSelectedItemsInKb] = useState<
+    Record<string, Set<string>>
+  >({})
+  const [selectedItemDetailsInKb, setSelectedItemDetailsInKb] = useState<
+    Record<string, Record<string, any>>
+  >({})
+  // Store mapping of integration IDs to their names and types
+  const [integrationIdToNameMap, setIntegrationIdToNameMap] = useState<
+    Record<string, { name: string; type: string }>
+  >({})
+  const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'kb-root' | 'kb' | 'folder'}>>([])
+  const [currentItems, setCurrentItems] = useState<any[]>([])
+  const [isLoadingItems, setIsLoadingItems] = useState(false)
+  const [kbSearchQuery, setKbSearchQuery] = useState("")
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -784,6 +799,8 @@ function AgentComponent() {
     setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
+    setSelectedItemsInKb({})
+    setSelectedItemDetailsInKb({})
     setEditingAgent(null)
     setSelectedUsers([])
     setSearchQuery("")
@@ -819,11 +836,10 @@ function AgentComponent() {
       return dynamicDataSources
     }
     
-    // KB integration feature in progress
     const knowledgeBaseSources: IntegrationSource[] = fetchedKnowledgeBases.map(
       (kb) => ({
         id: `kb_${kb.id}`,
-        name: `KB: ${kb.name}`,
+        name: kb.name,
         app: "knowledgebase",
         entity: "kb",
         icon: (
@@ -837,7 +853,6 @@ function AgentComponent() {
       }),
     )
     return [...availableIntegrationsList, ...dynamicDataSources, ...knowledgeBaseSources]
-    // return [...availableIntegrationsList, ...dynamicDataSources]
   }, [fetchedDataSources, isRagOn, fetchedKnowledgeBases])
 
   useEffect(() => {
@@ -850,8 +865,90 @@ function AgentComponent() {
       setAgentPrompt(editingAgent.prompt || "")
       setIsPublic(editingAgent.isPublic || false)
       setSelectedModel(editingAgent.model)
+      
+      // Fetch integration items for this agent
+      const fetchAgentIntegrationItems = async () => {
+        try {
+          const response = await api.agent[":agentExternalId"]["integration-items"].$get({
+            param: { agentExternalId: editingAgent.externalId },
+          })
+          if (response.ok) {
+            const data = await response.json()
+            // console.log("Fetched agent integration items:", data)
+            const idToNameMapping: Record<string, { name: string; type: string }> = {};
+
+            // Extract items and build ID to name mapping
+            if (data.integrationItems.knowledge_base && data.integrationItems.knowledge_base.groups) {
+              for (const [kbGroupId, items] of Object.entries(data.integrationItems.knowledge_base.groups)) {
+                if (Array.isArray(items)) {
+                  items.forEach((item: any) => {
+                    const itemType = item.type || "folder"; // Default to 'folder' if not provided
+                    // Add to ID andto name and type mapping
+                    idToNameMapping[item.id] = {
+                      name: item.name || "Unnamed",
+                      type: itemType
+                    };
+                  });
+                }
+                
+                // Also add KB group ID to name mapping if available
+                if (kbGroupId) {
+                  // Try to find the KB name from the fetched knowledge bases
+                  const kb = fetchedKnowledgeBases.find(kb => kb.id === kbGroupId);
+                  if (kb) {
+                    idToNameMapping[kbGroupId] = {
+                      name: kb.name,
+                      type: "knowledge_base"
+                    };
+                  }
+                }
+              }
+            }
+            // Update the ID to name mapping state
+            setIntegrationIdToNameMap(idToNameMapping);
+            
+            // Process knowledge base items if they exist
+            if (data.integrationItems.knowledge_base) {
+              const kbData = data.integrationItems.knowledge_base
+              const kbSelections: Record<string, Set<string>> = {}
+              const kbDetails: Record<string, Record<string, any>> = {}
+              
+              // Process each knowledge base group
+              for (const [kbId, items] of Object.entries(kbData.groups)) {
+                if (Array.isArray(items) && items.length > 0) {
+                  const selectedItems = new Set<string>()
+                  const itemDetails: Record<string, any> = {}
+                  
+                  items.forEach((item: any) => {
+                    selectedItems.add(item.id)
+                    itemDetails[item.id] = item
+                  })
+                  
+                  kbSelections[kbId] = selectedItems
+                  kbDetails[kbId] = itemDetails
+                  
+                  // Also mark the KB integration as selected
+                  setSelectedIntegrations(prev => ({
+                    ...prev,
+                    [`kb_${kbId}`]: true
+                  }))
+                }
+              }
+              
+              setSelectedItemsInKb(kbSelections)
+              setSelectedItemDetailsInKb(kbDetails)
+            }
+          } else {
+            console.warn("Failed to fetch agent integration items:", response.statusText)
+          }
+        } catch (error) {
+          console.error("Error fetching agent integration items:", error)
+        }
+      }
+      
+      fetchAgentIntegrationItems()
     }
-  }, [editingAgent, viewMode])
+  }, [editingAgent, viewMode, fetchedKnowledgeBases])
 
   useEffect(() => {
     if (
@@ -860,11 +957,123 @@ function AgentComponent() {
       allAvailableIntegrations.length > 0
     ) {
       const currentIntegrations: Record<string, boolean> = {}
+      const kbSelections: Record<string, Set<string>> = {}
+      const kbDetails: Record<string, Record<string, any>> = {}
+      
       allAvailableIntegrations.forEach((int) => {
-        currentIntegrations[int.id] =
-          editingAgent.appIntegrations?.includes(int.id) || false
-      })
+        // Handle legacy array format
+        if (Array.isArray(editingAgent.appIntegrations)) {
+          currentIntegrations[int.id] = editingAgent.appIntegrations.includes(int.id) || false
+        } else if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
+          // Handle both old and new object formats
+          const appIntegrations = editingAgent.appIntegrations as Record<string, any>
+          
+          // Check if it's a knowledge base
+          if (int.id.startsWith('kb_')) {
+            const kbId = int.id.replace('kb_', '')
+            
+            // Handle new format: knowledge_base key with itemIds array
+            if (appIntegrations['knowledge_base']) {
+              const kbConfig = appIntegrations['knowledge_base']
+              const itemIds = kbConfig.itemIds || []
+              
+              // Check if this KB is referenced in the itemIds
+              const isKbSelected = itemIds.includes(int.name) || // KB name is in itemIds (selectAll case)
+                                  itemIds.some((id: string) => id.startsWith(kbId)) // Some items from this KB are selected
+              
+              if (isKbSelected) {
+                currentIntegrations[int.id] = true
+                
+                // If only KB name is in itemIds, it means selectAll
+                if (itemIds.includes(int.name) && itemIds.length === 1) {
+                  kbSelections[kbId] = new Set() // Empty set means selectAll
+                } else {
+                  // Filter itemIds that belong to this KB
+                  const kbItemIds = itemIds.filter((id: string) => 
+                    id !== int.name && (id.startsWith(kbId) || id.includes(kbId))
+                  )
+                  
+                  if (kbItemIds.length > 0) {
+                    const selectedItems = new Set<string>(kbItemIds)
+                    kbSelections[kbId] = selectedItems
+                    
+                    // Create mock item details for display
+                    const itemDetailsForKb: Record<string, any> = {}
+                    kbItemIds.forEach((itemId: string, index: number) => {
+                      itemDetailsForKb[itemId] = {
+                        id: itemId,
+                        name: itemId, // Use itemId as name for now
+                        type: 'file', // Default to file type
+                      }
+                    })
+                    kbDetails[kbId] = itemDetailsForKb
+                  }
+                }
+              }
+            }
+            // Handle old format: knowledgebases key with nested structure
+            else if (appIntegrations['knowledgebases'] && appIntegrations['knowledgebases'][int.name]) {
+              const kbConfig = appIntegrations['knowledgebases'][int.name]
+              currentIntegrations[int.id] = true
+              
+              // Parse folders to recreate selections
+              if (kbConfig.folders && kbConfig.folders.length > 0) {
+                const selectedItems = new Set<string>()
+                
+                // For each item in folders array, determine if it's a file or folder
+                // Files have extensions in their names, folders do not
+                kbConfig.folders.forEach((folder: any, index: number) => {
+                  // Determine if this is a file or folder based on file extension in the name
+                  const hasFileExtension = /\.[a-zA-Z0-9]+$/.test(folder.name)
+                  const itemType = hasFileExtension ? 'file' : 'folder'
+                  const itemId = `${itemType}_${folder.name}_${Date.now()}_${index}`
+                  selectedItems.add(itemId)
+                  
+                  if (!kbDetails[kbId]) {
+                    kbDetails[kbId] = {}
+                  }
+                  kbDetails[kbId][itemId] = {
+                    id: itemId,
+                    name: folder.name,
+                    type: itemType,
+                    vespaIds: folder.ids // Store the vespa IDs for reference
+                  }
+                })
+                
+                kbSelections[kbId] = selectedItems
+              } else if (kbConfig.selectAll) {
+                // If selectAll is true, mark the KB as selected but no specific items
+                kbSelections[kbId] = new Set()
+              }
+            }
+          } 
+          // Handle DataSource key (new format for grouped data sources)
+          else if (int.app === Apps.DataSource && appIntegrations['DataSource']) {
+            const dsConfig = appIntegrations['DataSource']
+            const itemIds = dsConfig.itemIds || []
+            
+            // Check if this data source is in the itemIds array
+            if (itemIds.includes(int.id)) {
+              currentIntegrations[int.id] = true
+            }
+          }
+          else {
+            // Handle other integrations - check both new format (with selectedAll) and old format
+            if (appIntegrations[int.id]) {
+              if (typeof appIntegrations[int.id] === 'object' && appIntegrations[int.id].selectedAll !== undefined) {
+                // New format with selectedAll property
+                currentIntegrations[int.id] = appIntegrations[int.id].selectedAll || appIntegrations[int.id].itemIds?.length > 0
+              } else {
+                // Old format - just a boolean or truthy value
+                currentIntegrations[int.id] = !!appIntegrations[int.id]
+              }
+            }
+          }
+        }
+      })  
       setSelectedIntegrations(currentIntegrations)
+      setSelectedItemsInKb(kbSelections)
+      setSelectedItemDetailsInKb(kbDetails)
     }
   }, [editingAgent, viewMode, allAvailableIntegrations])
 
@@ -903,6 +1112,7 @@ function AgentComponent() {
       }
     }
   }, [editingAgent, viewMode, users])
+
 
   const handleDeleteAgent = async (agentExternalId: string) => {
     setConfirmModalTitle("Delete Agent")
@@ -948,9 +1158,75 @@ function AgentComponent() {
   }
 
   const handleSaveAgent = async () => {
-    const enabledIntegrations = Object.entries(selectedIntegrations)
-      .filter(([, isSelected]) => isSelected)
-      .map(([id]) => id)
+    // Build the new simplified appIntegrations structure
+    const appIntegrationsObject: Record<string, {
+      itemIds: string[]
+      selectedAll: boolean
+    }> = {}
+
+    // Collect knowledge base item IDs
+    const knowledgeBaseItemIds: string[] = []
+    let hasKnowledgeBaseSelections = false
+    
+    // Collect data source IDs
+    const dataSourceIds: string[] = []
+    let hasDataSourceSelections = false
+
+    // Process each selected integration
+    for (const [integrationId, isSelected] of Object.entries(selectedIntegrations)) {
+      if (isSelected) {
+        const integration = allAvailableIntegrations.find(int => int.id === integrationId)
+        if (!integration) continue
+
+        // For knowledge bases, collect item IDs
+        if (integrationId.startsWith('kb_')) {
+          const kbId = integrationId.replace('kb_', '')
+          const selectedItems = selectedItemsInKb[kbId] || new Set()
+          
+          if (selectedItems.size === 0) {
+            // If no specific items are selected, use the KB id
+            const kbId = integration.id.replace('kb_', '')
+            knowledgeBaseItemIds.push(kbId)
+            // console.log(`Adding KB ID: ${kbId} for integration ${integrationId}`)
+          } else {
+            // If specific items are selected, use their IDs
+            selectedItems.forEach(itemId => {
+              knowledgeBaseItemIds.push(itemId)
+              // console.log(`Adding KB item ID: ${itemId} for integration ${integrationId}`)
+            })
+          }
+          hasKnowledgeBaseSelections = true
+        } 
+        // For data sources, collect their IDs
+        else if (integrationId.startsWith('ds-') || integration.app === Apps.DataSource) {
+          dataSourceIds.push(integrationId)
+          hasDataSourceSelections = true
+        } 
+        // For other integrations, use the integration ID as key
+        else {
+          appIntegrationsObject[integrationId] = {
+            itemIds: [],
+            selectedAll: true
+          }
+        }
+      }
+    }
+
+    // Add knowledge base selections if any exist
+    if (hasKnowledgeBaseSelections) {
+      appIntegrationsObject['knowledge_base'] = {
+        itemIds: knowledgeBaseItemIds,
+        selectedAll: knowledgeBaseItemIds.length === 0
+      }
+    }
+    
+    // Add data source selections if any exist
+    if (hasDataSourceSelections) {
+      appIntegrationsObject['DataSource'] = {
+        itemIds: dataSourceIds,
+        selectedAll: dataSourceIds.length === 0
+      }
+    }
 
     const agentPayload = {
       name: agentName,
@@ -959,7 +1235,7 @@ function AgentComponent() {
       model: selectedModel,
       isPublic: isPublic,
       isRagOn: isRagOn,
-      appIntegrations: enabledIntegrations,
+      appIntegrations: appIntegrationsObject,
       docIds: selectedEntities,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
@@ -1017,17 +1293,106 @@ function AgentComponent() {
   }
 
   const toggleIntegrationSelection = (integrationId: string) => {
-    setSelectedIntegrations((prev) => ({
-      ...prev,
-      [integrationId]: !prev[integrationId],
-    }))
+    setSelectedIntegrations((prev) => {
+      const newValue = !prev[integrationId]
+      
+      // If it's a knowledge base integration and we're deselecting it, clear its items
+      if (integrationId.startsWith('kb_') && !newValue) {
+        const kbId = integrationId.replace('kb_', '')
+        setSelectedItemsInKb(prevItems => {
+          const newState = { ...prevItems }
+          delete newState[kbId]
+          return newState
+        })
+        setSelectedItemDetailsInKb(prevDetails => {
+          const newState = { ...prevDetails }
+          delete newState[kbId]
+          return newState
+        })
+      }
+      
+      return {
+        ...prev,
+        [integrationId]: newValue,
+      }
+    })
   }
 
   const handleRemoveSelectedIntegration = (integrationId: string) => {
-    setSelectedIntegrations((prev) => ({
-      ...prev,
-      [integrationId]: false,
-    }))
+    // Check if it's a KB item (format: kbId_itemId where itemId can contain underscores)
+    // We need to find the actual KB ID from the selected integrations
+    let isKbItem = false
+    let kbId = ''
+    let itemId = ''
+    
+    // Check if this is a KB item by looking for a pattern where the ID starts with a KB ID
+    for (const [integId] of Object.entries(selectedIntegrations)) {
+      if (integId.startsWith('kb_') && selectedIntegrations[integId]) {
+        const currentKbId = integId.replace('kb_', '')
+        if (integrationId.startsWith(currentKbId + '_')) {
+          isKbItem = true
+          kbId = currentKbId
+          itemId = integrationId.substring(currentKbId.length + 1) // Remove kbId and the underscore
+          break
+        }
+      }
+    }
+    
+    if (isKbItem && kbId && itemId) {
+      // Remove the specific item from the KB
+      setSelectedItemsInKb(prev => {
+        const newState = { ...prev }
+        if (newState[kbId]) {
+          const newSet = new Set(newState[kbId])
+          newSet.delete(itemId)
+          
+          if (newSet.size === 0) {
+            delete newState[kbId]
+            // Also deselect the KB integration if no items are selected
+            setSelectedIntegrations(prevInt => ({
+              ...prevInt,
+              [`kb_${kbId}`]: false
+            }))
+          } else {
+            newState[kbId] = newSet
+          }
+        }
+        return newState
+      })
+      
+      // Remove item details
+      setSelectedItemDetailsInKb(prev => {
+        const newState = { ...prev }
+        if (newState[kbId] && newState[kbId][itemId]) {
+          delete newState[kbId][itemId]
+          if (Object.keys(newState[kbId]).length === 0) {
+            delete newState[kbId]
+          }
+        }
+        return newState
+      })
+    } else {
+      // Handle regular integrations
+      setSelectedIntegrations((prev) => ({
+        ...prev,
+        [integrationId]: false,
+      }))
+      
+      // If it's a knowledge base integration, also clear its selections
+      if (integrationId.startsWith('kb_')) {
+        const kbId = integrationId.replace('kb_', '')
+        setSelectedItemsInKb(prev => {
+          const newState = { ...prev }
+          delete newState[kbId]
+          return newState
+        })
+        setSelectedItemDetailsInKb(prev => {
+          const newState = { ...prev }
+          delete newState[kbId]
+          return newState
+        })
+      }
+    }
   }
 
   const handleClearAllIntegrations = () => {
@@ -1036,13 +1401,88 @@ function AgentComponent() {
       (int) => (clearedSelection[int.id] = false),
     )
     setSelectedIntegrations(clearedSelection)
+    
+    // Also clear selected items and their details for all KBs
+    setSelectedItemsInKb({})
+    setSelectedItemDetailsInKb({})
   }
 
   const currentSelectedIntegrationObjects = useMemo(() => {
-    return allAvailableIntegrations.filter(
-      (integration) => selectedIntegrations[integration.id],
-    )
-  }, [selectedIntegrations, allAvailableIntegrations])
+    const result: Array<{
+      id: string
+      name: string
+      icon: React.ReactNode
+      type?: 'file' | 'folder' | 'integration' | 'kb'
+      kbId?: string
+      kbName?: string
+    }> = []
+    
+    // Add regular integrations
+    allAvailableIntegrations.forEach((integration) => {
+      if (selectedIntegrations[integration.id] && !integration.id.startsWith('kb_')) {
+        result.push({
+          ...integration,
+          type: 'integration'
+        })
+      }
+    })
+    
+    // Handle knowledge bases
+    allAvailableIntegrations.forEach((integration) => {
+      if (integration.id.startsWith('kb_') && selectedIntegrations[integration.id]) {
+        const kbId = integration.id.replace('kb_', '')
+        const selectedItems = selectedItemsInKb[kbId] || new Set()
+        
+        if (selectedItems.size === 0) {
+          // If no specific items are selected, show the whole KB pill
+          result.push({
+            ...integration,
+            type: 'kb'
+          })
+        } else {
+          // If specific items are selected, show individual file/folder pills
+          const itemDetails = selectedItemDetailsInKb[kbId] || {}
+          
+          selectedItems.forEach(itemId => {
+            const item = itemDetails[itemId]
+            if (item) {
+              // Use the name from the mapping if available, otherwise use the item name
+              const displayName = integrationIdToNameMap[itemId]?.name || item.name;
+              
+              // Determine the icon based on the type from the mapping or the item type
+              const itemType = integrationIdToNameMap[itemId]?.type || item.type;
+              const itemIcon = itemType === 'folder' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-700">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+              ) : itemType === 'knowledge_base' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-600">
+                  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                  <polyline points="13 2 13 9 20 9"></polyline>
+                </svg>
+              );
+              
+              result.push({
+                id: `${kbId}_${itemId}`,
+                name: displayName,
+                icon: itemIcon,
+                type: item.type,
+                kbId: kbId,
+                kbName: integration.name
+              })
+            }
+          })
+        }
+      }
+    })
+    
+    return result
+  }, [selectedIntegrations, allAvailableIntegrations, selectedItemsInKb, selectedItemDetailsInKb, integrationIdToNameMap])
 
   useEffect(() => {
     if (!isRagOn) {
@@ -1924,7 +2364,13 @@ function AgentComponent() {
                     ))}
                     <DropdownMenu
                       open={isIntegrationMenuOpen}
-                      onOpenChange={setIsIntegrationMenuOpen}
+                      onOpenChange={(open) => {
+                        setIsIntegrationMenuOpen(open)
+                        if (!open) {
+                          setNavigationPath([])
+                          setCurrentItems([])
+                        }
+                      }}
                     >
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -1936,13 +2382,129 @@ function AgentComponent() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
-                        className="w-72 md:w-80 max-h-80 overflow-y-auto" /* Adapts via CSS vars */
+                        className="w-[440px] p-0 bg-gray-100 dark:bg-gray-800 rounded-xl"
                         align="start"
                       >
-                        <div className="flex items-center justify-between px-2 py-1.5">
-                          <DropdownMenuLabel className="p-0 text-sm font-medium">
-                            Select Integrations
-                          </DropdownMenuLabel>
+                        <div className="flex items-center justify-between px-4 py-2">
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center overflow-hidden max-w-[75%]">
+                              {navigationPath.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (navigationPath.length === 1) {
+                                      // Go back to main menu from KB listing
+                                      setNavigationPath([])
+                                      setCurrentItems([])
+                                    } else {
+                                      // Navigate back one level
+                                      const newPath = navigationPath.slice(0, -1)
+                                      setNavigationPath(newPath)
+                                      
+                                      if (newPath.length === 1 && newPath[0].type === 'kb-root') {
+                                        // Back to KB listing
+                                        setCurrentItems([])
+                                      } else if (newPath.length > 1) {
+                                        // Navigate to parent folder
+                                        const kbId = newPath.find(item => item.type === 'kb')?.id
+                                        const parentId = newPath[newPath.length - 1]?.id === kbId ? null : newPath[newPath.length - 1]?.id
+                                        
+                                        if (kbId) {
+                                          setIsLoadingItems(true)
+                                          api.kb[":kbId"].items.$get({
+                                            param: { kbId },
+                                            query: parentId ? { parentId } : {}
+                                          }).then((response: Response) => {
+                                            if (response.ok) {
+                                              response.json().then((data: any[]) => {
+                                                setCurrentItems(data)
+                                                setIsLoadingItems(false)
+                                              })
+                                            }
+                                          }).catch(() => setIsLoadingItems(false))
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  className="p-0 h-auto w-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mr-2 flex-shrink-0"
+                                >
+                                  <ChevronLeft size={12} />
+                                </Button>
+                              )}
+                              {navigationPath.length > 0 ? (
+                                <div className="flex items-center text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap overflow-hidden">
+                                  <span 
+                                    className="cursor-pointer hover:text-gray-800 dark:hover:text-gray-100 text-xs whitespace-nowrap flex-shrink-0"
+                                    onClick={() => {
+                                      setNavigationPath([])
+                                      setCurrentItems([])
+                                    }}
+                                  >
+                                    ADD SOURCE
+                                  </span>
+                                  {(() => {
+                                    // Show up to 3 items in the breadcrumb
+                                    if (navigationPath.length > 0) {
+                                      // Get the last 3 items or all if less than 3
+                                      const itemsToShow = navigationPath.length <= 3 
+                                        ? navigationPath 
+                                        : navigationPath.slice(navigationPath.length - 3);
+                                      
+                                      return itemsToShow.map((item, index) => (
+                                        <React.Fragment key={item.id}>
+                                          <span className="mx-2 flex-shrink-0">/</span>
+                                          <span 
+                                            className={`max-w-[60px] truncate ${index < itemsToShow.length - 1 ? 'cursor-pointer hover:text-gray-800 dark:hover:text-gray-100' : 'font-medium'}`}
+                                            title={item.name}
+                                            onClick={() => {
+                                              if (index < itemsToShow.length - 1) {
+                                                // Navigate to this item
+                                                const newPathIndex = navigationPath.findIndex(p => p.id === item.id);
+                                                if (newPathIndex >= 0) {
+                                                  const newPath = navigationPath.slice(0, newPathIndex + 1);
+                                                  setNavigationPath(newPath);
+                                                  
+                                                  if (newPath.length === 1 && newPath[0].type === 'kb-root') {
+                                                    setCurrentItems([]);
+                                                  } else if (newPath.length > 1) {
+                                                    const kbId = newPath.find(item => item.type === 'kb')?.id;
+                                                    const parentId = newPath[newPath.length - 1]?.id === kbId ? null : newPath[newPath.length - 1]?.id;
+                                                    
+                                                    if (kbId) {
+                                                      setIsLoadingItems(true);
+                                                      api.kb[":kbId"].items.$get({
+                                                        param: { kbId },
+                                                        query: parentId ? { parentId } : {}
+                                                      }).then((response: Response) => {
+                                                        if (response.ok) {
+                                                          response.json().then((data: any[]) => {
+                                                            setCurrentItems(data);
+                                                            setIsLoadingItems(false);
+                                                          });
+                                                        }
+                                                      }).catch(() => setIsLoadingItems(false));
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }}
+                                          >
+                                            {item.name}
+                                          </span>
+                                        </React.Fragment>
+                                      ));
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              ) : (
+                                <span className="p-0 text-xs text-gray-600 dark:text-gray-300">
+                                  ADD SOURCE
+                                </span>
+                              )}
+                            </div>
+                          </div>
                           {currentSelectedIntegrationObjects.length > 0 && (
                             <Button
                               variant="ghost"
@@ -1954,31 +2516,412 @@ function AgentComponent() {
                             </Button>
                           )}
                         </div>
-                        <DropdownMenuSeparator /> {/* Adapts via CSS vars */}
-                        {allAvailableIntegrations.map((integration) => (
-                          <DropdownMenuItem
-                            key={integration.id}
-                            onSelect={() =>
-                              toggleIntegrationSelection(integration.id)
-                            }
-                            className="flex items-center justify-between cursor-pointer text-sm py-2 px-2 hover:bg-slate-50 dark:hover:bg-slate-600"
-                          >
-                            <div className="flex items-center">
-                              <span className="mr-2 flex items-center">
-                                {integration.icon}
-                              </span>
-                              <span>{integration.name}</span>
-                            </div>
-                            {selectedIntegrations[integration.id] && (
-                              <Check className="h-4 w-4 text-slate-700 dark:text-slate-200" />
-                            )}
-                          </DropdownMenuItem>
-                        ))}
+                        <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
+                          {navigationPath.length === 0 ? (
+                            // Main menu
+                            (() => {
+                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                                integration.id.startsWith('kb_')
+                              )
+                              const otherIntegrations = allAvailableIntegrations.filter(integration => 
+                                !integration.id.startsWith('kb_')
+                              )
+                              const hasSelectedKB = knowledgeBases.some(kb => selectedIntegrations[kb.id])
+
+                              return (
+                                <>
+                                  {/* Regular integrations */}
+                                  {otherIntegrations.map((integration) => {
+                                    const isGoogleDrive = integration.app === Apps.GoogleDrive && integration.entity === "file"
+                                    const showChevron = isGoogleDrive
+                                    
+                                    return (
+                                      <DropdownMenuItem
+                                        key={integration.id}
+                                        onSelect={(e) => {
+                                          e.preventDefault()
+                                          toggleIntegrationSelection(integration.id)
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                      >
+                                        <div className="flex items-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedIntegrations[integration.id] || false}
+                                            onChange={() => {}}
+                                            className="w-4 h-4 mr-3"
+                                          />
+                                          <span className="mr-2 flex items-center">
+                                            {integration.icon}
+                                          </span>
+                                          <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
+                                        </div>
+                                        {showChevron && (
+                                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                                        )}
+                                      </DropdownMenuItem>
+                                    )
+                                  })}
+
+                                  {/* Knowledge Bases item */}
+                                  {knowledgeBases.length > 0 && (
+                                    <DropdownMenuItem
+                                      onSelect={(e) => {
+                                        e.preventDefault()
+                                        setNavigationPath([{ id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' }])
+                                      }}
+                                      className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                    >
+                                      <div className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={hasSelectedKB}
+                                          onChange={() => {}}
+                                          className="w-4 h-4 mr-3"
+                                        />
+                                        <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                        <span className="text-gray-700 dark:text-gray-200">Knowledge Bases</span>
+                                      </div>
+                                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                                    </DropdownMenuItem>
+                                  )}
+                                </>
+                              )
+                            })()
+                          ) : navigationPath.length === 1 && navigationPath[0].type === 'kb-root' ? (
+                            // Knowledge Bases listing
+                            (() => {
+                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                                integration.id.startsWith('kb_')
+                              )
+
+                              // Helper function to navigate to KB
+                              const navigateToKb = async (kbId: string, kbName: string) => {
+                                setNavigationPath([
+                                  { id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' },
+                                  { id: kbId, name: kbName, type: 'kb' }
+                                ])
+                                setIsLoadingItems(true)
+                                try {
+                                  const response = await api.kb[":kbId"].items.$get({
+                                    param: { kbId }
+                                  })
+                                  if (response.ok) {
+                                    const data = await response.json()
+                                    setCurrentItems(data)
+                                  }
+                                } catch (error) {
+                                  console.error('Failed to fetch KB items:', error)
+                                } finally {
+                                  setIsLoadingItems(false)
+                                }
+                              }
+
+                              // Filter knowledge bases based on search
+                              const filteredKnowledgeBases = knowledgeBases.filter(kb =>
+                                kb.name.toLowerCase().includes(kbSearchQuery.toLowerCase())
+                              )
+
+                              return (
+                                <>
+                                  {/* Search input
+                                  <div className="border-b border-gray-200 dark:border-gray-700">
+                                    <div className="relative">
+                                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                      <input
+                                        type="text"
+                                        placeholder="Search"
+                                        value={kbSearchQuery}
+                                        className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => {
+                                          e.stopPropagation()
+                                          setKbSearchQuery(e.target.value)
+                                        }}
+                                      />
+                                    </div>
+                                  </div> */}
+
+                                  {/* Knowledge bases list */}
+                                  {filteredKnowledgeBases.map((integration) => {
+                                    const kbId = integration.id.replace('kb_', '')
+                                    
+                                    return (
+                                      <DropdownMenuItem
+                                        key={integration.id}
+                                        onSelect={(e) => {
+                                          e.preventDefault()
+                                          toggleIntegrationSelection(integration.id)
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                      >
+                                        <div className="flex items-center flex-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedIntegrations[integration.id] || false}
+                                            onChange={() => {}}
+                                            className="w-4 h-4 mr-3"
+                                          />
+                                          <span className="mr-2 flex items-center">
+                                            {integration.icon}
+                                          </span>
+                                          <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            e.preventDefault()
+                                            navigateToKb(kbId, integration.name)
+                                          }}
+                                          className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                        >
+                                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                                        </Button>
+                                      </DropdownMenuItem>
+                                    )
+                                  })}
+                                </>
+                              )
+                            })()
+                          ) : (
+                            // Knowledge Bases submenu
+                            (() => {
+                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                                integration.id.startsWith('kb_')
+                              )
+
+                              // Helper functions for navigation
+                              const navigateToKb = async (kbId: string, kbName: string) => {
+                                setNavigationPath([{ id: kbId, name: kbName, type: 'kb' }])
+                                setIsLoadingItems(true)
+                                try {
+                                  const response = await api.kb[":kbId"].items.$get({
+                                    param: { kbId }
+                                  })
+                                  if (response.ok) {
+                                    const data = await response.json()
+                                    setCurrentItems(data)
+                                  }
+                                } catch (error) {
+                                  console.error('Failed to fetch KB items:', error)
+                                } finally {
+                                  setIsLoadingItems(false)
+                                }
+                              }
+
+                              const navigateToFolder = async (folderId: string, folderName: string) => {
+                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
+                                if (!kbId) return
+                                
+                                setNavigationPath(prev => [...prev, { id: folderId, name: folderName, type: 'folder' }])
+                                setIsLoadingItems(true)
+                                try {
+                                  const response = await api.kb[":kbId"].items.$get({
+                                    param: { kbId },
+                                    query: { parentId: folderId }
+                                  })
+                                  if (response.ok) {
+                                    const data = await response.json()
+                                    setCurrentItems(data)
+                                  }
+                                } catch (error) {
+                                  console.error('Failed to fetch folder items:', error)
+                                } finally {
+                                  setIsLoadingItems(false)
+                                }
+                              }
+
+                              // Filter knowledge bases based on search
+                              const filteredKnowledgeBases = knowledgeBases.filter(kb =>
+                                kb.name.toLowerCase().includes(kbSearchQuery.toLowerCase())
+                              )
+
+                              return (
+                                <>
+                                  {/* Search input */}
+                                  {/* <div className="border-b border-gray-200 dark:border-gray-700">
+                                    <div className="relative">
+                                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                      <input
+                                        type="text"
+                                        placeholder="Search"
+                                        value={kbSearchQuery}
+                                        className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => setKbSearchQuery(e.target.value)}
+                                      />
+                                    </div>
+                                  </div> */}
+
+                                  {/* Content area */}
+                                  {navigationPath.length === 0 ? (
+                                    // Show knowledge bases list
+                                    filteredKnowledgeBases.map((integration) => {
+                                      const kbId = integration.id.replace('kb_', '')
+                                      
+                                      return (
+                                        <DropdownMenuItem
+                                          key={integration.id}
+                                          onSelect={(e) => {
+                                            e.preventDefault()
+                                            toggleIntegrationSelection(integration.id)
+                                          }}
+                                          className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                        >
+                                          <div className="flex items-center flex-1">
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedIntegrations[integration.id] || false}
+                                              onChange={() => {}}
+                                              className="w-4 h-4 mr-3"
+                                            />
+                                            <span className="mr-2 flex items-center">
+                                              {integration.icon}
+                                            </span>
+                                            <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
+                                          </div>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              e.preventDefault()
+                                              navigateToKb(kbId, integration.name)
+                                            }}
+                                            className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                          >
+                                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                                          </Button>
+                                        </DropdownMenuItem>
+                                      )
+                                    })
+                                  ) : (
+                                    // Show current folder/KB contents
+                                    <div className="max-h-60 overflow-y-auto">
+                                      {isLoadingItems ? (
+                                        <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                          Loading...
+                                        </div>
+                                      ) : currentItems.length > 0 ? (
+                                        currentItems.map((item: any) => (
+                                          <div
+                                            key={item.id}
+                                            className={`flex items-center px-4 py-2 text-sm ${
+                                              item.type === 'folder' 
+                                                ? 'cursor-pointer' 
+                                                : 'cursor-pointer'
+                                            }`}
+                                            onClick={() => {
+                                              if (item.type === 'folder') {
+                                                navigateToFolder(item.id, item.name)
+                                              } else {
+                                                // Handle file selection - you can add logic here to select/deselect files
+                                              }
+                                            }}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={(() => {
+                                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
+                                                if (!kbId) return false
+                                                const selectedSet = selectedItemsInKb[kbId] || new Set()
+                                                return selectedSet.has(item.id)
+                                              })()}
+                                              onChange={(e) => {
+                                                e.stopPropagation()
+                                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
+                                                if (!kbId) return
+                                                
+                                                const isCurrentlySelected = selectedItemsInKb[kbId]?.has(item.id)
+                                                
+                                                setSelectedItemsInKb(prev => {
+                                                  const newState = { ...prev }
+                                                  if (!newState[kbId]) {
+                                                    newState[kbId] = new Set()
+                                                  }
+                                                  
+                                                  const selectedSet = new Set(newState[kbId])
+                                                  if (selectedSet.has(item.id)) {
+                                                    selectedSet.delete(item.id)
+                                                  } else {
+                                                    selectedSet.add(item.id)
+                                                  }
+                                                  
+                                                  newState[kbId] = selectedSet
+                                                  return newState
+                                                })
+                                                
+                                                // Also store/remove item details
+                                                setSelectedItemDetailsInKb(prev => {
+                                                  const newState = { ...prev }
+                                                  if (!newState[kbId]) {
+                                                    newState[kbId] = {}
+                                                  }
+                                                  
+                                                  if (isCurrentlySelected) {
+                                                    // Remove item details
+                                                    delete newState[kbId][item.id]
+                                                  } else {
+                                                    // Store item details
+                                                    newState[kbId][item.id] = item
+                                                  }
+                                                  
+                                                  return newState
+                                                })
+                                                
+                                                // Auto-select/deselect the KB integration based on whether any items are selected
+                                                setSelectedIntegrations(prev => {
+                                                  const kbIntegrationId = `kb_${kbId}`
+                                                  const currentSelectedSet = selectedItemsInKb[kbId] || new Set()
+                                                  const newSelectedSet = new Set(currentSelectedSet)
+                                                  
+                                                  if (isCurrentlySelected) {
+                                                    newSelectedSet.delete(item.id)
+                                                  } else {
+                                                    newSelectedSet.add(item.id)
+                                                  }
+                                                  
+                                                  return {
+                                                    ...prev,
+                                                    [kbIntegrationId]: newSelectedSet.size > 0
+                                                  }
+                                                })
+                                              }}
+                                              className="w-4 h-4 mr-3"
+                                              onClick={(e) => e.stopPropagation()} // Prevent triggering the div click
+                                            />
+                                            {item.type === 'folder' && (
+                                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-800">
+                                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                              </svg>
+                                            )}
+                                            <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                              {item.name}
+                                            </span>
+                                            {item.type === 'folder' && (
+                                              <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
+                                            )}
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                          No items found
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()
+                          )}
+                        </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Knowledge bases are prefixed with "KB:" to distinguish them from other data sources.
+                    Knowledge bases appear in the submenu when selecting integrations.
                   </p>
                 </div>
 

@@ -122,7 +122,7 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
     else if(appName=='DataSource'){
       appN=Apps.DataSource
     }
-    else if(appName=='knowledge-base'){
+    else if(appName=='knowledge_base'){
       appN=Apps.KnowledgeBase
     }
     else if(appName=='slack'){
