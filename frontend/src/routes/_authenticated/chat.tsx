@@ -919,6 +919,13 @@ export const ChatPage = ({
 
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback((citation: Citation) => {
+    if (!citation || !citation.kbId || !citation.itemId) {
+      // For citations without kbId or itemId, open as regular link
+      if (citation.url) {
+        window.open(citation.url, "_blank", "noopener,noreferrer")
+      }
+      return
+    }
     setSelectedCitation(citation)
     setIsCitationPreviewOpen(true)
     // Close sources panel when opening citation preview
