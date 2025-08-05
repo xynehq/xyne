@@ -183,6 +183,7 @@ const availableIntegrationsList: IntegrationSource[] = [
 
 const AGENT_ENTITY_SEARCH_EXCLUSIONS: { app: string; entity: string }[] = [
   { app: Apps.Slack, entity: SlackEntity.Message },
+  {app: Apps.Slack, entity: SlackEntity.User}
 ]
 
 interface User {
@@ -307,6 +308,9 @@ function AgentComponent() {
         const response = await api.search.$get({
           query: {
             query: entitySearchQuery,
+            app: Apps.Slack,
+            isAgentIntegSearch: true,
+            // entity: SlackEntity.Channel
           },
         })
 
@@ -344,6 +348,45 @@ function AgentComponent() {
 
     return () => clearTimeout(debounceSearch)
   }, [entitySearchQuery, selectedEntities])
+
+  const handleEntitySelection = (entity: FetchedDataSource) => {
+    setSelectedEntities((prev) => [...prev, entity])
+
+    if (entity.app === Apps.Slack && entity.entity === SlackEntity.Channel) {
+      setSelectedIntegrations((prev) => ({
+        ...prev,
+        slack: true,
+      }))
+    }
+
+    setEntitySearchQuery("")
+    setShowEntitySearchResults(false)
+  }
+
+  const handleEntityRemoval = (entityToRemove: FetchedDataSource) => {
+    setSelectedEntities((prev) => {
+      const newEntities = prev.filter((c) => c.docId !== entityToRemove.docId)
+
+      if (
+        entityToRemove.app === Apps.Slack &&
+        entityToRemove.entity === SlackEntity.Channel
+      ) {
+        const remainingSlackChannels = newEntities.filter(
+          (entity) =>
+            entity.app === Apps.Slack && entity.entity === SlackEntity.Channel,
+        )
+
+        if (remainingSlackChannels.length === 0) {
+          setSelectedIntegrations((prevInt) => ({
+            ...prevInt,
+            slack: false,
+          }))
+        }
+      }
+
+      return newEntities
+    })
+  }
 
   const [users, setUsers] = useState<User[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -1187,12 +1230,9 @@ function AgentComponent() {
             // If no specific items are selected, use the KB id
             const kbId = integration.id.replace('kb_', '')
             knowledgeBaseItemIds.push(kbId)
-            // console.log(`Adding KB ID: ${kbId} for integration ${integrationId}`)
           } else {
-            // If specific items are selected, use their IDs
             selectedItems.forEach(itemId => {
               knowledgeBaseItemIds.push(itemId)
-              // console.log(`Adding KB item ID: ${itemId} for integration ${integrationId}`)
             })
           }
           hasKnowledgeBaseSelections = true
@@ -1211,6 +1251,28 @@ function AgentComponent() {
         }
       }
     }
+
+    // Process selectedEntities to automatically add integrations based on doc_ids
+    const entityIntegrations: Record<string, string[]> = {}
+    
+    selectedEntities.forEach(entity => {
+      const app = entity.app.toLowerCase()
+      if(app!=Apps.Slack)
+      return
+      // Group entity docIds by app
+      if (!entityIntegrations[app]) {
+        entityIntegrations[app] = []
+      }
+      entityIntegrations[app].push(entity.docId)
+    })
+
+    // Add entity-based integrations to appIntegrationsObject
+    Object.entries(entityIntegrations).forEach(([app, docIds]) => {
+      appIntegrationsObject[app] = {
+        itemIds: docIds,
+        selectedAll: false
+      }
+    })
 
     // Add knowledge base selections if any exist
     if (hasKnowledgeBaseSelections) {
@@ -2791,13 +2853,12 @@ function AgentComponent() {
                                               navigateToKb(kbId, integration.name)
                                             }}
                                             className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                          >
-                                            <ChevronRight className="h-4 w-4 text-gray-400" />
-                                          </Button>
-                                        </DropdownMenuItem>
-                                      )
-                                    })
-                                  ) : (
+                                        >
+                                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                                        </Button>
+                                      </DropdownMenuItem>
+                                    )
+                                  })) : (
                                     // Show current folder/KB contents
                                     <div className="max-h-60 overflow-y-auto">
                                       {isLoadingItems ? (
@@ -2939,12 +3000,8 @@ function AgentComponent() {
                       selectedEntities.map((entity) => (
                         <CustomBadge
                           key={entity.docId}
-                          text={entity.name}
-                          onRemove={() =>
-                            setSelectedEntities((prev) =>
-                              prev.filter((c) => c.docId !== entity.docId),
-                            )
-                          }
+                          text={entity.name || entity.docId}
+                          onRemove={() => handleEntityRemoval(entity)}
                         />
                       ))
                     ) : (
@@ -2968,16 +3025,10 @@ function AgentComponent() {
                               <div
                                 key={entity.docId}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
-                                onClick={() => {
-                                  setSelectedEntities((prev) => [
-                                    ...prev,
-                                    entity,
-                                  ])
-                                  setEntitySearchQuery("")
-                                }}
+                                onClick={() => handleEntitySelection(entity)}
                               >
                                 <p className="text-sm font-medium">
-                                  {entity.name}
+                                  {entity.name || entity.docId}
                                 </p>
                               </div>
                             ))
