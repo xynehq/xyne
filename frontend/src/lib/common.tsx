@@ -6,7 +6,8 @@ import {
   CalendarDays,
   PlugZap,
   Github,
-} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github
+  Search,
+} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, Search
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -128,6 +129,8 @@ export const getIcon = (
     entity === SystemEntity.SystemInfo
   ) {
     return <Github size={size?.w || 12} className={classNameVal} />
+  } else if (app === Apps.Xyne && entity === SystemEntity.SystemInfo) {
+    return <Search size={size?.w || 12} className={classNameVal} /> // Web search results
   } else if (entity === SystemEntity.SystemInfo) {
     return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
   } else if (
@@ -135,6 +138,8 @@ export const getIcon = (
     entity === DataSourceEntity.DataSourceFile
   ) {
     return <FileText size={12} className={classNameVal} />
+  } else if (app === "web" && entity === "search_result") {
+    return <Search size={size?.w || 12} className={classNameVal} />
   } else {
     return <FileText size={12} className={classNameVal} /> // Generic fallback icon
   }

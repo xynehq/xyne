@@ -181,7 +181,11 @@ import {
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
-import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
+import {
+  internalTools,
+  externalTools,
+  mapGithubToolResponse,
+} from "@/api/chat/mapper"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -210,6 +214,18 @@ const checkAndYieldCitationsForAgent = async function* (
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   let imgMatch
+
+  // Debug logging
+  Logger.debug("[checkAndYieldCitationsForAgent] Processing citations", {
+    resultsLength: results.length,
+    baseIndex,
+    sampleResults: results.slice(0, 3).map((r) => ({
+      id: r.id,
+      hasSource: !!r.source,
+      sourceDocId: r.source?.docId,
+    })),
+  })
+
   while (
     (match = textToCitationIndex.exec(text)) !== null ||
     (imgMatch = textToImageCitationIndex.exec(text)) !== null
@@ -217,11 +233,22 @@ const checkAndYieldCitationsForAgent = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - 1]
+        const item = results[citationIndex - baseIndex - 1]
 
-        if (!item?.source?.docId || !item.source?.url) {
+        Logger.debug("[checkAndYieldCitationsForAgent] Citation details", {
+          citationIndex,
+          baseIndex,
+          arrayIndex: citationIndex - baseIndex - 1,
+          resultsLength: results.length,
+          hasItem: !!item,
+          itemDocId: item?.source?.docId,
+          itemTitle: item?.source?.title,
+        })
+
+        if (!item?.source?.docId) {
           Logger.info(
-            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+            "[checkAndYieldCitationsForAgent] No docId found for citation, skipping",
+            { citationIndex, resultsLength: results.length, baseIndex },
           )
           continue
         }
@@ -241,7 +268,7 @@ const checkAndYieldCitationsForAgent = async function* (
         const imageIndex = parseInt(parts[1], 10)
         const citationIndex = docIndex + baseIndex
         if (!yieldedImageCitations.has(citationIndex)) {
-          const item = results[docIndex]
+          const item = results[docIndex - baseIndex - 1]
           if (item) {
             try {
               const imageData = await getCitationToImage(
@@ -328,10 +355,45 @@ async function* getToolContinuationIterator(
     imageCitation?: ImageCitation
   }
 > {
-  const context = answerContextMapFromFragments(results, maxDefaultSummary)
+  // **IMPORTANT: Filter results to only use web search sources when web search was performed**
+  // Check for web search by looking for specific patterns in docIds, entity types, or URLs
+  const hasWebSearchResults = results.some(
+    (r) =>
+      r.source.docId?.includes("web_") ||
+      r.source.docId?.includes("web_search") ||
+      r.source.entity === SystemEntity.SystemInfo ||
+      r.id?.includes("web_") ||
+      (r.source.url && r.source.url.startsWith("http")),
+  )
+  let filteredResults = results
+
+  if (hasWebSearchResults) {
+    // When web search results exist, ONLY use web search results for citations
+    filteredResults = results.filter(
+      (r) =>
+        r.source.docId?.includes("web_") ||
+        r.source.docId?.includes("web_search") ||
+        r.source.entity === SystemEntity.SystemInfo ||
+        r.id?.includes("web_") ||
+        (r.source.url && r.source.url.startsWith("http")),
+    )
+
+    loggerWithChild({ email: email || "unknown" }).info(
+      `[Agent Citation Logic] Web search results detected - using ONLY web search sources for citations (${filteredResults.length} out of ${results.length} total fragments). Internal database results excluded.`,
+    )
+  } else {
+    loggerWithChild({ email: email || "unknown" }).info(
+      `[Agent Citation Logic] No web search results - using all fragments for citations (${filteredResults.length} fragments)`,
+    )
+  }
+
+  const context = answerContextMapFromFragments(
+    filteredResults,
+    maxDefaultSummary,
+  )
   const { imageFileNames } = extractImageFileNames(
     context,
-    results.map(
+    filteredResults.map(
       (v) =>
         ({
           fields: {
@@ -365,6 +427,10 @@ async function* getToolContinuationIterator(
     context ?? "",
     agentPrompt,
     fallbackReasoning,
+  )
+
+  loggerWithChild({ email: email || "unknown" }).info(
+    `[Agent] Starting final answer generation with ${filteredResults.length} filtered results, context length: ${(context || "").length}`,
   )
 
   const previousResultsLength = 0 // todo fix this
@@ -427,8 +493,8 @@ async function* getToolContinuationIterator(
         yield* checkAndYieldCitationsForAgent(
           buffer,
           yieldedCitations,
-          results,
-          previousResultsLength,
+          filteredResults, // Use filtered results to exclude internal DB when web search is present
+          previousResultsLength, // This should be the baseIndex
           yieldedImageCitations,
           email ?? "",
         )
@@ -469,6 +535,27 @@ async function performSynthesis(
       type: AgentReasoningStepType.Synthesis,
       details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
     })
+
+    // Enhanced logging for web search scenarios
+    const webSearchFragments = gatheredFragments.filter(
+      (f) =>
+        (f as any).webSearchSource === true ||
+        ((f.source as any) && (f.source as any).webSearchSource === true),
+    )
+
+    if (webSearchFragments.length > 0) {
+      loggerWithChild({ email: sub }).info(
+        `[Synthesis] Processing ${webSearchFragments.length} web search fragments out of ${gatheredFragments.length} total fragments`,
+      )
+
+      // Log first web search fragment content length for debugging
+      const firstWebFragment = webSearchFragments[0]
+      if (firstWebFragment) {
+        loggerWithChild({ email: sub }).info(
+          `[Synthesis] First web search fragment content length: ${firstWebFragment.content?.length || 0} chars`,
+        )
+      }
+    }
 
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
@@ -1187,12 +1274,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                     .map(
                       (f, i) =>
                         `[Fragment ${i + 1}] (Source Doc ID: ${
-                          f.source.docId
+                          f.source?.docId || `Unknown-${i + 1}`
                         })\n` +
-                        `  - Title: ${f.source.title || "Untitled"}\n` +
+                        `  - Title: ${f.source?.title || "Untitled"}\n` +
                         // Truncate content in the scratchpad to keep the prompt concise.
                         // The full content is available in `planningContext` for the final answer.
-                        `  - Content Snippet: "${f.content.substring(0, 100)}..."`,
+                        `  - Content Snippet: "${(f.content || "No content available").substring(0, 100)}..."`,
                     )
                     .join("\n\n")
                 : "\n--- NO EVIDENCE GATHERED YET ---"
@@ -1295,7 +1382,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               },
               agentPromptForLLM,
               loopWarningPrompt,
-              { internal: xyneTools },
+              { internal: xyneTools, external: externalTools },
               isDebugMode,
             )
 
@@ -1609,22 +1696,47 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolExecutionSpan.end()
 
               if (toolExecutionResponse) {
+                // Count items from both contexts and individualResults
+                const contextsCount =
+                  toolExecutionResponse.contexts?.length || 0
+                const individualResultsCount =
+                  (toolExecutionResponse as any).individualResults?.length || 0
+                const totalItemsFound = Math.max(
+                  contextsCount,
+                  individualResultsCount,
+                ) // Use the higher count
+
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.ToolResult,
                   toolName: toolName as AgentToolName,
                   resultSummary: toolExecutionResponse.result,
-                  itemsFound: toolExecutionResponse.contexts?.length || 0,
+                  itemsFound: totalItemsFound,
                   error: toolExecutionResponse.error,
                 })
 
                 // If the tool execution resulted in an error or no new contexts, increment failure count
                 const currentToolCall =
                   previousToolCalls[previousToolCalls.length - 1]
+
+                // Check for fragments in both contexts and individualResults
+                const hasFragments =
+                  (toolExecutionResponse.contexts &&
+                    toolExecutionResponse.contexts.length > 0) ||
+                  ((toolExecutionResponse as any).individualResults &&
+                    (toolExecutionResponse as any).individualResults.length > 0)
+
+                // **CRITICAL FIX**: For web search, check if we have a successful result even without traditional fragments
+                const isWebSearchSuccess =
+                  (toolName === "web_search" ||
+                    toolName === "web_search_tool") &&
+                  (toolExecutionResponse as any).success === true &&
+                  toolExecutionResponse.result &&
+                  toolExecutionResponse.result.length > 100 // Ensure substantial content
+
                 if (
                   currentToolCall &&
                   (toolExecutionResponse.error ||
-                    !toolExecutionResponse.contexts ||
-                    toolExecutionResponse.contexts.length === 0)
+                    (!hasFragments && !isWebSearchSuccess))
                 ) {
                   currentToolCall.failureCount++
                 } else if (currentToolCall) {
@@ -1645,14 +1757,35 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                 }
 
-                if (
-                  toolExecutionResponse.contexts &&
-                  toolExecutionResponse.contexts.length > 0
-                ) {
-                  const newFragments = toolExecutionResponse.contexts
-                  gatheredFragments.push(...newFragments)
+                // Prioritize individualResults for web search tools to get proper web URL citations
+                const fragmentsToAdd =
+                  (toolExecutionResponse as any).individualResults &&
+                  (toolExecutionResponse as any).individualResults.length > 0
+                    ? (toolExecutionResponse as any).individualResults
+                    : toolExecutionResponse.contexts
 
-                  const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
+                if (fragmentsToAdd && fragmentsToAdd.length > 0) {
+                  // **IMPORTANT: Track if this is a web search tool**
+                  const isWebSearchTool = toolName === "web_search"
+
+                  if (isWebSearchTool) {
+                    // Mark all fragments from web search to distinguish them
+                    fragmentsToAdd.forEach((fragment: any) => {
+                      fragment.webSearchSource = true
+                      fragment.source = fragment.source || {}
+                      fragment.source.webSearchSource = true
+                    })
+
+                    loggerWithChild({ email: sub }).info(
+                      `[Agent Tool] Web search tool executed - adding ${fragmentsToAdd.length} web search fragments. Internal database results will be excluded from citations.`,
+                    )
+                  }
+
+                  gatheredFragments.push(...fragmentsToAdd)
+
+                  const newIds = fragmentsToAdd
+                    .map((f: any) => f.id)
+                    .filter(Boolean) // Use the fragment's own unique ID
                   excludedIds = [...new Set([...excludedIds, ...newIds])]
                 }
               } else {
@@ -1695,18 +1828,49 @@ export const MessageWithToolsApi = async (c: Context) => {
                 gatheredFragments.push(context)
               }
 
-              planningContext = gatheredFragments.length
-                ? gatheredFragments
+              // Filter fragments with actual content for synthesis
+              const fragmentsWithContent = gatheredFragments.filter(
+                (f) => f.content && f.content.trim().length > 0,
+              )
+
+              // Enhanced debug logging for web search scenarios
+              const webSearchFragmentsWithContent = fragmentsWithContent.filter(
+                (f) =>
+                  (f as any).webSearchSource === true ||
+                  ((f.source as any) &&
+                    (f.source as any).webSearchSource === true),
+              )
+
+              if (webSearchFragmentsWithContent.length > 0) {
+                loggerWithChild({ email: sub }).info(
+                  `[Planning Context] Including ${webSearchFragmentsWithContent.length} web search fragments in planning context`,
+                )
+
+                // Log the content lengths for debugging
+                webSearchFragmentsWithContent.forEach((f, index) => {
+                  loggerWithChild({ email: sub }).info(
+                    `[Planning Context] Web fragment ${index + 1}: ${f.content?.length || 0} chars, title: "${f.source?.title}"`,
+                  )
+                })
+              }
+
+              planningContext = fragmentsWithContent.length
+                ? fragmentsWithContent
                     .map(
                       (f, i) =>
                         `[${i + 1}] ${
-                          f.source.title || `Source ${f.source.docId}`
+                          f.source?.title ||
+                          f.source?.docId ||
+                          `Source ${i + 1}`
                         }: ${f.content}`,
                     )
                     .join("\n")
                 : ""
 
               if (planningContext.length) {
+                loggerWithChild({ email: sub }).info(
+                  `[Planning Context] Created planning context with ${planningContext.length} characters for synthesis`,
+                )
                 const parseSynthesisOutput = await performSynthesis(
                   ctx,
                   message,
@@ -1722,6 +1886,27 @@ export const MessageWithToolsApi = async (c: Context) => {
                   type: AgentReasoningStepType.LogMessage,
                   message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
                 })
+
+                // Enhanced debug logging for web search synthesis results
+                const webSearchFragments = gatheredFragments.filter(
+                  (f) =>
+                    (f as any).webSearchSource === true ||
+                    ((f.source as any) &&
+                      (f.source as any).webSearchSource === true),
+                )
+
+                if (webSearchFragments.length > 0) {
+                  loggerWithChild({ email: sub }).info(
+                    `[Synthesis Result] With ${webSearchFragments.length} web search fragments, synthesis state: ${parseSynthesisOutput?.synthesisState}`,
+                  )
+
+                  if (parseSynthesisOutput?.answer) {
+                    loggerWithChild({ email: sub }).info(
+                      `[Synthesis Result] Generated answer length: ${parseSynthesisOutput.answer.length} chars`,
+                    )
+                  }
+                }
+
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
                   message: ` Synthesis: ${
@@ -1739,6 +1924,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                     message:
                       "Context is sufficient. Proceeding to generate final answer.",
                   })
+
+                  // Enhanced debug logging for web search scenarios
+                  const webSearchFragments = gatheredFragments.filter(
+                    (f) =>
+                      (f as any).webSearchSource === true ||
+                      ((f.source as any) &&
+                        (f.source as any).webSearchSource === true),
+                  )
+
+                  if (webSearchFragments.length > 0) {
+                    loggerWithChild({ email: sub }).info(
+                      `[Agent] ✅ Synthesis completed with ${webSearchFragments.length} web search fragments. Total fragments: ${gatheredFragments.length}`,
+                    )
+                  }
+
                   // The `continuationIterator` logic will now run after the loop breaks.
                 } else {
                   // Context is Partial or NotFound. The loop will continue.
@@ -1975,6 +2175,14 @@ export const MessageWithToolsApi = async (c: Context) => {
               //   })
               // }
               answer += chunk.text
+
+              // Enhanced debug logging for web search scenarios
+              if (chunk.text.length > 50) {
+                loggerWithChild({ email: sub }).info(
+                  `[Agent] Streaming text chunk (${chunk.text.length} chars): ${chunk.text.substring(0, 100)}...`,
+                )
+              }
+
               stream.writeSSE({
                 event: ChatSSEvents.ResponseUpdate,
                 data: chunk.text,
@@ -2013,7 +2221,102 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
 
+          // **CRITICAL FIX FOR AGENTIC MODE**: Web search fallback mechanism
+          // If we have no answer or insufficient answer but web search succeeded, use the web search result
+          const hasInsufficientAnswer =
+            !answer ||
+            (answer &&
+              answer.length < 200 &&
+              answer.includes("don't have sufficient information"))
+
+          if (
+            (hasInsufficientAnswer || !answer) &&
+            !wasStreamClosedPrematurely
+          ) {
+            const webSearchTools = previousToolCalls.filter(
+              (call) => call.tool === "web_search" && call.failureCount === 0,
+            )
+
+            if (webSearchTools.length > 0) {
+              loggerWithChild({ email: sub }).info(
+                `[Agent] ${!answer ? "No" : "Insufficient"} LLM answer generated, but web search succeeded. Using web search result as fallback answer.`,
+              )
+
+              // Find web search result in reasoning steps - check multiple possible tool names
+              const webSearchReasoning = structuredReasoningSteps.find(
+                (step) =>
+                  step.type === AgentReasoningStepType.ToolResult &&
+                  ((step as any).toolName === "web_search" ||
+                    (step as any).toolName === XyneTools.WebSearch ||
+                    (step as any).toolName === "web_search_tool") &&
+                  !(step as any).error &&
+                  (step as any).resultSummary &&
+                  (step as any).resultSummary.length > 100,
+              )
+
+              if (webSearchReasoning) {
+                const webSearchAnswer = (webSearchReasoning as any)
+                  .resultSummary
+                answer = webSearchAnswer
+                loggerWithChild({ email: sub }).info(
+                  `[Agent] ✅ Using web search result as answer (${answer.length} chars)`,
+                )
+
+                // Stream the web search result as the final answer
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: answer,
+                })
+
+                // Also ensure we have web search fragments for citations
+                const webSearchFragments = gatheredFragments.filter(
+                  (f) =>
+                    (f as any).webSearchSource === true ||
+                    ((f.source as any) &&
+                      (f.source as any).webSearchSource === true),
+                )
+
+                if (webSearchFragments.length > 0) {
+                  loggerWithChild({ email: sub }).info(
+                    `[Agent] Found ${webSearchFragments.length} web search fragments for citations`,
+                  )
+                }
+              } else {
+                loggerWithChild({ email: sub }).warn(
+                  `[Agent] Web search tool succeeded but no reasoning step found with resultSummary. Available reasoning steps: ${structuredReasoningSteps.length}`,
+                )
+
+                // Debug: Log what reasoning steps we have
+                structuredReasoningSteps.forEach((step, index) => {
+                  if (step.type === AgentReasoningStepType.ToolResult) {
+                    loggerWithChild({ email: sub }).info(
+                      `[Agent] Reasoning step ${index}: toolName=${(step as any).toolName}, hasResultSummary=${!!((step as any).resultSummary)}, resultLength=${((step as any).resultSummary || "").length}`,
+                    )
+                  }
+                })
+              }
+            }
+          }
+
           if (answer || wasStreamClosedPrematurely) {
+            loggerWithChild({ email: sub }).info(
+              `[Agent] ✅ Final answer ready - length: ${answer?.length || 0}, streamClosed: ${wasStreamClosedPrematurely}`,
+            )
+
+            // Enhanced logging for web search scenarios
+            const webSearchFragmentCount = gatheredFragments.filter(
+              (f) =>
+                (f as any).webSearchSource === true ||
+                ((f.source as any) &&
+                  (f.source as any).webSearchSource === true),
+            ).length
+
+            if (webSearchFragmentCount > 0) {
+              loggerWithChild({ email: sub }).info(
+                `[Agent] Answer includes ${webSearchFragmentCount} web search fragments out of ${gatheredFragments.length} total fragments`,
+              )
+            }
+
             // Determine if a message (even partial) should be saved
             // TODO: incase user loses permission
             // to one of the citations what do we do?

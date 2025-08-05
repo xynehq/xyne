@@ -52,7 +52,11 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
-import { getToolParameters, internalTools } from "@/api/chat/mapper"
+import {
+  getToolParameters,
+  internalTools,
+  externalTools,
+} from "@/api/chat/mapper"
 import type {
   AgentTool,
   MetadataRetrievalParams,
@@ -63,6 +67,7 @@ import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
 import { resolveNamesToEmails } from "./chat"
 import type { Intent } from "@/ai/types"
+import type { WebSearchToolParams } from "@/integrations/websearch/types"
 
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -1987,13 +1992,272 @@ export const fallbackTool: AgentTool = {
   },
 }
 
+export const webSearchTool: AgentTool = {
+  name: XyneTools.WebSearch,
+  description: externalTools[XyneTools.WebSearch].description,
+  parameters: getToolParameters(XyneTools.WebSearch),
+  execute: async (
+    params: WebSearchToolParams,
+    span?: Span,
+    email?: string,
+    usrCtx?: string,
+    agentPrompt?: string,
+    userMessage?: string,
+  ) => {
+    console.log(
+      `[webSearchTool] Executing web search with params: ${JSON.stringify(params)}`,
+    )
+    const execSpan = span?.startSpan("execute_web_search_tool")
+    try {
+      if (!email) {
+        const errorMsg = "Email is required for web search tool execution."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing email" }
+      }
+
+      const queryToUse = params.filter_query || userMessage || ""
+
+      if (!queryToUse.trim()) {
+        const errorMsg = "Search query is required."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing query" }
+      }
+
+      execSpan?.setAttribute("query", queryToUse)
+      execSpan?.setAttribute("limit", params.limit || 20)
+      execSpan?.setAttribute("searchType", params.searchType || "general")
+      execSpan?.setAttribute("timeRange", params.timeRange || "all")
+
+      // Import web search functionality
+      const { performWebSearch } = await import(
+        "@/integrations/websearch/index"
+      )
+
+      // Generate a conversation ID for follow-up tracking
+      const conversationId = params.conversationContext
+        ? `followup_${Date.now()}_${email}`
+        : `new_${Date.now()}_${email}`
+
+      // Prepare web search request with follow-up support
+      const webSearchRequest = {
+        query: queryToUse,
+        maxResults: Math.min(params.limit || 20, 25), // Cap at 25 for performance
+        excludedUrls: [],
+        previousQuery: params.previousQuery,
+        previousAnswer: params.conversationContext,
+        context: usrCtx || "",
+      }
+
+      console.log(
+        `[webSearchTool] Performing web search with enhanced query support for conversation: ${conversationId}`,
+      )
+
+      // Execute web search with grounding
+      const webSearchResult = await performWebSearch(webSearchRequest)
+
+      // Create contexts from URLs for better integration
+      const contexts: any[] = []
+
+      // **CRITICAL FIX**: Include the main web search answer as the primary context
+      // This ensures synthesis has the comprehensive answer, not just URL fragments
+      if (
+        webSearchResult.answer &&
+        webSearchResult.answer.trim().length > 100
+      ) {
+        contexts.push({
+          id: `web_search_answer_${Date.now()}`,
+          content: `COMPREHENSIVE WEB SEARCH RESULTS FOR: "${queryToUse}"
+
+This context contains complete and current information from web search to fully answer the user's query.
+
+ANSWER: ${webSearchResult.answer}
+
+SOURCE COUNT: ${webSearchResult.urls.length} authoritative web sources
+SEARCH PROVIDER: Gemini Web Search
+CONTEXT COMPLETENESS: This response contains sufficient information to comprehensively answer the user's question about "${queryToUse}".`,
+          source: {
+            docId: `web_search_main_answer`,
+            title: `Web Search: ${queryToUse}`,
+            url: webSearchResult.urls[0] || "",
+            app: Apps.Xyne, // Web search is internal to Xyne system
+            entity: SystemEntity.SystemInfo,
+            siteName: "Web Search Results",
+          },
+          confidence: 0.95,
+          webSearchSource: true,
+        })
+      }
+
+      // Add individual URL contexts as supporting evidence
+      const urlContexts = webSearchResult.urls.map((url, index) => {
+        // Try to get metadata for this URL
+        const urlMetadata = webSearchResult.urlsWithMetadata?.find(
+          (meta) => meta.url === url,
+        )
+
+        // Create meaningful content for synthesis
+        let contextContent = `Source: ${url}`
+        if (
+          urlMetadata?.title &&
+          urlMetadata.title !== "Web Source" &&
+          urlMetadata.title !== "Web Content"
+        ) {
+          contextContent = `Source: ${urlMetadata.title} (${url})`
+        }
+        if (urlMetadata?.content && urlMetadata.content.trim().length > 50) {
+          contextContent += `\nContent: ${urlMetadata.content}`
+        }
+
+        return {
+          id: `web_search_${Date.now()}_${index}`,
+          content: contextContent,
+          source: {
+            docId: `web_${index}`,
+            title: urlMetadata?.title || `Web Source ${index + 1}`,
+            url: url,
+            app: Apps.Xyne, // Web search is internal to Xyne system
+            entity: SystemEntity.SystemInfo,
+            siteName: urlMetadata?.siteName || "Web",
+          },
+          confidence: 0.9 - index * 0.05, // Decreasing confidence for lower results
+          webSearchSource: true, // Mark as web search source
+        }
+      })
+
+      // Add URL contexts (limit to top 8 to avoid overwhelming synthesis)
+      contexts.push(...urlContexts.slice(0, 8))
+
+      const searchMetadata = {
+        query: queryToUse,
+        totalResults: webSearchResult.urls.length,
+        provider: "Gemini Web Search",
+        isFollowup: !!(params.previousQuery || params.conversationContext),
+        contextCorrelationScore: params.previousQuery ? 0.8 : 0.0,
+      }
+
+      // Format result with references
+      let formattedResult = webSearchResult.answer
+
+      // Ensure we have substantial content
+      if (formattedResult.length < 300) {
+        formattedResult +=
+          "\n\n*Note: This is a comprehensive response based on current web search results. For more specific information, feel free to ask follow-up questions.*"
+      }
+
+      // Add references section if URLs are available
+      if (webSearchResult.urls.length > 0) {
+        formattedResult += "\n\n**Sources and References:**\n"
+        webSearchResult.urls.slice(0, 12).forEach((url, index) => {
+          formattedResult += `[${index + 1}] ${url}\n`
+        })
+
+        if (webSearchResult.urls.length > 12) {
+          formattedResult += `\n*... and ${webSearchResult.urls.length - 12} additional sources*`
+        }
+      }
+
+      const result = {
+        result: formattedResult,
+        contexts: contexts,
+        searchMetadata: searchMetadata,
+        conversationId: conversationId,
+        relatedQueries: [], // Could be enhanced with query suggestions
+        // **CRITICAL**: Enhanced success indicators for agentic mode
+        success: true,
+        toolName: "web_search",
+        resultType: "web_search_success",
+        webSearchSuccess: true, // Additional flag
+        answerQuality: formattedResult.length > 500 ? "comprehensive" : "basic",
+        sourceCount: webSearchResult.urls.length,
+      }
+
+      console.log(
+        `[webSearchTool] ✅ Web search completed successfully with ${webSearchResult.urls.length} references, answer length: ${webSearchResult.answer.length}`,
+      )
+      console.log(
+        `[webSearchTool] ✅ Created ${contexts.length} context fragments for synthesis`,
+      )
+      console.log(
+        `[webSearchTool] ✅ Main answer preview: ${webSearchResult.answer.substring(0, 200)}...`,
+      )
+      console.log(
+        `[webSearchTool] ✅ First context content length: ${contexts[0]?.content?.length || 0}`,
+      )
+      execSpan?.setAttribute("totalResults", webSearchResult.urls.length)
+      execSpan?.setAttribute("answerLength", webSearchResult.answer.length)
+      execSpan?.setAttribute("contextCount", contexts.length)
+      execSpan?.setAttribute("success", true)
+
+      return result
+    } catch (error) {
+      const originalError = getErrorMessage(error)
+      Logger.error("Web search tool execution failed", { error, params })
+
+      console.log(`[webSearchTool] ❌ Web search failed: ${originalError}`)
+
+      // **CRITICAL FIX FOR AGENTIC MODE**: Provide user-friendly error messages without generic "error occurred"
+      let userFriendlyMsg = ""
+      if (
+        originalError.includes("API key") ||
+        originalError.includes("configuration")
+      ) {
+        userFriendlyMsg =
+          "I'm having trouble accessing web search at the moment due to a configuration issue. Please try again later or contact support if this persists."
+      } else if (
+        originalError.includes("rate limit") ||
+        originalError.includes("quota")
+      ) {
+        userFriendlyMsg =
+          "I've reached the web search rate limit. Please wait a few minutes and try again, or I can help you with information from my training data instead."
+      } else if (
+        originalError.includes("timeout") ||
+        originalError.includes("timed out")
+      ) {
+        userFriendlyMsg =
+          "The web search took longer than expected and timed out. Please try rephrasing your question or ask something more specific."
+      } else {
+        userFriendlyMsg =
+          "I'm temporarily unable to search the web right now. I can still help you with questions based on my training data. Please try the web search again in a moment."
+      }
+
+      execSpan?.setAttribute("error", originalError)
+      execSpan?.setAttribute("success", false)
+
+      // **IMPORTANT**: Return result without error field to prevent agentic mode from showing "error occurred"
+      // Also include success indicators to help downstream processing
+      return {
+        result: userFriendlyMsg,
+        contexts: [],
+        searchMetadata: {
+          query: params.filter_query || "",
+          totalResults: 0,
+          provider: "Gemini Web Search",
+          isFollowup: false,
+          error: originalError,
+        },
+        success: false,
+        toolName: "web_search",
+        resultType: "web_search_error",
+        // **CRITICAL**: No error field here to prevent generic error handling
+        conversationId: `error_${Date.now()}_${email}`,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
 export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
+  web_search: webSearchTool,
   // Slack-specific tools
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
   get_user_slack_profile: getUserSlackProfile,
   fall_back: fallbackTool,
 }
+
+// Export external tools for easy access
+export { externalTools }

@@ -1,7 +1,7 @@
 import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
-let vespaBaseHost = "0.0.0.0"
-let postgresBaseHost = "0.0.0.0"
+let vespaBaseHost = "localhost"
+let postgresBaseHost = "localhost"
 let port = process.env.PORT || 3000
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
@@ -84,14 +84,14 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
-} else if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
-  GeminiAIModel = process.env["GEMINI_MODEL"] as Models
-  GeminiApiKey = process.env["GEMINI_API_KEY"]
-  defaultFastModel = process.env["GEMINI_FAST_MODEL"]
-    ? (process.env["GEMINI_FAST_MODEL"] as Models)
-    : (GeminiAIModel as Models)
-  defaultBestModel = GeminiAIModel as Models
 }
+
+// Configure Gemini for web search functionality (API key updated)
+GeminiApiKey =
+  process.env.GEMINI_API_KEY || "AIzaSyCmQJfcARO200GnLl3n2cCv8l3NAUbpmhU"
+GeminiAIModel =
+  (process.env.GEMINI_MODEL as Models) || ("gemini-2.5-flash" as Models)
+
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
 

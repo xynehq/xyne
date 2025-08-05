@@ -21,6 +21,69 @@ const { StartThinkingToken, EndThinkingToken } = config
 import { findImageByName } from "@/ai/provider/base"
 import { createLabeledImageContent } from "../utils"
 
+// Global rate limiter for Bedrock to prevent throttling across all instances
+class BedrockRateLimiter {
+  private static instance: BedrockRateLimiter
+  private requestTimes: number[] = []
+  private readonly maxRequestsPerMinute = 3 // Even more conservative limit
+  private readonly windowMs = 60000 // 1 minute window
+  private lastRequestTime = 0
+  private readonly minIntervalMs = 10000 // Minimum 10 seconds between requests
+
+  private constructor() {}
+
+  static getInstance(): BedrockRateLimiter {
+    if (!BedrockRateLimiter.instance) {
+      BedrockRateLimiter.instance = new BedrockRateLimiter()
+    }
+    return BedrockRateLimiter.instance
+  }
+
+  async waitForSlot(): Promise<void> {
+    const now = Date.now()
+
+    // Enforce minimum interval between requests
+    const timeSinceLastRequest = now - this.lastRequestTime
+    if (timeSinceLastRequest < this.minIntervalMs) {
+      const waitTime = this.minIntervalMs - timeSinceLastRequest
+      Logger.debug(
+        `Bedrock rate limiter: enforcing minimum interval, waiting ${waitTime}ms`,
+      )
+      await new Promise((resolve) => setTimeout(resolve, waitTime))
+    }
+
+    // Remove old requests outside the window
+    this.requestTimes = this.requestTimes.filter(
+      (time) => now - time < this.windowMs,
+    )
+
+    // If we're at the limit, wait until we can make another request
+    if (this.requestTimes.length >= this.maxRequestsPerMinute) {
+      const oldestRequest = this.requestTimes[0]
+      const waitTime = this.windowMs - (now - oldestRequest) + 1000 // Add 1s buffer
+
+      if (waitTime > 0) {
+        Logger.debug(
+          `Bedrock rate limiter: waiting ${waitTime}ms before next request`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, waitTime))
+        return this.waitForSlot() // Recursively check again
+      }
+    }
+
+    // Record this request
+    const requestTime = Date.now()
+    this.requestTimes.push(requestTime)
+    this.lastRequestTime = requestTime
+
+    Logger.debug(
+      `Bedrock rate limiter: request approved, ${this.requestTimes.length}/${this.maxRequestsPerMinute} requests in current window`,
+    )
+  }
+}
+
+const bedrockRateLimiter = BedrockRateLimiter.getInstance()
+
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (
   imagePaths: string[],
@@ -155,6 +218,7 @@ export class BedrockProvider extends BaseProvider {
       }
       return message
     })
+
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
@@ -172,29 +236,72 @@ export class BedrockProvider extends BaseProvider {
         temperature: modelParams.temperature || 0,
       },
     })
-    const response = await (this.client as BedrockRuntimeClient).send(command)
-    if (!response) {
-      throw new Error("Invalid bedrock response")
+
+    // Enhanced throttling exception handling with exponential backoff
+    const maxRetries = 5 // Increased from 3 to 5
+    let lastError: any
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Wait for rate limiter slot before making the request
+        await bedrockRateLimiter.waitForSlot()
+
+        const response = await (this.client as BedrockRuntimeClient).send(
+          command,
+        )
+        if (!response) {
+          throw new Error("Invalid bedrock response")
+        }
+
+        let fullResponse = response.output?.message?.content?.reduce(
+          (prev: string, current) => {
+            prev += current.text
+            return prev
+          },
+          "",
+        )
+        if (!response.usage) {
+          throw new Error("Could not get usage")
+        }
+        const { inputTokens, outputTokens } = response.usage
+        return {
+          text: fullResponse,
+          cost: calculateCost(
+            { inputTokens: inputTokens!, outputTokens: outputTokens! },
+            modelDetailsMap[modelParams.modelId].cost.onDemand,
+          ),
+        }
+      } catch (error: any) {
+        lastError = error
+
+        // Check if it's a throttling exception
+        const isThrottling =
+          error?.name === "ThrottlingException" ||
+          error?.message?.includes("Too many requests") ||
+          error?.message?.includes("throttling") ||
+          error?.$metadata?.httpStatusCode === 429
+
+        if (isThrottling && attempt < maxRetries) {
+          // More aggressive exponential backoff: 5s, 10s, 20s, 40s, 80s
+          const backoffMs = Math.pow(2, attempt + 1) * 2500 // Increased base time
+          Logger.warn(
+            `Bedrock throttling detected, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        // If not throttling or max retries exceeded, throw the error
+        Logger.error(
+          error,
+          `Bedrock converse failed after ${attempt + 1} attempts`,
+        )
+        throw error
+      }
     }
 
-    let fullResponse = response.output?.message?.content?.reduce(
-      (prev: string, current) => {
-        prev += current.text
-        return prev
-      },
-      "",
-    )
-    if (!response.usage) {
-      throw new Error("Could not get usage")
-    }
-    const { inputTokens, outputTokens } = response.usage
-    return {
-      text: fullResponse,
-      cost: calculateCost(
-        { inputTokens: inputTokens!, outputTokens: outputTokens! },
-        modelDetailsMap[modelParams.modelId].cost.onDemand,
-      ),
-    }
+    // This should never be reached, but TypeScript requires it
+    throw lastError
   }
 
   async *converseStream(
@@ -290,74 +397,107 @@ export class BedrockProvider extends BaseProvider {
     let startedReasoning = false
     let reasoningComplete = false
 
-    try {
-      const response = await this.client.send(command)
-      // we are handling the reasoning and normal text in the same iteration
-      // using two different iteration for reasoning and normal text we are lossing some data of normal text
-      if (response.stream) {
-        for await (const chunk of response.stream) {
-          // Handle reasoning content
-          const reasoning =
-            chunk.contentBlockDelta?.delta?.reasoningContent?.text || ""
-          if (reasoning && isThinkingEnabled && !reasoningComplete) {
-            if (!startedReasoning) {
-              yield { text: `${StartThinkingToken}${reasoning}` }
-              startedReasoning = true
-            } else {
-              yield { text: reasoning }
+    // Enhanced throttling exception handling with exponential backoff
+    const maxRetries = 5 // Increased from 3 to 5
+    let lastError: any
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Wait for rate limiter slot before making the request
+        await bedrockRateLimiter.waitForSlot()
+
+        const response = await this.client.send(command)
+        // we are handling the reasoning and normal text in the same iteration
+        // using two different iteration for reasoning and normal text we are lossing some data of normal text
+        if (response.stream) {
+          for await (const chunk of response.stream) {
+            // Handle reasoning content
+            const reasoning =
+              chunk.contentBlockDelta?.delta?.reasoningContent?.text || ""
+            if (reasoning && isThinkingEnabled && !reasoningComplete) {
+              if (!startedReasoning) {
+                yield { text: `${StartThinkingToken}${reasoning}` }
+                startedReasoning = true
+              } else {
+                yield { text: reasoning }
+              }
             }
-          }
 
-          // Handle reasoning completion
-          if (
-            chunk.contentBlockStop &&
-            startedReasoning &&
-            !reasoningComplete
-          ) {
-            yield { text: EndThinkingToken }
-            reasoningComplete = true
-            continue
-          }
-
-          // Handle regular content
-          const text = chunk.contentBlockDelta?.delta?.text || ""
-          const metadata = chunk.metadata
-
-          if (text) {
-            yield {
-              text,
-              metadata,
-              cost:
-                !costYielded && metadata?.usage
-                  ? calculateCost(
-                      {
-                        inputTokens: metadata.usage.inputTokens!,
-                        outputTokens: metadata.usage.outputTokens!,
-                      },
-                      modelDetailsMap[modelId].cost.onDemand,
-                    )
-                  : undefined,
+            // Handle reasoning completion
+            if (
+              chunk.contentBlockStop &&
+              startedReasoning &&
+              !reasoningComplete
+            ) {
+              yield { text: EndThinkingToken }
+              reasoningComplete = true
+              continue
             }
-            if (metadata?.usage) costYielded = true
-          } else if (metadata?.usage && !costYielded) {
-            costYielded = true
-            yield {
-              text: "",
-              metadata,
-              cost: calculateCost(
-                {
-                  inputTokens: metadata.usage.inputTokens!,
-                  outputTokens: metadata.usage.outputTokens!,
-                },
-                modelDetailsMap[modelId].cost.onDemand,
-              ),
+
+            // Handle regular content
+            const text = chunk.contentBlockDelta?.delta?.text || ""
+            const metadata = chunk.metadata
+
+            if (text) {
+              yield {
+                text,
+                metadata,
+                cost:
+                  !costYielded && metadata?.usage
+                    ? calculateCost(
+                        {
+                          inputTokens: metadata.usage.inputTokens!,
+                          outputTokens: metadata.usage.outputTokens!,
+                        },
+                        modelDetailsMap[modelId].cost.onDemand,
+                      )
+                    : undefined,
+              }
+              if (metadata?.usage) costYielded = true
+            } else if (metadata?.usage && !costYielded) {
+              costYielded = true
+              yield {
+                text: "",
+                metadata,
+                cost: calculateCost(
+                  {
+                    inputTokens: metadata.usage.inputTokens!,
+                    outputTokens: metadata.usage.outputTokens!,
+                  },
+                  modelDetailsMap[modelId].cost.onDemand,
+                ),
+              }
             }
           }
         }
+        return // Success, exit the retry loop
+      } catch (error: any) {
+        lastError = error
+
+        // Check if it's a throttling exception
+        const isThrottling =
+          error?.name === "ThrottlingException" ||
+          error?.message?.includes("Too many requests") ||
+          error?.message?.includes("throttling") ||
+          error?.$metadata?.httpStatusCode === 429
+
+        if (isThrottling && attempt < maxRetries) {
+          // More aggressive exponential backoff: 5s, 10s, 20s, 40s, 80s
+          const backoffMs = Math.pow(2, attempt + 1) * 2500 // Increased base time
+          Logger.warn(
+            `Bedrock throttling detected in stream, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        // If not throttling or max retries exceeded, throw the error
+        Logger.error(
+          error,
+          `Bedrock converseStream failed after ${attempt + 1} attempts`,
+        )
+        throw error
       }
-    } catch (error) {
-      Logger.error(error, "Error in converseStream of Bedrock")
-      throw error
     }
   }
 }

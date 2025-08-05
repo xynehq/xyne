@@ -1068,14 +1068,14 @@ export const agentSearchQueryPrompt = (
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
     Valid app keywords that map to apps:
-    - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
+    - 'email', 'mail', 'emails', 'mails', 'gmail' → '${Apps.Gmail}'
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
     Valid entity keywords that map to entities:
-    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+    - For Gmail: 'email', 'emails', 'mail', 'mails', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'

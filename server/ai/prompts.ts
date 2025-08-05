@@ -14,6 +14,7 @@ import {
   internalTools,
   slackTools,
   formatToolsSection,
+  externalTools,
   type ToolDefinition,
 } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
@@ -831,6 +832,7 @@ export const SearchQueryToolContextPrompt = (
   customTools?: {
     internal?: Record<string, ToolDefinition>
     slack?: Record<string, ToolDefinition>
+    external?: Record<string, ToolDefinition>
   },
   isDebugMode?: boolean,
 ): string => {
@@ -841,6 +843,7 @@ export const SearchQueryToolContextPrompt = (
   const toolsToUse = {
     internal: customTools?.internal || internalTools,
     slack: customTools?.slack || slackTools,
+    external: customTools?.external || {},
   }
 
   const updatedInternalTools = { ...toolsToUse.internal }
@@ -923,6 +926,8 @@ export const SearchQueryToolContextPrompt = (
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
     ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
+    
+    ${formatToolsSection(toolsToUse.external, "External Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -988,7 +993,7 @@ export const SearchQueryToolContextPrompt = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (userContext: string): string => {
   return `
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${getDateForAI()}. Use this date information ONLY for temporal reasoning when explicitly needed. Do NOT add temporal information like "2025" or "latest information" to search queries unless specifically requested by the user. Be formal and precise. 
 
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
@@ -1408,8 +1413,7 @@ export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
 ) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
-The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+The current date is: ${getDateForAI()}. Use this date information ONLY for temporal reasoning when explicitly needed. Do NOT add temporal information like "2025" or "latest information" to search queries unless specifically requested by the user. Be formal and precise. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
 
@@ -1895,11 +1899,16 @@ export const withToolQueryPrompt = (
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
     }
     - If the query is **casual or conversational** (e.g., greetings, clarifications, or questions about content), respond **naturally in plain text**.
-    - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
+    - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [1], [2], etc.) that corresponds to the source fragment index.
+    - **COMPREHENSIVE WEB SEARCH RESPONSES**: When context includes web search results (indicated by multiple sources with URLs), provide detailed, comprehensive answers that:
+      * Synthesize information from all available sources
+      * Include relevant details, examples, and explanations
+      * Use multiple citations [1][2][3] to show information comes from different sources
+      * Provide thorough coverage of the topic rather than brief summaries
     - **Do NOT** reject any query. Respond using the available context only.
-    - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
+    - **BALANCE**: For web search results, prioritize completeness and usefulness over brevity while maintaining accuracy.
 
-    Be concise, accurate, and context-aware in all replies.
+    Provide comprehensive, well-cited, and context-aware replies.
   `
 }
 
@@ -2226,3 +2235,9 @@ ${retrievedContext}
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
+
+// Export external tools for use in prompts and tool definitions
+export const external: Record<string, ToolDefinition> = externalTools
+
+// Re-export for convenience
+export { externalTools }

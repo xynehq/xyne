@@ -4,6 +4,7 @@ import {
   ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
+import { NodeHttpHandler } from "@smithy/node-http-handler"
 import config from "@/config"
 import { z } from "zod"
 
@@ -212,8 +213,12 @@ const initializeProviders = (): void => {
     }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 45000, // Increased from 30s to 45s
+        socketTimeout: 45000, // Increased from 30s to 45s
+      }),
       retryMode: "adaptive",
-      maxAttempts: 5,
+      maxAttempts: 3, // Reduced from 5 to 3 to avoid aggressive retrying
       credentials: {
         accessKeyId: AwsAccessKey,
         secretAccessKey: AwsSecretKey,
@@ -467,13 +472,47 @@ export const analyzeQueryMetadata = async (
 const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
+  const originalText = text // Store original text before processing
   try {
+    // Early check for empty or invalid input
+    if (!text || typeof text !== "string") {
+      Logger.warn("jsonParseLLMOutput received empty or invalid text input")
+      return {}
+    }
+
     text = text.trim()
+
+    // If text is still empty after trimming
+    if (!text) {
+      Logger.warn("jsonParseLLMOutput received empty text after trimming")
+      return {}
+    }
+
     if (!jsonKey && text.includes("```json")) {
       const jsonCodeBlockMatch = text.match(/```(?:json\s*)?\n?([\s\S]*?)```/)
       if (jsonCodeBlockMatch) {
         text = jsonCodeBlockMatch[1].trim()
       }
+    }
+
+    // Also handle cases where there are just ``` without json keyword
+    if (!jsonKey && text.startsWith("```") && text.includes("```")) {
+      const codeBlockMatch = text.match(/```[a-zA-Z]*\s*\n?([\s\S]*?)```/)
+      if (codeBlockMatch) {
+        text = codeBlockMatch[1].trim()
+      } else {
+        // Simple case: just remove the ``` markers
+        text = text
+          .replace(/```[a-zA-Z]*\s*\n?/g, "")
+          .replace(/```$/g, "")
+          .trim()
+      }
+    }
+
+    // After code block extraction, check if text is still empty
+    if (!text.trim()) {
+      Logger.warn("Text is empty after code block extraction")
+      return {}
     }
 
     if (
@@ -563,7 +602,17 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       }
       return jsonVal
     } catch (err) {
-      Logger.error(`Initial parse failed - ${JSON.stringify(err)}`)
+      Logger.error(
+        `Initial parse failed - ${JSON.stringify(err)} | Input text: "${text?.substring(0, 200)}..." | Original length: ${originalText?.length}`,
+      )
+
+      // If text starts with backticks, it might be an incomplete code block
+      if (originalText?.startsWith("```")) {
+        Logger.warn(
+          "Response appears to be an incomplete or malformed code block",
+        )
+      }
+
       // If first parse failed, continue to code block cleanup
       // throw new Error("Initial parse failed")
     }
@@ -586,12 +635,41 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     } catch (parseError) {
       Logger.error(
         parseError,
-        `The ai response that triggered the json parse error ${text.trim()}`,
+        `The ai response that triggered the json parse error: "${text?.substring(0, 200)}..."`,
       )
+
+      // Final fallback: try to extract something useful from the text
+      if (originalText && typeof originalText === "string") {
+        // Check if it looks like incomplete JSON that we can salvage
+        if (originalText.includes('"title":')) {
+          const titleMatch = originalText.match(/"title"\s*:\s*"([^"]*)"/)
+          if (titleMatch && titleMatch[1]) {
+            Logger.info(
+              `Extracted title from malformed JSON: "${titleMatch[1]}"`,
+            )
+            return { title: titleMatch[1] }
+          }
+        }
+
+        // If this looks like it might be a title (single line, reasonable length)
+        const cleanText = originalText
+          .trim()
+          .replace(/[{}"\[\]`]/g, "")
+          .trim()
+        if (
+          cleanText.length > 0 &&
+          cleanText.length < 200 &&
+          !cleanText.includes("\n")
+        ) {
+          Logger.info(`Using cleaned text as fallback title: "${cleanText}"`)
+          return { title: cleanText }
+        }
+      }
+
       // throw parseError
     }
   }
-  return jsonVal
+  return jsonVal || {}
 }
 
 type QueryAnalysisResult = z.infer<typeof QueryAnalysisSchema>
@@ -673,6 +751,12 @@ export const generateTitleUsingQuery = async (
     }
 
     params.json = true
+
+    // Ensure we have reasonable token limits for title generation
+    if (!params.max_new_tokens || params.max_new_tokens < 100) {
+      params.max_new_tokens = 150 // Enough for a decent title
+    }
+
     Logger.info("inside generateTitleUsingQuery")
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
@@ -689,6 +773,19 @@ export const generateTitleUsingQuery = async (
       params,
     )
     Logger.info("after getProvider generateTitleUsingQuery")
+
+    Logger.debug(
+      `AI response for title generation: "${text?.substring(0, 300)}..." (length: ${text?.length})`,
+    )
+
+    if (!text || text.trim() === "") {
+      Logger.warn("Empty response from AI provider for title generation")
+      return {
+        title: "Untitled",
+        cost: cost || 0,
+      }
+    }
+
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }
@@ -697,7 +794,20 @@ export const generateTitleUsingQuery = async (
       try {
         jsonVal = jsonParseLLMOutput(text)
       } catch (err) {
-        Logger.error(err, `Failed to parse LLM output for title: ${text}`)
+        Logger.error(
+          err,
+          `Failed to parse LLM output for title: "${text?.substring(0, 200)}..."`,
+        )
+        // Try to extract a title from plain text if JSON parsing fails
+        const lines = text.split("\n").filter((line) => line.trim())
+        const firstLine = lines[0]?.trim()
+        if (firstLine && firstLine.length > 0 && firstLine.length < 100) {
+          // Use first line as title if it looks reasonable
+          return {
+            title: firstLine.replace(/['"]/g, "").trim(),
+            cost: cost!,
+          }
+        }
         jsonVal = undefined
       }
       let title = "Untitled"
@@ -709,7 +819,7 @@ export const generateTitleUsingQuery = async (
         title = jsonVal.title.trim()
       } else {
         Logger.error(
-          `LLM output did not contain a valid title. Raw output: ${text}`,
+          `LLM output did not contain a valid title. Raw output: "${text?.substring(0, 200)}..." | Parsed JSON: ${JSON.stringify(jsonVal)}`,
         )
       }
       return {
@@ -1370,6 +1480,7 @@ export async function generateToolSelectionOutput(
   tools?: {
     internal?: Record<string, ToolDefinition> | undefined
     slack?: Record<string, ToolDefinition> | undefined
+    external?: Record<string, ToolDefinition> | undefined
   },
   isDebugMode?: boolean,
 ): Promise<{

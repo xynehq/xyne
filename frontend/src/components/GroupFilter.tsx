@@ -63,9 +63,12 @@ const GroupFilterItem = ({
   )
 }
 
-export const getName = (app: Apps, entity: Entity): string => {
+export const getName = (
+  app: Apps | string,
+  entity: Entity | string,
+): string => {
   if (app === Apps.Gmail) {
-    if (isMailAttachment(entity)) {
+    if (isMailAttachment(entity as Entity)) {
       return "Attachments"
     }
     return "Gmail"
@@ -105,11 +108,15 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Channel"
   } else if (app === Apps.Github && entity === SystemEntity.SystemInfo) {
     return "Github"
+  } else if (app === Apps.Xyne && entity === SystemEntity.SystemInfo) {
+    return "Web Search"
   } else if (
     app === Apps.DataSource &&
     entity === DataSourceEntity.DataSourceFile
   ) {
     return "Data-Source"
+  } else if (app === "web" && entity === "search_result") {
+    return "Web Search"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

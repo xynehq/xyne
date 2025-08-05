@@ -529,6 +529,9 @@ export enum XyneTools {
   // Conversational tool
   Conversational = "conversational",
 
+  // Web search tool
+  WebSearch = "web_search",
+
   // slack tools
   getSlackRelatedMessages = "get_slack_related_messages",
   getSlackThreads = "get_slack_threads",

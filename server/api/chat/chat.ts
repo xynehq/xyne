@@ -1131,7 +1131,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
-  let channelIds:string[] = []
+  let channelIds: string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1485,13 +1485,254 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           vespaSearchSpan,
         )
 
+        // Perform web search alongside Vespa search
+        const webSearchSpan = querySpan?.startSpan("web_search")
+        let webSearchResults: any[] = []
+        try {
+          const { performWebSearch } = await import(
+            "@/integrations/websearch/index"
+          )
+
+          loggerWithChild({ email: email }).info(
+            `[Web Search Integration] Performing web search for query: "${query}"`,
+          )
+
+          const webSearchResult = await performWebSearch({
+            query: query,
+            maxResults: 8, // Limit web results to keep balanced with local results
+            context: userCtx || "",
+          })
+
+          if (webSearchResult.answer && webSearchResult.urls.length > 0) {
+            // Enhanced citations with proper webpage titles
+            let enhancedAnswer = webSearchResult.answer
+
+            try {
+              // Clean up generic "Vertexaisearch - Web Content" references with proper titles
+              if (webSearchResult.urlsWithMetadata) {
+                webSearchResult.urlsWithMetadata.forEach((urlMeta, index) => {
+                  if (urlMeta.title) {
+                    // Replace generic references with actual webpage titles
+                    const genericPattern = new RegExp(
+                      `Vertexaisearch\\s*-\\s*Web\\s*Content`,
+                      "gi",
+                    )
+                    enhancedAnswer = enhancedAnswer.replace(
+                      genericPattern,
+                      urlMeta.title,
+                    )
+                  }
+                })
+              }
+
+              loggerWithChild({ email: email }).info(
+                `[Web Search Integration] Enhanced citations with ${webSearchResult.urlsWithMetadata?.length || 0} webpage titles`,
+              )
+            } catch (error) {
+              loggerWithChild({ email: email }).warn(
+                `[Web Search Integration] Failed to enhance citations, using fallback cleanup`,
+              )
+
+              // Fallback to basic cleanup if enhancement fails
+              enhancedAnswer = enhancedAnswer
+                .replace(/\[index\s*(\d+)\]/gi, "[$1]") // Fix [index 1] -> [1]
+                .replace(/\[\s*source\s*(\d+)\s*\]/gi, "[$1]") // Fix [source 1] -> [1]
+                .replace(/\[\s*(\d+)\s*\]/g, "[$1]") // Clean up spacing in [1] citations
+
+                // Enhanced asterisk pattern handling - handle various formats Gemini might use
+                .replace(
+                  /\*{2,6}\s*([^*\n]+?)\s*\*{0,6}/g,
+                  (match, content) => {
+                    // Handle multiple asterisk formats: **content**, ***content***, ****content****
+                    const urlMatch = content.match(
+                      /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/,
+                    )
+                    if (urlMatch) {
+                      const domain = urlMatch[1].replace("www.", "")
+                      const urlIndex = webSearchResult.urls.findIndex((url) =>
+                        url.toLowerCase().includes(domain.toLowerCase()),
+                      )
+                      if (urlIndex !== -1) {
+                        return `[${urlIndex + 1}]`
+                      }
+                    }
+                    // If no URL match, just remove the asterisks but keep the content
+                    return content.trim()
+                  },
+                )
+
+                // Handle standalone asterisks that might represent citations
+                .replace(
+                  /(?:^|\s)(\*{2,6})(?=\s|$)/g,
+                  (match, asterisks, offset, string) => {
+                    // Count how many asterisk groups we've seen to assign sequential numbers
+                    const beforeText = string.substring(0, offset)
+                    const asteriskGroupsBefore = (
+                      beforeText.match(/\*{2,6}/g) || []
+                    ).length
+                    const citationNumber = asteriskGroupsBefore + 1
+
+                    if (citationNumber <= webSearchResult.urls.length) {
+                      return ` [${citationNumber}]`
+                    }
+                    return "" // Remove if beyond available URLs
+                  },
+                )
+
+                // Clean up remaining asterisks
+                .replace(/^\*{2,}\s*/gm, "") // Remove leading asterisks from lines
+                .replace(/\s*\*{2,}\s*$/gm, "") // Remove trailing asterisks from lines
+                .replace(/\*{2,}/g, "") // Remove any remaining asterisks that weren't converted
+
+                // Handle domain-based citation formats
+                .replace(
+                  /(?:Source:|Reference:|From:)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi,
+                  (match, domain) => {
+                    // Handle "Source: domain.com" format
+                    const urlIndex = webSearchResult.urls.findIndex((url) =>
+                      url.includes(domain),
+                    )
+                    if (urlIndex !== -1) {
+                      return `[${urlIndex + 1}]`
+                    }
+                    return match
+                  },
+                )
+
+                // Final cleanup and normalization
+                .replace(/\s{2,}/g, " ") // Normalize multiple spaces
+                .trim()
+            }
+
+            // Instead of creating fake results, create a single comprehensive web search result
+            // that contains the cleaned answer and proper URL references
+            webSearchResults = [
+              {
+                id: `web_search_comprehensive_${Date.now()}`,
+                relevance: 0.98,
+                fields: {
+                  docId: `web_search_comprehensive_${Date.now()}`,
+                  title: "Web Search Results",
+                  app: Apps.Xyne,
+                  entity: SystemEntity.SystemInfo,
+                  chunks_summary: [enhancedAnswer], // Use the enhanced comprehensive answer
+                  mimeType: "text/web-search",
+                  webSearchSource: true,
+                  webSearchUrls: webSearchResult.urls, // Store actual URLs for citation processing
+                  sddocname: "web_search" as any,
+                  matchfeatures: {
+                    "bm25(title)": 0.98,
+                    "bm25(chunks)": 0.98,
+                    chunk_scores: { cells: {} },
+                  } as any,
+                } as any,
+              } as any,
+            ]
+
+            webSearchSpan?.setAttribute(
+              "web_results_count",
+              1, // One comprehensive result instead of multiple fake ones
+            )
+            webSearchSpan?.setAttribute(
+              "web_urls_count",
+              webSearchResult.urls.length,
+            )
+            loggerWithChild({ email: email }).info(
+              `[Web Search Integration] Created comprehensive web search result with ${webSearchResult.urls.length} URL references`,
+            )
+          } else {
+            loggerWithChild({ email: email }).info(
+              `[Web Search Integration] No useful web search results found`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: email }).warn(
+            `[Web Search Integration] Web search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          )
+          webSearchSpan?.setAttribute(
+            "web_search_error",
+            error instanceof Error ? error.message : "Unknown error",
+          )
+        }
+        webSearchSpan?.end()
+
         const totalResultsSpan = querySpan?.startSpan("total_results")
-        const totalResults = (results?.root?.children || []).concat(
-          latestResults || [],
-        )
+        // Combine Vespa results with web search results
+        const totalResults = (results?.root?.children || [])
+          .concat(latestResults || [])
+          .concat(webSearchResults || [])
+
+        // **IMPORTANT: For citations, if web search was performed, ONLY use web search sources**
+        // This prevents mixing internal database results with web search results
+        let citationResults: any[] = []
+        const hasWebSearchResults = webSearchResults.length > 0
+
+        if (hasWebSearchResults) {
+          // When web search is performed, ONLY use web search results for citations
+          const webOnlyResults = webSearchResults.filter(
+            (result: any) =>
+              result.fields?.webSearchSource === true &&
+              !result.fields?.webSearchSummary,
+          )
+
+          if (webOnlyResults.length > 0) {
+            // Extract the URLs from the web search result and create citation entries for each URL
+            const webResult = webOnlyResults[0]
+            const webUrls = webResult.fields?.webSearchUrls || []
+
+            // Create citation entries for each web URL
+            citationResults = webUrls.map((url: string, index: number) => {
+              const urlObj = new URL(url)
+              const domain = urlObj.hostname.replace("www.", "")
+              const siteName = domain.split(".")[0]
+              const capitalizedSiteName =
+                siteName.charAt(0).toUpperCase() + siteName.slice(1)
+
+              return {
+                id: `web_citation_${index}`,
+                relevance: 0.95 - index * 0.05,
+                fields: {
+                  docId: `web_citation_${index}`,
+                  title: `${capitalizedSiteName}`,
+                  url: url,
+                  chunks_summary: [`Source: ${url}`],
+                  webSearchSource: true,
+                  webCitation: true,
+                  sddocname: "web_citation" as any,
+                } as any,
+              } as any
+            })
+          }
+
+          loggerWithChild({ email: email }).info(
+            `[Citation Logic] Web search performed - using ONLY web search sources for citations (${citationResults.length} sources). Internal database results excluded.`,
+          )
+        } else {
+          // Only use internal database results when NO web search was performed
+          citationResults = totalResults.filter(
+            (result: any) => !(result.fields?.webSearchSummary === true),
+          )
+
+          loggerWithChild({ email: email }).info(
+            `[Citation Logic] No web search - using internal database results for citations (${citationResults.length} sources)`,
+          )
+        }
+
         totalResultsSpan?.setAttribute(
           "total_result_count",
           totalResults.length,
+        )
+        totalResultsSpan?.setAttribute(
+          "vespa_result_count",
+          (results?.root?.children || []).length + (latestResults || []).length,
+        )
+        totalResultsSpan?.setAttribute(
+          "web_result_count",
+          webSearchResults.length,
+        )
+        totalResultsSpan?.setAttribute(
+          "citation_result_count",
+          citationResults.length,
         )
         totalResultsSpan?.setAttribute(
           "result_ids",
@@ -1501,7 +1742,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount)
+
+        // Use citation results for context to ensure index alignment
+        // When web search results exist, they will be prioritized in citations
+        const initialContext = buildContext(citationResults, maxSummaryCount)
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1510,9 +1754,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
-        contextSpan?.setAttribute("number_of_chunks", totalResults.length)
+        contextSpan?.setAttribute("number_of_chunks", citationResults.length)
         loggerWithChild({ email: email }).info(
-          `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
+          `[Query Rewrite Path] Number of contextual chunks being passed: ${citationResults.length}`,
         )
         contextSpan?.end()
 
@@ -1536,7 +1780,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         const answer = yield* processIterator(
           iterator,
-          totalResults,
+          citationResults, // Use filtered results for citations
           previousResultsLength,
           config.isReasoning && userRequestsReasoning,
           email,
@@ -1609,6 +1853,296 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         ),
       )
       searchSpan?.end()
+
+      // Add web search results for page 0 (first page)
+      if (pageNumber === 0) {
+        const webSearchSpan = pageSearchSpan?.startSpan("page_web_search")
+        try {
+          const { performWebSearch } = await import(
+            "@/integrations/websearch/index"
+          )
+
+          loggerWithChild({ email: email }).info(
+            `[Page Web Search Integration] Performing web search for message: "${message}"`,
+          )
+
+          const webSearchResult = await performWebSearch({
+            query: message,
+            maxResults: 6, // Moderate number of web results for main search
+            context: userCtx || "",
+          })
+
+          if (webSearchResult?.answer && webSearchResult?.urls?.length > 0) {
+            // Enhanced citations with proper webpage titles
+            let enhancedAnswer = webSearchResult.answer
+
+            try {
+              // Clean up generic "Vertexaisearch - Web Content" references with proper titles
+              if (webSearchResult.urlsWithMetadata) {
+                webSearchResult.urlsWithMetadata.forEach((urlMeta, index) => {
+                  if (urlMeta.title) {
+                    // Replace generic references with actual webpage titles
+                    const genericPattern = new RegExp(
+                      `Vertexaisearch\\s*-\\s*Web\\s*Content`,
+                      "gi",
+                    )
+                    enhancedAnswer = enhancedAnswer.replace(
+                      genericPattern,
+                      urlMeta.title,
+                    )
+                  }
+                })
+              }
+
+              loggerWithChild({ email: email }).info(
+                `[Page Web Search Integration] Enhanced citations with ${webSearchResult.urlsWithMetadata?.length || 0} webpage titles`,
+              )
+            } catch (error) {
+              loggerWithChild({ email: email }).warn(
+                `[Page Web Search Integration] Failed to enhance citations, using fallback cleanup`,
+              )
+
+              // Fallback to basic cleanup if enhancement fails
+              // First, create a mapping of domain names to URL indices for better citation accuracy
+              const domainToIndexMap = new Map()
+              webSearchResult.urls.forEach((url, index) => {
+                try {
+                  const domain = new URL(url).hostname.replace("www.", "")
+                  domainToIndexMap.set(domain, index + 1)
+                } catch {
+                  // Skip invalid URLs
+                }
+              })
+
+              enhancedAnswer = enhancedAnswer
+                .replace(/\[index\s*(\d+)\]/gi, "[$1]") // Fix [index 1] -> [1]
+                .replace(/\[\s*source\s*(\d+)\s*\]/gi, "[$1]") // Fix [source 1] -> [1]
+                .replace(/\[\s*(\d+)\s*\]/g, "[$1]") // Clean up spacing in [1] citations
+                .replace(/\*{2,4}\s*([^*\n]+)/g, (match, content) => {
+                  // Handle **** domain.com format and convert to numbered citations
+                  const urlMatch = content.match(
+                    /([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/,
+                  )
+                  if (urlMatch) {
+                    const domain = urlMatch[1].replace("www.", "")
+                    // Use domain mapping for more accurate citation numbers
+                    if (domainToIndexMap.has(domain)) {
+                      return `[${domainToIndexMap.get(domain)}]`
+                    }
+                    // Fallback to URL search
+                    const urlIndex = webSearchResult.urls.findIndex((url) =>
+                      url.includes(urlMatch[1]),
+                    )
+                    if (urlIndex !== -1) {
+                      return `[${urlIndex + 1}]`
+                    }
+                  }
+                  return "" // Remove unmatched asterisk citations
+                })
+                .replace(/^\*{2,4}\s*/gm, "") // Remove leading asterisks from lines
+                .replace(/\s*\*{2,4}\s*$/gm, "") // Remove trailing asterisks from lines
+                .replace(/\*{2,4}/g, "") // Remove any remaining asterisks that weren't converted
+                .replace(
+                  /(?:Source:|Reference:|From:)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi,
+                  (match, domain) => {
+                    // Handle "Source: domain.com" format
+                    const cleanDomain = domain.replace("www.", "")
+                    if (domainToIndexMap.has(cleanDomain)) {
+                      return `[${domainToIndexMap.get(cleanDomain)}]`
+                    }
+                    const urlIndex = webSearchResult.urls.findIndex((url) =>
+                      url.includes(domain),
+                    )
+                    if (urlIndex !== -1) {
+                      return `[${urlIndex + 1}]`
+                    }
+                    return match
+                  },
+                )
+            }
+
+            // Create individual web search results for each URL to show multiple sources
+            const webSearchResults: any[] = []
+
+            // Helper function to get domain-based title
+            const getDomainTitle = (url: string): string => {
+              try {
+                const urlObj = new URL(url)
+                const domain = urlObj.hostname.replace("www.", "")
+
+                // Extract the main site name from domain
+                const domainParts = domain.split(".")
+                let siteName = domainParts[0]
+
+                // Handle special cases for better formatting
+                if (
+                  domain.includes("co.uk") ||
+                  domain.includes("com.au") ||
+                  domain.includes("co.in")
+                ) {
+                  // For domains like bbc.co.uk, take the main part
+                  siteName = domainParts[0]
+                } else if (domainParts.length > 2) {
+                  // For subdomains like news.google.com, prefer the main domain
+                  siteName = domainParts[domainParts.length - 2]
+                }
+
+                // Capitalize and format the site name
+                const capitalizedSiteName =
+                  siteName.charAt(0).toUpperCase() + siteName.slice(1)
+
+                // Add context based on common domain patterns
+                if (
+                  domain.includes("news") ||
+                  domain.includes("times") ||
+                  domain.includes("post") ||
+                  domain.includes("guardian") ||
+                  domain.includes("herald") ||
+                  domain.includes("tribune") ||
+                  domain.includes("reuters") ||
+                  domain.includes("bloomberg") ||
+                  domain.includes("cnn") ||
+                  domain.includes("bbc") ||
+                  domain.includes("npr")
+                ) {
+                  return `${capitalizedSiteName} - News`
+                } else if (domain.includes("github")) {
+                  return `${capitalizedSiteName} - Code Repository`
+                } else if (domain.includes("wikipedia")) {
+                  return `${capitalizedSiteName} - Encyclopedia`
+                } else if (
+                  domain.includes("stackoverflow") ||
+                  domain.includes("stackexchange")
+                ) {
+                  return `${capitalizedSiteName} - Q&A Platform`
+                } else if (domain.includes("reddit")) {
+                  return `${capitalizedSiteName} - Discussion Forum`
+                } else if (
+                  domain.includes("medium") ||
+                  domain.includes("blog")
+                ) {
+                  return `${capitalizedSiteName} - Blog`
+                } else if (
+                  domain.includes("youtube") ||
+                  domain.includes("video")
+                ) {
+                  return `${capitalizedSiteName} - Video Platform`
+                } else if (
+                  domain.includes("espn") ||
+                  domain.includes("sport")
+                ) {
+                  return `${capitalizedSiteName} - Sports`
+                } else if (
+                  domain.includes("f1") ||
+                  domain.includes("formula")
+                ) {
+                  return `${capitalizedSiteName} - Formula 1`
+                } else {
+                  // Default format for any other website
+                  return `${capitalizedSiteName} - Web Content`
+                }
+              } catch {
+                return "Web Search Result"
+              }
+            }
+
+            // Create individual result for each URL
+            webSearchResult.urls.forEach((url, index) => {
+              const title = getDomainTitle(url)
+              const excerpt =
+                enhancedAnswer.substring(0, 200) +
+                (enhancedAnswer.length > 200 ? "..." : "")
+
+              webSearchResults.push({
+                id: `page_web_search_${Date.now()}_${index}`,
+                relevance: 0.9 - index * 0.05, // Decreasing relevance
+                fields: {
+                  docId: `page_web_search_${Date.now()}_${index}`,
+                  title: title,
+                  app: Apps.Xyne,
+                  entity: SystemEntity.SystemInfo,
+                  chunks_summary: [excerpt], // Show content preview
+                  mimeType: "text/web-search",
+                  url: url,
+                  webSearchSource: true, // Flag to identify web search results
+                  sddocname: "web_search" as any, // Special type for web search
+                  matchfeatures: {
+                    "bm25(title)": 0.9 - index * 0.05,
+                    "bm25(chunks)": 0.9 - index * 0.05,
+                    chunk_scores: { cells: {} },
+                  } as any,
+                } as any,
+              } as any)
+            })
+
+            // Also add the main comprehensive result for context
+            webSearchResults.push({
+              id: `page_web_search_main_${Date.now()}`,
+              relevance: 0.95,
+              fields: {
+                docId: `page_web_search_main_${Date.now()}`,
+                title: "Web Search Summary",
+                app: Apps.Xyne,
+                entity: SystemEntity.SystemInfo,
+                chunks_summary: [enhancedAnswer], // Full web search content for context
+                mimeType: "text/web-search",
+                webSearchSource: true,
+                webSearchSummary: true, // Flag for summary result
+                sddocname: "web_search" as any,
+                matchfeatures: {
+                  "bm25(title)": 0.95,
+                  "bm25(chunks)": 0.95,
+                  chunk_scores: { cells: {} },
+                } as any,
+              } as any,
+            } as any)
+
+            // Add web results to Vespa results using type assertion with safety checks
+            try {
+              if (!results.root.children) {
+                results.root.children = []
+              }
+              results.root.children = [
+                ...results.root.children,
+                ...webSearchResults,
+              ]
+
+              webSearchSpan?.setAttribute(
+                "web_results_added",
+                webSearchResults.length,
+              )
+              webSearchSpan?.setAttribute(
+                "web_urls_count",
+                webSearchResult.urls.length,
+              )
+              loggerWithChild({ email: email }).info(
+                `[Page Web Search Integration] Added web search results with ${webSearchResult.urls.length} sources`,
+              )
+            } catch (integrationError) {
+              loggerWithChild({ email: email }).warn(
+                `[Page Web Search Integration] Failed to integrate web results: ${integrationError instanceof Error ? integrationError.message : "Unknown integration error"}`,
+              )
+              // Continue without failing the entire operation
+            }
+          } else {
+            loggerWithChild({ email: email }).info(
+              `[Page Web Search Integration] No useful web search results found`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: email }).warn(
+            `[Page Web Search Integration] Web search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          )
+          webSearchSpan?.setAttribute(
+            "web_search_error",
+            error instanceof Error ? error.message : "Unknown error",
+          )
+          // Don't let web search errors break the entire chat process
+        } finally {
+          webSearchSpan?.end()
+        }
+      }
+
       if (!results.root.children) {
         results.root.children = []
       }
@@ -1677,11 +2211,19 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     )
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
+
     const contextSpan = pageSpan?.startSpan("build_context")
+
+    // Use all results for context (including web search summary for content quality)
     const initialContext = buildContext(
       results?.root?.children,
       maxSummaryCount,
       startIndex,
+    )
+
+    // Filter out summary web search results for citations AFTER building context
+    const citationResults = (results?.root?.children || []).filter(
+      (result: any) => !(result.fields?.webSearchSummary === true),
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -1691,13 +2233,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
-    contextSpan?.setAttribute(
-      "number_of_chunks",
-      results?.root?.children?.length || 0,
-    )
+    contextSpan?.setAttribute("number_of_chunks", citationResults.length)
     loggerWithChild({ email: email }).info(
       `[Main Search Path] Number of contextual chunks being passed: ${
-        results?.root?.children?.length || 0
+        citationResults.length
       }`,
     )
     contextSpan?.end()
@@ -1715,7 +2254,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const answer = yield* processIterator(
       iterator,
-      results?.root?.children,
+      citationResults, // Use filtered results for citations
       previousResultsLength,
       config.isReasoning && userRequestsReasoning,
       email,
@@ -1730,7 +2269,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       return
     }
     if (config.isReasoning && userRequestsReasoning) {
-      previousResultsLength += results?.root?.children?.length || 0
+      previousResultsLength += citationResults.length
       pageSpan?.setAttribute("previous_results_length", previousResultsLength)
     }
     ragSpan?.end()
@@ -1934,13 +2473,16 @@ async function* generateAnswerFromGivenContext(
         const creator = await getDocumentOrNull(
           chatUserSchema,
           (v.fields as any).creator,
-        )      
+        )
         if (creator) {
-              content += `\nCreator: ${(creator.fields as any).name}`
+          content += `\nCreator: ${(creator.fields as any).name}`
         }
       } catch (error) {
-          loggerWithChild({ email }).error(error, `Failed to fetch creator for chat container`)
-        }
+        loggerWithChild({ email }).error(
+          error,
+          `Failed to fetch creator for chat container`,
+        )
+      }
     }
     return `Index ${i + startIndex} \n ${content}`
   })

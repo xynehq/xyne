@@ -54,7 +54,6 @@ const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
 
-
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
@@ -361,6 +360,16 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: `https://${result.fields.domain}.slack.com/archives/${result.fields.docId}`,
       app: (fields as VespaChatContainer).app,
       entity: SlackEntity.Channel,
+    }
+  } else if ((result.fields as any).webSearchSource) {
+    // Handle web search results specifically using the webSearchSource flag
+    const webFields = result.fields as any
+    return {
+      docId: webFields.docId,
+      title: webFields.title || "Web Search Result",
+      url: webFields.url || "",
+      app: webFields.app,
+      entity: webFields.entity,
     }
   } else {
     throw new Error("Invalid search result type for citation")

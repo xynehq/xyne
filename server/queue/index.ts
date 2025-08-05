@@ -31,6 +31,9 @@ const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss({
   connectionString: url,
   monitorStateIntervalMinutes: 10, // Monitor state every minute
+  expireInHours: 12, // Jobs expire after 12 hours (within the 24 hour limit)
+  retentionDays: 7, // Keep job records for 7 days
+  deleteAfterDays: 30, // Delete old job records after 30 days
 })
 
 // run it if we are re-doing ingestion

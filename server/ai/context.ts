@@ -61,11 +61,11 @@ const constructFileContext = (
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-  // Handle metadata that might already be an object or a string that needs parsing
+  // Handle metadata that might already be an object, a string that needs parsing, or undefined
   const parsedMetadata =
     typeof fields.metadata === "string"
       ? JSON.parse(fields.metadata)
-      : fields.metadata
+      : fields.metadata || {}
   const folderName = parsedMetadata.parents?.[0]?.folderName || ""
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
@@ -121,6 +121,49 @@ ${fields.gender ? `Gender: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
 ${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+// Function for handling web search context
+const constructWebSearchContext = (
+  fields: any, // Web search fields are dynamic
+  relevance: number,
+  maxSummaryChunks?: number,
+): string => {
+  const content = fields.chunks_summary?.[0] || ""
+  const limitedContent =
+    maxSummaryChunks && content.length > maxSummaryChunks * 200
+      ? content.substring(0, maxSummaryChunks * 200) + "..."
+      : content
+
+  // Extract domain name for better display
+  let displayTitle = fields.title || "Web Search Result"
+
+  // If the title is generic, try to extract a better one from the URL
+  if (
+    displayTitle === "Web Search Results" ||
+    displayTitle === "Web Search Summary" ||
+    displayTitle.includes("Vertexaisearch")
+  ) {
+    try {
+      if (fields.url) {
+        const urlObj = new URL(fields.url)
+        const domain = urlObj.hostname.replace("www.", "")
+        const siteName = domain.split(".")[0]
+        const capitalizedSiteName =
+          siteName.charAt(0).toUpperCase() + siteName.slice(1)
+        displayTitle = `${capitalizedSiteName} - Web Search Result`
+      }
+    } catch {
+      displayTitle = "Web Search Result"
+    }
+  }
+
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Title: ${displayTitle}
+${fields.url ? `URL: ${fields.url}` : ""}
+Content: ${limitedContent}
 vespa relevance score: ${relevance}`
 }
 
@@ -459,6 +502,44 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 \n${pc.green("vespa relevance score")}: ${relevance}`
 }
 
+// Function for handling web search colored context
+const constructWebSearchColoredContext = (
+  fields: any, // Web search fields are dynamic
+  relevance: number,
+): string => {
+  const content = fields.chunks_summary?.[0] || ""
+
+  // Extract domain name for better display
+  let displayTitle = fields.title || "Web Search Result"
+
+  // If the title is generic, try to extract a better one from the URL
+  if (
+    displayTitle === "Web Search Results" ||
+    displayTitle === "Web Search Summary" ||
+    displayTitle.includes("Vertexaisearch")
+  ) {
+    try {
+      if (fields.url) {
+        const urlObj = new URL(fields.url)
+        const domain = urlObj.hostname.replace("www.", "")
+        const siteName = domain.split(".")[0]
+        const capitalizedSiteName =
+          siteName.charAt(0).toUpperCase() + siteName.slice(1)
+        displayTitle = `${capitalizedSiteName} - Web Search Result`
+      }
+    } catch {
+      displayTitle = "Web Search Result"
+    }
+  }
+
+  return `${pc.green("App")}: ${fields.app}
+${pc.green("Entity")}: ${fields.entity}
+${pc.green("Title")}: ${displayTitle}
+${fields.url ? `${pc.green("URL")}: ${fields.url}` : ""}
+${pc.green("Content")}: ${content}
+\n${pc.green("vespa relevance score")}: ${relevance}`
+}
+
 const constructDataSourceFileContext = (
   fields: VespaDataSourceFileSearch,
   relevance: number,
@@ -610,6 +691,11 @@ export const answerColoredContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
+  } else if ((searchResult.fields as any).webSearchSource) {
+    return constructWebSearchColoredContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -665,6 +751,12 @@ export const answerContextMap = (
       maxSummaryChunks,
       isSelectedFiles,
     )
+  } else if ((searchResult.fields as any).webSearchSource) {
+    return constructWebSearchContext(
+      searchResult.fields,
+      searchResult.relevance,
+      maxSummaryChunks,
+    )
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -684,7 +776,7 @@ export const answerContextMapFromFragments = (
   return fragments
     .map((fragment, index) => {
       const citationIndex = index + 1
-      return `[index ${citationIndex}] ${fragment.content}`
+      return `Index ${citationIndex} \n ${fragment.content}`
     })
     .join("\n\n")
 }

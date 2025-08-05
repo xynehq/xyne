@@ -46,6 +46,7 @@ import type {
   SlackThreadsParams,
   SlackUserProfileParams,
 } from "@/api/chat/types"
+import type { WebSearchToolParams } from "@/integrations/websearch/types"
 import config from "@/config"
 
 const getLoggerForMapper = (emailSub: string) =>
@@ -859,7 +860,9 @@ export function createAgentToolFromDefinition(
 export function getToolDefinition(
   toolName: string,
 ): ToolDefinition | undefined {
-  return internalTools[toolName] || slackTools[toolName]
+  return (
+    internalTools[toolName] || slackTools[toolName] || externalTools[toolName]
+  )
 }
 
 // Helper to create parameters object for a specific tool
@@ -915,13 +918,18 @@ export function createCustomMetadataRetrievalTool(
 
 // Helper function to validate parameter types match the tool definition
 export function validateToolParams<
-  T extends keyof typeof internalTools | keyof typeof slackTools,
+  T extends
+    | keyof typeof internalTools
+    | keyof typeof slackTools
+    | keyof typeof externalTools,
 >(
   toolName: T,
   params: any,
 ): params is T extends keyof typeof internalTools
   ? MetadataRetrievalParams | SearchParams | ConversationalParams
-  : SlackThreadsParams | SlackRelatedMessagesParams | SlackUserProfileParams {
+  : T extends keyof typeof externalTools
+    ? WebSearchToolParams
+    : SlackThreadsParams | SlackRelatedMessagesParams | SlackUserProfileParams {
   const toolDef = getToolDefinition(toolName as string)
   if (!toolDef || !toolDef.params) return true
 
@@ -949,4 +957,62 @@ export function createToolParams(
   }
 
   return params
+}
+
+// External tools definition for WebSearch
+export const externalTools: Record<string, ToolDefinition> = {
+  [XyneTools.WebSearch]: {
+    name: XyneTools.WebSearch,
+    description:
+      "Search the web for recent and relevant content based on user query, with support for followup queries that build upon previous search results.",
+    params: [
+      {
+        name: "filter_query",
+        type: "string",
+        required: true,
+        description: "Query string or keywords to guide the web search.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description:
+          "Maximum number of search results to return (default: 20, max: 50).",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "How many results to skip (useful for pagination).",
+      },
+      {
+        name: "timeRange",
+        type: "string",
+        required: false,
+        description:
+          "Time range for search results: 'recent', 'week', 'day', 'year', or 'all'.",
+      },
+      {
+        name: "searchType",
+        type: "string",
+        required: false,
+        description:
+          "Type of search: 'general', 'news', 'academic', or 'images'.",
+      },
+      {
+        name: "previousQuery",
+        type: "string",
+        required: false,
+        description:
+          "Previous query in the conversation for better context understanding.",
+      },
+      {
+        name: "conversationContext",
+        type: "string",
+        required: false,
+        description:
+          "Additional conversation context to improve followup query understanding.",
+      },
+    ],
+  },
 }

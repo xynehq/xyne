@@ -179,3 +179,13 @@ export interface SlackRelatedMessagesParams {
 export interface SlackUserProfileParams {
   user_email: string
 }
+
+export interface WebSearchToolParams {
+  filter_query: string
+  limit?: number
+  offset?: number
+  timeRange?: string
+  searchType?: string
+  previousQuery?: string
+  conversationContext?: string
+}
