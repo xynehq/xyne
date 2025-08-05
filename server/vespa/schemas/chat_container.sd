@@ -205,7 +205,7 @@ schema chat_container {
     }
     rank-profile title_boosted_hybrid inherits initial {
   first-phase {
-    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (1 * nativeRank(name)))
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (nativeRank(name)))
   }
   
   global-phase {

@@ -4,12 +4,6 @@ import { getIcon } from "@/lib/common"
 import { Reference } from "@/types"
 import { parseHighlight, trimToHighlightHotspot } from "./Highlight"
 
-// const getPillDisplayTitle = (title: string): string => {
-//   if (title.length > 15) {
-//     return title.substring(0, 15) + "..."
-//   }
-//   return title
-// }
 function truncateWithHiTags(str: string, maxLen: number): string {
   let visibleLen = 0
   let result = ""
