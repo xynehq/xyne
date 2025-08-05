@@ -195,7 +195,7 @@ export const autocomplete = async (
         and owner contains @email)
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email
+        and ${emailQuery}
         )
         `
 
@@ -324,7 +324,7 @@ export const HybridDefaultProfile = (
               ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
             )
               ${appOrEntityFilter}
-              and permissions contains @email
+              and ${emailQuery}
             )
           or
           (
@@ -407,7 +407,7 @@ const HybridDefaultProfileAppEntityCounts = (
               or
                 ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
               )
-              and permissions contains @email
+              and ${emailQuery}
             )
             or (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
