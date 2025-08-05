@@ -170,7 +170,8 @@ export enum MailAttachmentEntity {
 export enum KnowledgeBaseEntity {
   File = "file",
   Folder = 'folder',
-  KnowledgeBase = 'knowledgebase'
+  KnowledgeBase = 'knowledgebase',
+  Collection = 'collection'
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>

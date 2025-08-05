@@ -148,7 +148,7 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
     )
 
     const validatedData = createKnowledgeBaseSchema.parse(rawData)
-
+    const vespaDocId = generateFolderVespaDocId()
     loggerWithChild({ email: userEmail }).info(
       `User object: ${JSON.stringify({ id: user.id, email: user.email, role: user.role })}`,
     )
@@ -161,7 +161,10 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
       isPrivate: validatedData.isPrivate ?? true,
       lastUpdatedById: user.id,
       lastUpdatedByEmail: user.email,
-      metadata: validatedData.metadata || {},
+      metadata:{
+        ...validatedData.metadata || {},
+        vespaDocId: vespaDocId, // Store the vespaDocId in metadata
+      },
     }
 
     loggerWithChild({ email: userEmail }).info(
@@ -170,6 +173,35 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
 
     const kb = await createKnowledgeBase(db, kbData)
 
+    const vespaDoc = {
+      docId: vespaDocId,
+      kbId: kb.id,
+      itemId: kb.id,
+      fileName: validatedData.name,
+      app: Apps.KnowledgeBase,
+      entity: KnowledgeBaseEntity.Collection, // You may need to add this to your enum
+      storagePath: "",
+      chunks: [],
+      chunks_pos: [],
+      image_chunks: [],
+      image_chunks_pos: [],
+      description: validatedData.description || "",
+      metadata: JSON.stringify({
+        type: "knowledge_base",
+        isPrivate: validatedData.isPrivate ?? true,
+        createdBy: user.email,
+        ownerId: user.id,
+        workspaceId: user.workspaceId,
+      }),
+      createdBy: user.email,
+      mimeType: "knowledge_base",
+      fileSize: 0,
+      duration: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+
+    await insert(vespaDoc, kbFileSchema)
     loggerWithChild({ email: userEmail }).info(
       `Created Knowledge Base: ${kb.id} for user ${userEmail}`,
     )
@@ -414,6 +446,42 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
           }
 
           deletedFilesCount++
+        }
+      }
+      else if (item.type === "folder") {
+        // Delete folder from Vespa
+        const folderMetadata = item.metadata as Record<string, any>
+        const vespaDocId = folderMetadata?.vespaDocId
+
+        if (vespaDocId) {
+          try {
+            await DeleteDocument(vespaDocId, kbFileSchema)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted folder from Vespa: ${vespaDocId}`,
+            )
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete folder from Vespa: ${vespaDocId} - ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+      else if (item.type === "knowledge_base") {
+        // Delete Knowledge Base from Vespa
+        const kbMetadata = item.metadata as Record<string, any>
+        const vespaDocId = kbMetadata?.vespaDocId
+
+        if (vespaDocId) {
+          try {
+            await DeleteDocument(vespaDocId, kbFileSchema)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted Knowledge Base from Vespa: ${vespaDocId}`,
+            )
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete Knowledge Base from Vespa: ${vespaDocId} - ${getErrorMessage(error)}`,
+            )
+          }
         }
       }
     }
