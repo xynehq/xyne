@@ -455,21 +455,21 @@ export const generateFollowUpQuestionsSystemPrompt = (
 - Slack messages and workspace data
 
 **Guidelines for Follow-up Questions:**
-1. **Direct Search Queries**: Generate specific, actionable search queries that users can immediately click to search their workspace
+1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
 2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for
-3. **Concise**: Keep questions short and direct (max 8-10 words)
+3. **Conversational**: Make questions sound like how users would naturally ask (e.g., "what emails did I get from..." instead of "emails from...")
 4. **Immediately Actionable**: Each question should be a complete search query ready to execute
 5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic
 6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
 
 **Question Categories to Generate:**
-- Related people searches: "John Smith recent documents"
-- Temporal searches: "project updates this week"
-- Related content searches: "budget reports Q4"
-- Email searches: "emails from marketing team"
-- Meeting searches: "meetings about product launch"
-- File searches: "presentations by Sarah"
-- Status searches: "deadline updates January"
+- Related people searches: "what documents did John Smith share recently?"
+- Temporal searches: "what are the latest project updates this week?"
+- Related content searches: "show me budget reports from Q4"
+- Email searches: "what emails did I get from the marketing team?"
+- Meeting searches: "what meetings did we have about product launch?"
+- File searches: "what presentations did Sarah create?"
+- Status searches: "what are the deadline updates from January?"
 
 **Response Format:**
 Return exactly 3 follow-up questions in a JSON array format:
@@ -482,19 +482,19 @@ Return exactly 3 follow-up questions in a JSON array format:
 }
 
 **Example Good Questions (Direct Search Queries):**
-- "Recent emails from project team"
-- "Budget documents this quarter"
-- "Meeting notes about product roadmap"
-- "Files shared by engineering team"
-- "Status updates from last week"
-- "Presentations about Q4 goals"
+- "What emails did I receive from the project team recently?"
+- "Show me budget documents from this quarter"
+- "What meeting notes do we have about the product roadmap?"
+- "What files has the engineering team shared?"
+- "What status updates came in last week?"
+- "What presentations were made about Q4 goals?"
 
 **Example BAD Questions (Meta Questions - AVOID):**
 - "What specific type of workspace data do you need?"
 - "Can I help you search for recent files or emails?"
 - "Would you like to explore your calendar or contacts?"
 
-**CRITICAL:** Generate ONLY direct search queries that users can immediately execute, NOT questions asking users what they want to search for.
+**CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
 
 Do not include explanatory text outside the JSON structure.`
 

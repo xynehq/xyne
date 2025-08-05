@@ -6109,7 +6109,7 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
     email = sub || ""
 
     // @ts-ignore - Validation handled by middleware
-    const { chatId, messageId, userTimezone } = c.req.valid("json")
+    const { chatId, messageId } = c.req.valid("json")
 
     if (!chatId || !messageId) {
       throw new HTTPException(400, {
@@ -6152,13 +6152,9 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       .join("\n\n")
 
     // Generate user context
-    const userContext = `User: ${user.email}
-Company: ${workspace.name}
-Current time: ${getDateForAI()}
-Timezone: ${userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone}`
-
+    const ctx = userContext(userAndWorkspace)
     // Use the follow-up questions prompt
-    const systemPrompt = generateFollowUpQuestionsSystemPrompt(userContext)
+    const systemPrompt = generateFollowUpQuestionsSystemPrompt(ctx)
 
     const userPrompt = `Based on this conversation, generate 3 relevant follow-up questions:
 

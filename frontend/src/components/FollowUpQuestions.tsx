@@ -54,7 +54,6 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
         json: {
           chatId,
           messageId,
-          userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
       })
 
