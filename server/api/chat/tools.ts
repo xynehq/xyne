@@ -47,7 +47,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import { searchToCitation } from "./utils"
+import { getChannelIdsFromAgentPrompt, searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
@@ -156,6 +156,7 @@ interface UnifiedSearchOptions {
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
   intent?: Intent | null
+  channelIds?: string[]
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -177,6 +178,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     span,
     schema,
     intent,
+    channelIds,
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
@@ -238,6 +240,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
               ? { from: fromTimestamp, to: toTimestamp }
               : undefined,
           dataSourceIds: options.dataSourceIds ?? undefined,
+          channelIds,
         },
       )
     } else {
@@ -384,7 +387,9 @@ export const searchTool: AgentTool = {
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
-
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
       return await executeVespaSearch({
         email,
         query: queryToUse,
@@ -393,6 +398,7 @@ export const searchTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -587,6 +593,9 @@ export const metadataRetrievalTool: AgentTool = {
       Logger.debug(
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
 
       const { agentAppEnums, agentSpecificDataSourceIds } =
         parseAgentAppIntegrations(agentPrompt)
@@ -624,6 +633,7 @@ export const metadataRetrievalTool: AgentTool = {
         dataSourceIds: agentSpecificDataSourceIds,
         timestampRange: { from: params.from, to: params.to },
         intent: resolvedIntent,
+        channelIds: channelIds,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -728,10 +738,11 @@ export const getSlackThreads: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack threads.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack threads.",
           contexts: [],
         }
       }
@@ -993,10 +1004,11 @@ export const getSlackMessagesFromUser: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from user.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from user.",
           contexts: [],
         }
       }
@@ -1203,10 +1215,11 @@ export const getSlackRelatedMessages: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve related Slack messages.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve related Slack messages.",
           contexts: [],
         }
       }
@@ -1389,10 +1402,11 @@ export const getUserSlackProfile: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack user profile.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack user profile.",
           contexts: [],
         }
       }
@@ -1549,10 +1563,11 @@ export const getSlackMessagesFromChannel: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from channel.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from channel.",
           contexts: [],
         }
       }
@@ -1747,10 +1762,11 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     if (agentPrompt) {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = await getChannelIdsFromAgentPrompt(agentPrompt)
+      if (!agentAppEnums.includes(Apps.Slack) && channelIds.length === 0) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from time range.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from time range.",
           contexts: [],
         }
       }

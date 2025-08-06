@@ -12,11 +12,16 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { UserRole } from "@/shared/types"
 import { workspaces } from "./workspaces"
+import { encryptedText } from "../customType"
+import { Encryption } from "@/utils/encryption"
+const encryptionKey = process.env.ENCRYPTION_KEY!
 
 export const userRoleEnum = pgEnum(
   "role",
   Object.values(UserRole) as [string, ...string[]],
 )
+
+const refreshTokenEncryption = new Encryption(encryptionKey)
 
 // Users Table
 export const users = pgTable(
@@ -43,6 +48,7 @@ export const users = pgTable(
       .default(sql`'1970-01-01T00:00:00Z'`),
     lastLogin: timestamp("last_login", { withTimezone: true }),
     role: userRoleEnum("role").notNull().default(UserRole.User),
+    refreshToken: encryptedText(refreshTokenEncryption)("refreshToken"),
   },
   (table) => ({
     emailUniqueIndex: uniqueIndex("email_unique_index").on(

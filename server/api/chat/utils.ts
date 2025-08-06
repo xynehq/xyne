@@ -2,6 +2,7 @@ import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
   DataSourceEntity,
   dataSourceFileSchema,
@@ -15,9 +16,11 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatContainer,
   type VespaChatMessage,
   type VespaDataSourceFile,
   type VespaEvent,
@@ -50,9 +53,31 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
+
+
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
+}
+
+export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
+  try {
+    const agent = JSON.parse(agentPrompt)
+    if (!agent || !agent.docIds) {
+      return []
+    }
+    const channelIds = new Set<string>()
+    agent.docIds?.forEach((doc: any) => {
+      if (doc.app === Apps.Slack) {
+        if (doc.entity === SlackEntity.Channel && doc.docId) {
+          channelIds.add(doc.docId)
+        }
+      }
+    })
+    return Array.from(channelIds)
+  } catch (e) {
+    return []
+  }
 }
 
 // Interface for email search result fields
@@ -328,6 +353,14 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
+    }
+  } else if (result.fields.sddocname === chatContainerSchema) {
+    return {
+      docId: (fields as VespaChatContainer).docId,
+      title: (fields as VespaChatContainer).name,
+      url: `https://${result.fields.domain}.slack.com/archives/${result.fields.docId}`,
+      app: (fields as VespaChatContainer).app,
+      entity: SlackEntity.Channel,
     }
   } else {
     throw new Error("Invalid search result type for citation")

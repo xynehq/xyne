@@ -89,6 +89,7 @@ import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
+import { FeedbackModal } from "@/components/feedback/FeedbackModal"
 import { getName } from "@/components/GroupFilter"
 import {
   useQueryClient,
@@ -112,14 +113,14 @@ import {
 } from "@/components/ui/tooltip"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
 import { Tip } from "@/components/Tooltip"
+import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import React from "react"
-import { renderToStaticMarkup } from "react-dom/server"
-import { Pill } from "@/components/Pill"
+import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
-import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
+import { ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
@@ -224,94 +225,6 @@ interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
   agentWhiteList: boolean
-}
-
-// Define the structure for parsed message parts, including app, entity, and pillType for pills
-type ParsedMessagePart =
-  | { type: "text"; value: string }
-  | {
-      type: "pill"
-      value: {
-        docId: string
-        url: string | null
-        title: string | null
-        app?: string
-        entity?: string
-        pillType?: "citation" | "global"
-        imgSrc?: string | null
-        wholeSheet?: boolean
-      }
-    }
-  | { type: "link"; value: string }
-
-// Helper function to convert JSON message parts back to HTML using Pill component
-const jsonToHtmlMessage = (jsonString: string): string => {
-  try {
-    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
-    if (!Array.isArray(parts)) {
-      // If not our specific JSON structure, treat as plain HTML/text string
-      return jsonString
-    }
-
-    return parts
-      .map((part, index) => {
-        let htmlPart = ""
-        if (part.type === "text") {
-          htmlPart = part.value
-        } else if (
-          part.type === "pill" &&
-          part.value &&
-          typeof part.value === "object"
-        ) {
-          const {
-            docId,
-            url,
-            title,
-            app,
-            entity,
-            pillType,
-            imgSrc,
-            wholeSheet,
-          } = part.value
-
-          const referenceForPill: Reference = {
-            id: docId,
-            docId: docId,
-            title: title || docId,
-            url: url || undefined,
-            app: app,
-            entity: entity,
-            type: pillType || "global",
-            // Include imgSrc if available, mapping it to photoLink for the Reference type.
-            // The Pill component will need to be able to utilize this.
-            ...(imgSrc && { photoLink: imgSrc }),
-            // Include wholeSheet if available
-            ...(wholeSheet !== undefined && { wholeSheet: wholeSheet }),
-          }
-          htmlPart = renderToStaticMarkup(
-            React.createElement(Pill, { newRef: referenceForPill }),
-          )
-        } else if (part.type === "link" && typeof part.value === "string") {
-          const url = part.value
-          // Create a simple anchor tag string for links
-          // Ensure it has similar styling to how it's created in ChatBox
-          // The text of the link will be the URL itself
-          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer">${url}</a>`
-        }
-        // Add a space only if the part is not the last one, or if the next part is text.
-        // This avoids trailing spaces or double spaces between elements.
-        if (htmlPart.length > 0 && index < parts.length - 1) {
-          // Add space if current part is not empty and it's not the last part.
-          // More sophisticated logic might be needed if consecutive non-text elements occur.
-          htmlPart += " "
-        }
-        return htmlPart
-      })
-      .join("")
-      .trimEnd()
-  } catch (error) {
-    return jsonString
-  }
 }
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
@@ -432,6 +345,11 @@ export const ChatPage = ({
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, MessageFeedback | null>
   >({})
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
+  const [pendingFeedback, setPendingFeedback] = useState<{
+    messageId: string
+    type: MessageFeedback
+  } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -624,6 +542,23 @@ export const ChatPage = ({
     }
   }, [chatId, queryClient])
 
+  // Helper function to extract feedback type from either JSON or legacy format
+  const extractFeedbackType = (feedback: any): MessageFeedback | null => {
+    if (!feedback) return null
+
+    // Handle new JSON format
+    if (typeof feedback === "object" && feedback.type) {
+      return feedback.type as MessageFeedback
+    }
+
+    // Handle legacy string format
+    if (typeof feedback === "string") {
+      return feedback as MessageFeedback
+    }
+
+    return null
+  }
+
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
@@ -638,9 +573,7 @@ export const ChatPage = ({
       const initialFeedbackMap: Record<string, MessageFeedback | null> = {}
       data.messages.forEach((msg: SelectPublicMessage) => {
         if (msg.externalId && msg.feedback !== undefined) {
-          // msg.feedback can be null
-          initialFeedbackMap[msg.externalId] =
-            msg.feedback as MessageFeedback | null
+          initialFeedbackMap[msg.externalId] = extractFeedbackType(msg.feedback)
         }
       })
       setFeedbackMap(initialFeedbackMap)
@@ -784,46 +717,71 @@ export const ChatPage = ({
   ) => {
     if (!messageId) return
 
-    setFeedbackMap((prev) => {
-      const currentFeedback = prev[messageId]
-      return {
-        ...prev,
-        [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
-      }
-    })
+    // Open the enhanced feedback modal
+    setPendingFeedback({ messageId, type: feedback })
+    setFeedbackModalOpen(true)
+  }
+
+  const handleEnhancedFeedbackSubmit = async (data: {
+    type: MessageFeedback
+    customFeedback?: string
+    selectedOptions?: string[]
+    shareChat?: boolean
+  }) => {
+    if (!pendingFeedback) return
+
+    const { messageId } = pendingFeedback
+
+    // Optimistically update the UI
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [messageId]: data.type,
+    }))
 
     try {
-      const currentFeedbackInState = feedbackMap[messageId]
-      const newFeedbackStatus =
-        currentFeedbackInState === feedback ? null : feedback
-
-      await api.message.feedback.$post({
-        json: { messageId, feedback: newFeedbackStatus },
+      const response = await api.message.feedback.enhanced.$post({
+        json: {
+          messageId,
+          type: data.type,
+          customFeedback: data.customFeedback,
+          selectedOptions: data.selectedOptions,
+          shareChat: data.shareChat,
+        },
       })
-      toast({ title: "Success", description: "Feedback submitted." })
+
+      const result = await response.json()
+
+      let successMessage = "Feedback submitted."
+      if (data.shareChat && result.shareToken) {
+        successMessage += " Chat has been shared for improvement purposes."
+      } else if (data.shareChat && !result.shareToken) {
+        successMessage +=
+          " Feedback submitted, but share token generation failed."
+      }
+
+      toast({ title: "Success", description: successMessage })
     } catch (error) {
-      console.error("Failed to submit feedback", error)
+      console.error("Failed to submit enhanced feedback", error)
+      // Revert optimistic update on error
       setFeedbackMap((prev) => {
-        // Get the current state after optimistic update
-        const currentState = prev[messageId]
-        const originalFeedback =
-          currentState === null
-            ? feedback
-            : currentState === feedback
-              ? feedbackMap[messageId]
-              : null
-        return { ...prev, [messageId]: originalFeedback }
+        const newMap = { ...prev }
+        delete newMap[messageId]
+        return newMap
       })
       toast({
         title: "Error",
-        description: "Could not submit feedback.",
+        description: "Failed to submit feedback. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setPendingFeedback(null)
+      setFeedbackModalOpen(false)
     }
   }
 
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
+    setRetryIsStreaming(true)
     await retryMessage(messageId, isReasoningActive, isAgenticMode)
   }
 
@@ -889,6 +847,12 @@ export const ChatPage = ({
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
     setUserHasScrolled(!isAtBottom)
+  }
+
+  const scrollToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container || userHasScrolled) return
+    container.scrollTop = container.scrollHeight
   }
 
   useEffect(() => {
@@ -1176,6 +1140,21 @@ export const ChatPage = ({
                         attachments={message.attachments || []}
                       />
                     )}
+                    {/* Show follow-up questions only for the latest assistant message */}
+                    {message.messageRole === "assistant" &&
+                      !isStreaming &&
+                      !retryIsStreaming &&
+                      !isSharedChat &&
+                      message.externalId &&
+                      index === messages.length - 1 && (
+                        <FollowUpQuestions
+                          chatId={chatId}
+                          messageId={message.externalId}
+                          onQuestionClick={handleSend}
+                          isStreaming={isStreaming || retryIsStreaming}
+                          onQuestionsLoaded={scrollToBottom}
+                        />
+                      )}
                   </Fragment>
                 )
               })}
@@ -1273,6 +1252,21 @@ export const ChatPage = ({
         chatId={chatId}
         messages={messages}
       />
+
+      {/* Enhanced Feedback Modal */}
+      {pendingFeedback && (
+        <FeedbackModal
+          isOpen={feedbackModalOpen}
+          onClose={() => {
+            setFeedbackModalOpen(false)
+            setPendingFeedback(null)
+          }}
+          onSubmit={handleEnhancedFeedbackSubmit}
+          feedbackType={pendingFeedback.type}
+          messageId={pendingFeedback.messageId}
+          chatId={chatId || ""}
+        />
+      )}
     </div>
   )
 }

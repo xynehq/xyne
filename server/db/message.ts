@@ -6,7 +6,7 @@ import {
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt, count, inArray, sql } from "drizzle-orm"
+import { and, asc, eq, lt, count, inArray, sql, desc } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -153,20 +153,29 @@ export async function getMessageFeedbackStats({
   totalLikes: number
   totalDislikes: number
   feedbackByChat: Record<string, { likes: number; dislikes: number }>
+  feedbackMessages: Array<{
+    messageId: string
+    chatExternalId: string
+    type: "like" | "dislike"
+    feedbackText: string[]
+    timestamp: string
+  }>
 }> {
   if (chatExternalIds.length === 0) {
     return {
       totalLikes: 0,
       totalDislikes: 0,
       feedbackByChat: {},
+      feedbackMessages: [],
     }
   }
 
+  // Get aggregated feedback counts
   const result = await db
     .select({
       chatExternalId: messages.chatExternalId,
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)::int`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)::int`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)::int`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
     })
     .from(messages)
     .where(
@@ -174,10 +183,29 @@ export async function getMessageFeedbackStats({
         inArray(messages.chatExternalId, chatExternalIds),
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
-        inArray(messages.feedback, ["like", "dislike"]),
+        sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
       ),
     )
     .groupBy(messages.chatExternalId)
+
+  // Get detailed feedback messages
+  const feedbackMessages = await db
+    .select({
+      messageId: messages.externalId,
+      chatExternalId: messages.chatExternalId,
+      feedback: messages.feedback,
+      updatedAt: messages.updatedAt,
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+        sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
+      ),
+    )
+    .orderBy(desc(messages.updatedAt))
 
   let totalLikes = 0
   let totalDislikes = 0
@@ -196,9 +224,24 @@ export async function getMessageFeedbackStats({
     totalDislikes += row.dislikes
   })
 
+  // Process detailed feedback messages
+  const processedFeedbackMessages = feedbackMessages.map((msg) => {
+    const feedbackData = msg.feedback as any
+    return {
+      messageId: msg.messageId,
+      chatExternalId: msg.chatExternalId,
+      type: (feedbackData?.type || "like") as "like" | "dislike",
+      feedbackText: Array.isArray(feedbackData?.feedback)
+        ? feedbackData.feedback.filter((text: string) => text && text.trim())
+        : [""],
+      timestamp: msg.updatedAt?.toISOString() || new Date().toISOString(),
+    }
+  })
+
   return {
     totalLikes,
     totalDislikes,
     feedbackByChat,
+    feedbackMessages: processedFeedbackMessages,
   }
 }
