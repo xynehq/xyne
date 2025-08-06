@@ -235,8 +235,8 @@ const generateStepSummary = async (
 
     // Parse the JSON response
     const parsed = jsonParseLLMOutput(summaryResponse)
-    console.log("Parsed reasoning step:", parsed)
-    console.log("Generated summary:", parsed?.summary)
+    Logger.debug("Parsed reasoning step:", {parsed})
+    Logger.debug("Generated summary:", {summary: parsed?.summary})
     return parsed?.summary || generateFallbackSummary(step)
   } catch (error) {
     Logger.error(`Error generating step summary: ${error}`)
@@ -849,7 +849,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               await generateAndStreamIterationSummary(currentIterationNumber, currentIterationAllSteps, userQuery)
             }
             
-            currentIterationNumber = reasoningStep.iteration || currentIterationNumber + 1
+            currentIterationNumber = reasoningStep.iteration ?? currentIterationNumber + 1
             currentIterationSteps = 0 // Reset step counter for new iteration
             currentIterationAllSteps = [] // Reset all steps for new iteration
           } else {
@@ -904,6 +904,19 @@ export const MessageWithToolsApi = async (c: Context) => {
           })
         }
 
+        // Helper function to create iteration summary steps
+        const createIterationSummaryStep = (summary: string, iterationNumber: number): AgentReasoningStep => ({
+          type: AgentReasoningStepType.LogMessage,
+          stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
+          timestamp: Date.now(),
+          status: 'completed',
+          iteration: iterationNumber,
+          message: summary,
+          stepSummary: summary,
+          aiGeneratedSummary: summary,
+          isIterationSummary: true,
+        })
+
         // Generate and stream iteration summary
         const generateAndStreamIterationSummary = async (
           iterationNumber: number,
@@ -947,17 +960,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const summary = parsed?.summary || `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
             
             // Create the iteration summary step
-            const iterationSummaryStep: AgentReasoningStep = {
-              type: AgentReasoningStepType.LogMessage,
-              stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
-              timestamp: Date.now(),
-              status: 'completed',
-              iteration: iterationNumber,
-              message: summary,
-              stepSummary: summary,
-              aiGeneratedSummary: summary,
-              isIterationSummary: true,
-            }
+            const iterationSummaryStep = createIterationSummaryStep(summary, iterationNumber)
             
             // Add to structured reasoning steps so it gets saved to DB
             structuredReasoningSteps.push(iterationSummaryStep)
@@ -979,17 +982,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const fallbackSummary = `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
             
             // Create the fallback iteration summary step
-            const fallbackSummaryStep: AgentReasoningStep = {
-              type: AgentReasoningStepType.LogMessage,
-              stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
-              timestamp: Date.now(),
-              status: 'completed',
-              iteration: iterationNumber,
-              message: fallbackSummary,
-              stepSummary: fallbackSummary,
-              aiGeneratedSummary: fallbackSummary,
-              isIterationSummary: true,
-            }
+            const fallbackSummaryStep = createIterationSummaryStep(fallbackSummary, iterationNumber)
             
             // Add to structured reasoning steps so it gets saved to DB
             structuredReasoningSteps.push(fallbackSummaryStep)
@@ -1005,6 +998,25 @@ export const MessageWithToolsApi = async (c: Context) => {
               }),
             })
           }
+        }
+
+        // Helper function to infer app type from tool name
+        const inferAppFromToolName = (toolName: string): string | undefined => {
+          const appPatterns: Record<string, string[]> = {
+            'gmail': ['gmail', 'mail'],
+            'drive': ['drive', 'file'],
+            'calendar': ['calendar', 'event'],
+            'slack': ['slack'],
+            'workspace': ['workspace', 'people'],
+          }
+          
+          const lowerToolName = toolName.toLowerCase()
+          for (const [app, patterns] of Object.entries(appPatterns)) {
+            if (patterns.some(pattern => lowerToolName.includes(pattern))) {
+              return app
+            }
+          }
+          return undefined
         }
 
         streamKey = `${chat.externalId}` // Create the stream key
@@ -1486,23 +1498,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               let iterationApp: string | undefined
               let iterationEntity: string | undefined
               
-              if (toolParams.app) {
-                iterationApp = toolParams.app
-                iterationEntity = toolParams.entity
-              } else {
-                // Infer app from tool name if not in params
-                if (toolName.includes('gmail') || toolName.includes('mail')) {
-                  iterationApp = 'gmail'
-                } else if (toolName.includes('drive') || toolName.includes('file')) {
-                  iterationApp = 'drive'
-                } else if (toolName.includes('calendar') || toolName.includes('event')) {
-                  iterationApp = 'calendar'
-                } else if (toolName.includes('slack')) {
-                  iterationApp = 'slack'
-                } else if (toolName.includes('workspace') || toolName.includes('people')) {
-                  iterationApp = 'workspace'
-                }
-              }
+              iterationApp = toolParams.app || inferAppFromToolName(toolName)
+              iterationEntity = toolParams.entity
               
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Iteration,
@@ -1563,7 +1560,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 `execute_tool_${toolName}`,
               )
 
-                if (agentTools[toolName]) {
+              if (agentTools[toolName]) {
                 if (excludedIds.length > 0) {
                   toolParams.excludedIds = excludedIds
                 }
@@ -2209,15 +2206,25 @@ export const MessageWithToolsApi = async (c: Context) => {
             // somehow hide that citation and change
             // the answer to reflect that
             
-            // Save structured reasoning steps as JSON lines for frontend parsing
+            // Save structured reasoning steps as NDJSON (newline-delimited JSON) format for frontend parsing
             const reasoningLog = structuredReasoningSteps
-              .map(step => JSON.stringify({
-                text: convertReasoningStepToText(step),
-                step: step,
-                quickSummary: step.stepSummary,
-                aiSummary: step.aiGeneratedSummary,
-                ...(step.isIterationSummary ? { isIterationSummary: true } : {}),
-              }))
+              .map(step => {
+                try {
+                  return JSON.stringify({
+                    text: convertReasoningStepToText(step),
+                    step: step,
+                    quickSummary: step.stepSummary,
+                    aiSummary: step.aiGeneratedSummary,
+                    ...(step.isIterationSummary ? { isIterationSummary: true } : {}),
+                  })
+                } catch (error) {
+                  Logger.error("Failed to stringify reasoning step", { error, stepType: step.type })
+                  return JSON.stringify({ 
+                    text: "Error serializing step", 
+                    step: { type: step.type, error: "Serialization failed" } 
+                  })
+                }
+              })
               .join("\n")
 
             const msg = await insertMessage(db, {

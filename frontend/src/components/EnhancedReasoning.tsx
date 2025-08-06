@@ -180,7 +180,7 @@ const formatParametersInText = (text: string): string => {
         // Apply the same 3-steps-per-iteration logic as backend
         if (step.type === AgentReasoningStepType.Iteration) {
           currentIteration = step
-          currentIterationNumber = step.iterationNumber || currentIterationNumber + 1
+          currentIterationNumber = step.iterationNumber ?? currentIterationNumber + 1
           currentIterationSteps = 0 // Reset step counter for new iteration
           currentIterationToolName = undefined // Reset tool name for new iteration
           // Add iteration step to show attempt headers
@@ -361,7 +361,7 @@ const ReasoningStepComponent: React.FC<{
         )}
         
         {/* White div with fixed height and scrollable content */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm h-36 overflow-y-auto overflow-x-hidden flex flex-col items-start gap-4 w-full max-w-full">
+        <div className="bg-white dark:bg-slate-700 rounded-xl py-4 shadow-sm h-36 overflow-y-auto overflow-x-hidden flex flex-col items-start gap-4 w-full max-w-full">
           {hasSubsteps && (
             <div className="space-y-1 w-full max-w-full">
               {step.substeps!.map((substep, substepIndex) => (
@@ -467,7 +467,7 @@ const ReasoningStepComponent: React.FC<{
           <div className="flex-1 min-w-0 w-full">
             <div 
               className={cn(
-                "text-sm leading-relaxed text-gray-600 dark:text-gray-300",
+                "text-sm leading-relaxed text-gray-700 dark:text-gray-300",
                 canToggleDetails && "cursor-pointer"
               )}
               onClick={canToggleDetails ? () => setShowFullDetails(!showFullDetails) : undefined}
@@ -511,7 +511,7 @@ const ReasoningStepComponent: React.FC<{
                           className="inline-block align-middle ml-1 p-0.5 text-gray-400"
                         >
                           {showFullDetails ? null : (
-                            <ChevronRight className="w-3 h-3" />
+                            <ChevronRight className=" w-4 h-3.5" />
                           )}
                         </button>
                       )}
@@ -553,7 +553,7 @@ const ReasoningStepComponent: React.FC<{
         {/* Show full details below when expanded */}
         {showFullDetails && canToggleDetails && (
           <div className="mt-2 ml-4 pl-2 ">
-            <div className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed w-full break-words flex">
+            <div className="text-sm text-[#6B757F] leading-relaxed w-full break-words flex">
               <span className="mr-1 flex-shrink-0">-</span>
               <MarkdownPreview
                 source={processReasoningWithCitations(
@@ -652,7 +652,7 @@ const getCurrentProgressState = (steps: ReasoningStep[], isStreaming: boolean, s
   for (let i = steps.length - 1; i >= 0; i--) {
     if (steps[i].type === AgentReasoningStepType.Iteration) {
       currentIteration = steps[i]
-      currentIterationNumber = steps[i].iterationNumber || 1
+      currentIterationNumber = steps[i].iterationNumber ?? 1
       break
     }
   }
@@ -880,26 +880,21 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   const toggleCollapsed = useCallback(() => setIsCollapsed(!isCollapsed), [isCollapsed])
 
   return (
-    <div className={cn("mb-8 w-full max-w-none rounded-2xl bg-gradient-to-b from-[#eaf1fb] to-[#f9fbfd] shadow-md", className)}>
-      {/* Combined Progress Indicator and Collapsible Header */}
+    <div className={cn("mb-8 w-full max-w-none rounded-2xl bg-[#F8FAFC] dark:bg-slate-800", className)}>
       <div className="p-1">
         <button
           onClick={toggleCollapsed}
-          className="sticky top-0 z-10 w-full bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          className="sticky top-0 z-10 w-full bg-white dark:bg-slate-700 rounded-2xl border border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors cursor-pointer"
         >
         <div className="flex items-center gap-3">
-          {progressState.state === ProgressState.SearchCompleted ? (
-            <Brain className="w-5 h-5 text-gray-500" />
-          ) : (
-            <Brain className="w-5 h-5 text-gray-500" />
-          )}
+          <Brain className="w-5 h-5 text-gray-500 dark:text-gray-300" />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {progressState.text}
           </span>
         </div>
         <div className="flex items-center gap-3">
           {isCollapsed ? (
-            <div className="border px-2 py-1 rounded-xl">
+            <div className="border px-2 py-1 rounded-xl ">
               <ExpandIcon className="w-3.5 h-3.5" />
            </div>) : null}
         </div>
@@ -909,11 +904,15 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       {/* Content */}
       {!isCollapsed && (
         <div className="p-6">
-          <div className="w-full max-w-full pl-3 pr-6 pb-4">
+          <div className="w-full max-w-full pl-4 pr-1 ">
             <div
               ref={scrollContainerRef}
               onScroll={handleScroll}
-              className="space-y-6 max-h-80 overflow-y-auto overflow-x-hidden w-full max-w-full pr-4 pb-2"
+              className="space-y-6 max-h-80 overflow-y-auto overflow-x-hidden w-full max-w-full pr-4 pb-2 scrollbar-hide"
+              style={{
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+              }}
             >
               {steps.length > 0 ? (
                 steps.map((step, index) => (

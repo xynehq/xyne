@@ -171,6 +171,24 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
+// Helper function to append reasoning data to stream state
+const appendReasoningData = (streamState: StreamState, data: string) => {
+  try {
+    const stepData = JSON.parse(data)
+    
+    // If this is a valid reasoning step, add it as a new line
+    if (stepData.step || stepData.text) {
+      streamState.thinking += data + '\n'
+    } else {
+      // Fallback to simple text accumulation
+      streamState.thinking += data
+    }
+  } catch (e) {
+    // Not JSON, just add as text
+    streamState.thinking += data
+  }
+}
+
 // Start a new stream or continue existing one
 export const startStream = async (
   streamKey: string,
@@ -269,23 +287,7 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
-    
-    // Try to parse individual reasoning step
-    try {
-      const stepData = JSON.parse(event.data)
-      
-      // If this is a valid reasoning step, add it as a new line
-      if (stepData.step || stepData.text) {
-        streamState.thinking += event.data + '\n'
-      } else {
-        // Fallback to simple text accumulation
-        streamState.thinking += event.data
-      }
-    } catch (e) {
-      // Not JSON, just add as text
-      streamState.thinking += event.data
-    }
-    
+    appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
   })
 
@@ -816,22 +818,7 @@ export const useChatStream = (
           messageId,
         })
         
-        // Try to parse individual reasoning step
-        try {
-          const stepData = JSON.parse(event.data)
-          
-          // If this is a valid reasoning step, add it as a new line
-          if (stepData.step || stepData.text) {
-            streamState.thinking += event.data + '\n'
-          } else {
-            // Fallback to simple text accumulation
-            streamState.thinking += event.data
-          }
-        } catch (e) {
-          // Not JSON, just add as text
-          streamState.thinking += event.data
-        }
-        
+        appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })
 
