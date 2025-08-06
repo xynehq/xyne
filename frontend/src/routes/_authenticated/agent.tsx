@@ -50,7 +50,7 @@ import {
   ChevronRight,
   BookOpen,
 } from "lucide-react"
-import React, { useState, useMemo, useEffect, useRef } from "react"
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
@@ -429,13 +429,13 @@ function AgentComponent() {
     setCurrentPage(1)
   }
 
-  const toggleFavorite = (agentExternalId: string) => {
+  const toggleFavorite = useCallback((agentExternalId: string) => {
     setFavoriteAgents((prevFavorites) =>
       prevFavorites.includes(agentExternalId)
         ? prevFavorites.filter((id) => id !== agentExternalId)
         : [...prevFavorites, agentExternalId],
     )
-  }
+  }, [])
 
   useEffect(() => {
     setSelectedSearchIndex(-1)

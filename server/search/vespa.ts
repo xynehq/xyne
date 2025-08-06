@@ -819,7 +819,7 @@ export const HybridDefaultProfileForAgent =  async(
     const dataSourceIdConditions =
       dataSourceIds && dataSourceIds.length > 0
         ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
-        : "" // If no specific IDs, this part of the query should not match anything
+        : "false" // If no specific IDs, this part of the query should not match anything
 
    
     return `

@@ -9,6 +9,7 @@ import {
   chatRenameSchema,
   chatTraceSchema,
   chatSchema,
+  followUpQuestionsSchema,
   dashboardDataSchema,
   sharedAgentUsageSchema,
   messageRetrySchema,
@@ -116,6 +117,7 @@ import {
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
+  GenerateFollowUpQuestionsApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -682,6 +684,11 @@ export const AppRoutes = app
     SharedAgentUsageApi,
   )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+  .post(
+    "/chat/followup-questions",
+    zValidator("json", followUpQuestionsSchema),
+    GenerateFollowUpQuestionsApi,
+  )
   // Shared chat routes
   .post(
     "/chat/share/create",

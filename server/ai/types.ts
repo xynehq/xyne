@@ -38,6 +38,7 @@ export enum Models {
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
   Gemini_2_5_Flash = "gemini-2.5-flash",
   Gemini_2_0_Flash_Thinking = "gemini-2.0-flash-thinking-exp",
+
 }
 
 export enum QueryCategory {
