@@ -129,6 +129,7 @@ export const getUserAccessibleAgents = async (
       appIntegrations: agents.appIntegrations,
       allowWebSearch: agents.allowWebSearch,
       isRagOn: agents.isRagOn,
+      docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
     })
@@ -174,6 +175,7 @@ export const getAgentsMadeByMe = async (
       appIntegrations: agents.appIntegrations,
       allowWebSearch: agents.allowWebSearch,
       isRagOn: agents.isRagOn,
+      docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
     })
@@ -218,6 +220,7 @@ export const getAgentsSharedToMe = async (
       appIntegrations: agents.appIntegrations,
       allowWebSearch: agents.allowWebSearch,
       isRagOn: agents.isRagOn,
+      docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
     })

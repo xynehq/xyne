@@ -211,6 +211,7 @@ interface PillValue {
   wholeSheet?: boolean
   threadId?: string
   app?: Apps
+  entity?: string
 }
 
 interface PillQueryItem {

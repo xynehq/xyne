@@ -1,16 +1,15 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
-import { api } from "@/api"
 import { errorComponent } from "@/components/error"
+import { authFetch } from "@/utils/authFetch"
 
 export const Route = createFileRoute("/_authenticated")({
-  beforeLoad: async ({ context }) => {
-    const res = await api.me.$get()
-    if (!res.ok) {
-      // If user is not logged in, take user to '/auth'
-      throw redirect({ to: "/auth" })
-    }
+  beforeLoad: async () => {
+    // Try to get user info
+    const res = await authFetch("/api/v1/me")
+    if (res.ok) return res.json()
 
-    return await res.json()
+    // If still not ok after refresh, redirect to login
+    throw redirect({ to: "/auth" })
   },
   component: () => {
     return <Outlet />
