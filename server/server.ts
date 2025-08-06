@@ -117,6 +117,7 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat/chat"
+import jafRoutes from "@/api/chat/routes-jaf"
 import {
   CreateSharedChatApi,
   GetSharedChatApi,
@@ -709,6 +710,8 @@ export const AppRoutes = app
     zValidator("json", enhancedMessageFeedbackSchema),
     EnhancedMessageFeedbackApi,
   )
+  // JAF routes for agent-based chat
+  .route("/chat/jaf", jafRoutes)
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get(
     "/search/slack-channels",
