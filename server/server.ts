@@ -269,6 +269,7 @@ export const WsApp = app.get(
   AuthMiddleware,
   upgradeWebSocket((c) => {
     let connectorId: string | undefined
+    let workspaceId: string | undefined
     let isAuthenticated = false
     return {
       async onOpen(event, ws) {
@@ -281,7 +282,22 @@ export const WsApp = app.get(
           return
         }
         
-        const { sub: userEmail, workspaceId } = payload as { sub: string; workspaceId: string }
+        if (typeof payload !== 'object' || payload === null) {
+          Logger.warn("Invalid JWT payload structure in WebSocket connection")
+          ws.close(1008, "Unauthorized - Invalid token")
+          return
+        }
+        
+        const { sub, workspaceId: wsId } = payload as Record<string, unknown>
+        
+        if (typeof sub !== 'string' || typeof wsId !== 'string') {
+          Logger.warn("Missing or invalid required fields in JWT payload")
+          ws.close(1008, "Unauthorized - Invalid token structure")
+          return
+        }
+        
+        const userEmail = sub
+        workspaceId = wsId // Store workspaceId for later use
         
         try {
           const user = await getUserByEmail(db, userEmail)
@@ -312,13 +328,9 @@ export const WsApp = app.get(
       },
       onClose: (event, ws) => {
         Logger.info("Connection closed")
-        if (connectorId && isAuthenticated) {
-          const payload = c.get("jwtPayload")
-          if (payload) {
-            const { workspaceId } = payload as { workspaceId: string }
-            const scopedKey = `${workspaceId}:${connectorId}`
-            wsConnections.delete(scopedKey)
-          }
+        if (connectorId && isAuthenticated && workspaceId) {
+          const scopedKey = `${workspaceId}:${connectorId}`
+          wsConnections.delete(scopedKey)
         }
       },
     }
