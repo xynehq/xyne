@@ -530,7 +530,7 @@ const buildKBYQL = () => {
           sourcesToExclude.push(kbFileSchema)
       }
     })
-    newSources = AllSources.split(", ")
+    newSources = newSources.split(", ")
       .filter((source) => !sourcesToExclude.includes(source))
       .join(", ")
   }

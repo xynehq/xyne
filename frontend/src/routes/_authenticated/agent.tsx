@@ -183,7 +183,8 @@ const availableIntegrationsList: IntegrationSource[] = [
 
 const AGENT_ENTITY_SEARCH_EXCLUSIONS: { app: string; entity: string }[] = [
   { app: Apps.Slack, entity: SlackEntity.Message },
-  {app: Apps.Slack, entity: SlackEntity.User}
+  {app:Apps.Slack,entity:SlackEntity.User}
+
 ]
 
 interface User {
@@ -257,8 +258,45 @@ function AgentComponent() {
   const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'kb-root' | 'kb' | 'folder'}>>([])
   const [currentItems, setCurrentItems] = useState<any[]>([])
   const [isLoadingItems, setIsLoadingItems] = useState(false)
-  // const [kbSearchQuery, setKbSearchQuery] = useState("")
-  const [kbSearchQuery] = useState("")
+  const [dropdownSearchQuery, setDropdownSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+
+  // Global search effect for knowledge base dropdown
+  useEffect(() => {
+    const performGlobalSearch = async () => {
+      if (!dropdownSearchQuery.trim()) {
+        setSearchResults([])
+        return
+      }
+      setIsSearching(true)
+      try {
+        const response = await api.search.$get({
+          query: {
+            query: dropdownSearchQuery,
+            app: "knowledge-base",
+            isAgentIntegSearch:true
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log(data)
+          setSearchResults(data.results || [])
+        } else {
+          setSearchResults([])
+        }
+      } catch (error) {
+        console.error('Global search failed:', error)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
+    }
+    
+    const debounceSearch = setTimeout(performGlobalSearch, 300)
+    return () => clearTimeout(debounceSearch)
+  }, [dropdownSearchQuery])
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -308,9 +346,8 @@ function AgentComponent() {
         const response = await api.search.$get({
           query: {
             query: entitySearchQuery,
-            app: Apps.Slack,
-            isAgentIntegSearch: true,
-            // entity: SlackEntity.Channel
+            app:Apps.Slack,
+            isAgentIntegSearch:true
           },
         })
 
@@ -348,45 +385,6 @@ function AgentComponent() {
 
     return () => clearTimeout(debounceSearch)
   }, [entitySearchQuery, selectedEntities])
-
-  const handleEntitySelection = (entity: FetchedDataSource) => {
-    setSelectedEntities((prev) => [...prev, entity])
-
-    if (entity.app === Apps.Slack && entity.entity === SlackEntity.Channel) {
-      setSelectedIntegrations((prev) => ({
-        ...prev,
-        slack: true,
-      }))
-    }
-
-    setEntitySearchQuery("")
-    setShowEntitySearchResults(false)
-  }
-
-  const handleEntityRemoval = (entityToRemove: FetchedDataSource) => {
-    setSelectedEntities((prev) => {
-      const newEntities = prev.filter((c) => c.docId !== entityToRemove.docId)
-
-      if (
-        entityToRemove.app === Apps.Slack &&
-        entityToRemove.entity === SlackEntity.Channel
-      ) {
-        const remainingSlackChannels = newEntities.filter(
-          (entity) =>
-            entity.app === Apps.Slack && entity.entity === SlackEntity.Channel,
-        )
-
-        if (remainingSlackChannels.length === 0) {
-          setSelectedIntegrations((prevInt) => ({
-            ...prevInt,
-            slack: false,
-          }))
-        }
-      }
-
-      return newEntities
-    })
-  }
 
   const [users, setUsers] = useState<User[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -1230,9 +1228,12 @@ function AgentComponent() {
             // If no specific items are selected, use the KB id
             const kbId = integration.id.replace('kb_', '')
             knowledgeBaseItemIds.push(kbId)
+            // console.log(`Adding KB ID: ${kbId} for integration ${integrationId}`)
           } else {
+            // If specific items are selected, use their IDs
             selectedItems.forEach(itemId => {
               knowledgeBaseItemIds.push(itemId)
+              // console.log(`Adding KB item ID: ${itemId} for integration ${integrationId}`)
             })
           }
           hasKnowledgeBaseSelections = true
@@ -1251,28 +1252,6 @@ function AgentComponent() {
         }
       }
     }
-
-    // Process selectedEntities to automatically add integrations based on doc_ids
-    const entityIntegrations: Record<string, string[]> = {}
-    
-    selectedEntities.forEach(entity => {
-      const app = entity.app.toLowerCase()
-      if(app!=Apps.Slack)
-      return
-      // Group entity docIds by app
-      if (!entityIntegrations[app]) {
-        entityIntegrations[app] = []
-      }
-      entityIntegrations[app].push(entity.docId)
-    })
-
-    // Add entity-based integrations to appIntegrationsObject
-    Object.entries(entityIntegrations).forEach(([app, docIds]) => {
-      appIntegrationsObject[app] = {
-        itemIds: docIds,
-        selectedAll: false
-      }
-    })
 
     // Add knowledge base selections if any exist
     if (hasKnowledgeBaseSelections) {
@@ -2431,6 +2410,7 @@ function AgentComponent() {
                         if (!open) {
                           setNavigationPath([])
                           setCurrentItems([])
+                          setDropdownSearchQuery("") // Clear search when closing dropdown
                         }
                       }}
                     >
@@ -2459,6 +2439,7 @@ function AgentComponent() {
                                       // Go back to main menu from KB listing
                                       setNavigationPath([])
                                       setCurrentItems([])
+                                      setDropdownSearchQuery("")
                                     } else {
                                       // Navigate back one level
                                       const newPath = navigationPath.slice(0, -1)
@@ -2501,6 +2482,7 @@ function AgentComponent() {
                                     onClick={() => {
                                       setNavigationPath([])
                                       setCurrentItems([])
+                                      setDropdownSearchQuery("")
                                     }}
                                   >
                                     ADD SOURCE
@@ -2631,6 +2613,7 @@ function AgentComponent() {
                                       onSelect={(e) => {
                                         e.preventDefault()
                                         setNavigationPath([{ id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' }])
+                                        setDropdownSearchQuery("")
                                       }}
                                       className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
                                     >
@@ -2650,113 +2633,24 @@ function AgentComponent() {
                                 </>
                               )
                             })()
-                          ) : navigationPath.length === 1 && navigationPath[0].type === 'kb-root' ? (
-                            // Knowledge Bases listing
-                            (() => {
-                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                                integration.id.startsWith('kb_')
-                              )
-
-                              // Helper function to navigate to KB
-                              const navigateToKb = async (kbId: string, kbName: string) => {
-                                setNavigationPath([
-                                  { id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' },
-                                  { id: kbId, name: kbName, type: 'kb' }
-                                ])
-                                setIsLoadingItems(true)
-                                try {
-                                  const response = await api.kb[":kbId"].items.$get({
-                                    param: { kbId }
-                                  })
-                                  if (response.ok) {
-                                    const data = await response.json()
-                                    setCurrentItems(data)
-                                  }
-                                } catch (error) {
-                                  console.error('Failed to fetch KB items:', error)
-                                } finally {
-                                  setIsLoadingItems(false)
-                                }
-                              }
-
-                              // Filter knowledge bases based on search
-                              const filteredKnowledgeBases = knowledgeBases.filter(kb =>
-                                kb.name.toLowerCase().includes(kbSearchQuery.toLowerCase())
-                              )
-
-                              return (
-                                <>
-                                  {/* Search input
-                                  <div className="border-b border-gray-200 dark:border-gray-700">
-                                    <div className="relative">
-                                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                      <input
-                                        type="text"
-                                        placeholder="Search"
-                                        value={kbSearchQuery}
-                                        className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => {
-                                          e.stopPropagation()
-                                          setKbSearchQuery(e.target.value)
-                                        }}
-                                      />
-                                    </div>
-                                  </div> */}
-
-                                  {/* Knowledge bases list */}
-                                  {filteredKnowledgeBases.map((integration) => {
-                                    const kbId = integration.id.replace('kb_', '')
-                                    
-                                    return (
-                                      <DropdownMenuItem
-                                        key={integration.id}
-                                        onSelect={(e) => {
-                                          e.preventDefault()
-                                          toggleIntegrationSelection(integration.id)
-                                        }}
-                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                      >
-                                        <div className="flex items-center flex-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedIntegrations[integration.id] || false}
-                                            onChange={() => {}}
-                                            className="w-4 h-4 mr-3"
-                                          />
-                                          <span className="mr-2 flex items-center">
-                                            {integration.icon}
-                                          </span>
-                                          <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
-                                        </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            e.preventDefault()
-                                            navigateToKb(kbId, integration.name)
-                                          }}
-                                          className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                        >
-                                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                                        </Button>
-                                      </DropdownMenuItem>
-                                    )
-                                  })}
-                                </>
-                              )
-                            })()
                           ) : (
-                            // Knowledge Bases submenu
+                            // Unified Knowledge Bases section - handles both KB listing and file/folder navigation
                             (() => {
                               const knowledgeBases = allAvailableIntegrations.filter(integration => 
                                 integration.id.startsWith('kb_')
                               )
 
-                              // Helper functions for navigation
+                              // Unified navigation functions
                               const navigateToKb = async (kbId: string, kbName: string) => {
-                                setNavigationPath([{ id: kbId, name: kbName, type: 'kb' }])
+                                // Update navigation path based on current context
+                                const newPath = navigationPath.length === 1 && navigationPath[0].type === 'kb-root' 
+                                  ? [
+                                      { id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' as const },
+                                      { id: kbId, name: kbName, type: 'kb' as const }
+                                    ]
+                                  : [{ id: kbId, name: kbName, type: 'kb' as const }]
+                                
+                                setNavigationPath(newPath)
                                 setIsLoadingItems(true)
                                 try {
                                   const response = await api.kb[":kbId"].items.$get({
@@ -2795,184 +2689,301 @@ function AgentComponent() {
                                 }
                               }
 
-                              // Filter knowledge bases based on search
-                              const filteredKnowledgeBases = knowledgeBases.filter(kb =>
-                                kb.name.toLowerCase().includes(kbSearchQuery.toLowerCase())
-                              )
+                              // Determine if we're showing KB list or KB contents
+                              const isShowingKbList = navigationPath.length === 1 && navigationPath[0].type === 'kb-root'
+                              const isShowingKbContents = navigationPath.length > 1 || (navigationPath.length === 1 && navigationPath[0].type === 'kb')
 
                               return (
                                 <>
-                                  {/* Search input */}
-                                  {/* <div className="border-b border-gray-200 dark:border-gray-700">
-                                    <div className="relative">
-                                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                      <input
-                                        type="text"
-                                        placeholder="Search"
-                                        value={kbSearchQuery}
-                                        className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => setKbSearchQuery(e.target.value)}
-                                      />
-                                    </div>
-                                  </div> */}
-
-                                  {/* Content area */}
-                                  {navigationPath.length === 0 ? (
-                                    // Show knowledge bases list
-                                    filteredKnowledgeBases.map((integration) => {
-                                      const kbId = integration.id.replace('kb_', '')
-                                      
-                                      return (
-                                        <DropdownMenuItem
-                                          key={integration.id}
-                                          onSelect={(e) => {
-                                            e.preventDefault()
-                                            toggleIntegrationSelection(integration.id)
-                                          }}
-                                          className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                        >
-                                          <div className="flex items-center flex-1">
-                                            <input
-                                              type="checkbox"
-                                              checked={selectedIntegrations[integration.id] || false}
-                                              onChange={() => {}}
-                                              className="w-4 h-4 mr-3"
-                                            />
-                                            <span className="mr-2 flex items-center">
-                                              {integration.icon}
-                                            </span>
-                                            <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
-                                          </div>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
+                                  {/* Single unified search input */}
+                                  {(isShowingKbList || isShowingKbContents) && (
+                                    <div className="border-b border-gray-200 dark:border-gray-700">
+                                      <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                          type="text"
+                                          placeholder="Search knowledge bases..."
+                                          value={dropdownSearchQuery}
+                                          onChange={(e) => setDropdownSearchQuery(e.target.value)}
+                                          className="w-full pl-10 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                        {dropdownSearchQuery && (
+                                          <button
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              e.preventDefault()
-                                              navigateToKb(kbId, integration.name)
+                                              setDropdownSearchQuery("")
                                             }}
-                                            className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                        >
-                                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                                        </Button>
-                                      </DropdownMenuItem>
-                                    )
-                                  })) : (
-                                    // Show current folder/KB contents
-                                    <div className="max-h-60 overflow-y-auto">
-                                      {isLoadingItems ? (
-                                        <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                          Loading...
-                                        </div>
-                                      ) : currentItems.length > 0 ? (
-                                        currentItems.map((item: any) => (
-                                          <div
-                                            key={item.id}
-                                            className={`flex items-center px-4 py-2 text-sm ${
-                                              item.type === 'folder' 
-                                                ? 'cursor-pointer' 
-                                                : 'cursor-pointer'
-                                            }`}
-                                            onClick={() => {
-                                              if (item.type === 'folder') {
-                                                navigateToFolder(item.id, item.name)
-                                              } else {
-                                                // Handle file selection - you can add logic here to select/deselect files
-                                              }
-                                            }}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                                           >
-                                            <input
-                                              type="checkbox"
-                                              checked={(() => {
-                                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
-                                                if (!kbId) return false
-                                                const selectedSet = selectedItemsInKb[kbId] || new Set()
-                                                return selectedSet.has(item.id)
-                                              })()}
-                                              onChange={(e) => {
-                                                e.stopPropagation()
-                                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
-                                                if (!kbId) return
-                                                
-                                                const isCurrentlySelected = selectedItemsInKb[kbId]?.has(item.id)
-                                                
-                                                setSelectedItemsInKb(prev => {
-                                                  const newState = { ...prev }
-                                                  if (!newState[kbId]) {
-                                                    newState[kbId] = new Set()
-                                                  }
-                                                  
-                                                  const selectedSet = new Set(newState[kbId])
-                                                  if (selectedSet.has(item.id)) {
-                                                    selectedSet.delete(item.id)
-                                                  } else {
-                                                    selectedSet.add(item.id)
-                                                  }
-                                                  
-                                                  newState[kbId] = selectedSet
-                                                  return newState
-                                                })
-                                                
-                                                // Also store/remove item details
-                                                setSelectedItemDetailsInKb(prev => {
-                                                  const newState = { ...prev }
-                                                  if (!newState[kbId]) {
-                                                    newState[kbId] = {}
-                                                  }
-                                                  
-                                                  if (isCurrentlySelected) {
-                                                    // Remove item details
-                                                    delete newState[kbId][item.id]
-                                                  } else {
-                                                    // Store item details
-                                                    newState[kbId][item.id] = item
-                                                  }
-                                                  
-                                                  return newState
-                                                })
-                                                
-                                                // Auto-select/deselect the KB integration based on whether any items are selected
-                                                setSelectedIntegrations(prev => {
-                                                  const kbIntegrationId = `kb_${kbId}`
-                                                  const currentSelectedSet = selectedItemsInKb[kbId] || new Set()
-                                                  const newSelectedSet = new Set(currentSelectedSet)
-                                                  
-                                                  if (isCurrentlySelected) {
-                                                    newSelectedSet.delete(item.id)
-                                                  } else {
-                                                    newSelectedSet.add(item.id)
-                                                  }
-                                                  
-                                                  return {
-                                                    ...prev,
-                                                    [kbIntegrationId]: newSelectedSet.size > 0
-                                                  }
-                                                })
-                                              }}
-                                              className="w-4 h-4 mr-3"
-                                              onClick={(e) => e.stopPropagation()} // Prevent triggering the div click
-                                            />
-                                            {item.type === 'folder' && (
-                                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-800">
-                                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                                              </svg>
-                                            )}
-                                            <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
-                                              {item.name}
-                                            </span>
-                                            {item.type === 'folder' && (
-                                              <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
-                                            )}
-                                          </div>
-                                        ))
-                                      ) : (
-                                        <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                          No items found
-                                        </div>
-                                      )}
+                                            <LucideX className="h-4 w-4" />
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   )}
+
+                                  {/* Content area - unified global search */}
+                                  {(() => {
+                                    // If there's a search query, always show global search results
+                                    if (dropdownSearchQuery.trim()) {
+                                      return (
+                                        <div className="max-h-60 overflow-y-auto">
+                                          {isSearching ? (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              Searching...
+                                            </div>
+                                          ) : searchResults.length > 0 ? (
+                                            searchResults.map((result: any) => (
+                                              <div
+                                                key={result.docId || result.id}
+                                                className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                              >
+                                                <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                                  {result.title || result.name || result.fileName || 'Untitled'}
+                                                </span>
+                                                <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                                  {result.type || result.entity}
+                                                </span>
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              No results found for "{dropdownSearchQuery}"
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    }
+                                    
+                                    // If no search query, show navigation-based content
+                                    if (navigationPath.length === 0) {
+                                      // Main menu - show regular integrations and Knowledge Bases option
+                                      const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                                        integration.id.startsWith('kb_')
+                                      )
+                                      const otherIntegrations = allAvailableIntegrations.filter(integration => 
+                                        !integration.id.startsWith('kb_')
+                                      )
+                                      const hasSelectedKB = knowledgeBases.some(kb => selectedIntegrations[kb.id])
+
+                                      return (
+                                        <>
+                                          {/* Regular integrations */}
+                                          {otherIntegrations.map((integration) => {
+                                            const isGoogleDrive = integration.app === Apps.GoogleDrive && integration.entity === "file"
+                                            const showChevron = isGoogleDrive
+                                            
+                                            return (
+                                              <DropdownMenuItem
+                                                key={integration.id}
+                                                onSelect={(e) => {
+                                                  e.preventDefault()
+                                                  toggleIntegrationSelection(integration.id)
+                                                }}
+                                                className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                              >
+                                                <div className="flex items-center">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedIntegrations[integration.id] || false}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 mr-3"
+                                                  />
+                                                  <span className="mr-2 flex items-center">
+                                                    {integration.icon}
+                                                  </span>
+                                                  <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
+                                                </div>
+                                                {showChevron && (
+                                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                )}
+                                              </DropdownMenuItem>
+                                            )
+                                          })}
+
+                                          {/* Knowledge Bases item */}
+                                          {knowledgeBases.length > 0 && (
+                                            <DropdownMenuItem
+                                              onSelect={(e) => {
+                                                e.preventDefault()
+                                                setNavigationPath([{ id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' }])
+                                                setDropdownSearchQuery("")
+                                              }}
+                                              className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                            >
+                                              <div className="flex items-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={hasSelectedKB}
+                                                  onChange={() => {}}
+                                                  className="w-4 h-4 mr-3"
+                                                />
+                                                <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                                <span className="text-gray-700 dark:text-gray-200">Knowledge Bases</span>
+                                              </div>
+                                              <ChevronRight className="h-4 w-4 text-gray-400" />
+                                            </DropdownMenuItem>
+                                          )}
+                                        </>
+                                      )
+                                    } else if (navigationPath.length === 1 && navigationPath[0].type === 'kb-root') {
+                                      // Show knowledge bases list
+                                      const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                                        integration.id.startsWith('kb_')
+                                      )
+                                      
+                                      return knowledgeBases.map((integration) => {
+                                        const kbId = integration.id.replace('kb_', '')
+                                        
+                                        return (
+                                          <DropdownMenuItem
+                                            key={integration.id}
+                                            onSelect={(e) => {
+                                              e.preventDefault()
+                                              toggleIntegrationSelection(integration.id)
+                                            }}
+                                            className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                          >
+                                            <div className="flex items-center flex-1">
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedIntegrations[integration.id] || false}
+                                                onChange={() => {}}
+                                                className="w-4 h-4 mr-3"
+                                              />
+                                              <span className="mr-2 flex items-center">
+                                                {integration.icon}
+                                              </span>
+                                              <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
+                                            </div>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                e.preventDefault()
+                                                navigateToKb(kbId, integration.name)
+                                              }}
+                                              className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                            >
+                                              <ChevronRight className="h-4 w-4 text-gray-400" />
+                                            </Button>
+                                          </DropdownMenuItem>
+                                        )
+                                      })
+                                    } else {
+                                      // Show KB contents (files/folders)
+                                      return (
+                                        <div className="max-h-60 overflow-y-auto">
+                                          {isLoadingItems ? (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              Loading...
+                                            </div>
+                                          ) : currentItems.length > 0 ? (
+                                            currentItems.map((item: any) => (
+                                              <div
+                                                key={item.id}
+                                                className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                onClick={() => {
+                                                  if (item.type === 'folder') {
+                                                    navigateToFolder(item.id, item.name)
+                                                  }
+                                                }}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={(() => {
+                                                    const kbId = navigationPath.find(item => item.type === 'kb')?.id
+                                                    if (!kbId) return false
+                                                    const selectedSet = selectedItemsInKb[kbId] || new Set()
+                                                    return selectedSet.has(item.id)
+                                                  })()}
+                                                  onChange={(e) => {
+                                                    e.stopPropagation()
+                                                    const kbId = navigationPath.find(item => item.type === 'kb')?.id
+                                                    if (!kbId) return
+                                                    
+                                                    const isCurrentlySelected = selectedItemsInKb[kbId]?.has(item.id)
+                                                    
+                                                    setSelectedItemsInKb(prev => {
+                                                      const newState = { ...prev }
+                                                      if (!newState[kbId]) {
+                                                        newState[kbId] = new Set()
+                                                      }
+                                                      
+                                                      const selectedSet = new Set(newState[kbId])
+                                                      if (selectedSet.has(item.id)) {
+                                                        selectedSet.delete(item.id)
+                                                      } else {
+                                                        selectedSet.add(item.id)
+                                                      }
+                                                      
+                                                      newState[kbId] = selectedSet
+                                                      return newState
+                                                    })
+                                                    
+                                                    // Also store/remove item details
+                                                    setSelectedItemDetailsInKb(prev => {
+                                                      const newState = { ...prev }
+                                                      if (!newState[kbId]) {
+                                                        newState[kbId] = {}
+                                                      }
+                                                      
+                                                      if (isCurrentlySelected) {
+                                                        delete newState[kbId][item.id]
+                                                      } else {
+                                                        newState[kbId][item.id] = item
+                                                      }
+                                                      
+                                                      return newState
+                                                    })
+                                                    
+                                                    // Auto-select/deselect the KB integration
+                                                    setSelectedIntegrations(prev => {
+                                                      const kbIntegrationId = `kb_${kbId}`
+                                                      const currentSelectedSet = selectedItemsInKb[kbId] || new Set()
+                                                      const newSelectedSet = new Set(currentSelectedSet)
+                                                      
+                                                      if (isCurrentlySelected) {
+                                                        newSelectedSet.delete(item.id)
+                                                      } else {
+                                                        newSelectedSet.add(item.id)
+                                                      }
+                                                      
+                                                      return {
+                                                        ...prev,
+                                                        [kbIntegrationId]: newSelectedSet.size > 0
+                                                      }
+                                                    })
+                                                  }}
+                                                  className="w-4 h-4 mr-3"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                />
+                                                {item.type === 'folder' && (
+                                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-800">
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                  </svg>
+                                                )}
+                                                <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                                  {item.name}
+                                                </span>
+                                                {item.type === 'folder' && (
+                                                  <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
+                                                )}
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              No items found
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    }
+                                    
+                                    return null
+                                  })()}
                                 </>
                               )
                             })()
@@ -3000,8 +3011,12 @@ function AgentComponent() {
                       selectedEntities.map((entity) => (
                         <CustomBadge
                           key={entity.docId}
-                          text={entity.name || entity.docId}
-                          onRemove={() => handleEntityRemoval(entity)}
+                          text={entity.name}
+                          onRemove={() =>
+                            setSelectedEntities((prev) =>
+                              prev.filter((c) => c.docId !== entity.docId),
+                            )
+                          }
                         />
                       ))
                     ) : (
@@ -3025,10 +3040,16 @@ function AgentComponent() {
                               <div
                                 key={entity.docId}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
-                                onClick={() => handleEntitySelection(entity)}
+                                onClick={() => {
+                                  setSelectedEntities((prev) => [
+                                    ...prev,
+                                    entity,
+                                  ])
+                                  setEntitySearchQuery("")
+                                }}
                               >
                                 <p className="text-sm font-medium">
-                                  {entity.name || entity.docId}
+                                  {entity.name}
                                 </p>
                               </div>
                             ))
