@@ -128,3 +128,12 @@ html {
   @apply prevent-overflow;
   word-break: break-all;
 }
+
+.favorite-agents-container::-webkit-scrollbar {
+  display: none;
+}
+
+.favorite-agents-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
