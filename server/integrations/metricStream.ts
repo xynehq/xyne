@@ -1,6 +1,6 @@
 import type { WSContext } from "hono/ws"
 
-export const wsConnections = new Map()
+export const wsConnections = new Map<string, WSContext>()
 
 export const closeWs = (connectorId: string, workspaceId?: string) => {
   const key = workspaceId ? `${workspaceId}:${connectorId}` : connectorId

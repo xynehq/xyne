@@ -296,11 +296,10 @@ export const WsApp = app.get(
           return
         }
         
-        const userEmail = sub
         workspaceId = wsId // Store workspaceId for later use
         
         try {
-          const user = await getUserByEmail(db, userEmail)
+          const user = await getUserByEmail(db, sub)
           if (!user?.length || !connectorId) {
             ws.close(1008, "Unauthorized")
             return
@@ -312,7 +311,7 @@ export const WsApp = app.get(
           wsConnections.set(scopedKey, ws)
           isAuthenticated = true
         } catch (error) {
-          Logger.warn(`Unauthorized WebSocket connection attempt for connector ${connectorId}`)
+          Logger.warn(error, `Unauthorized WebSocket connection attempt for connector ${connectorId}`)
           ws.close(1008, "Unauthorized")
         }
       },
