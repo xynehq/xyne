@@ -62,7 +62,7 @@ export function addTools(server: FastMCP) {
     execute: async ({ issueKey }: { issueKey: string }, context?: any) => {
       const jira = createJiraClient(context?.session);
       if (!jira) {
-        throw new UserError("Jira client not configured - missing session data (jiraBaseUrl, jiraUserEmail, jiraApiToken)");
+        throw new UserError("Jira client not configured - missing session data (x-jira-base-url, x-jira-user-email, x-jira-api-token)");
       }
       try {
         const issue = await jira.getIssue(issueKey);
@@ -122,7 +122,7 @@ export function addTools(server: FastMCP) {
       
       const bitbucket = createBitbucketClient(context?.session);
       if (!bitbucket) {
-        throw new UserError("Bitbucket client not configured - missing session data (bitbucketBaseUrl, bitbucketUserName, bitbucketAppPassword)");
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
       }
       try {
         // console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
@@ -443,7 +443,7 @@ export function addTools(server: FastMCP) {
     }, context?: any) => {
       const bitbucket = createBitbucketClient(context?.session);
       if (!bitbucket) {
-        throw new UserError("Bitbucket client not configured - missing session data (bitbucketBaseUrl, bitbucketUserName, bitbucketAppPassword)");
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
       }
       try {
         const blameResponse = await bitbucket.getGitBlame(
@@ -528,7 +528,7 @@ export function addTools(server: FastMCP) {
     }, context?: any) => {
       const kibana = createKibanaClient(context?.session);
       if (!kibana) {
-        throw new UserError("Kibana client not configured - missing session data (kibanaBaseUrl, kibanaCookie)");
+        throw new UserError("Kibana client not configured - missing session data (x-kibana-base-ur, x-kibana-cookie)");
       }
       try {
         const searchResult = await kibana.searchLogs({
