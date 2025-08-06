@@ -177,6 +177,6 @@ export const groupVespaSearchProxy = handleProxy(
 
 // Vespa search proxy endpoint (Hono)
 export const searchVespaProxy = handleProxy((body, email) => {
-  const { query, app, entity, isAtSearch, ...rest } = body
-  return searchVespa(query, email, app, entity, rest,isAtSearch)
+  const { query, app, entity, ...rest } = body
+  return searchVespa(query, email, app, entity, rest)
 }, "Vespa search proxy error")

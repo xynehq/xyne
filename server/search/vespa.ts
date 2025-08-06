@@ -633,7 +633,6 @@ export const HybridDefaultProfileForAgent =  async(
   driveIds:string[] = [],
   selectedItem:{} = {},
 ): Promise<YqlProfile> => {
-  console.log("Printing the selected Item",selectedItem)
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -761,7 +760,6 @@ export const HybridDefaultProfileForAgent =  async(
            }
          }
          const driveIdConditions = buildDocsInclusionCondition('docId',driveIds)
-         console.log(driveIdConditions)
     return `
       (
         (
@@ -797,13 +795,9 @@ export const HybridDefaultProfileForAgent =  async(
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
     let channelIds:string [] = []
-    // if we have some DriveIds then we are going to fetch all the items in that folder
          const intentFilter = buildIntentFilter(intent)
          channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
     const channelIdConditions = buildDocsInclusionCondition("docId" ,channelIds)
-    //   channelIds && channelIds.length > 0
-    //     ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
-    //     : ""
 
     return `
       (
@@ -825,10 +819,9 @@ export const HybridDefaultProfileForAgent =  async(
     const dataSourceIdConditions =
       dataSourceIds && dataSourceIds.length > 0
         ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
-        : "false" // If no specific IDs, this part of the query should not match anything
+        : "" // If no specific IDs, this part of the query should not match anything
 
-    // Permissions for datasource_file are based on 'uploadedBy' matching the user's email
-    // and the dataSourceId matching one of the allowed ones.
+   
     return `
       (
         (
@@ -945,22 +938,7 @@ export const HybridDefaultProfileForAgent =  async(
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
-  // if (channelIds.length > 0) {
-  //   appQueries.push(buildSlackYQL())
-  //   if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
-  //   if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
-  //   if (!sources.includes(chatContainerSchema))
-  //     sources.push(chatContainerSchema)
-  // }
-
-  // // Handle knowledge base IDs
-  // if (kbIds && kbIds.length > 0) {
-  //   const kbQuery =await buildKbFileYQL()
-  //   if (kbQuery) {
-  //     appQueries.push(kbQuery)
-  //     if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
-  //   }
-  // }
+  
 
   // Debug logging
   Logger.debug(`Agent search configuration:`, {
@@ -1478,6 +1456,7 @@ type VespaQueryConfig = {
   kbIds?: string[] // Added for agent-specific knowledge base docIds filtering
   driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?:{}
+  isAtsearch?:boolean
 }
 
 export const searchVespa = async (
@@ -1499,8 +1478,8 @@ export const searchVespa = async (
     recencyDecayRate = 0.02,
     isIntentSearch = false,
     intent = {},
+    isAtsearch=false,
   }: Partial<VespaQueryConfig>,
-   isAtsearch?:boolean,
 ): Promise<VespaSearchResponse> => {
   const hasProdConfig = Boolean(
     process.env.PRODUCTION_SERVER_URL && process.env.API_KEY,
@@ -1528,8 +1507,8 @@ export const searchVespa = async (
         span,
         maxHits,
         recencyDecayRate,
-        isAtsearch,
         intent,
+        isAtsearch,
       })
     } catch (err) {
       Logger.warn(
@@ -1555,7 +1534,8 @@ export const searchVespa = async (
     recencyDecayRate,
     isIntentSearch,
     intent,
-  },isAtsearch)
+    isAtsearch
+  })
 }
 async function _searchVespa(
   query: string,
@@ -1576,8 +1556,8 @@ async function _searchVespa(
     recencyDecayRate = 0.02,
     isIntentSearch = false,
     intent = {},
+    isAtsearch=false,
   }: Partial<VespaQueryConfig>,
-   isAtsearch?:boolean,
 ): Promise<VespaSearchResponse> {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
@@ -1854,7 +1834,6 @@ export const searchVespaAgent = async (
     selectedItem,
     
   )
-  console.log("printing the yql ",yql)
 
   const hybridDefaultPayload = {
     yql,
