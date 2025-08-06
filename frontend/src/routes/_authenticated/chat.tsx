@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import DOMPurify from "dompurify"
 import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
@@ -2125,7 +2126,7 @@ export const ChatMessage = ({
         {isUser ? (
           <div
             className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
-            dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
+            dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(DOMPurify.sanitize(message)) }}
           />
         ) : (
           <div
