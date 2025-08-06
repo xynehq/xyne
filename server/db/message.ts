@@ -1,12 +1,24 @@
 import { createId } from "@paralleldrive/cuid2"
 import {
   messages,
+  chats,
   selectMessageSchema,
   type InsertMessage,
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt, count, inArray, sql, desc } from "drizzle-orm"
+import {
+  and,
+  asc,
+  eq,
+  lt,
+  count,
+  inArray,
+  sql,
+  desc,
+  sum,
+  isNull,
+} from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -103,40 +115,51 @@ export async function getAllMessages({
 export async function getMessageCountsByChats({
   db,
   chatExternalIds,
-  email,
-  workspaceExternalId,
 }: {
   db: TxnOrClient
   chatExternalIds: string[]
-  email: string
-  workspaceExternalId: string
-}): Promise<Record<string, number>> {
+}): Promise<
+  Record<
+    string,
+    { messageCount: number; totalCost: number; totalTokens: number }
+  >
+> {
   if (chatExternalIds.length === 0) {
     return {}
   }
 
+  // Build a query to get message counts, cost, and tokens for each chat
   const result = await db
     .select({
-      chatExternalId: messages.chatExternalId,
+      chatExternalId: chats.externalId,
       messageCount: count(messages.externalId),
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
-    .from(messages)
+    .from(chats)
+    .leftJoin(messages, eq(chats.id, messages.chatId))
     .where(
       and(
-        inArray(messages.chatExternalId, chatExternalIds),
-        eq(messages.email, email),
-        eq(messages.workspaceExternalId, workspaceExternalId),
+        inArray(chats.externalId, chatExternalIds),
+        isNull(messages.deletedAt),
       ),
     )
-    .groupBy(messages.chatExternalId)
+    .groupBy(chats.externalId)
 
-  return result.reduce(
-    (acc, row) => {
-      acc[row.chatExternalId] = row.messageCount
-      return acc
-    },
-    {} as Record<string, number>,
-  )
+  // Convert to a map for easier lookup
+  const countMap: Record<
+    string,
+    { messageCount: number; totalCost: number; totalTokens: number }
+  > = {}
+  for (const row of result) {
+    countMap[row.chatExternalId] = {
+      messageCount: row.messageCount,
+      totalCost: row.totalCost,
+      totalTokens: row.totalTokens,
+    }
+  }
+
+  return countMap
 }
 
 export async function getMessageFeedbackStats({
@@ -152,7 +175,12 @@ export async function getMessageFeedbackStats({
 }): Promise<{
   totalLikes: number
   totalDislikes: number
-  feedbackByChat: Record<string, { likes: number; dislikes: number }>
+  totalCost: number
+  totalTokens: number
+  feedbackByChat: Record<
+    string,
+    { likes: number; dislikes: number; cost: number; tokens: number }
+  >
   feedbackMessages: Array<{
     messageId: string
     chatExternalId: string
@@ -165,17 +193,21 @@ export async function getMessageFeedbackStats({
     return {
       totalLikes: 0,
       totalDislikes: 0,
+      totalCost: 0,
+      totalTokens: 0,
       feedbackByChat: {},
       feedbackMessages: [],
     }
   }
 
-  // Get aggregated feedback counts
+  // Get aggregated feedback counts, cost, and tokens
   const result = await db
     .select({
       chatExternalId: messages.chatExternalId,
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)::int`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(messages)
     .where(
@@ -183,7 +215,7 @@ export async function getMessageFeedbackStats({
         inArray(messages.chatExternalId, chatExternalIds),
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
-        sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
+        isNull(messages.deletedAt),
       ),
     )
     .groupBy(messages.chatExternalId)
@@ -209,19 +241,28 @@ export async function getMessageFeedbackStats({
 
   let totalLikes = 0
   let totalDislikes = 0
-  const feedbackByChat: Record<string, { likes: number; dislikes: number }> = {}
+  let totalCost = 0
+  let totalTokens = 0
+  const feedbackByChat: Record<
+    string,
+    { likes: number; dislikes: number; cost: number; tokens: number }
+  > = {}
 
-  // Initialize all chats with zero feedback
+  // Initialize all chats with zero feedback, cost, and tokens
   chatExternalIds.forEach((chatId) => {
-    feedbackByChat[chatId] = { likes: 0, dislikes: 0 }
+    feedbackByChat[chatId] = { likes: 0, dislikes: 0, cost: 0, tokens: 0 }
   })
 
-  // Populate with actual feedback counts
+  // Populate with actual feedback counts, cost, and tokens
   result.forEach((row) => {
     feedbackByChat[row.chatExternalId].likes = row.likes
     feedbackByChat[row.chatExternalId].dislikes = row.dislikes
+    feedbackByChat[row.chatExternalId].cost = row.totalCost
+    feedbackByChat[row.chatExternalId].tokens = row.totalTokens
     totalLikes += row.likes
     totalDislikes += row.dislikes
+    totalCost += row.totalCost
+    totalTokens += row.totalTokens
   })
 
   // Process detailed feedback messages
@@ -241,6 +282,8 @@ export async function getMessageFeedbackStats({
   return {
     totalLikes,
     totalDislikes,
+    totalCost,
+    totalTokens,
     feedbackByChat,
     feedbackMessages: processedFeedbackMessages,
   }

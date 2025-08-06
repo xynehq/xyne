@@ -1232,7 +1232,7 @@ export const GetAdminChats = async (c: Context) => {
       conditions.push(eq(chats.userId, userId))
     }
 
-    // Build the query with feedback aggregation
+    // Build the query with feedback aggregation and cost tracking
     const baseQuery = db
       .select({
         id: chats.id,
@@ -1247,6 +1247,8 @@ export const GetAdminChats = async (c: Context) => {
         messageCount: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -1315,6 +1317,8 @@ export const GetAdminUsers = async (c: Context) => {
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
       })
       .from(users)
       .leftJoin(chats, eq(users.id, chats.userId))

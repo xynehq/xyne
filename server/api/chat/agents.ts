@@ -441,6 +441,9 @@ async function* getToolContinuationIterator(
     if (chunk.cost) {
       yield { cost: chunk.cost }
     }
+    if (chunk.metadata) {
+      yield { metadata: chunk.metadata }
+    }
   }
 }
 
@@ -611,6 +614,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -2011,6 +2015,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
+            if (chunk.metadata?.usage) {
+              tokenArr.push({
+                inputTokens: chunk.metadata.usage.inputTokens,
+                outputTokens: chunk.metadata.usage.outputTokens,
+              })
+            }
           }
 
           if (answer || wasStreamClosedPrematurely) {
@@ -2022,6 +2032,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             const reasoningLog = structuredReasoningSteps
               .map(convertReasoningStepToText)
               .join("\n")
+
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+            const totalTokens = tokenArr.reduce(
+              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+              0,
+            )
 
             const msg = await insertMessage(db, {
               chatId: chat.id,
@@ -2036,6 +2053,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               thinking: reasoningLog,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              cost: totalCost,
+              tokensUsed: totalTokens,
             })
             assistantMessageId = msg.externalId
 
@@ -2407,6 +2426,9 @@ async function* nonRagIterator(
       if (chunk.cost) {
         yield { cost: chunk.cost }
       }
+      if (chunk.metadata) {
+        yield { metadata: chunk.metadata }
+      }
     } catch (e) {
       Logger.error(`Error processing chunk: ${e}`)
       continue
@@ -2490,6 +2512,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -2778,9 +2801,22 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }
+          if (chunk.metadata?.usage) {
+            tokenArr.push({
+              inputTokens: chunk.metadata.usage.inputTokens,
+              outputTokens: chunk.metadata.usage.outputTokens,
+            })
+          }
         }
 
         if (answer) {
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2793,6 +2829,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost,
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
 
@@ -2804,6 +2842,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             }),
           })
         } else if (wasStreamClosedPrematurely) {
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2816,11 +2861,21 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost,
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
         } else {
           const errorMessage =
             "There seems to be an issue on our side. Please try again after some time."
+
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2833,6 +2888,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(errorMessage, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost,
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
           await stream.writeSSE({
@@ -2957,6 +3014,7 @@ export const AgentMessageApi = async (c: Context) => {
 
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -3220,6 +3278,12 @@ export const AgentMessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens,
+                  outputTokens: chunk.metadata.usage.outputTokens,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 citations.push(item)
@@ -3274,6 +3338,14 @@ export const AgentMessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
+
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+              const totalTokens = tokenArr.reduce(
+                (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+                0,
+              )
+
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -3287,6 +3359,8 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost,
+                tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -3518,6 +3592,12 @@ export const AgentMessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens,
+                  outputTokens: chunk.metadata.usage.outputTokens,
+                })
+              }
             }
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
@@ -3605,6 +3685,12 @@ export const AgentMessageApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens,
+                    outputTokens: chunk.metadata.usage.outputTokens,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   citations.push(item)
@@ -3663,6 +3749,13 @@ export const AgentMessageApi = async (c: Context) => {
               // somehow hide that citation and change
               // the answer to reflect that
 
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+              const totalTokens = tokenArr.reduce(
+                (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+                0,
+              )
+
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -3676,6 +3769,8 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost,
+                tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
 
