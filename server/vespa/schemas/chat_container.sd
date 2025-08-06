@@ -212,7 +212,7 @@ schema chat_container {
     expression {
       1.2 * (
         (query(alpha) * vector_score) + 
-        ((1 - query(alpha)) * (1 * nativeRank(name)))
+        ((1 - query(alpha)) * (nativeRank(name)))
       )
     }
     rerank-count: 1000
