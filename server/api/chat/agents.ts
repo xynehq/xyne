@@ -203,7 +203,8 @@ const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
-  yieldedImageCitations?: Map<number, Set<number>>,
+  baseIndex: number = 0,
+  yieldedImageCitations?: Set<number>,
   email: string = "",
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
@@ -238,10 +239,8 @@ const checkAndYieldCitationsForAgent = async function* (
       if (parts.length >= 2) {
         const docIndex = parseInt(parts[0], 10)
         const imageIndex = parseInt(parts[1], 10)
-        if (
-          !yieldedImageCitations.has(docIndex) ||
-          !yieldedImageCitations.get(docIndex)?.has(imageIndex)
-        ) {
+        const citationIndex = docIndex + baseIndex
+        if (!yieldedImageCitations.has(citationIndex)) {
           const item = results[docIndex]
           if (item) {
             try {
@@ -283,14 +282,11 @@ const checkAndYieldCitationsForAgent = async function* (
                 { citationKey: imgMatch[1], error: getErrorMessage(error) },
               )
             }
-            if (!yieldedImageCitations.has(docIndex)) {
-              yieldedImageCitations.set(docIndex, new Set<number>())
-            }
-            yieldedImageCitations.get(docIndex)?.add(imageIndex)
+            yieldedImageCitations.add(citationIndex)
           } else {
-            loggerWithChild({ email: email }).warn(
+            loggerWithChild({ email: email }).error(
               "Found a citation index but could not find it in the search result ",
-              imageIndex,
+              citationIndex,
               results.length,
             )
             continue
@@ -371,14 +367,14 @@ async function* getToolContinuationIterator(
     fallbackReasoning,
   )
 
-  // const previousResultsLength = 0 // todo fix this
+  const previousResultsLength = 0 // todo fix this
   let buffer = ""
   let currentAnswer = ""
   let parsed = { answer: "" }
   let thinking = ""
   let reasoning = config.isReasoning
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Map<number, Set<number>>()
+  let yieldedImageCitations = new Set<number>()
   const ANSWER_TOKEN = '"answer":'
 
   for await (const chunk of continuationIterator) {
@@ -432,6 +428,7 @@ async function* getToolContinuationIterator(
           buffer,
           yieldedCitations,
           results,
+          previousResultsLength,
           yieldedImageCitations,
           email ?? "",
         )
@@ -2339,12 +2336,12 @@ async function* nonRagIterator(
     messages,
   )
 
-  // const previousResultsLength = 0
+  const previousResultsLength = 0
   let buffer = ""
   let thinking = ""
   let reasoning = isReasoning
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Map<number, Set<number>>()
+  let yieldedImageCitations = new Set<number>()
 
   for await (const chunk of ragOffIterator) {
     try {
@@ -2356,6 +2353,7 @@ async function* nonRagIterator(
               thinking,
               yieldedCitations,
               results,
+              previousResultsLength,
               undefined,
               email!,
             )
@@ -2379,6 +2377,7 @@ async function* nonRagIterator(
                 thinking,
                 yieldedCitations,
                 results,
+                previousResultsLength,
                 undefined,
                 email!,
               )
@@ -2398,6 +2397,7 @@ async function* nonRagIterator(
             buffer,
             yieldedCitations,
             results,
+            previousResultsLength,
             yieldedImageCitations,
             email ?? "",
           )

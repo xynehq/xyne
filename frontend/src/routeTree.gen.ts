@@ -17,7 +17,6 @@ import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index
 import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
-import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
 import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
@@ -71,13 +70,6 @@ const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
   path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-
-const AuthenticatedKnowledgeManagementRoute =
-  AuthenticatedKnowledgeManagementImport.update({
-    id: '/knowledgeManagement',
-    path: '/knowledgeManagement',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 
 const AuthenticatedDashboardRoute = AuthenticatedDashboardImport.update({
   id: '/dashboard',
@@ -232,13 +224,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardImport
       parentRoute: typeof AuthenticatedImport
     }
-    '/_authenticated/knowledgeManagement': {
-      id: '/_authenticated/knowledgeManagement'
-      path: '/knowledgeManagement'
-      fullPath: '/knowledgeManagement'
-      preLoaderRoute: typeof AuthenticatedKnowledgeManagementImport
-      parentRoute: typeof AuthenticatedImport
-    }
     '/_authenticated/search': {
       id: '/_authenticated/search'
       path: '/search'
@@ -372,7 +357,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -394,7 +378,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
@@ -427,7 +410,6 @@ export interface FileRoutesByFullPath {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
@@ -452,7 +434,6 @@ export interface FileRoutesByTo {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
@@ -479,7 +460,6 @@ export interface FileRoutesById {
   '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
@@ -507,7 +487,6 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
-    | '/knowledgeManagement'
     | '/search'
     | '/tuning'
     | '/oauth/success'
@@ -531,7 +510,6 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
-    | '/knowledgeManagement'
     | '/search'
     | '/tuning'
     | '/oauth/success'
@@ -556,7 +534,6 @@ export interface FileRouteTypes {
     | '/_authenticated/api-key'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
-    | '/_authenticated/knowledgeManagement'
     | '/_authenticated/search'
     | '/_authenticated/tuning'
     | '/oauth/success'
@@ -610,7 +587,6 @@ export const routeTree = rootRoute
         "/_authenticated/api-key",
         "/_authenticated/chat",
         "/_authenticated/dashboard",
-        "/_authenticated/knowledgeManagement",
         "/_authenticated/search",
         "/_authenticated/tuning",
         "/_authenticated/",
@@ -647,10 +623,6 @@ export const routeTree = rootRoute
     },
     "/_authenticated/dashboard": {
       "filePath": "_authenticated/dashboard.tsx",
-      "parent": "/_authenticated"
-    },
-    "/_authenticated/knowledgeManagement": {
-      "filePath": "_authenticated/knowledgeManagement.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/search": {

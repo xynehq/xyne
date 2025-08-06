@@ -123,7 +123,6 @@ const parseMessageInput = (htmlString: string) => {
                   ? false
                   : undefined,
             threadId: el.dataset.threadId,
-            itemId: el.dataset.docItemId,
           },
         })
       } else if (tagName === "a" && el.getAttribute("href")) {

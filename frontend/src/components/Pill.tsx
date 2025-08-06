@@ -85,7 +85,6 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       contentEditable={false}
       data-reference-id={newRef.id}
       {...(newRef.docId ? { "data-doc-id": newRef.docId } : {})}
-      {...(newRef.itemId ? { "data-doc-item-id": newRef.itemId } : {})}
       {...(newRef.mailId ? { "data-mail-id": newRef.mailId } : {})}
       {...(newRef.threadId ? { "data-thread-id": newRef.threadId } : {})}
       {...(newRef.app ? { "data-app": newRef.app } : {})}

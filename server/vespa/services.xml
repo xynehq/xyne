@@ -31,7 +31,6 @@
             <document type="chat_team" mode="index" global="true" />
             <document type="datasource" mode="index" global="true" />
             <document type="datasource_file" mode="index" />
-            <document type="kb_file" mode="index"/>
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

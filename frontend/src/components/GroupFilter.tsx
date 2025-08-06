@@ -110,8 +110,6 @@ export const getName = (app: Apps, entity: Entity): string => {
     entity === DataSourceEntity.DataSourceFile
   ) {
     return "Data-Source"
-  } else if (app === Apps.KnowledgeBase) {
-    return "Knowledge-Base"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
