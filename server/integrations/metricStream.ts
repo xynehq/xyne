@@ -2,14 +2,14 @@ import type { WSContext } from "hono/ws"
 
 export const wsConnections = new Map()
 
-export const closeWs = (connectorId: string) => {
-  wsConnections.get(connectorId)?.close(1000, "Job finished")
+export const closeWs = (connectorId: string, workspaceId?: string) => {
+  const key = workspaceId ? `${workspaceId}:${connectorId}` : connectorId
+  wsConnections.get(key)?.close(1000, "Job finished")
 }
 
-// TODO: scope it per user email who is integration
-// if multiple people are doing oauth it should just work
-export const sendWebsocketMessage = (message: string, connectorId: string) => {
-  const ws: WSContext = wsConnections.get(connectorId)
+export const sendWebsocketMessage = (message: string, connectorId: string, workspaceId?: string) => {
+  const key = workspaceId ? `${workspaceId}:${connectorId}` : connectorId
+  const ws: WSContext = wsConnections.get(key)
   if (ws) {
     ws.send(JSON.stringify({ message }))
   }

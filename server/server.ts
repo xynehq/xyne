@@ -83,6 +83,7 @@ import {
   getUserByEmail,
   saveRefreshTokenToDB,
 } from "@/db/user"
+import { getConnectorByExternalId } from "@/db/connector"
 import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
@@ -265,22 +266,59 @@ const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
 export const WsApp = app.get(
   "/ws",
+  AuthMiddleware,
   upgradeWebSocket((c) => {
     let connectorId: string | undefined
+    let isAuthenticated = false
     return {
-      onOpen(event, ws) {
+      async onOpen(event, ws) {
         connectorId = c.req.query("id")
-        Logger.info(`Websocket connection with id ${connectorId}`)
-        wsConnections.set(connectorId, ws)
+        
+        const payload = c.get("jwtPayload")
+        if (!payload) {
+          Logger.warn("No JWT payload found in WebSocket connection")
+          ws.close(1008, "Unauthorized - No authentication")
+          return
+        }
+        
+        const { sub: userEmail, workspaceId } = payload as { sub: string; workspaceId: string }
+        
+        try {
+          const user = await getUserByEmail(db, userEmail)
+          if (!user?.length || !connectorId) {
+            ws.close(1008, "Unauthorized")
+            return
+          }
+          await getConnectorByExternalId(db, connectorId, user[0].id)
+          
+          const scopedKey = `${workspaceId}:${connectorId}`
+          Logger.info(`Websocket connection with id ${scopedKey}`)
+          wsConnections.set(scopedKey, ws)
+          isAuthenticated = true
+        } catch (error) {
+          Logger.warn(`Unauthorized WebSocket connection attempt for connector ${connectorId}`)
+          ws.close(1008, "Unauthorized")
+        }
       },
       onMessage(event, ws) {
+        if (!isAuthenticated) {
+          Logger.warn("Message received before authentication completed")
+          ws.close(1008, "Unauthorized")
+          return
+        }
+        
         Logger.info(`Message from client: ${event.data}`)
         ws.send(JSON.stringify({ message: "Hello from server!" }))
       },
       onClose: (event, ws) => {
         Logger.info("Connection closed")
-        if (connectorId) {
-          wsConnections.delete(connectorId)
+        if (connectorId && isAuthenticated) {
+          const payload = c.get("jwtPayload")
+          if (payload) {
+            const { workspaceId } = payload as { workspaceId: string }
+            const scopedKey = `${workspaceId}:${connectorId}`
+            wsConnections.delete(scopedKey)
+          }
         }
       },
     }
@@ -1257,3 +1295,4 @@ errorEvents.forEach((eventType: string) =>
     Logger.error(error, `Caught via event: ${eventType}`)
   }),
 )
+
