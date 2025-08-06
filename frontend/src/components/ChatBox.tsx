@@ -73,6 +73,7 @@ import {
   createImagePreview,
   cleanupPreviewUrls,
 } from "@/utils/fileUtils"
+import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
   file: File
@@ -514,7 +515,7 @@ export const ChatBox = ({
           formData.append("attachment", selectedFile.file)
 
           // Use the new attachment upload endpoint
-          const response = await fetch("/api/v1/files/upload-attachment", {
+          const response = await authFetch("/api/v1/files/upload-attachment", {
             method: "POST",
             body: formData,
           })

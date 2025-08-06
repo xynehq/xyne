@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, X, Download } from "lucide-react"
+import { authFetch } from "@/utils/authFetch"
 
 interface AttachmentGalleryProps {
   attachments: AttachmentMetadata[]
@@ -49,7 +50,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
     if (images[currentImageIndex]) {
       const attachment = images[currentImageIndex]
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `/api/v1/attachments/${attachment.fileId}`,
           {
             credentials: "include",

@@ -7,6 +7,7 @@ import crypto from "crypto"
 import path from "path"
 import { describeImageWithllm } from "./lib/describeImageWithllm"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
+import { chunkTextByParagraph } from "./chunks"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pptChunks",
@@ -19,109 +20,6 @@ const cleanText = (str: string): string => {
     /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
     "",
   )
-}
-
-/**
- * Post-processes the extracted text to normalize whitespace and handle newlines intelligently.
- * Reusing the same logic as DOCX processing for consistency.
- */
-const postProcessText = (text: string): string => {
-  const lines = text.split("\n")
-  const processedLines: string[] = []
-  let previousLine = ""
-  let consecutiveNewlines = 0
-
-  const isListItem = (line: string): boolean => /^[\s]*[-*+] /.test(line)
-
-  lines.forEach((line, index) => {
-    const trimmedLine = line.trim()
-
-    if (trimmedLine === "") {
-      consecutiveNewlines++
-      if (consecutiveNewlines <= 2) {
-        processedLines.push("") // Keep up to two empty lines
-      }
-    } else {
-      if (
-        consecutiveNewlines >= 2 ||
-        index === 0 ||
-        trimmedLine.startsWith("#")
-      ) {
-        // Start of a new paragraph or heading
-        processedLines.push(trimmedLine)
-      } else if (previousLine !== "" && !isListItem(previousLine)) {
-        // Continuation of the previous paragraph (not a list item)
-        processedLines[processedLines.length - 1] += " " + trimmedLine
-      } else {
-        // Single line paragraph or list item
-        processedLines.push(trimmedLine)
-      }
-      consecutiveNewlines = 0
-    }
-
-    previousLine = trimmedLine
-  })
-
-  return processedLines.join("\n")
-}
-
-/**
- * Chunk text by paragraphs with byte-based sizing and overlap.
- * Reusing the same logic as DOCX and PDF processing for consistency.
- */
-function chunkTextByParagraph(
-  text: string,
-  maxChunkBytes = 512,
-  overlapBytes = 128,
-): string[] {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  const chunks: string[] = []
-
-  for (let p of paragraphs) {
-    const pBytes = Buffer.byteLength(p, "utf8")
-    if (pBytes <= maxChunkBytes) {
-      chunks.push(p)
-    } else {
-      // Fallback to sentences
-      const sentences = p.match(/[^\.!\?]+[\.!\?]+(\s|$)/g) || [p]
-      let buffer = ""
-      for (let sentence of sentences) {
-        const sentenceTrim = sentence.trim()
-        if (!sentenceTrim) continue
-        const sentenceBytes = Buffer.byteLength(sentenceTrim, "utf8")
-        const bufferBytes = Buffer.byteLength(buffer, "utf8")
-        if (bufferBytes + sentenceBytes + 1 <= maxChunkBytes) {
-          buffer = buffer ? buffer + " " + sentenceTrim : sentenceTrim
-        } else {
-          if (buffer) {
-            chunks.push(buffer)
-            // Overlap: take last overlapBytes from buffer as start for next chunk
-            let overlapStr = ""
-            let overlapLen = 0
-            for (let i = buffer.length - 1; i >= 0; i--) {
-              const charBytes = Buffer.byteLength(buffer[i], "utf8")
-              if (overlapLen + charBytes > overlapBytes) break
-              overlapStr = buffer[i] + overlapStr
-              overlapLen += charBytes
-            }
-            buffer = overlapStr + " " + sentenceTrim
-          } else {
-            // Sentence longer than maxChunkBytes, push as is
-            chunks.push(sentenceTrim)
-            buffer = ""
-          }
-        }
-      }
-      if (buffer) {
-        chunks.push(buffer)
-      }
-    }
-  }
-
-  return chunks
 }
 
 interface PptxContentItem {
@@ -141,13 +39,144 @@ interface PptxProcessingResult {
 
 /**
  * Extract text content from PowerPoint text elements
- * Looks for <a:t> elements within text shapes
+ * Enhanced to handle paragraph structure, text runs, and line breaks like node-pptx-parser
  */
 function extractTextFromTextElements(element: any): string {
-  let text = ""
-  if (!element) return text
+  if (!element) return ""
 
-  // Helper function to recursively search for <a:t> elements
+  // First try the enhanced paragraph-aware extraction
+  const paragraphText = extractTextFromParagraphs(element)
+  if (paragraphText) return paragraphText
+
+  // Fallback to the original recursive approach for other structures
+  return extractTextRecursively(element)
+}
+
+/**
+ * Extract text with proper paragraph and line break handling
+ * Based on node-pptx-parser's approach but enhanced for our structure
+ */
+function extractTextFromParagraphs(element: any): string {
+  const paragraphs: string[] = []
+
+  // Look for text body elements that contain paragraphs
+  const searchForTextBodies = (obj: any): any[] => {
+    const textBodies: any[] = []
+    if (!obj || typeof obj !== "object") return textBodies
+
+    // Check for text body elements
+    if (obj["p:txBody"] || obj["a:txBody"]) {
+      const txBodies = obj["p:txBody"] || obj["a:txBody"]
+      const bodiesArray = Array.isArray(txBodies) ? txBodies : [txBodies]
+      textBodies.push(...bodiesArray)
+    }
+
+    // Recursively search for text bodies
+    for (const key in obj) {
+      if (typeof obj[key] === "object") {
+        if (Array.isArray(obj[key])) {
+          for (const item of obj[key]) {
+            textBodies.push(...searchForTextBodies(item))
+          }
+        } else {
+          textBodies.push(...searchForTextBodies(obj[key]))
+        }
+      }
+    }
+
+    return textBodies
+  }
+
+  const textBodies = searchForTextBodies(element)
+
+  for (const textBody of textBodies) {
+    if (textBody["a:p"]) {
+      const paragraphElements = Array.isArray(textBody["a:p"])
+        ? textBody["a:p"]
+        : [textBody["a:p"]]
+
+      for (const paragraph of paragraphElements) {
+        const paragraphText = extractTextFromSingleParagraph(paragraph)
+        if (paragraphText.trim()) {
+          paragraphs.push(paragraphText)
+        }
+      }
+    }
+  }
+
+  return paragraphs.length > 0 ? paragraphs.join("\n") : ""
+}
+
+/**
+ * Extract text from a single paragraph with proper run and line break handling
+ * Mirrors node-pptx-parser's paragraph processing logic
+ */
+function extractTextFromSingleParagraph(paragraph: any): string {
+  if (!paragraph) return ""
+
+  const textParts: string[] = []
+
+  // Process text runs (a:r elements)
+  if (paragraph["a:r"]) {
+    const runs = Array.isArray(paragraph["a:r"])
+      ? paragraph["a:r"]
+      : [paragraph["a:r"]]
+
+    for (const run of runs) {
+      if (run["a:t"]) {
+        let textContent = ""
+        if (typeof run["a:t"] === "string") {
+          textContent = run["a:t"]
+        } else if (Array.isArray(run["a:t"])) {
+          textContent = run["a:t"].join("")
+        } else if (run["a:t"]["#text"]) {
+          textContent = run["a:t"]["#text"]
+        } else if (typeof run["a:t"] === "object") {
+          // Handle case where a:t is an object with text content
+          textContent = String(run["a:t"])
+        }
+
+        if (textContent) {
+          textParts.push(textContent)
+        }
+      }
+    }
+  }
+
+  // Handle explicit line breaks (a:br elements)
+  if (paragraph["a:br"]) {
+    textParts.push("\n")
+  }
+
+  // Handle paragraph end markers (a:endParaRPr) - indicates paragraph break
+  if (paragraph["a:endParaRPr"]) {
+    // If we have no text content but have end paragraph marker, add line break
+    if (textParts.length === 0) {
+      textParts.push("\n")
+    }
+  }
+
+  // Handle direct text content in paragraph (fallback)
+  if (textParts.length === 0 && paragraph["a:t"]) {
+    let textContent = ""
+    if (typeof paragraph["a:t"] === "string") {
+      textContent = paragraph["a:t"]
+    } else if (paragraph["a:t"]["#text"]) {
+      textContent = paragraph["a:t"]["#text"]
+    }
+    if (textContent) {
+      textParts.push(textContent)
+    }
+  }
+
+  return textParts.join("")
+}
+
+/**
+ * Fallback recursive text extraction for non-standard structures
+ * This is the original approach, kept for compatibility
+ */
+function extractTextRecursively(element: any): string {
   const searchForText = (obj: any): string[] => {
     const textElements: string[] = []
     if (!obj || typeof obj !== "object") return textElements
@@ -157,6 +186,8 @@ function extractTextFromTextElements(element: any): string {
       const textContent = obj["a:t"]
       if (typeof textContent === "string") {
         textElements.push(textContent)
+      } else if (Array.isArray(textContent)) {
+        textElements.push(...textContent.map(String))
       } else if (textContent["#text"]) {
         textElements.push(textContent["#text"])
       }
