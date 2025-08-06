@@ -35,6 +35,8 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  kbFileSchema,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
@@ -53,7 +55,8 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
-
+import { getAllFolderItems, getKbFilesVespaIds } from "@/db/knowledgeBase"
+import { db } from "@/db/client"
 
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
@@ -77,6 +80,71 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
     return Array.from(channelIds)
   } catch (e) {
     return []
+  }
+}
+
+export interface AppSelection {
+  itemIds: string[]
+  selectedAll: boolean
+}
+
+export interface AppSelectionMap {
+  [appName: string]: AppSelection
+}
+
+export interface ParsedResult {
+  selectedApps: Apps[]
+  selectedItems: { [app: string]: string[] }
+}
+
+export function parseAppSelections(input: AppSelectionMap): ParsedResult {
+  const selectedApps: Apps[] = []
+  const selectedItems: { [app: string]: string[] } = {}
+
+  for (let [appName, selection] of Object.entries(input)) {
+    let app: Apps
+    // Add app to selectedApps list
+    if (appName == "googledrive") {
+      app = Apps.GoogleDrive
+    } else if (appName == "googlesheets") {
+      app = Apps.GoogleDrive
+    } else if (appName == "gmail") {
+      app = Apps.Gmail
+    } else if (appName == "googlecalendar") {
+      app = Apps.GoogleCalendar
+    } else if (appName == "DataSource") {
+      app = Apps.DataSource
+    } else if (appName == "knowledge_base") {
+      app = Apps.KnowledgeBase
+    } else if (appName == "slack") {
+      app = Apps.Slack
+    } else if (appName == "google-workspace") app = Apps.GoogleWorkspace
+    else {
+      app = appName as unknown as Apps
+    }
+
+    selectedApps.push(app)
+    // If selectedAll is true or itemIds is empty, we infer "all selected"
+    // So we don't add anything to selectedItems (empty means all)
+    if (
+      !selection.selectedAll &&
+      selection.itemIds &&
+      selection.itemIds.length > 0
+    ) {
+      // Only add specific itemIds when selectedAll is false and there are specific items
+      if (selectedItems[app]) {
+        selectedItems[app] = [
+          ...new Set([...selectedItems[app], ...selection.itemIds]),
+        ]
+      } else {
+        selectedItems[app] = selection.itemIds
+      }
+    }
+  }
+  console.log(selectedApps.join(", "))
+  return {
+    selectedApps,
+    selectedItems,
   }
 }
 
@@ -354,6 +422,18 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
+  } else if (result.fields.sddocname === kbFileSchema) {
+    // Handle KB files - include the actual file and KB UUIDs for direct access
+    const kbFields = fields as any // Type as VespaKbFileSearch when types are available
+    return {
+      docId: kbFields.docId,
+      title: kbFields.fileName || "KB File",
+      url: `/kb/${kbFields.kbId}`,
+      app: Apps.KnowledgeBase,
+      entity: SystemEntity.SystemInfo,
+      itemId: kbFields.itemId,
+      kbId: kbFields.kbId,
+    }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
       docId: (fields as VespaChatContainer).docId,
@@ -429,6 +509,7 @@ export const extractFileIdsFromMessage = async (
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
+  const kbFolderIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
@@ -481,6 +562,19 @@ export const extractFileIdsFromMessage = async (
         // Regular pill behavior: just add the docId
         fileIds.push(docId)
       }
+
+      if (obj?.value?.app == Apps.KnowledgeBase) {
+        // now if it is folder then get all the items in it  else if file of kb then add as it is
+        if (
+          (obj?.value?.entity == KnowledgeBaseEntity.Folder ||
+            obj?.value?.entity == KnowledgeBaseEntity.KnowledgeBase || obj?.value?.entity == KnowledgeBaseEntity.Collection) &&
+          obj?.value?.itemId
+        ) {
+          kbFolderIds.push(obj.value.itemId)
+        } else if (obj?.value?.entity == KnowledgeBaseEntity.File) {
+          fileIds.push(obj.value.docId)
+        }
+      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
@@ -511,6 +605,7 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
+
   while (driveItem.length) {
     let curr = driveItem.shift()
     // Ensure email is defined before passing it to getFolderItems\
@@ -546,6 +641,16 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
+
+  console.log("console.log",kbFolderIds.join(" ,"))
+  const kbfileIds = await getAllFolderItems(kbFolderIds, db)
+  console.log("console.log",kbfileIds.join(" ,"))
+  if (kbFolderIds.length > 0) {
+    const ids = await getKbFilesVespaIds(kbfileIds, db)
+    const vespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+    fileIds.push(...vespaIds)
+  }
+
   return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 
@@ -751,4 +856,38 @@ export function extractNamesFromIntent(intent: any): Intent {
   }
 
   return result
+}
+
+export function isAppSelectionMap(value: any): value is AppSelectionMap {
+
+  if (!value || typeof value !== "object") {
+    return false
+  }
+  // Check if it's an empty object (valid case)
+  if (Object.keys(value).length === 0) {
+    return true
+  }
+  // Check if all properties are valid AppSelection objects
+  for (const [appName, selection] of Object.entries(value)) {
+    // Optionally validate app name is a valid app
+    // if (!isValidApp(appName)) {
+    //   return false;
+    // }
+
+    if (!isValidAppSelection(selection)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function isValidAppSelection(value: any): value is AppSelection {
+  return (
+    value &&
+    typeof value === "object" &&
+    Array.isArray(value.itemIds) &&
+    value.itemIds.every((id: any) => typeof id === "string") &&
+    typeof value.selectedAll === "boolean"
+  )
 }

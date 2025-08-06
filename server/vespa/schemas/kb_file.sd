@@ -1,0 +1,394 @@
+schema kb_file {
+  document kb_file {
+
+    field docId type string {
+      indexing: attribute | summary
+      # Unique document identifier in Vespa
+    }
+    
+    field kbId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      # Knowledge base ID for folder-level queries
+    }
+    
+    field itemId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      # Database item ID linking to kb_items table
+    }
+    # knowledge-base
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field fileName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index { enable-bm25 }
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+      # Entity type: file or folder
+    }
+
+    field description type string {
+      indexing: index | summary | attribute
+      index { enable-bm25 }
+    }
+    
+    field storagePath type string {
+      indexing: attribute | summary
+    }
+    
+    field chunks type array<string> {
+      indexing: index | summary
+      index { enable-bm25 }
+    }
+
+    field image_chunks type array<string> {
+      indexing: index | summary
+      index { enable-bm25 }
+    }
+
+    field chunks_pos type array<long> {
+      indexing: attribute | summary
+    }
+
+    field image_chunks_pos type array<long> {
+      indexing: attribute | summary
+    }
+    
+    field metadata type string {
+      indexing: attribute | summary
+    }
+    
+    field createdBy type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field duration type long {
+      indexing: attribute | summary
+    }
+
+    field mimeType type string {
+      indexing: attribute | summary
+    }
+    
+    field fileSize type long {
+      indexing: attribute | summary
+    }
+
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  # Vector embeddings
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+    indexing: input chunks | embed | attribute | index
+    attribute { distance-metric: angular }
+  }
+
+  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+    indexing: input image_chunks | embed | attribute | index
+    attribute { distance-metric: angular }
+  }
+
+  # Fuzzy fileName
+  field fileName_fuzzy type string {
+    indexing: input fileName | index
+    index { enable-bm25 }
+    match { gram gram-size: 3 }
+  }
+
+  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy }
+  fieldset autocomplete { fields:  fileName }
+  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity }
+
+  rank-profile initial {
+    # Inputs for the query vector and alpha for hybrid search
+    inputs {
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+      query(alpha) double  # Alpha parameter for hybrid weight
+      query(recency_decay_rate) double
+    }
+
+    constants {
+      THREE_MONTHS_IN_SECONDS: 7890000
+      ONE_YEAR_IN_SECONDS: 31536000
+      MAX_DOC_DECAY: 0.5
+    }
+
+    # custom normalize function
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function document_age() {
+      # Default document age assuming to 3 months when no updatedAt timestamp is present
+      expression: max(if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(updatedAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
+    }
+
+    # Document score decays min to 0.5
+    function doc_recency() {
+        expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
+    }
+
+    function vector_score() {
+      expression: closeness(field, chunk_embeddings) + closeness(field, image_chunk_embeddings)
+    }
+
+    function combined_bm25() {
+      expression: bm25(fileName) + bm25(chunks) + bm25(image_chunks) + bm25(description)
+    }
+
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(fileName) + matches(chunks) + matches(image_chunks) + matches(description)
+      }
+    }
+
+    function combined_nativeRank() {
+      expression: (nativeRank(fileName) + nativeRank(chunks) + nativeRank(image_chunks) + nativeRank(description)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks), x, double)
+    }
+
+    function image_chunk_scores() {
+      expression: elementwise(bm25(image_chunks), x, double)
+    }
+  }
+
+  rank-profile default_native inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        ) * doc_recency
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(fileName)
+      nativeRank(chunks)
+      nativeRank(description)
+      chunk_scores
+      image_chunk_scores
+      doc_recency
+    }
+  }
+
+  # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
+  rank-profile global_sorted inherits initial {
+    # No global-phase section to allow sorting by first-phase score directly.
+
+    # Query inputs specific to this rank profile
+    inputs { # query(e) and query(alpha) are inherited from 'initial'
+      query(bin_size_days_gs) double: 1.0 # Default bin size is 1 day. Send with query: ?ranking.features.query(bin_size_days_gs)=7 for weekly bins
+    }
+
+    # Constants for recency binning within global_sorted
+    constants {
+      ONE_DAY_IN_SECONDS_GS: 86400.0         # 60 * 60 * 24
+      RECENCY_BIN_MULTIPLIER_GS: 10000.0     # Must be > max value of normalized_hybrid_relevance_gs. Adjust if needed.
+      MAX_SCORE_BASE_GS: 1000000000.0      # Large base score to ensure positive scores and separation.
+    }
+
+    # Helper Functions for recency binning specific to global_sorted
+
+    # Calculate document age in days.
+    # Uses THREE_MONTHS_IN_SECONDS from 'initial' profile as default age if updatedAt is missing.
+    function document_age_days_gs() {
+      expression: max(0.0, if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS_GS, (now() - (attribute(updatedAt) / 1000)) / ONE_DAY_IN_SECONDS_GS))
+    }
+
+    # Assign document to a recency bin index (0=today/newest, 1=yesterday, etc.)
+    function recency_bin_index_gs() {
+      expression: floor(document_age_days_gs() / query(bin_size_days_gs))
+    }
+
+    # Calculate a large score based purely on the recency bin.
+    # Newer bins (lower index) get significantly higher scores.
+    function recency_bin_score_gs() {
+      expression: MAX_SCORE_BASE_GS - (recency_bin_index_gs() * RECENCY_BIN_MULTIPLIER_GS)
+    }
+
+    # Calculate a hybrid relevance score, combining vector and text relevance.
+    # vector_score() and combined_nativeRank are inherited from 'initial'.
+    # query(alpha) is inherited from 'initial'.
+    function hybrid_relevance_score_gs() {
+      expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    # Calculate a normalized version of the hybrid relevance score.
+    # The divisor (e.g., 10.0) should be tuned based on typical combined_nativeRank values
+    # to ensure this score component is smaller than RECENCY_BIN_MULTIPLIER_GS.
+    function normalized_hybrid_relevance_gs() {
+      expression: max(0.0, min(hybrid_relevance_score_gs() / 10.0, RECENCY_BIN_MULTIPLIER_GS - 1.0))
+    }
+
+    # --- Ranking Expression ---
+    first-phase {
+      # Final score = Huge score from recency bin + smaller normalized hybrid relevance score.
+      # This guarantees sorting by recency bin first, then by hybrid relevance within the bin.
+      expression: recency_bin_score_gs() + normalized_hybrid_relevance_gs()
+    }
+
+    match-features {
+      query(alpha)
+      vector_score
+      matchedFieldCount
+      combined_nativeRank        
+      nativeRank(fileName)
+      nativeRank(chunks)
+      nativeRank(description)
+      chunk_scores
+      image_chunk_scores
+      document_age_days_gs
+      query(bin_size_days_gs)  
+      recency_bin_index_gs
+      recency_bin_score_gs
+      hybrid_relevance_score_gs 
+      normalized_hybrid_relevance_gs 
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        )
+      }
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+      rerank-count: 1000
+    }
+
+     match-features {
+      vector_score
+      bm25(chunks)
+      bm25(fileName)
+      bm25(description)
+      scale(combined_bm25)
+      chunk_scores
+      image_chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(fileName)
+      nativeRank(chunks)
+      nativeRank(description)
+      chunk_scores
+      image_chunk_scores
+      doc_recency
+    }
+  }
+
+  rank-profile default_random inherits initial {
+    first-phase {
+        expression: random.match
+    }
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(fileName)
+      nativeRank(chunks)
+      nativeRank(description)
+      chunk_scores
+      image_chunk_scores
+      doc_recency
+    }
+  }
+
+  document-summary default {
+    summary chunks_summary {
+      bolding: on
+      source: chunks
+    }
+    summary image_chunks_summary {
+      bolding: on
+      source: image_chunks
+    }
+    summary chunks_pos_summary {
+      source: chunks_pos
+    }
+    summary image_chunks_pos_summary {
+      source: image_chunks_pos
+    }
+  }
+
+  document-summary autocomplete {
+    summary fileName {
+        source: fileName
+    }
+    summary docId {
+        source: docId
+    }
+  }
+
+  # Autocomplete rank profile for fuzzy prefix search
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(fileName_fuzzy)
+    }
+    match-features {
+      bm25(fileName_fuzzy)
+    }
+  }
+}
