@@ -4,26 +4,68 @@ import JiraClient from "./jiraClient.js";
 import BitbucketClient from "./bitbucketClient.js";
 import KibanaClient from "./kibanaClient.js";
 
-export function addTools(
-  server: FastMCP,
-  jira: JiraClient | null,
-  bitbucket: BitbucketClient | null,
-  kibana: KibanaClient | null
-) {
+// Helper functions to create clients from session data
+interface SessionData {
+  jiraBaseUrl?: string;
+  jiraUserEmail?: string;
+  jiraApiToken?: string;
+  bitbucketBaseUrl?: string;
+  bitbucketUserName?: string;
+  bitbucketAppPassword?: string;
+  kibanaBaseUrl?: string;
+  kibanaCookie?: string;
+  kibanaPreference?: string;
+  [key: string]: unknown;
+}
+
+function createJiraClient(session?: SessionData): JiraClient | null {
+  const baseUrl = session?.jiraBaseUrl || process.env.JIRA_BASE_URL;
+  const email = session?.jiraUserEmail || process.env.JIRA_USER_EMAIL;
+  const token = session?.jiraApiToken || process.env.JIRA_API_TOKEN;
+  
+  if (baseUrl && email && token) {
+    return new JiraClient(baseUrl, email, token);
+  }
+  return null;
+}
+
+function createBitbucketClient(session?: SessionData): BitbucketClient | null {
+  const baseUrl = session?.bitbucketBaseUrl || process.env.BITBUCKET_BASE_URL;
+  const userName = session?.bitbucketUserName || process.env.BITBUCKET_USER_NAME;
+  const appPassword = session?.bitbucketAppPassword || process.env.BITBUCKET_APP_PASSWORD;
+  
+  if (baseUrl && userName && appPassword) {
+    return new BitbucketClient(baseUrl, userName, appPassword);
+  }
+  return null;
+}
+
+function createKibanaClient(session?: SessionData): KibanaClient | null {
+  const baseUrl = session?.kibanaBaseUrl || process.env.KIBANA_BASE_URL;
+  const cookie = session?.kibanaCookie || process.env.KIBANA_COOKIE;
+  const preference = session?.kibanaPreference || process.env.KIBANA_PREFERENCE;
+  
+  if (baseUrl && cookie) {
+    return new KibanaClient(baseUrl, cookie, preference);
+  }
+  return null;
+}
+
+export function addTools(server: FastMCP) {
   // -------- Jira tool --------
-  if (jira) {
-    server.addTool({
-      name: "jira_get_issue",
-      description: "Get Jira issue details by issue key",
-      parameters: z.object({
-        issueKey: z.string(),
-      }),
-      execute: async ({ issueKey }: { issueKey: string }) => {
-        if (!jira) {
-          throw new UserError("Jira client not configured - missing environment variables");
-        }
-        try {
-          const issue = await jira.getIssue(issueKey);
+  server.addTool({
+    name: "jira_get_issue",
+    description: "Get Jira issue details by issue key",
+    parameters: z.object({
+      issueKey: z.string(),
+    }),
+    execute: async ({ issueKey }: { issueKey: string }, context?: any) => {
+      const jira = createJiraClient(context?.session);
+      if (!jira) {
+        throw new UserError("Jira client not configured - missing session data (jiraBaseUrl, jiraUserEmail, jiraApiToken)");
+      }
+      try {
+        const issue = await jira.getIssue(issueKey);
         const issueData = {
           key: issue.key,
           summary: issue.fields.summary,
@@ -38,7 +80,7 @@ export function addTools(
           issueType: issue.fields.issuetype.name,
           created: issue.fields.created,
           // updated: issue.fields.updated,
-          url: `${process.env.JIRA_BASE_URL}/browse/${issue.key}`,
+          url: `${context?.session?.jiraBaseUrl || process.env.JIRA_BASE_URL}/browse/${issue.key}`,
         };
         return JSON.stringify(issueData, null, 2);
       } catch (err) {
@@ -46,11 +88,9 @@ export function addTools(
       }
     },
   });
-  } // End of Jira tools
 
   // -------- Find Code Lines tool --------
-  if (bitbucket) {
-    server.addTool({
+  server.addTool({
     name: "find_code_lines",
     description: "Find the exact line numbers of a code snippet within a file. Gets the whole file content and searches for your code snippet. Use this tool BEFORE using bitbucket_get_git_blame to ensure accurate line numbers.",
     parameters: z.object({
@@ -72,9 +112,17 @@ export function addTools(
       filePath: string;
       codeSnippet: string;
       searchAroundLine?: number;
-    }) => {
+    }, context?: any) => {
+      // Debug: Log what we're receiving
+      // console.log("=== MCP Tool Debug Info ===");
+      // console.log("Context:", JSON.stringify(context, null, 2));
+      // console.log("Process env BITBUCKET_BASE_URL:", process.env.BITBUCKET_BASE_URL);
+      // console.log("Process env keys:", Object.keys(process.env).filter(k => k.includes('BITBUCKET')));
+      // console.log("=========================");
+      
+      const bitbucket = createBitbucketClient(context?.session);
       if (!bitbucket) {
-        throw new UserError("Bitbucket client not configured - missing environment variables");
+        throw new UserError("Bitbucket client not configured - missing session data (bitbucketBaseUrl, bitbucketUserName, bitbucketAppPassword)");
       }
       try {
         // console.log(`Fetching file content for: ${projectKey}/${repoSlug}/${filePath}`);
@@ -368,11 +416,9 @@ export function addTools(
       }
     },
   });
-  } // End of bitbucket tools
 
   // -------- Bitbucket git blame tool --------
-  if (bitbucket) {
-    server.addTool({
+  server.addTool({
     name: "bitbucket_get_git_blame",
     description: "Get Git blame for a file in Bitbucket with the correct lines the given code covers. After this tool, it is mandatory to call jira_get_issue tool to get the Jira description and link from the Jira ticket. For calling this tool you need to be absolutely be sure about the lines of the code. For each of the Jira ID in the response call the jira_get_issue tool to get the description and link. And provide a super detailed output at the end.",
     parameters: z.object({
@@ -394,9 +440,10 @@ export function addTools(
       filePath: string;
       startLine: number;
       endLine: number;
-    }) => {
+    }, context?: any) => {
+      const bitbucket = createBitbucketClient(context?.session);
       if (!bitbucket) {
-        throw new UserError("Bitbucket client not configured - missing environment variables");
+        throw new UserError("Bitbucket client not configured - missing session data (bitbucketBaseUrl, bitbucketUserName, bitbucketAppPassword)");
       }
       try {
         const blameResponse = await bitbucket.getGitBlame(
@@ -439,17 +486,15 @@ export function addTools(
           ...commitMap[b.commitId],
         }));
 
-          return JSON.stringify(final, null, 2);
+        return JSON.stringify(final, null, 2);
       } catch (err) {
         throw new UserError(`Error fetching Git blame: ${(err as Error).message}`);
       }
     },
   });
-  } // End of bitbucket tools
 
   // -------- Kibana Search tool --------
-  if (kibana) {
-    server.addTool({
+  server.addTool({
     name: "kibana_search_logs",
     description: "Search Kibana logs using OpenSearch API with support for AND, OR, and NOT conditions. Includes progressive token counting and result truncation.",
     parameters: z.object({
@@ -480,9 +525,10 @@ export function addTools(
       max_results?: number;
       response_format?: "concise" | "detailed";
       max_tokens?: number;
-    }) => {
+    }, context?: any) => {
+      const kibana = createKibanaClient(context?.session);
       if (!kibana) {
-        throw new UserError("Kibana client not configured - missing environment variables");
+        throw new UserError("Kibana client not configured - missing session data (kibanaBaseUrl, kibanaCookie)");
       }
       try {
         const searchResult = await kibana.searchLogs({
@@ -502,5 +548,4 @@ export function addTools(
       }
     },
   });
-  } // End of kibana tools
 }
