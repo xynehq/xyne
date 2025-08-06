@@ -2655,9 +2655,9 @@ function AgentComponent() {
                           ) : (
                             // Unified Knowledge Bases section - handles both KB listing and file/folder navigation
                             (() => {
-                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                                integration.id.startsWith('kb_')
-                              )
+                              // const knowledgeBases = allAvailableIntegrations.filter(integration => 
+                              //   integration.id.startsWith('kb_')
+                              // )
 
                               // Unified navigation functions
                               const navigateToKb = async (kbId: string, kbName: string) => {
