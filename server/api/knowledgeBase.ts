@@ -1615,50 +1615,8 @@ export const GetFileContentApi = async (c: Context) => {
   const kbId = c.req.param("kbId")
   const itemId = c.req.param("itemId")
 
-  // Get user from database
-  const users = await getUserByEmail(db, userEmail)
-  if (!users || users.length === 0) {
-    throw new HTTPException(404, { message: "User not found" })
-  }
-  const user = users[0]
-
-  try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
-    }
-
-    // Check access: owner can always access, others only if KB is public
-    if (kb.ownerId !== user.id && kb.isPrivate) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
-      })
-    }
-
-    const item = await getKbItemById(db, itemId)
-    if (!item || item.type !== "file") {
-      throw new HTTPException(404, { message: "File not found" })
-    }
-
-    // Verify item belongs to this KB by traversing up the hierarchy
-    let currentItem = item
-    let belongsToKb = false
-    while (currentItem.parentId) {
-      if (currentItem.parentId === kbId) {
-        belongsToKb = true
-        break
-      }
-      const parent = await getKbItemById(db, currentItem.parentId)
-      if (!parent) break
-      currentItem = parent
-    }
-
-    if (!belongsToKb) {
-      throw new HTTPException(404, {
-        message: "File not found in this knowledge base",
-      })
-    }
-
+ 
+  try{
     const kbFile = await getKbFileByItemId(db, itemId)
     if (!kbFile) {
       throw new HTTPException(404, { message: "File data not found" })
