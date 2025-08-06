@@ -34,7 +34,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       timestampRange,
     )
     expect(result.yql).toContain("updatedAt >= 1000 and updatedAt <= 2000")
@@ -52,7 +51,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       timestampRange,
     )
     expect(result.yql).not.toContain("updatedAt <= 1000")
@@ -70,7 +68,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       timestampRange,
     )
     expect(result.yql).not.toContain("updatedAt >= 1000")
@@ -88,7 +85,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       null,
       excludedIds,
     )
@@ -104,7 +100,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       null,
       [],
       notInMailLabels,
@@ -121,7 +116,6 @@ describe("HybridDefaultProfile", () => {
       null,
       null,
       SearchModes.NativeRank,
-      false,
       invalidTimestampRange,
     )
     expect(result.yql).not.toContain("updatedAt")
@@ -139,7 +133,6 @@ describe("HybridDefaultProfile", () => {
       Apps.GoogleWorkspace,
       DriveEntity.PDF,
       SearchModes.NativeRank,
-      false,
       timestampRange,
       excludedIds,
       notInMailLabels,
@@ -160,7 +153,6 @@ describe("HybridDefaultProfile", () => {
       Apps.GoogleWorkspace,
       DriveEntity.PDF,
       SearchModes.NativeRank,
-      false,
       timestampRange,
     )
 

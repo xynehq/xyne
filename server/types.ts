@@ -52,18 +52,10 @@ const baseSearchSchema = z.object({
     .pipe(z.boolean())
     .optional(),
   agentId: z.string().optional(),
-  isAgentIntegSearch: z.string().optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
-    
-  (data) => {
-    if (data.isAgentIntegSearch) {
-      return true;
-    }
-    // Otherwise use the existing validation
-    return (data.app && data.entity) || (!data.app && !data.entity);
-  },
+  (data) => (data.app && data.entity) || (!data.app && !data.entity),
   {
     message: "app and entity must be provided together",
     path: ["app", "entity"],
