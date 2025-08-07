@@ -1,10 +1,61 @@
+# Node modules (will be installed in container)
 node_modules
 **/node_modules
+
+# Environment files
 **/.env
+!frontend/.env
+.env.development
+.env.local
+.env.test
+.env.production
+
+# Development files
 .git
 .github/
-docs
-.env.development
-server/vespa-data
-server/xyne-data
-server/data
+docs/
+
+# Large data directories (excluded from image, will be restored from sample-data.tar.gz)
+deployment/data/
+deployment/xyne-data*
+deployment/xyne-portable*
+deployment/grafana/grafana-storage/
+deployment/loki/
+server/vespa-data/
+server/xyne-data/
+server/data/
+xyne-data/
+
+# Build artifacts
+dist/
+build/
+**/dist/
+**/build/
+
+# Logs and temporary files
+*.log
+logs/
+**/logs/
+tmp/
+temp/
+**/tmp/
+**/temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+test-results/
+playwright-report/
+coverage/
+
+# Development-specific
+eval-data/
+observability/

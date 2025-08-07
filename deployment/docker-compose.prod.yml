@@ -1,33 +1,90 @@
-version: "3.9"
-
 services:
-  # app:
-  #   image: xyne
-  #   container_name: xyne-app
-  #   build:
-  #     context: ..
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - xyne-db
-  #     - vespa
-  #   env_file:
-  #     - ../server/.env
-  #   networks:
-  #     - xyne
-  #   restart: always
+  app-storage-init:
+    image: busybox
+    volumes:
+      - ./data/app-uploads:/app-uploads
+      - ./data/app-logs:/app-logs
+    command: |
+      sh -c '
+        mkdir -p /app-uploads /app-logs
+        chown -R 1000:1000 /app-uploads /app-logs
+        chmod 755 /app-uploads /app-logs
+      '
+    user: "0:0"
+
+  app:
+    image: xyne
+    container_name: xyne-app
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    ports:
+      - "3000:80"
+    depends_on:
+      app-storage-init:
+        condition: service_completed_successfully
+      xyne-db:
+        condition: service_healthy
+      vespa:
+        condition: service_started
+      # ollama:
+      #   condition: service_healthy
+    env_file:
+      - ../server/.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_HOST=xyne-db
+      - VESPA_HOST=vespa
+      - HOST=http://localhost
+    volumes:
+      # Application data volumes
+      - ./data/app-uploads:/usr/src/app/server/storage
+      - ./data/app-logs:/usr/src/app/server/logs
+    networks:
+      - xyne
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/v1/me"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   
+  prometheus-init:
+    image: busybox
+    volumes:
+      - ./data/prometheus-data:/prometheus
+    command: |
+      sh -c '
+        mkdir -p /prometheus
+        chown -R 65534:65534 /prometheus
+        chmod 755 /prometheus
+      '
+    user: "0:0"
+
   prometheus:
-    image: "prom/prometheus"
+    image: "prom/prometheus:latest"
     container_name: xyne-prometheus
     user: "65534:65534"
+    depends_on:
+      prometheus-init:
+        condition: service_completed_successfully
     volumes:
       - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+      - ./data/prometheus-data:/prometheus
     ports:
     - "9090:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+      - "--storage.tsdb.path=/prometheus"
     restart: always
     networks:
       - xyne
@@ -35,12 +92,12 @@ services:
     - "host.docker.internal:host-gateway"
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
     container_name: xyne-grafana
-    user: "472:472"
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/grafana-storage:/var/lib/grafana 
+      - ./data/grafana-storage:/var/lib/grafana 
     ports:
       - "3002:3000"
     restart: always
@@ -50,65 +107,180 @@ services:
       - POSTGRES_PASSWORD=xyne
 
   vespa:
-    image: vespaengine/vespa
+    image: vespaengine/vespa:latest
     container_name: vespa
-    hostname: vespa-container
-    # sudo chown -R 1000:1000 ./server/vespa-data
-    user: "1000:1000" # Run as vespa user
+    hostname: vespa
+    # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     ports:
-      - "8080:8080"
+      - "${VESPA_PORT:-8080}:8080"
       - "19071:19071"
     volumes:
-      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
-      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
+      - ./data/vespa-data:/opt/vespa/var
     networks:
       - xyne
     ulimits:
       nproc: 409600
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19071/state/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
     environment:
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - TMPDIR=/opt/vespa/var/tmp
+      - VESPA_LOG_LEVEL=info
+      - VESPA_LOG_FILE_SIZE=50M
+      - VESPA_LOG_FILE_COUNT=5
 
   xyne-db:
-    image: postgres
+    image: postgres:15-alpine
     container_name: xyne-db
     environment:
       POSTGRES_USER: xyne
       POSTGRES_PASSWORD: xyne
       POSTGRES_DB: xyne
-    ports:
-      - "${XYNE_DB_PORT:-5432}:5432"
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    # ports:
+    #   - "${XYNE_DB_PORT:-5432}:5432"
     volumes:
-      - ../server/xyne-data:/var/lib/postgresql/data
+      - ./data/postgres-data:/var/lib/postgresql/data
     networks:
       - xyne
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xyne -d xyne"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  loki-init:
+    image: busybox
+    volumes:
+      - ./data/loki-data:/loki-data
+    command: |
+      sh -c '
+        mkdir -p /loki-data
+        chown -R 10001:10001 /loki-data
+        chmod 755 /loki-data
+      '
+    user: "0:0"
 
   loki:
     image: grafana/loki:3.4.1
     container_name: loki
     user: "10001:10001"
+    depends_on:
+      - loki-init
     ports:
       - "3100:3100"
     volumes:
       - ./loki-config.yaml:/mnt/config/loki-config.yaml
-      - ./loki:/tmp/loki
+      - ./data/loki-data:/loki
     command: --config.file=/mnt/config/loki-config.yaml
     restart: unless-stopped
     networks:
       - xyne
 
+  promtail-init:
+    image: busybox
+    volumes:
+      - ./data/promtail-data:/promtail-data
+    command: |
+      sh -c '
+        mkdir -p /promtail-data
+        chown -R 10001:10001 /promtail-data
+        chmod 755 /promtail-data
+      '
+    user: "0:0"
+
+  promtail:
+    image: grafana/promtail:3.4.1
+    container_name: promtail
+    user: "0:${DOCKER_GROUP_ID:-999}"  # root user with docker group for socket access
+    depends_on:
+      - promtail-init
+      - loki
+    volumes:
+      - ./promtail-config.yaml:/mnt/config/promtail-config.yaml
+      - ./data/promtail-data:/promtail
+      - ./data/app-logs:/var/log/app:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: --config.file=/mnt/config/promtail-config.yaml
+    restart: unless-stopped
+    networks:
+      - xyne
+    environment:
+      - DOCKER_GROUP_ID=${DOCKER_GROUP_ID:-999}
+
+  # ollama-init:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama-init
+  #   volumes:
+  #     - ./data/ollama-data:/root/.ollama
+  #   command: |
+  #     sh -c '
+  #       echo "Pulling gemma3:27b model..."
+  #       ollama serve &
+  #       sleep 10
+  #       ollama pull gemma3:27b
+  #       echo "Model pulled successfully"
+  #     '
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   restart: "no"
+  #   networks:
+  #     - xyne
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   depends_on:
+  #     - ollama-init
+  #   ports:
+  #     - "11435:11434"
+  #   volumes:
+  #     - ./data/ollama-data:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+  #   networks:
+  #     - xyne
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #     - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
 networks:
   xyne:
     driver: bridge
-volumes:
-  vespa-data:
-    driver: local
-  grafana-storage:  
-    driver: local
+# Using simple bind mounts like dev setup - no named volumes needed
