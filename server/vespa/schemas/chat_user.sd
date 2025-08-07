@@ -183,6 +183,21 @@ schema chat_user {
           vector_score
         }
     }
+    rank-profile title_boosted_hybrid inherits initial {
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(name)))
+  }
+  
+  global-phase {
+    expression {
+      (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (5 * nativeRank(name)))
+      ) * freshness_score()
+    }
+    rerank-count: 1000
+  }
+}
 
     rank-profile global_sorted inherits initial {
     constants {
