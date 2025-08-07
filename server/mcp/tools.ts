@@ -636,4 +636,56 @@ export function addTools(server: FastMCP) {
       }
     },
   });
+
+  // -------- Bitbucket Pull Request Activities tool --------
+  server.addTool({
+    name: "bitbucket_get_pull_request_activities",
+    description: "Get activities (comments, approvals, commits, etc.) for a specific pull request in Bitbucket",
+    parameters: z.object({
+      projectKey: z.string().describe("Project key in Bitbucket"),
+      repoSlug: z.string().describe("Repository slug in Bitbucket"),
+      pullRequestId: z.number().describe("Pull request ID"),
+      avatarSize: z.number().optional().default(48).describe("Size of avatar images"),
+      start: z.number().optional().default(0).describe("Start index for pagination"),
+      limit: z.number().optional().default(25).describe("Maximum number of results to return"),
+      markup: z.boolean().optional().default(true).describe("Whether to include markup in the response")
+    }),
+    execute: async ({
+      projectKey,
+      repoSlug,
+      pullRequestId,
+      avatarSize = 48,
+      start = 0,
+      limit = 25,
+      markup = true
+    }: {
+      projectKey: string;
+      repoSlug: string;
+      pullRequestId: number;
+      avatarSize?: number;
+      start?: number;
+      limit?: number;
+      markup?: boolean;
+    }, context?: any) => {
+      const bitbucket = createBitbucketClient(context?.session);
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
+      }
+      try {
+        const activities = await bitbucket.getPullRequestActivities({
+          projectKey,
+          repoSlug,
+          pullRequestId,
+          avatarSize,
+          start,
+          limit,
+          markup
+        });
+        
+        return JSON.stringify(activities, null, 2);
+      } catch (err) {
+        throw new UserError(`Error fetching pull request activities: ${(err as Error).message}`);
+      }
+    },
+  });
 }
