@@ -688,4 +688,48 @@ export function addTools(server: FastMCP) {
       }
     },
   });
+
+  // -------- Bitbucket Pull Request Details tool --------
+  server.addTool({
+    name: "bitbucket_get_pull_request_details",
+    description: "Get detailed information about a specific pull request in Bitbucket including title, description, status, reviewers, author, etc.",
+    parameters: z.object({
+      projectKey: z.string().describe("Project key in Bitbucket"),
+      repoSlug: z.string().describe("Repository slug in Bitbucket"),
+      pullRequestId: z.number().describe("Pull request ID"),
+      avatarSize: z.number().optional().default(48).describe("Size of avatar images"),
+      markup: z.boolean().optional().default(true).describe("Whether to include markup in the response")
+    }),
+    execute: async ({
+      projectKey,
+      repoSlug,
+      pullRequestId,
+      avatarSize = 48,
+      markup = true
+    }: {
+      projectKey: string;
+      repoSlug: string;
+      pullRequestId: number;
+      avatarSize?: number;
+      markup?: boolean;
+    }, context?: any) => {
+      const bitbucket = createBitbucketClient(context?.session);
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
+      }
+      try {
+        const details = await bitbucket.getPullRequestDetails({
+          projectKey,
+          repoSlug,
+          pullRequestId,
+          avatarSize,
+          markup
+        });
+        
+        return JSON.stringify(details, null, 2);
+      } catch (err) {
+        throw new UserError(`Error fetching pull request details: ${(err as Error).message}`);
+      }
+    },
+  });
 }

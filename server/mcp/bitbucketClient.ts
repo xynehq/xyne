@@ -414,6 +414,64 @@ class BitbucketClient {
       throw new Error(`Pull request activities request failed: ${(error as Error).message}`)
     }
   }
+
+  async getPullRequestDetails(params: {
+    projectKey: string;
+    repoSlug: string;
+    pullRequestId: number;
+    avatarSize?: number;
+    markup?: boolean;
+  }): Promise<any> {
+    const {
+      projectKey,
+      repoSlug,
+      pullRequestId,
+      avatarSize = 48,
+      markup = true
+    } = params;
+
+    // Input validation
+    if (!projectKey || typeof projectKey !== 'string') {
+      throw new Error('Invalid projectKey: must be a non-empty string')
+    }
+    if (!repoSlug || typeof repoSlug !== 'string') {
+      throw new Error('Invalid repoSlug: must be a non-empty string')
+    }
+    if (!Number.isInteger(pullRequestId) || pullRequestId < 1) {
+      throw new Error('Invalid pullRequestId: must be a positive integer')
+    }
+
+    try {
+      const url = `${this.baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repoSlug)}/pull-requests/${pullRequestId}?avatarSize=${avatarSize}&markup=${markup}`;
+      console.log(`Fetching pull request details from URL: ${url}`);
+      
+      const options: RequestInit = {
+        method: "GET",
+        headers: {
+          ...this.baseHeaders,
+          'accept': 'application/json, text/javascript, */*; q=0.01',
+          'accept-language': 'en-US,en;q=0.9',
+          'cache-control': 'no-cache',
+          'content-type': 'application/json',
+          'pragma': 'no-cache',
+          'priority': 'u=1, i',
+          'sec-ch-ua': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"macOS"',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-origin',
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+          'x-requested-with': 'XMLHttpRequest'
+        },
+      };
+
+      return await this.fetchWithRetry(url, options);
+    } catch (error) {
+      console.error(`Failed to get pull request details for ${projectKey}/${repoSlug}/pull-requests/${pullRequestId}:`, error)
+      throw new Error(`Pull request details request failed: ${(error as Error).message}`)
+    }
+  }
 }
 
 export default BitbucketClient;
