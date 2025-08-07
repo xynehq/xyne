@@ -258,6 +258,100 @@ class BitbucketClient {
       throw new Error(`File content request failed: ${(error as Error).message}`)
     }
   }
+
+  async getPullRequestsAsReviewer(params: {
+    avatarSize?: number;
+    order?: string;
+    start?: number;
+    limit?: number;
+    state?: string;
+  }): Promise<any> {
+    const {
+      avatarSize = 48,
+      order = "participant_status",
+      start = 0,
+      limit = 25,
+      state = "OPEN"
+    } = params;
+
+    try {
+      const url = `${this.baseUrl}/rest/ui/latest/dashboard/pull-requests?avatarSize=${avatarSize}&order=${encodeURIComponent(order)}&start=${start}&limit=${limit}&state=${state}&role=REVIEWER`;
+      console.log(`Fetching pull requests as reviewer from URL: ${url}`);
+      
+      const options: RequestInit = {
+        method: "GET",
+        headers: {
+          ...this.baseHeaders,
+          'accept': 'application/json, text/javascript, */*; q=0.01',
+          'accept-language': 'en-US,en;q=0.9',
+          'cache-control': 'no-cache',
+          'content-type': 'application/json',
+          'pragma': 'no-cache',
+          'priority': 'u=1, i',
+          'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"macOS"',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-origin',
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          'x-requested-with': 'XMLHttpRequest'
+        },
+      };
+
+      return await this.fetchWithRetry(url, options);
+    } catch (error) {
+      console.error(`Failed to get pull requests as reviewer:`, error)
+      throw new Error(`Pull requests as reviewer request failed: ${(error as Error).message}`)
+    }
+  }
+
+  async getPullRequestsAsAuthor(params: {
+    avatarSize?: number;
+    order?: string;
+    start?: number;
+    limit?: number;
+    state?: string;
+  }): Promise<any> {
+    const {
+      avatarSize = 48,
+      order = "participant_status",
+      start = 0,
+      limit = 25,
+      state = "OPEN"
+    } = params;
+
+    try {
+      const url = `${this.baseUrl}/rest/ui/latest/dashboard/pull-requests?avatarSize=${avatarSize}&order=${encodeURIComponent(order)}&start=${start}&limit=${limit}&state=${state}&role=AUTHOR`;
+      console.log(`Fetching pull requests as author from URL: ${url}`);
+      
+      const options: RequestInit = {
+        method: "GET",
+        headers: {
+          ...this.baseHeaders,
+          'accept': 'application/json, text/javascript, */*; q=0.01',
+          'accept-language': 'en-US,en;q=0.9',
+          'cache-control': 'no-cache',
+          'content-type': 'application/json',
+          'pragma': 'no-cache',
+          'priority': 'u=1, i',
+          'sec-ch-ua': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"macOS"',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-origin',
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+          'x-requested-with': 'XMLHttpRequest'
+        },
+      };
+
+      return await this.fetchWithRetry(url, options);
+    } catch (error) {
+      console.error(`Failed to get pull requests as author:`, error)
+      throw new Error(`Pull requests as author request failed: ${(error as Error).message}`)
+    }
+  }
 }
 
 export default BitbucketClient;

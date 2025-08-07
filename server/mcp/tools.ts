@@ -462,9 +462,9 @@ export function addTools(server: FastMCP) {
           lineNoTo: b.lineNumber + b.spannedLines - 1,
         }));
 
-        const uniqueCommits = [
-          ...new Set(processed.map((b: any) => b.commitId)),
-        ] as string[];
+        const uniqueCommits = Array.from(
+          new Set(processed.map((b: any) => b.commitId))
+        ) as string[];
         const commits = await Promise.all(
           uniqueCommits.map((cid: string) =>
             bitbucket.getCommit(projectKey, repoSlug, cid)
@@ -545,6 +545,94 @@ export function addTools(server: FastMCP) {
         return JSON.stringify(searchResult, null, 2);
       } catch (err) {
         throw new UserError(`Error searching Kibana logs: ${(err as Error).message}`);
+      }
+    },
+  });
+
+  // -------- Bitbucket Pull Requests as Reviewer tool --------
+  server.addTool({
+    name: "bitbucket_get_pull_requests_reviewer",
+    description: "Get pull requests from Bitbucket dashboard where the current user is a reviewer",
+    parameters: z.object({
+      avatarSize: z.number().optional().default(48).describe("Size of avatar images"),
+      order: z.string().optional().default("participant_status").describe("Order of results"),
+      start: z.number().optional().default(0).describe("Start index for pagination"),
+      limit: z.number().optional().default(25).describe("Maximum number of results to return"),
+      state: z.string().optional().default("OPEN").describe("State of pull requests (OPEN, MERGED, DECLINED)")
+    }),
+    execute: async ({
+      avatarSize = 48,
+      order = "participant_status",
+      start = 0,
+      limit = 25,
+      state = "OPEN"
+    }: {
+      avatarSize?: number;
+      order?: string;
+      start?: number;
+      limit?: number;
+      state?: string;
+    }, context?: any) => {
+      const bitbucket = createBitbucketClient(context?.session);
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
+      }
+      try {
+        const pullRequests = await bitbucket.getPullRequestsAsReviewer({
+          avatarSize,
+          order,
+          start,
+          limit,
+          state
+        });
+        
+        return JSON.stringify(pullRequests, null, 2);
+      } catch (err) {
+        throw new UserError(`Error fetching pull requests as reviewer: ${(err as Error).message}`);
+      }
+    },
+  });
+
+  // -------- Bitbucket Pull Requests as Author tool --------
+  server.addTool({
+    name: "bitbucket_get_pull_requests_author",
+    description: "Get pull requests from Bitbucket dashboard where the current user is the author",
+    parameters: z.object({
+      avatarSize: z.number().optional().default(48).describe("Size of avatar images"),
+      order: z.string().optional().default("participant_status").describe("Order of results"),
+      start: z.number().optional().default(0).describe("Start index for pagination"),
+      limit: z.number().optional().default(25).describe("Maximum number of results to return"),
+      state: z.string().optional().default("OPEN").describe("State of pull requests (OPEN, MERGED, DECLINED)")
+    }),
+    execute: async ({
+      avatarSize = 48,
+      order = "participant_status",
+      start = 0,
+      limit = 25,
+      state = "OPEN"
+    }: {
+      avatarSize?: number;
+      order?: string;
+      start?: number;
+      limit?: number;
+      state?: string;
+    }, context?: any) => {
+      const bitbucket = createBitbucketClient(context?.session);
+      if (!bitbucket) {
+        throw new UserError("Bitbucket client not configured - missing session data (x-bitbucket-base-url, x-bitbucket-user-name, x-bitbucket-app-password)");
+      }
+      try {
+        const pullRequests = await bitbucket.getPullRequestsAsAuthor({
+          avatarSize,
+          order,
+          start,
+          limit,
+          state
+        });
+        
+        return JSON.stringify(pullRequests, null, 2);
+      } catch (err) {
+        throw new UserError(`Error fetching pull requests as author: ${(err as Error).message}`);
       }
     },
   });
