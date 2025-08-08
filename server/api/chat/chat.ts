@@ -4119,7 +4119,7 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-                cost: totalCost,
+                cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
@@ -4662,7 +4662,7 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-                cost: totalCost,
+                cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
@@ -5266,7 +5266,7 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
-                    cost: totalCost,
+                    cost: totalCost.toString(),
                     tokensUsed:
                       totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
@@ -5304,7 +5304,7 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
-                      cost: totalCost,
+                      cost: totalCost.toString(),
                       tokensUsed:
                         totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
@@ -5723,7 +5723,7 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
-                    cost: totalCost,
+                    cost: totalCost.toString(),
                     tokensUsed:
                       totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
@@ -5761,7 +5761,7 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
-                      cost: totalCost,
+                      cost: totalCost.toString(),
                       tokensUsed:
                         totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before

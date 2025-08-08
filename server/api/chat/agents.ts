@@ -2053,7 +2053,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               thinking: reasoningLog,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-              cost: totalCost,
+              cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
             assistantMessageId = msg.externalId
@@ -2829,7 +2829,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
-            cost: totalCost,
+            cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
@@ -2861,7 +2861,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
-            cost: totalCost,
+            cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
@@ -2888,7 +2888,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(errorMessage, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
-            cost: totalCost,
+            cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
@@ -3359,7 +3359,7 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-                cost: totalCost,
+                cost: totalCost.toString(),
                 tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
@@ -3769,7 +3769,7 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-                cost: totalCost,
+                cost: totalCost.toString(),
                 tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
