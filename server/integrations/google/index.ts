@@ -26,6 +26,7 @@ import {
   type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
+  type TxnOrClient,
 } from "@/types"
 import PgBoss from "pg-boss"
 import { hashPdfFilename } from "@/utils"
@@ -36,6 +37,7 @@ import {
   insert,
   insertDocument,
   insertUser,
+  updateDocumentsWithDeletedGrpEmails,
   UpdateEventCancelledInstances,
   insertWithRetry,
 } from "@/search/vespa"
@@ -1074,6 +1076,9 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { groups } from "@/db/schema/groups"
+import { groupMembers } from "@/db/schema/groupMembers"
+import { getAllGroupEmails, insertGroup, insertGroupMembers } from "@/db/group"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -1147,6 +1152,119 @@ const handleGmailIngestionForServiceAccount = async (
   })
 }
 
+// This function gets all the groups and its members in the workspace
+// During sync it also compares the old groups with the new groups
+// and if any group is deleted then it fetches all the docs that
+// have that group email in the permissions array and deletes that group email from the permissions array of each doc
+export const getAndSaveAllGroupsMembers = async (
+  admin: admin_directory_v1.Admin,
+  domain: string,
+) => {
+  // First fetching all the groups in the workspace
+  let nextPageToken = ""
+  const maxGroupMembersResults = 200
+  let groups: admin_directory_v1.Schema$Group[] = []
+  do {
+    const res = await retryWithBackoff(
+      () =>
+        admin.groups.list({
+          domain,
+          maxResults: maxGroupMembersResults,
+          pageToken: nextPageToken,
+        }),
+      `Fetching all workspace groups`,
+      Apps.GoogleWorkspace,
+    )
+
+    if (res.data.groups) {
+      groups = groups.concat(res.data.groups)
+    }
+    nextPageToken = res.data.nextPageToken ?? ""
+  } while (nextPageToken)
+
+  // Get all the previous groups stored in postgres
+  // Compare them with the new groups
+  // If any grp is deleted then update those docs which have those grp emails in permissions array
+  await db.transaction(async (trx) => {
+    const oldGroupEmails = await getAllGroupEmails(trx)
+    // Only should happen when there are old groups to compare
+    if (oldGroupEmails.length) {
+      const newGroupEmails = groups.map((grp) => grp.email)
+
+      // Convert newGroupEmails to a Set for faster lookups
+      const newGroupEmailsSet = new Set(newGroupEmails)
+
+      // Filter oldGroupEmails to get only the deleted emails
+      const deletedGroupEmails = oldGroupEmails.filter(
+        (email) => !newGroupEmailsSet.has(email),
+      )
+
+      // Delete these group emails from permissions array of each document having them
+      await updateDocumentsWithDeletedGrpEmails(deletedGroupEmails)
+
+      // Now after we are done comparing and doing the changes, we want we delete the older groups and its group members
+      await deleteAllGroupMembers(trx)
+      await deleteAllGroups(trx)
+    }
+  })
+
+  // Fetching each member of each group
+  // Currently not saving groups with no members
+  for (const grp of groups) {
+    nextPageToken = ""
+    let members: admin_directory_v1.Schema$Member[] = []
+    const membersOfGroups: string[] = []
+    do {
+      const res = await retryWithBackoff(
+        () =>
+          admin.members.list({
+            groupKey: grp.id!,
+            maxResults: maxGroupMembersResults,
+            pageToken: nextPageToken,
+          }),
+        `Fetching members of group ${grp?.id}`,
+        Apps.GoogleWorkspace,
+      )
+      if (res.data.members) {
+        members = members.concat(res.data.members)
+      }
+      nextPageToken = res.data.nextPageToken ?? ""
+    } while (nextPageToken)
+
+    if (members && members?.length) {
+      for (const mem of members) {
+        if (mem.type === "USER" && mem.status === "ACTIVE" && mem?.email) {
+          membersOfGroups.push(mem?.email)
+        }
+      }
+      if (membersOfGroups.length) {
+        await db.transaction(async (trx) => {
+          await insertGroup(
+            trx,
+            grp?.id!,
+            grp?.name!,
+            grp?.email!,
+            grp?.description!,
+            grp?.directMembersCount!,
+          )
+          await insertGroupMembers(trx, grp.id!, membersOfGroups)
+        })
+      }
+    }
+  }
+  Logger.info(`Groups and group members inserted`)
+}
+
+const deleteAllGroups = async (trx: TxnOrClient) => {
+  await trx.delete(groups)
+  Logger.info(`Deleted all groups from groups table...`)
+}
+
+const deleteAllGroupMembers = async (trx: TxnOrClient) => {
+  await trx.delete(groupMembers)
+  Logger.info(`Deleted all group members from groupMembers table...`)
+}
+
 // we make 2 sync jobs
 // one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
@@ -1175,12 +1293,12 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     const workspace = await getWorkspaceById(db, connector.workspaceId)
 
     let usersToQuery: admin_directory_v1.Schema$User[] = []
-    const whiteListedEmails = data.whiteListedEmails || []
-    if (whiteListedEmails.length) {
-      usersToQuery = await listUsersByEmails(admin, whiteListedEmails)
-    } else {
-      usersToQuery = await listUsers(admin, workspace.domain)
-    }
+    // const whiteListedEmails = data.whiteListedEmails || []
+    // if (whiteListedEmails.length) {
+    //   usersToQuery = await listUsersByEmails(admin, whiteListedEmails)
+    // } else {
+    //   usersToQuery = await listUsers(admin, workspace.domain)
+    // }
 
     // Deduplicate users based on the extracted valid email before further processing
     const uniqueUsersMap = new Map<string, admin_directory_v1.Schema$User>()
@@ -1190,13 +1308,15 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         uniqueUsersMap.set(email, user)
       }
     }
-    const usersToProcess = Array.from(uniqueUsersMap.values())
 
-    if (usersToProcess.length !== usersToQuery.length) {
-      loggerWithChild({ email: data.email! }).warn(
-        `Removed ${usersToQuery.length - usersToProcess.length} duplicate or unidentifiable (no email) users from initial query (jobId: ${jobId})`,
-      )
-    }
+    // const usersToProcess = Array.from(uniqueUsersMap.values())
+    const usersToProcess = ["kalp.a@xynehq.com"]
+
+    // if (usersToProcess.length !== usersToQuery.length) {
+    //   loggerWithChild({ email: data.email! }).warn(
+    //     `Removed ${usersToQuery.length - usersToProcess.length} duplicate or unidentifiable (no email) users from initial query (jobId: ${jobId})`,
+    //   )
+    // }
 
     if (usersToProcess.length === 0) {
       loggerWithChild({ email: data.email! }).warn(
@@ -1229,24 +1349,40 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
       }
     }, 4000)
 
-    const userProcessingPromises = usersToProcess.map((googleUser) =>
-      limit(async () => {
-        const userEmail = getValidUserEmailFromGoogleUser(googleUser)
+    // todo Gets all groups in the workscpace, Also get all memebers of all groups
+    const groups = await getAndSaveAllGroupsMembers(admin, workspace.domain)
+    console.log(`Groups fetched and saved`)
 
-        if (!userEmail) {
-          loggerWithChild({ email: userEmail! }).error(
-            `handleGoogleServiceAccountIngestion: Could not determine a valid email for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping.`,
-          )
-          tracker.markUserComplete(
-            googleUser.id || `UNKNOWN_ID_${Math.random()}`,
-          )
-          return null
-        }
+    const oauth2Client = new google.auth.OAuth2({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri: `${config.host}/oauth/callback`,
+    })
+
+    oauth2Client.setCredentials({
+      access_token: process.env.ACCESS_TOKEN,
+      refresh_token: process.env.REFRESH_TOKEN,
+    })
+
+    const userProcessingPromises =
+      // usersToProcess.map((googleUser) =>
+      limit(async () => {
+        const userEmail = process.env.EMAIL!
+        // if (!userEmail) {
+        //   loggerWithChild({ email: userEmail! }).error(
+        //     `handleGoogleServiceAccountIngestion: Could not determine a valid email for Google user ID: ${googleUser.id || "N/A"} (jobId: ${jobId}). Skipping.`,
+        //   )
+        //   tracker.markUserComplete(
+        //     googleUser.id || `UNKNOWN_ID_${Math.random()}`,
+        //   )
+        //   return null
+        // }
 
         loggerWithChild({ email: userEmail! }).info(
           `started for ${userEmail} (jobId: ${jobId})`,
         )
-        const userJwtClient = createJwtClient(serviceAccountKey, userEmail) // Renamed
+        // const userJwtClient = createJwtClient(serviceAccountKey, userEmail) // Renamed
+        const userJwtClient = oauth2Client // Renamed
         const userDriveClient = google.drive({
           version: "v3",
           auth: userJwtClient,
@@ -1307,13 +1443,17 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         }
 
         // Pass userJwtClient where appropriate if those functions use it directly, or serviceAccountKey
-        const [_, historyIdResult, calendarResult] = await Promise.all([
+        const [
+          _,
+          // historyIdResult,
+          calendarResult,
+        ] = await Promise.all([
           insertFilesForUser(userJwtClient, userEmail, connector!, tracker), // Assuming connector is valid here
-          handleGmailIngestionForServiceAccount(
-            userEmail,
-            serviceAccountKey,
-            jobId,
-          ),
+          // handleGmailIngestionForServiceAccount(
+          //   userEmail,
+          //   serviceAccountKey,
+          //   jobId,
+          // ),
           insertCalendarEvents(userJwtClient, userEmail, tracker),
         ])
 
@@ -1326,15 +1466,15 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           driveToken: startPageToken,
           contactsToken,
           otherContactsToken,
-          historyId: historyIdResult, // Use the result from the promise
+          historyId: "", // Use the result from the promise
           calendarEventsToken: calendarResult.calendarEventsToken, // Use the result
         } as IngestionMetadata
-      }),
-    )
+      })
+    // )
 
-    const results = (await Promise.all(
+    const results = (await Promise.all([
       userProcessingPromises,
-    )) as (IngestionMetadata | null)[]
+    ])) as (IngestionMetadata | null)[]
     const successfulResults = results.filter(
       (meta) => meta !== null,
     ) as IngestionMetadata[]
@@ -1346,7 +1486,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         (sr) => sr.email === getValidUserEmailFromGoogleUser(u),
       ),
     )
-    await insertUsersForWorkspace(usersForWorkspaceInsert)
+    // await insertUsersForWorkspace(usersForWorkspaceInsert)
 
     setTimeout(() => {
       clearInterval(interval)
@@ -1847,14 +1987,14 @@ const insertFilesForUser = async (
         ),
       ])
       totalDurationOfDriveFileExtraction()
-      const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
-        googleClient,
-        rest,
-        userEmail,
-      )
+      // const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+      //   googleClient,
+      //   rest,
+      //   userEmail,
+      // )
 
       let allFiles: VespaFileWithDrivePermission[] = [
-        ...driveFiles,
+        // ...driveFiles,
         ...documents,
         ...slides,
         ...sheetsObj.sheets,

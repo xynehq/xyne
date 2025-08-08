@@ -61,6 +61,7 @@ import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { ProductionVespaClient } from "./productionVespaClient"
+import { getGroupEmailsFromEmail } from "@/db/group"
 
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
@@ -220,13 +221,25 @@ export const autocomplete = async (
     .filter((s) => s !== chatMessageSchema)
     .join(", ")
 
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let emailQuery = ""
+  if (emails && emails.length > 0) {
+    emailQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
   const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery}))
         or
         (
             (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
@@ -245,10 +258,10 @@ export const autocomplete = async (
         )
         or
         (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery}))
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery}))
         or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
@@ -258,7 +271,7 @@ export const autocomplete = async (
             name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
             email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
           )
-          and permissions contains @email
+          and ${emailQuery})
         )
         `
 
@@ -3180,5 +3193,49 @@ export const getFolderItems = async (
     )
     const errMessage = getErrorMessage(error)
     throw new Error(errMessage)
+  }
+}
+
+export const updateDocumentsWithDeletedGrpEmails = async (
+  deletedGrpEmails: string[],
+) => {
+  if (deletedGrpEmails && deletedGrpEmails?.length > 0) {
+    // First search and get all the documents that have one of these deletedEmails
+    const filterQuery = deletedGrpEmails
+      ?.map((deletedGrpEmail) => `permissions contains "${deletedGrpEmail}"`)
+      .join(" OR ")
+    // Construct the overall search query. Here *:* is used to indicate all documents.
+    // Adjust the query as needed if you have other search constraints.
+    const yql = `select * from sources ${AllSources} where (${filterQuery})`
+
+    try {
+      const results = (await vespa.search({ yql })) as VespaSearchResponse
+      const deletedGroupEmailsDocs = results?.root?.children
+
+      // Now for each document, update their permissions array by removing the deleted group email
+      for (const doc of deletedGroupEmailsDocs) {
+        const docFields = doc?.fields as {
+          permissions: string[]
+          sddocname: VespaSchema
+          docId: string
+        }
+        const currentPermissions = docFields?.permissions
+        // Filter out the deleted emails from this document's permissions.
+        const deletedGrpEmailsSet = new Set(deletedGrpEmails)
+        const updatedPermissions = currentPermissions?.filter(
+          (perm) => !deletedGrpEmailsSet?.has(perm),
+        )
+        await UpdateDocumentPermissions(
+          docFields?.sddocname,
+          docFields?.docId,
+          updatedPermissions,
+        )
+      }
+    } catch (error) {
+      throw new ErrorUpdatingDocument({
+        cause: error as Error,
+        sources: AllSources,
+      })
+    }
   }
 }

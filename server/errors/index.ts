@@ -310,6 +310,14 @@ export class ConnectionInsertionError extends DbError {
   }
 }
 
+// db/groups/GroupInsertionError
+export class GroupInsertionError extends DbError {
+  constructor({ message, cause }: BaseErrorOpts) {
+    super({ message, model: Model.Connectors, dbOp: DbOp.Create, cause })
+    this.name = this.constructor.name
+  }
+}
+
 // api/oauth/OauthCallbackError
 export class OAuthCallbackError extends Error {
   constructor({ message, cause }: BaseErrorOpts) {
