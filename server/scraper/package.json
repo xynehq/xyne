@@ -1,0 +1,50 @@
+{
+  "name": "unified-web-scraper",
+  "version": "2.0.0",
+  "description": "Unified web scraper with multiple modes: basic, stealth, and aggressive stealth using Playwright and Crawlee",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "unified-scraper": "./dist/unified-cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/unified-cli.js",
+    "dev": "tsx unified-cli.ts",
+    "examples": "npm run build && node dist/unified-examples.js",
+    "clean": "rm -rf dist scraped_data example_output_*",
+    "test": "npm run build && npm run examples",
+    "unified-basic": "npm run dev scrape",
+    "unified-stealth": "npm run dev scrape --mode stealth",
+    "unified-aggressive": "npm run dev scrape --mode aggressive_stealth"
+  },
+  "keywords": [
+    "web-scraping",
+    "playwright",
+    "crawlee",
+    "stealth-scraping",
+    "unified-scraper",
+    "anti-detection",
+    "web-crawler",
+    "aggressive-stealth"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@crawlee/playwright": "^3.14.0",
+    "@types/node": "^24.1.0",
+    "commander": "^14.0.0",
+    "crawlee": "^3.14.0",
+    "csv-parser": "^3.2.0",
+    "pdf-parse": "^1.1.1",
+    "pdf2pic": "^3.2.0",
+    "playwright": "^1.54.2",
+    "playwright-extra": "^4.3.6",
+    "playwright-extra-plugin-stealth": "^0.0.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1131,7 +1131,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
-  let channelIds:string[] = []
+  let channelIds: string[] = []
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1934,13 +1934,16 @@ async function* generateAnswerFromGivenContext(
         const creator = await getDocumentOrNull(
           chatUserSchema,
           (v.fields as any).creator,
-        )      
+        )
         if (creator) {
-              content += `\nCreator: ${(creator.fields as any).name}`
+          content += `\nCreator: ${(creator.fields as any).name}`
         }
       } catch (error) {
-          loggerWithChild({ email }).error(error, `Failed to fetch creator for chat container`)
-        }
+        loggerWithChild({ email }).error(
+          error,
+          `Failed to fetch creator for chat container`,
+        )
+      }
     }
     return `Index ${i + startIndex} \n ${content}`
   })
@@ -1980,6 +1983,30 @@ async function* generateAnswerFromGivenContext(
       combinedSearchResponse?.length || 0
     }`,
   )
+
+  // CRITICAL: URL Detection for automatic agentic mode fallback
+  // Check if the context contains URLs that need to be scraped
+  const containsURLs =
+    initialContext &&
+    (/https?:\/\/[^\s]+/i.test(initialContext) ||
+      /link to [^.]+\./i.test(initialContext) ||
+      /watch how to/i.test(initialContext) ||
+      /tutorial.*video/i.test(initialContext) ||
+      /see.*video/i.test(initialContext) ||
+      /visit.*link/i.test(initialContext) ||
+      /click.*here/i.test(initialContext) ||
+      /go to.*website/i.test(initialContext) ||
+      /check out.*link/i.test(initialContext))
+
+  // Log URL detection for debugging
+  if (containsURLs && !agentPrompt) {
+    loggerWithChild({ email: email }).info(
+      `[URL Detection] URLs detected in context but no agentPrompt set. User should use agentic mode for web scraping.`,
+      { containsURLs, contextSnippet: initialContext.substring(0, 200) },
+    )
+    generateAnswerSpan?.setAttribute("url_detection_warning", true)
+    generateAnswerSpan?.setAttribute("contains_urls", true)
+  }
 
   const selectedContext = isContextSelected(message)
   const builtUserQuery = selectedContext

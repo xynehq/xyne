@@ -179,3 +179,10 @@ export interface SlackRelatedMessagesParams {
 export interface SlackUserProfileParams {
   user_email: string
 }
+
+export interface WebScraperParams {
+  urls: string[]
+  query?: string
+  max_pages?: number
+  stealth_mode?: boolean
+}

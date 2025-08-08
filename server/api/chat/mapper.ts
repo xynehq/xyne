@@ -615,6 +615,32 @@ export const internalTools: Record<string, ToolDefinition> = {
       'Determine if the user\'s query is conversational or a basic calculation. Examples include greetings like: "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.',
     params: [],
   },
+  [XyneTools.WebScraper]: {
+    name: XyneTools.WebScraper,
+    description:
+      "Scrape and extract content from external websites and URLs. Use this tool when: 1) User provides URLs or links to websites, 2) User asks to scrape, extract, or analyze content from web pages, 3) User wants information from external websites not in their connected data sources, 4) User mentions specific websites, articles, or web content. Always use this for external URLs.",
+    params: [
+      {
+        name: "urls",
+        type: "array",
+        required: true,
+        description:
+          "Array of URLs to scrape. Extract URLs from user's message if they provide website links.",
+      },
+      {
+        name: "query",
+        type: "string",
+        required: false,
+        description: "The user's original query for context.",
+      },
+      {
+        name: "max_pages",
+        type: "number",
+        required: false,
+        description: "Maximum number of pages to scrape (default: 5).",
+      },
+    ],
+  },
 }
 
 export const slackTools: Record<string, ToolDefinition> = {
@@ -720,6 +746,41 @@ export const slackTools: Record<string, ToolDefinition> = {
   },
 }
 
+export const externalTools: Record<string, ToolDefinition> = {
+  [XyneTools.WebScraper]: {
+    name: XyneTools.WebScraper,
+    description:
+      "Scrape and extract content from external websites and URLs. Use this tool when: 1) User provides URLs or links to websites, 2) User asks to scrape, extract, or analyze content from web pages, 3) User wants information from external websites not in their connected data sources, 4) User mentions specific websites, articles, or web content, 5) URLs are found in search results and user wants the actual content from those URLs, 6) User asks for detailed information about links found in emails or documents, 7) CRITICAL: If emails/documents contain phrases like 'link to tutorial', 'watch how to', 'read more at', 'see guide', etc. - ALWAYS scrape the actual URL to get complete content instead of just referencing the link. NEVER consider URL references as sufficient information - always get the actual content. Extracts text, links, images, and documents for analysis.",
+    params: [
+      {
+        name: "urls",
+        type: "array",
+        required: true,
+        description:
+          "Array of URLs to scrape. Extract URLs from user's message if they provide website links.",
+      },
+      {
+        name: "query",
+        type: "string",
+        required: false,
+        description: "The user's original query for context",
+      },
+      {
+        name: "max_pages",
+        type: "number",
+        required: false,
+        description: "Maximum number of pages to scrape (default: 5)",
+      },
+      {
+        name: "stealth_mode",
+        type: "boolean",
+        required: false,
+        description: "Use stealth mode to avoid detection (default: false)",
+      },
+    ],
+  },
+}
+
 export function formatToolDescription(tool: ToolDefinition): string {
   let description = `${tool.name}: ${tool.description}`
 
@@ -748,17 +809,22 @@ export function formatToolsSection(
 export function createCustomToolSet(options: {
   internal?: Record<string, ToolDefinition>
   slack?: Record<string, ToolDefinition>
+  external?: Record<string, ToolDefinition>
   excludeInternal?: string[]
   excludeSlack?: string[]
+  excludeExternal?: string[]
 }): {
   internal: Record<string, ToolDefinition>
   slack: Record<string, ToolDefinition>
+  external: Record<string, ToolDefinition>
 } {
   const {
     internal: customInternal = {},
     slack: customSlack = {},
+    external: customExternal = {},
     excludeInternal = [],
     excludeSlack = [],
+    excludeExternal = [],
   } = options
 
   // Filter out excluded tools and merge with custom tools
@@ -770,10 +836,16 @@ export function createCustomToolSet(options: {
   const filteredSlack = Object.fromEntries(
     Object.entries(slackTools).filter(([key]) => !excludeSlack.includes(key)),
   )
+  const filteredExternal = Object.fromEntries(
+    Object.entries(externalTools).filter(
+      ([key]) => !excludeExternal.includes(key),
+    ),
+  )
 
   return {
     internal: { ...filteredInternal, ...customInternal },
     slack: { ...filteredSlack, ...customSlack },
+    external: { ...filteredExternal, ...customExternal },
   }
 }
 
@@ -859,7 +931,9 @@ export function createAgentToolFromDefinition(
 export function getToolDefinition(
   toolName: string,
 ): ToolDefinition | undefined {
-  return internalTools[toolName] || slackTools[toolName]
+  return (
+    internalTools[toolName] || slackTools[toolName] || externalTools[toolName]
+  )
 }
 
 // Helper to create parameters object for a specific tool

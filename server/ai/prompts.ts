@@ -13,6 +13,7 @@ import { ContextSysthesisState, XyneTools } from "@/shared/types"
 import {
   internalTools,
   slackTools,
+  externalTools,
   formatToolsSection,
   type ToolDefinition,
 } from "@/api/chat/mapper"
@@ -511,7 +512,19 @@ ${retrievedContext}
    - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
-2. Response Structure:
+   
+2. **CRITICAL: URL Detection in Retrieved Context**:
+   - Scan the retrieved context for any URL references, links, or phrases like:
+     * "link to [something]"
+     * "Watch how to [something]" 
+     * "tutorial on [something]"
+     * "Read more at [something]"
+     * "See guide at [something]"
+     * Any embedded URLs (http://, https://)
+   - **If such references exist but no actual content from those URLs is provided → Return null to trigger web scraping**
+   - **Do NOT just reference URLs - actual content from URLs is required to provide complete answers**
+   
+3. Response Structure:
    - Begin with the most relevant information
    - Maintain chronological order when relevant
    - Every statement should cite its source using [index] format
@@ -558,10 +571,12 @@ If NO relevant items are found in Retrieved Context or context doesn't match que
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
+- **CRITICAL: If context contains URL references without actual content from those URLs, set "answer" to null**
+- **URL references like "link to tutorial", "watch how to", etc. are NOT sufficient - actual content is required**
 - If no clear answer is found in the retrieved context, set "answer" to null 
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear, or the query lacks context set "answer" as null 
+If information is missing or unclear, or the query lacks context, or if URLs need to be scraped, set "answer" as null 
 `
 
 // Baseline Reasoing Prompt JSON
@@ -841,6 +856,7 @@ export const SearchQueryToolContextPrompt = (
   const toolsToUse = {
     internal: customTools?.internal || internalTools,
     slack: customTools?.slack || slackTools,
+    external: externalTools,
   }
 
   const updatedInternalTools = { ...toolsToUse.internal }
@@ -897,6 +913,10 @@ export const SearchQueryToolContextPrompt = (
     
     **Smart Tool Usage Strategy:**
     
+    **External vs Internal Tool Selection:**
+    - **Use Web Scraper Tool when**: User provides URLs, asks to scrape websites, wants information from external web content, mentions specific articles/websites, or asks about content NOT in their connected data sources.
+    - **Use Internal Tools when**: User asks about their emails, files, calendar events, or other connected data sources.
+    
     **Discovery Before Specifics:**
     - When working with resources that require specific identifiers (IDs, numbers, hashes, etc.), prefer discovery/listing tools first.
     - Use broad search or listing capabilities before attempting to fetch specific items.
@@ -923,6 +943,8 @@ export const SearchQueryToolContextPrompt = (
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
     ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
+    
+    ${formatToolsSection(toolsToUse.external, "External Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -948,6 +970,17 @@ export const SearchQueryToolContextPrompt = (
     Review the conversation history and understand what information has already been gathered.
     If an **agent prompt** is provided, interpret and apply any additional instructions or constraints it contains before proceeding.
 
+    **URL DETECTION in Context:**
+    - Scan all gathered context for URL references, link mentions, or phrases like:
+      * "link to [something]"
+      * "Watch how to [something]" 
+      * "tutorial on [something]"
+      * "Read more at [something]"
+      * "See guide at [something]"
+      * Any embedded URLs or web links
+    - If such references exist but no actual content from those URLs is provided → Information is INSUFFICIENT
+    - If user asks about topics that these URLs address → USE WEB_SCRAPER TOOL immediately
+
     ## 2. Query Assessment
     Determine what type of information or action the user is requesting:
     - Information retrieval (search, lookup, fetch)
@@ -955,12 +988,31 @@ export const SearchQueryToolContextPrompt = (
     - Analysis or computation
     - Multi-step operations
     
+    **CRITICAL: External Content Detection**
+    - If user provides URLs (http://, https://) or mentions specific websites → USE WEB_SCRAPER TOOL
+    - If user asks to "scrape", "extract from website", "get content from URL" → USE WEB_SCRAPER TOOL
+    - If user wants information from external websites not in their data sources → USE WEB_SCRAPER TOOL
+    - If search results contain URLs and user wants detailed content → USE WEB_SCRAPER TOOL to get actual content
+    - If URLs are found in emails, documents, or other sources and user asks for information about them → USE WEB_SCRAPER TOOL
+    - **CRITICAL: If context mentions links/URLs but only provides the link text without actual content → ALWAYS USE WEB_SCRAPER TOOL**
+    - **Examples requiring scraping: "link to tutorial", "Watch how to make", "Read more at", "See details at", etc.**
+    - Always prefer scraping actual URLs over just referencing them when user needs detailed information
+    - Otherwise, use internal search tools for connected data sources
+    
     ## 4. Next Action Decision
     ### If Information is Complete:
-    - Set "tool" and "arguments" to null
+    - **IMPORTANT**: Only consider information complete if:
+      * The user's question is fully answered with specific details, AND
+      * No URLs were found that could provide additional relevant content, AND
+      * No link references (like "Watch how to", "Read more", "tutorial link") exist without actual content
+    - **NEVER consider just URL references as complete information** 
+    - If context contains URLs/links that could provide the actual content the user needs → USE WEB_SCRAPER TOOL first
+    - If emails/documents mention "link to tutorial", "watch video", "see guide", etc. → USE WEB_SCRAPER TOOL to get actual content
+    - Only set "tool" and "arguments" to null when no URLs need scraping AND the answer is complete with actual content
     
     ### If More Information Needed:
     - Choose the most appropriate tool for the next step.
+    - If URLs are present in context but not yet scraped → USE WEB_SCRAPER TOOL
     - Provide well-formed arguments.
     - Consider using exclusion parameters to avoid duplicate results.
     - If you lack necessary discovery capabilities, acknowledge this limitation.
@@ -1885,11 +1937,14 @@ export const withToolQueryPrompt = (
       fallbackReasoning
         ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
         : `- **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
+    - **WEB SCRAPED CONTENT**: If the context includes successfully scraped web content (indicated by titles, URLs, and extracted text content), this is COMPLETE information that should be used to answer the query. Do NOT claim inability to access websites when web content is already provided in context.
+    - **URL DETECTION**: Only if context contains URLs or links but no actual extracted content from those URLs, consider the context INSUFFICIENT and indicate that the URLs should be scraped for actual content.
     - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
     - **INSUFFICIENT CONTEXT**: If the context is incomplete, partially relevant, or doesn't contain the specific information requested:
       * DO NOT provide partial answers or tangentially related information
       * DO NOT list what you found if it doesn't directly answer the query
       * Instead, honestly explain that you don't have sufficient information to answer the query
+      * If URLs are present but not scraped, specifically mention that the actual content from those URLs is needed
       * Explain what specific information would be needed to provide a complete answer
       * Suggest how the user could refine their query to get better results
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
@@ -1915,19 +1970,23 @@ export const synthesisContextPrompt = (
   Instruction:
   - Analyze the provided "Context Fragments" to answer the current user-query.
   - The "answer" key should contain a **concise and focused** synthesis grounded only in the context. If relevant information is missing, state that explicitly.
+  - **CRITICAL for web scraped content**: If the context contains successfully scraped web content (indicated by URLs, titles, and extracted text), use this information to answer the query. Do NOT claim inability to access websites when the content is already provided.
   - Your response MUST be a JSON object with the following two keys: "synthesisState" (string) and "answer" (string).
 
   - The "synthesisState" must be set to one of the following values:
      - ${ContextSysthesisState.Complete}:
        - Use this if the provided Context Fragments include enough information to meaningfully answer the User Query. Some details may be missing, but the main question is clearly addressed.
+       - **For web scraped content**: If the context includes successfully scraped web content (from URLs), consider this Complete information unless the user asks for something very specific that's not covered.
        - **For date-based queries**, assume the context has already been filtered to match the requested date range—no need to question whether it's complete.
        - If even a single relevant item fully satisfies the user's intent mark the state as **Complete**.
      - ${ContextSysthesisState.Partial}:
        - Use if the context provides **some** helpful information, but less than 80% of what's required to confidently answer the query.
+       - **Do NOT use Partial if web scraped content successfully provides relevant information for the user's query.**
      - ${ContextSysthesisState.NotFound}:
        - Use if the context contains no relevant information to answer the query.
 
   - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
+  - **WEB SCRAPED CONTENT HANDLING**: When Context Fragments contain successfully scraped web content (identifiable by URLs, titles, and extracted text), always use this content to provide meaningful answers. Never respond with "cannot access websites" or similar phrases when web content is already provided in the context.
 
   Context Fragments:
   ${synthesisContext}
@@ -1935,7 +1994,7 @@ export const synthesisContextPrompt = (
   ## Response Format
   {
     "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
-    "answer": "Brief, synthesized answer based only on the context"
+    "answer": "Brief, synthesized answer based only on the context. IMPORTANT: If context contains web scraped content (URLs + extracted text), use that content to answer the query. Do NOT claim inability to access websites when content is already available."
   }
 `
 }

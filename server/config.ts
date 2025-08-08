@@ -1,7 +1,7 @@
 import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
-let vespaBaseHost = "0.0.0.0"
-let postgresBaseHost = "0.0.0.0"
+let vespaBaseHost = process.env.VESPA_HOST || "0.0.0.0"
+let postgresBaseHost = process.env.DATABASE_HOST || "0.0.0.0"
 let port = process.env.PORT || 3000
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!

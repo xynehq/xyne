@@ -52,12 +52,18 @@ export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
-import { getToolParameters, internalTools } from "@/api/chat/mapper"
+import {
+  getToolParameters,
+  internalTools,
+  externalTools,
+  convertToAgentToolParameters,
+} from "@/api/chat/mapper"
 import type {
   AgentTool,
   MetadataRetrievalParams,
   MinimalAgentFragment,
   SearchParams,
+  WebScraperParams,
 } from "./types"
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
@@ -686,6 +692,106 @@ export const userInfoTool: AgentTool = {
       Logger.error(error, `Error in get_user_info tool: ${errMsg}`)
       return {
         result: `Error retrieving user context: ${errMsg}`,
+        error: errMsg,
+      }
+    } finally {
+      execSpan?.end()
+    }
+  },
+}
+
+export const webScraperTool: AgentTool = {
+  name: XyneTools.WebScraper,
+  description: externalTools[XyneTools.WebScraper].description,
+  parameters: convertToAgentToolParameters(externalTools[XyneTools.WebScraper]),
+  execute: async (
+    params: WebScraperParams,
+    span?: Span,
+    email?: string,
+    usrCtx?: string,
+    agentPrompt?: string,
+    userMessage?: string,
+  ) => {
+    const execSpan = span?.startSpan("execute_web_scraper_tool")
+    try {
+      console.log(
+        `[webScraperTool] Executing web scraper with params: ${JSON.stringify(params)}`,
+      )
+
+      if (!email) {
+        const errorMsg = "Email is required for web scraper tool execution."
+        execSpan?.setAttribute("error", errorMsg)
+        return { result: errorMsg, error: "Missing email" }
+      }
+
+      const urls = params.urls || []
+      const maxPages = params.max_pages || 5
+      const stealth = params.stealth_mode || false
+
+      if (!urls || urls.length === 0) {
+        return {
+          result: "Error: No URLs provided for scraping",
+          error: "Missing URLs parameter",
+        }
+      }
+
+      execSpan?.setAttribute("urls_count", urls.length)
+      execSpan?.setAttribute("max_pages", maxPages)
+      execSpan?.setAttribute("stealth_mode", stealth)
+
+      const { scrapeUrlContent } = await import("../webScraper")
+
+      const scrapedContent = await scrapeUrlContent(urls, email, {
+        stealth,
+        maxPages,
+        contentOnly: true,
+      })
+
+      if (scrapedContent && scrapedContent.length > 0) {
+        const contexts: MinimalAgentFragment[] = scrapedContent.map(
+          (item: any, index: number) => ({
+            id: `web_scraper_${index}_${Date.now()}`,
+            content: item.content || "",
+            source: {
+              docId: `web_scraper_${index}`,
+              title: item.title || item.url,
+              url: item.url,
+              app: Apps.Xyne,
+              entity: SystemEntity.SystemInfo,
+            },
+            confidence: 0.9,
+          }),
+        )
+
+        const resultText = scrapedContent
+          .map(
+            (item: any, index: number) =>
+              `URL ${index + 1}: ${item.url}\nTitle: ${item.title}\nContent: ${item.content || "No content available"}`,
+          )
+          .join("\n\n")
+
+        execSpan?.setAttribute("scraped_content_count", scrapedContent.length)
+        return {
+          result: `Successfully scraped ${scrapedContent.length} URL(s). Here is the complete content:\n\n${resultText}`,
+          contexts: contexts,
+        }
+      } else {
+        // Try to provide more helpful error message
+        const errorMessage = urls.some((url) => url.includes("medium.com"))
+          ? "Unable to scrape the provided URLs. Medium and similar sites have strong anti-bot protection. The content may require manual access or alternative methods to retrieve."
+          : "No content was successfully scraped from the provided URLs. The sites may have bot protection or the content may not be accessible."
+
+        return {
+          result: errorMessage,
+          error: "No content scraped - possibly blocked by anti-bot protection",
+        }
+      }
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      execSpan?.setAttribute("error", errMsg)
+      Logger.error(error, `Error in web_scraper tool: ${errMsg}`)
+      return {
+        result: `Execution of web_scraper tool failed: ${errMsg}`,
         error: errMsg,
       }
     } finally {
@@ -1991,6 +2097,7 @@ export const agentTools: Record<string, AgentTool> = {
   get_user_info: userInfoTool,
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
+  web_scraper: webScraperTool,
   // Slack-specific tools
   get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,

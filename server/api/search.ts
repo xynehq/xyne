@@ -242,7 +242,7 @@ export const AutocompleteApi = async (c: Context) => {
   }
 }
 
-export const SearchApi = async (c:Context) => {
+export const SearchApi = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   let userAlpha = await getUserPersonalizationAlpha(db, email)
