@@ -172,7 +172,7 @@ import {
   startSocketMode,
   getSocketModeStatus,
 } from "@/integrations/slack/client"
-
+const { JwtPayloadKey } = config
 // Import Vespa proxy handlers
 import {
   validateApiKey,
@@ -232,6 +232,26 @@ const AuthMiddleware = jwt({
   secret: accessTokenSecret,
   cookie: AccessTokenCookieName,
 })
+
+// Middleware to check if user has admin or superAdmin role
+const AdminRoleMiddleware = async (c: Context, next: Next) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const user = await getUserByEmail(db, sub)
+  if (!user.length) {
+    throw new HTTPException(403, {
+      message: `Access denied. user with email ${sub} does not exist.`,
+    })
+  }
+  const userRole = user[0].role
+  if (userRole !== UserRole.Admin && userRole !== UserRole.SuperAdmin) {
+    console.log("nope")
+    throw new HTTPException(403, {
+      message: "Access denied. Admin privileges required.",
+    })
+  }
+
+  await next()
+}
 
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
@@ -762,8 +782,36 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  .post(
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
   // Admin Routes
   .basePath("/admin")
+  .use("*", AdminRoleMiddleware)
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
@@ -779,25 +827,6 @@ export const AppRoutes = app
   )
   // create the provider + connector
   .post(
-    "/oauth/create",
-    zValidator("form", createOAuthProvider),
-    CreateOAuthProvider,
-  )
-  .post(
-    "/slack/ingest_more_channel",
-    async (c, next) => {
-      console.log("i am ")
-      await next()
-    },
-    zValidator("json", ingestMoreChannelSchema),
-    IngestMoreChannelApi,
-  )
-  .post(
-    "/slack/start_ingestion",
-    zValidator("json", startSlackIngestionSchema),
-    StartSlackIngestionApi,
-  )
-  .post(
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
     AddApiKeyConnector,
@@ -812,23 +841,15 @@ export const AppRoutes = app
     zValidator("form", addStdioMCPConnectorSchema),
     AddStdioMCPConnector,
   )
-  .get("/connectors/all", GetConnectors)
+
   .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
-  .post(
-    "/connector/update_status",
-    zValidator("form", updateConnectorStatusSchema),
-    UpdateConnectorStatus,
-  )
+
   .delete(
     "/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteConnector,
   )
-  .delete(
-    "/oauth/connector/delete",
-    zValidator("form", deleteConnectorSchema),
-    DeleteOauthConnector,
-  )
+
   .post(
     // Added route for updating tool statuses
     "/tools/update_status",
@@ -840,7 +861,7 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
-  .get("/oauth/global-slack-provider", GetProviders)
+
   // Admin Dashboard Routes
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
   .get("/agents", GetAdminAgents)
@@ -1222,6 +1243,13 @@ export const init = async () => {
 
 app.get("/metrics", async (c) => {
   try {
+    const origin = c.req.header("origin")
+
+    // Check if origin contains localhost
+    if (!origin || !origin.includes("localhost")) {
+      return c.text("Access denied", 403)
+    }
+
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
       "Content-Type": metricRegister.contentType,

@@ -73,7 +73,7 @@ const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
 ) => {
-  const response = await api.admin.oauth.create.$post({
+  const response = await api.oauth.create.$post({
     form: {
       clientId: value.clientId,
       clientSecret: value.clientSecret,
@@ -387,7 +387,7 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
 export const minHeight = 320
 
 export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
+  const res = await api.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -398,7 +398,7 @@ export const getConnectors = async (): Promise<any> => {
 }
 
 export const deleteOauthConnector = async (connectorId: string) => {
-  const res = await api.admin.oauth.connector.delete.$delete({
+  const res = await api.oauth.connector.delete.$delete({
     form: { connectorId },
   })
   if (!res.ok) {

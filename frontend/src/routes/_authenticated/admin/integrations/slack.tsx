@@ -46,7 +46,7 @@ export const updateConnectorStatus = async (
   connectorId: string,
   status: ConnectorStatus,
 ) => {
-  const res = await api.admin.connector.update_status.$post({
+  const res = await api.connector.update_status.$post({
     form: {
       connectorId,
       status,
@@ -102,7 +102,7 @@ const submitSlackBotToken = async (
 
 // Add this function to fetch connectors (similar to Google implementation)
 export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
+  const res = await api.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -219,7 +219,7 @@ export const SlackOAuthForm = ({
           payload.isGlobalProvider = value.isGlobalProvider // Send checkbox value when providing own
         }
 
-        const response = await api.admin.oauth.create.$post({
+        const response = await api.oauth.create.$post({
           form: payload,
         })
 
@@ -456,7 +456,7 @@ const SlackOAuthTab = ({
     useQuery({
       queryKey: ["global-slack-provider"],
       queryFn: async () => {
-        const res = await api.admin.oauth["global-slack-provider"].$get()
+        const res = await api.oauth["global-slack-provider"].$get()
         if (!res.ok) {
           // Handle error, maybe log it or show a toast
           toast({
@@ -479,7 +479,7 @@ const SlackOAuthTab = ({
         isUsingGlobalCred: true,
         app: Apps.Slack,
       }
-      const response = await api.admin.oauth.create.$post({
+      const response = await api.oauth.create.$post({
         form: payload,
       })
       if (!response.ok) {
@@ -846,7 +846,7 @@ export const Slack = ({
     setIsRegularIngestionActive(true)
 
     try {
-      const response = await api.admin.slack.start_ingestion.$post({
+      const response = await api.slack.start_ingestion.$post({
         json: {
           connectorId: slackConnector.cId,
         },
@@ -1101,7 +1101,7 @@ const ManualIngestionForm = ({
           return
         }
 
-        const response = await api.admin.slack.ingest_more_channel.$post({
+        const response = await api.slack.ingest_more_channel.$post({
           json: {
             connectorId: connectorId,
             channelsToIngest: channelIdsList,

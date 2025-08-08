@@ -780,7 +780,7 @@ export const ChatBox = ({
     const loadInitialData = async () => {
       let processedConnectors: FetchedConnector[] = []
       try {
-        const response = await api.admin.connectors.all.$get(undefined, {
+        const response = await api.connectors.all.$get(undefined, {
           credentials: "include",
         })
         const data = await response.json()
