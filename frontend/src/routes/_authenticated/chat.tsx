@@ -2126,7 +2126,9 @@ export const ChatMessage = ({
         {isUser ? (
           <div
             className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
-            dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(DOMPurify.sanitize(message)) }}
+            dangerouslySetInnerHTML={{
+              __html: jsonToHtmlMessage(DOMPurify.sanitize(message)),
+            }}
           />
         ) : (
           <div

@@ -54,7 +54,6 @@ const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
 
-
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
