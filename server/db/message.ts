@@ -16,7 +16,6 @@ import {
   inArray,
   sql,
   desc,
-  sum,
   isNull,
 } from "drizzle-orm"
 import { z } from "zod"
@@ -133,7 +132,7 @@ export async function getMessageCountsByChats({
     .select({
       chatExternalId: chats.externalId,
       messageCount: count(messages.externalId),
-      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(chats)
@@ -206,7 +205,7 @@ export async function getMessageFeedbackStats({
       chatExternalId: messages.chatExternalId,
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)::int`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
-      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(messages)

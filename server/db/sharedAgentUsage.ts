@@ -312,7 +312,7 @@ export async function getAgentUsageByUsers({
       messageCount: count(messages.id),
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
-      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(messages)
@@ -430,7 +430,7 @@ export async function getUserAgentLeaderboard({
       messageCount: count(messages.id),
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
-      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(messages)
@@ -602,7 +602,7 @@ export async function getAgentAnalysis({
       messageCount: count(messages.id),
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
-      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(messages)

@@ -230,6 +230,13 @@ const getTimeRangeDescription = (
   }
 }
 
+// Utility function to safely convert cost values (which may be strings from numeric type) to numbers
+const safeNumberConversion = (value: any): number => {
+  if (typeof value === "number") return value
+  if (typeof value === "string") return parseFloat(value) || 0
+  return 0
+}
+
 const MetricCard = ({
   title,
   value,
@@ -256,6 +263,76 @@ const MetricCard = ({
     </CardContent>
   </Card>
 )
+
+const ShowMoreMetricsToggle = ({
+  showMoreMetrics,
+  onToggle,
+  variant = "default",
+  className = "",
+}: {
+  showMoreMetrics: boolean
+  onToggle: () => void
+  variant?: "default" | "muted"
+  className?: string
+}) => {
+  const baseClasses =
+    "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors"
+  const variantClasses =
+    variant === "muted"
+      ? "text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg"
+      : "text-muted-foreground hover:text-foreground"
+
+  return (
+    <div className={`flex justify-center ${className}`}>
+      <button onClick={onToggle} className={`${baseClasses} ${variantClasses}`}>
+        <span>
+          {showMoreMetrics ? "Show Less Metrics" : "Show More Metrics"}
+        </span>
+        <svg
+          className={`h-4 w-4 transition-transform duration-200 ${
+            showMoreMetrics ? "rotate-180" : ""
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+const ExpandableMetricsSection = ({
+  showMoreMetrics,
+  children,
+  className = "",
+  variant = "fade",
+}: {
+  showMoreMetrics: boolean
+  children: React.ReactNode
+  className?: string
+  variant?: "fade" | "slide"
+}) => {
+  if (variant === "slide") {
+    return showMoreMetrics ? <div className={className}>{children}</div> : null
+  }
+
+  return (
+    <div
+      className={`transition-all duration-300 ease-in-out overflow-hidden ${
+        showMoreMetrics ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  )
+}
 
 const MessageActivityChart = ({
   data,
@@ -495,7 +572,7 @@ const AgentUsageCard = ({
                   </div>
                   <div className="flex flex-col items-center">
                     <span className="text-sm font-medium">
-                      ${(agent.totalCost || 0).toFixed(4)}
+                      ${safeNumberConversion(agent.totalCost).toFixed(4)}
                     </span>
                     <span className="text-xs text-muted-foreground">cost</span>
                   </div>
@@ -755,42 +832,20 @@ const SharedAgentUsageCard = ({
       </div>
 
       {/* Show More Metrics Button */}
-      <div className="flex justify-center">
-        <button
-          onClick={() => setShowMoreMetrics(!showMoreMetrics)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <span>
-            {showMoreMetrics ? "Show Less Metrics" : "Show More Metrics"}
-          </span>
-          <svg
-            className={`h-4 w-4 transition-transform duration-200 ${
-              showMoreMetrics ? "rotate-180" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </button>
-      </div>
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+      />
 
       {/* Additional Metrics (Expandable) */}
-      <div
-        className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          showMoreMetrics ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
-        }`}
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        className="pt-2"
       >
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 pt-2">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${(totalUsage.totalCost || 0).toFixed(4)}`}
+            value={`$${safeNumberConversion(totalUsage.totalCost).toFixed(4)}`}
             description="Total LLM usage cost"
             icon={Activity}
           />
@@ -802,7 +857,7 @@ const SharedAgentUsageCard = ({
           />
           <MetricCard
             title="Cost Per Message"
-            value={`$${totalUsage.totalMessages > 0 ? ((totalUsage.totalCost || 0) / totalUsage.totalMessages).toFixed(6) : "0.000000"}`}
+            value={`$${totalUsage.totalMessages > 0 ? (safeNumberConversion(totalUsage.totalCost) / totalUsage.totalMessages).toFixed(6) : "0.000000"}`}
             description="Average cost per message"
             icon={Activity}
           />
@@ -811,7 +866,8 @@ const SharedAgentUsageCard = ({
             value={
               totalUsage.totalMessages > 0
                 ? Math.round(
-                    (totalUsage.totalTokens || 0) / totalUsage.totalMessages,
+                    safeNumberConversion(totalUsage.totalTokens) /
+                      totalUsage.totalMessages,
                   ).toLocaleString()
                 : "0"
             }
@@ -819,7 +875,7 @@ const SharedAgentUsageCard = ({
             icon={Activity}
           />
         </div>
-      </div>
+      </ExpandableMetricsSection>
 
       {/* Agent List */}
       {sharedAgents.length > 0 ? (
@@ -902,7 +958,7 @@ const SharedAgentUsageCard = ({
                       </div>
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">
-                          ${(agent.totalCost || 0).toFixed(4)}
+                          ${safeNumberConversion(agent.totalCost).toFixed(4)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           cost
@@ -1027,9 +1083,14 @@ const UsersAnalyticsTable = ({
       case "dislikes":
         return b.dislikes - a.dislikes
       case "cost":
-        return (b.totalCost || 0) - (a.totalCost || 0)
+        return (
+          safeNumberConversion(b.totalCost) - safeNumberConversion(a.totalCost)
+        )
       case "tokens":
-        return (b.totalTokens || 0) - (a.totalTokens || 0)
+        return (
+          safeNumberConversion(b.totalTokens) -
+          safeNumberConversion(a.totalTokens)
+        )
       case "lastUsed":
         return new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()
       default:
@@ -1170,7 +1231,7 @@ const UsersAnalyticsTable = ({
                       </div>
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">
-                          ${(user.totalCost || 0).toFixed(4)}
+                          ${safeNumberConversion(user.totalCost).toFixed(4)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           cost
@@ -1277,12 +1338,14 @@ const AgentDetailPage = ({
 
   const avgCostPerUser =
     agent.userUsage.length > 0
-      ? (agent.totalCost || 0) / agent.userUsage.length
+      ? safeNumberConversion(agent.totalCost) / agent.userUsage.length
       : 0
 
   const avgTokensPerUser =
     agent.userUsage.length > 0
-      ? Math.round((agent.totalTokens || 0) / agent.userUsage.length)
+      ? Math.round(
+          safeNumberConversion(agent.totalTokens) / agent.userUsage.length,
+        )
       : 0
 
   const satisfactionRate =
@@ -1376,34 +1439,21 @@ const AgentDetailPage = ({
       </div>
 
       {/* Show More Button */}
-      <div className="flex justify-center">
-        <button
-          onClick={() => setShowMoreMetrics(!showMoreMetrics)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors"
-        >
-          <span>{showMoreMetrics ? "Show Less" : "Show More Metrics"}</span>
-          <svg
-            className={`h-4 w-4 transition-transform ${showMoreMetrics ? "rotate-180" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </button>
-      </div>
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+        variant="muted"
+      />
 
       {/* Additional Metrics - Expandable */}
-      {showMoreMetrics && (
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        variant="slide"
+      >
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${(agent.totalCost || 0).toFixed(4)}`}
+            value={`$${safeNumberConversion(agent.totalCost).toFixed(4)}`}
             description={`Avg $${avgCostPerUser.toFixed(4)} per user`}
             icon={Activity}
             className="border-purple-200 dark:border-purple-800"
@@ -1417,7 +1467,7 @@ const AgentDetailPage = ({
           />
           <MetricCard
             title="Cost per Message"
-            value={`$${agent.totalMessages > 0 ? ((agent.totalCost || 0) / agent.totalMessages).toFixed(6) : "0.000000"}`}
+            value={`$${agent.totalMessages > 0 ? (safeNumberConversion(agent.totalCost) / agent.totalMessages).toFixed(6) : "0.000000"}`}
             description="Average cost per message"
             icon={Activity}
             className="border-yellow-200 dark:border-yellow-800"
@@ -1427,7 +1477,8 @@ const AgentDetailPage = ({
             value={
               agent.totalMessages > 0
                 ? Math.round(
-                    (agent.totalTokens || 0) / agent.totalMessages,
+                    safeNumberConversion(agent.totalTokens) /
+                      agent.totalMessages,
                   ).toLocaleString()
                 : "0"
             }
@@ -1436,7 +1487,7 @@ const AgentDetailPage = ({
             className="border-green-200 dark:border-green-800"
           />
         </div>
-      )}
+      </ExpandableMetricsSection>
 
       {/* Unified Users Table with Sort */}
       <UsersAnalyticsTable
@@ -1615,7 +1666,7 @@ const AdminUsersLeaderboard = ({
                     </div>
                     <div className="flex flex-col items-center">
                       <span className="text-sm font-medium">
-                        ${(user.totalCost || 0).toFixed(4)}
+                        ${safeNumberConversion(user.totalCost).toFixed(4)}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         cost
@@ -2425,34 +2476,21 @@ const UserDetailPage = ({
       </div>
 
       {/* Show More Button */}
-      <div className="flex justify-center">
-        <button
-          onClick={() => setShowMoreMetrics(!showMoreMetrics)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors"
-        >
-          <span>{showMoreMetrics ? "Show Less" : "Show More Metrics"}</span>
-          <svg
-            className={`h-4 w-4 transition-transform ${showMoreMetrics ? "rotate-180" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </button>
-      </div>
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+        variant="muted"
+      />
 
       {/* Additional Metrics - Expandable */}
-      {showMoreMetrics && (
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        variant="slide"
+      >
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${(userStats.totalCost || 0).toFixed(4)}`}
+            value={`$${safeNumberConversion(userStats.totalCost).toFixed(4)}`}
             description="LLM usage cost"
             icon={Activity}
             className="border-purple-200 dark:border-purple-800"
@@ -2466,7 +2504,7 @@ const UserDetailPage = ({
           />
           <MetricCard
             title="Cost per Message"
-            value={`$${userStats.totalMessages > 0 ? ((userStats.totalCost || 0) / userStats.totalMessages).toFixed(6) : "0.000000"}`}
+            value={`$${userStats.totalMessages > 0 ? (safeNumberConversion(userStats.totalCost) / userStats.totalMessages).toFixed(6) : "0.000000"}`}
             description="Average cost per message"
             icon={Activity}
             className="border-yellow-200 dark:border-yellow-800"
@@ -2476,7 +2514,8 @@ const UserDetailPage = ({
             value={
               userStats.totalMessages > 0
                 ? Math.round(
-                    (userStats.totalTokens || 0) / userStats.totalMessages,
+                    safeNumberConversion(userStats.totalTokens) /
+                      userStats.totalMessages,
                   ).toLocaleString()
                 : "0"
             }
@@ -2485,7 +2524,7 @@ const UserDetailPage = ({
             className="border-green-200 dark:border-green-800"
           />
         </div>
-      )}
+      </ExpandableMetricsSection>
 
       {/* Tabs for Charts */}
       <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
@@ -3827,48 +3866,22 @@ export const Dashboard = ({
                   </div>
 
                   {/* Show More Metrics Button */}
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() =>
-                        setShowMoreAdminMetrics(!showMoreAdminMetrics)
-                      }
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <span>
-                        {showMoreAdminMetrics
-                          ? "Show Less Metrics"
-                          : "Show More Metrics"}
-                      </span>
-                      <svg
-                        className={`h-4 w-4 transition-transform duration-200 ${
-                          showMoreAdminMetrics ? "rotate-180" : ""
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                  <ShowMoreMetricsToggle
+                    showMoreMetrics={showMoreAdminMetrics}
+                    onToggle={() =>
+                      setShowMoreAdminMetrics(!showMoreAdminMetrics)
+                    }
+                  />
 
                   {/* Additional Metrics (Expandable) */}
-                  <div
-                    className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                      showMoreAdminMetrics
-                        ? "max-h-96 opacity-100"
-                        : "max-h-0 opacity-0"
-                    }`}
+                  <ExpandableMetricsSection
+                    showMoreMetrics={showMoreAdminMetrics}
+                    className="pt-2"
                   >
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 pt-2">
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                       <MetricCard
                         title="Total Cost"
-                        value={`$${(adminStats.totalCost || 0).toFixed(4)}`}
+                        value={`$${safeNumberConversion(adminStats.totalCost).toFixed(4)}`}
                         description="System-wide LLM usage cost"
                         icon={Activity}
                       />
@@ -3880,7 +3893,7 @@ export const Dashboard = ({
                       />
                       <MetricCard
                         title="Cost Per Message"
-                        value={`$${adminStats.totalMessages > 0 ? ((adminStats.totalCost || 0) / adminStats.totalMessages).toFixed(6) : "0.000000"}`}
+                        value={`$${adminStats.totalMessages > 0 ? (safeNumberConversion(adminStats.totalCost) / adminStats.totalMessages).toFixed(6) : "0.000000"}`}
                         description="Average cost per message"
                         icon={Activity}
                       />
@@ -3889,7 +3902,7 @@ export const Dashboard = ({
                         value={
                           adminStats.totalMessages > 0
                             ? Math.round(
-                                (adminStats.totalTokens || 0) /
+                                safeNumberConversion(adminStats.totalTokens) /
                                   adminStats.totalMessages,
                               ).toLocaleString()
                             : "0"
@@ -3898,7 +3911,7 @@ export const Dashboard = ({
                         icon={Activity}
                       />
                     </div>
-                  </div>
+                  </ExpandableMetricsSection>
 
                   {/* Tabs for Charts */}
                   <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">

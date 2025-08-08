@@ -1247,7 +1247,7 @@ export const GetAdminChats = async (c: Context) => {
         messageCount: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
-        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
         totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
       })
       .from(chats)
@@ -1317,7 +1317,7 @@ export const GetAdminUsers = async (c: Context) => {
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
-        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::real`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
         totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
       })
       .from(users)
