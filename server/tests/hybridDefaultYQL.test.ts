@@ -2,9 +2,11 @@ import { Apps, DriveEntity } from "@/search/types"
 import { HybridDefaultProfile, SearchModes } from "@/search/vespa"
 import { expect, test, describe } from "bun:test"
 
+const fakeEmails = ["user@example.com"]
+
 describe("HybridDefaultProfile", () => {
   test("basic query without optional parameters", () => {
-    const result = HybridDefaultProfile(10, null, null)
+    const result = HybridDefaultProfile(10, null, null, fakeEmails)
     expect(result.profile).toBe(SearchModes.NativeRank)
     expect(result.yql).toContain("{targetHits:10}")
     expect(result.yql).toContain("permissions contains @email")
@@ -16,13 +18,13 @@ describe("HybridDefaultProfile", () => {
   })
 
   test("query with app filter", () => {
-    const result = HybridDefaultProfile(5, Apps.Gmail, null)
+    const result = HybridDefaultProfile(5, Apps.Gmail, null, fakeEmails)
     expect(result.yql).toContain("app contains @app")
     expect(result.yql).not.toContain("entity contains")
   })
 
   test("query with entity filter", () => {
-    const result = HybridDefaultProfile(5, null, DriveEntity.Docs)
+    const result = HybridDefaultProfile(5, null, DriveEntity.Docs, fakeEmails)
     expect(result.yql).toContain("entity contains @entity")
     expect(result.yql).not.toContain("app contains")
   })
@@ -33,6 +35,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       timestampRange,
     )
@@ -50,6 +53,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       timestampRange,
     )
@@ -67,6 +71,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       timestampRange,
     )
@@ -84,6 +89,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       null,
       excludedIds,
@@ -99,6 +105,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       null,
       [],
@@ -115,6 +122,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
+      fakeEmails,
       SearchModes.NativeRank,
       invalidTimestampRange,
     )
@@ -132,6 +140,7 @@ describe("HybridDefaultProfile", () => {
       5,
       Apps.GoogleWorkspace,
       DriveEntity.PDF,
+      fakeEmails,
       SearchModes.NativeRank,
       timestampRange,
       excludedIds,
@@ -152,6 +161,7 @@ describe("HybridDefaultProfile", () => {
       5,
       Apps.GoogleWorkspace,
       DriveEntity.PDF,
+      fakeEmails,
       SearchModes.NativeRank,
       timestampRange,
     )

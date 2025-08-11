@@ -228,9 +228,9 @@ export const autocomplete = async (
   // Build the email permissions condition using the array of emails.
   // This creates a clause like:
   // (permissions contains "user@example.com" or permissions contains "group@example.com")
-  let emailQuery = ""
+  let permissionsQuery = ""
   if (emails && emails.length > 0) {
-    emailQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+    permissionsQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
   }
 
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
@@ -239,7 +239,7 @@ export const autocomplete = async (
   const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and ${emailQuery}))
+        and ${permissionsQuery}))
         or
         (
             (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
@@ -258,10 +258,10 @@ export const autocomplete = async (
         )
         or
         (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and ${emailQuery}))
+        and ${permissionsQuery}))
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and ${emailQuery}))
+        and ${permissionsQuery}))
         or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
@@ -271,7 +271,7 @@ export const autocomplete = async (
             name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
             email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
           )
-          and ${emailQuery})
+          and ${permissionsQuery})
         )
         `
 
@@ -332,6 +332,7 @@ export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
+  emails: string[],
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -368,6 +369,15 @@ export const HybridDefaultProfile = (
     if (!notInMailLabels || notInMailLabels.length === 0) return ""
     return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
+
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let permissionsQuery = ""
+  if (emails && emails.length > 0) {
+    permissionsQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   const intentFilter = intent ? buildIntentFilter(intent) : ""
 
   // App-specific YQL builders
@@ -389,7 +399,7 @@ export const HybridDefaultProfile = (
         ${
           !hasAppOrEntity
             ? `and app contains "${Apps.GoogleWorkspace}"`
-            : `${appOrEntityFilter} and permissions contains @email`
+            : `${appOrEntityFilter} and ${permissionsQuery}`
         }
         ${intentFilter}
       )
@@ -418,7 +428,7 @@ export const HybridDefaultProfile = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${mailTimestamp.length ? `and (${mailTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${mailLabelQuery}
         ${appOrEntityFilter}
         ${intentFilter}
@@ -435,7 +445,7 @@ export const HybridDefaultProfile = (
             or
             ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
       )
-      and (permissions contains @email or owner contains @email)
+      and (${permissionsQuery} or owner contains @email)
       ${timestamp.length ? `and (${timestamp})` : ""}
       ${appOrEntityFilter}
       ${intentFilter}
@@ -454,7 +464,7 @@ export const HybridDefaultProfile = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${appOrEntityFilter}
         ${intentFilter}
       )`
@@ -471,7 +481,7 @@ export const HybridDefaultProfile = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${appOrEntityFilter}
         ${intentFilter}
       )`
@@ -604,6 +614,7 @@ export const HybridDefaultProfileForAgent = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
+  emails: string[],
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -638,6 +649,15 @@ export const HybridDefaultProfileForAgent = (
     if (!notInMailLabels || notInMailLabels.length === 0) return ""
     return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
+
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let permissionsQuery = ""
+  if (emails && emails.length > 0) {
+    permissionsQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   // App-specific YQL builders
   const buildGoogleWorkspaceYQL = () => {
     const userTimestamp = buildTimestampConditions(
@@ -654,7 +674,7 @@ export const HybridDefaultProfileForAgent = (
         ${
           !hasAppOrEntity
             ? `and app contains "${Apps.GoogleWorkspace}"`
-            : `${appOrEntityFilter} and permissions contains @email`
+            : `${appOrEntityFilter} and ${permissionsQuery}`
         }
       )
       or
@@ -679,7 +699,7 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${timestampRange ? `and (${mailTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${mailLabelQuery}
         ${appOrEntityFilter}
         ${intentFilter}
@@ -697,7 +717,7 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${timestampRange ? `and (${fileTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${appOrEntityFilter}
         ${intentFilter}
       )
@@ -715,7 +735,7 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${timestampRange ? `and (${eventTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${appOrEntityFilter}
         ${intentFilter}
       )`
@@ -856,6 +876,7 @@ export const HybridDefaultProfileForAgent = (
 
 export const HybridDefaultProfileInFiles = (
   hits: number,
+  emails: string[],
   profile: SearchModes = SearchModes.NativeRank,
   fileIds: string[],
   notInMailLabels?: string[],
@@ -876,6 +897,14 @@ export const HybridDefaultProfileInFiles = (
     ? `and (${contextClauses.join(" or ")})`
     : ""
 
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let permissionsQuery = ""
+  if (emails && emails.length > 0) {
+    permissionsQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
@@ -888,7 +917,7 @@ export const HybridDefaultProfileInFiles = (
               or
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            and permissions contains @email ${mailLabelQuery}
+            and ${permissionsQuery} ${mailLabelQuery}
             ${specificContextQuery} 
           )
             or
@@ -898,12 +927,12 @@ export const HybridDefaultProfileInFiles = (
               or
               ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
             )
-              and permissions contains @email ${specificContextQuery}
+              and ${permissionsQuery} ${specificContextQuery}
             )
           or
           (
             ({targetHits:${hits}}userInput(@query))
-            and permissions contains @email ${specificContextQuery}
+            and ${permissionsQuery} ${specificContextQuery}
           )
           or
           (
@@ -979,6 +1008,7 @@ export const HybridDefaultProfileForSlack = (
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
+  emails: string[],
   notInMailLabels?: string[],
   excludedApps?: Apps[],
 ): YqlProfile => {
@@ -1005,6 +1035,11 @@ const HybridDefaultProfileAppEntityCounts = (
     throw new Error("Invalid timestamp range")
   }
 
+  let permissionsQuery = ""
+  if (emails && emails.length > 0) {
+    permissionsQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   // App-specific YQL builders for counting
   const buildFilesAndMailYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
@@ -1019,7 +1054,7 @@ const HybridDefaultProfileAppEntityCounts = (
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         )
         ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
         ${mailLabelQuery}
       )`
   }
@@ -1036,7 +1071,7 @@ const HybridDefaultProfileAppEntityCounts = (
           ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
         )
         ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-        and permissions contains @email
+        and ${permissionsQuery}
       )`
   }
 
@@ -1275,9 +1310,15 @@ async function _groupVespaSearch(
     excludedApps.push(Apps.Slack)
   }
 
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
+    emails,
     [], // notInMailLabels
     excludedApps, // excludedApps as fourth parameter
   )
@@ -1439,10 +1480,16 @@ async function _searchVespa(
     excludedApps.push(Apps.Slack)
   }
 
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
     entity,
+    emails,
     rankProfile,
     timestampRange,
     excludedIds,
@@ -1503,8 +1550,14 @@ export const searchVespaInFiles = async (
 ): Promise<VespaSearchResponse> => {
   const isDebugMode = config.isDebugMode || requestDebug || false
 
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+
   let { yql, profile } = HybridDefaultProfileInFiles(
     limit,
+    emails,
     rankProfile,
     fileIds,
     notInMailLabels,
@@ -1665,10 +1718,16 @@ export const searchVespaAgent = async (
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+
   let { yql, profile } = HybridDefaultProfileForAgent(
     limit,
     app,
     entity,
+    emails,
     rankProfile,
     timestampRange,
     excludedIds,
@@ -2347,6 +2406,7 @@ export const getItems = async (
   if (schema === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
+    // todo figure out what to do here
     conditions.push(`permissions contains '${email}'`)
   } else {
     // For user schema
