@@ -404,10 +404,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     blockedPdfs,
   })
 }
-const updateApp = new Hono()
 
-updateApp.post("/update-metrics", handleUpdatedMetrics)
-app.route("/", updateApp)
+app2.post("/update-metrics", handleUpdatedMetrics)
 
 // App validatione endpoint
 
