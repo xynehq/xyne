@@ -313,7 +313,7 @@ export async function getAgentUsageByUsers({
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -431,7 +431,7 @@ export async function getUserAgentLeaderboard({
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -603,7 +603,7 @@ export async function getAgentAnalysis({
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))

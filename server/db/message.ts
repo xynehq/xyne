@@ -133,7 +133,7 @@ export async function getMessageCountsByChats({
       chatExternalId: chats.externalId,
       messageCount: count(messages.externalId),
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(chats)
     .leftJoin(
@@ -151,8 +151,8 @@ export async function getMessageCountsByChats({
   for (const row of result) {
     countMap[row.chatExternalId] = {
       messageCount: row.messageCount,
-      totalCost: Number(row.totalCost) || 0, // Convert string to number
-      totalTokens: row.totalTokens,
+      totalCost: Number(row.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(row.totalTokens) || 0, // bigint → string at runtime
     }
   }
 
@@ -204,7 +204,7 @@ export async function getMessageFeedbackStats({
       likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)::int`,
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(messages)
     .where(
@@ -254,12 +254,12 @@ export async function getMessageFeedbackStats({
   result.forEach((row) => {
     feedbackByChat[row.chatExternalId].likes = row.likes
     feedbackByChat[row.chatExternalId].dislikes = row.dislikes
-    feedbackByChat[row.chatExternalId].cost = Number(row.totalCost) || 0 // Convert string to number
-    feedbackByChat[row.chatExternalId].tokens = row.totalTokens
+    feedbackByChat[row.chatExternalId].cost = Number(row.totalCost) || 0 // numeric → string at runtime
+    feedbackByChat[row.chatExternalId].tokens = Number(row.totalTokens) || 0 // bigint → string at runtime
     totalLikes += row.likes
     totalDislikes += row.dislikes
-    totalCost += Number(row.totalCost) || 0 // Convert string to number
-    totalTokens += row.totalTokens
+    totalCost += Number(row.totalCost) || 0 // numeric → string at runtime
+    totalTokens += Number(row.totalTokens) || 0 // bigint → string at runtime
   })
 
   // Process detailed feedback messages

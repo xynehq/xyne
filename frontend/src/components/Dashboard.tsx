@@ -237,6 +237,26 @@ const safeNumberConversion = (value: any): number => {
   return 0
 }
 
+// Utility function to convert USD to INR and format as currency
+const formatCostInINR = (usdAmount: any): string => {
+  const USD_TO_INR_RATE = 83.0 // Approximate exchange rate (1 USD = 83 INR)
+  const usdValue = safeNumberConversion(usdAmount)
+  const inrValue = usdValue * USD_TO_INR_RATE
+  return `₹${inrValue.toFixed(2)}`
+}
+
+// Utility function for cost per message in INR
+const formatCostPerMessageInINR = (
+  totalCost: any,
+  messageCount: number,
+): string => {
+  if (messageCount === 0) return "₹0.00"
+  const USD_TO_INR_RATE = 83.0
+  const usdValue = safeNumberConversion(totalCost)
+  const inrValue = (usdValue * USD_TO_INR_RATE) / messageCount
+  return `₹${inrValue.toFixed(4)}`
+}
+
 const MetricCard = ({
   title,
   value,
@@ -572,7 +592,7 @@ const AgentUsageCard = ({
                   </div>
                   <div className="flex flex-col items-center">
                     <span className="text-sm font-medium">
-                      ${safeNumberConversion(agent.totalCost).toFixed(4)}
+                      {formatCostInINR(agent.totalCost)}
                     </span>
                     <span className="text-xs text-muted-foreground">cost</span>
                   </div>
@@ -845,7 +865,7 @@ const SharedAgentUsageCard = ({
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${safeNumberConversion(totalUsage.totalCost).toFixed(4)}`}
+            value={formatCostInINR(totalUsage.totalCost)}
             description="Total LLM usage cost"
             icon={Activity}
           />
@@ -857,7 +877,10 @@ const SharedAgentUsageCard = ({
           />
           <MetricCard
             title="Cost Per Message"
-            value={`$${totalUsage.totalMessages > 0 ? (safeNumberConversion(totalUsage.totalCost) / totalUsage.totalMessages).toFixed(6) : "0.000000"}`}
+            value={formatCostPerMessageInINR(
+              totalUsage.totalCost,
+              totalUsage.totalMessages,
+            )}
             description="Average cost per message"
             icon={Activity}
           />
@@ -958,7 +981,7 @@ const SharedAgentUsageCard = ({
                       </div>
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">
-                          ${safeNumberConversion(agent.totalCost).toFixed(4)}
+                          {formatCostInINR(agent.totalCost)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           cost
@@ -1231,7 +1254,7 @@ const UsersAnalyticsTable = ({
                       </div>
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">
-                          ${safeNumberConversion(user.totalCost).toFixed(4)}
+                          {formatCostInINR(user.totalCost)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           cost
@@ -1453,8 +1476,8 @@ const AgentDetailPage = ({
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${safeNumberConversion(agent.totalCost).toFixed(4)}`}
-            description={`Avg $${avgCostPerUser.toFixed(4)} per user`}
+            value={formatCostInINR(agent.totalCost)}
+            description={`Avg ${formatCostInINR(avgCostPerUser)} per user`}
             icon={Activity}
             className="border-purple-200 dark:border-purple-800"
           />
@@ -1467,7 +1490,10 @@ const AgentDetailPage = ({
           />
           <MetricCard
             title="Cost per Message"
-            value={`$${agent.totalMessages > 0 ? (safeNumberConversion(agent.totalCost) / agent.totalMessages).toFixed(6) : "0.000000"}`}
+            value={formatCostPerMessageInINR(
+              agent.totalCost,
+              agent.totalMessages,
+            )}
             description="Average cost per message"
             icon={Activity}
             className="border-yellow-200 dark:border-yellow-800"
@@ -1666,7 +1692,7 @@ const AdminUsersLeaderboard = ({
                     </div>
                     <div className="flex flex-col items-center">
                       <span className="text-sm font-medium">
-                        ${safeNumberConversion(user.totalCost).toFixed(4)}
+                        {formatCostInINR(user.totalCost)}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         cost
@@ -1781,7 +1807,7 @@ const UserAgentLeaderboardCard = ({
           Agent Usage Leaderboard
         </CardTitle>
         <CardDescription>
-          Ranked by total messages sent to each agent
+          Ranked by total messages sent to each agent with cost and token usage
         </CardDescription>
         {/* Search */}
         <div className="mt-4">
@@ -1840,9 +1866,24 @@ const UserAgentLeaderboardCard = ({
                     </span>
                   </div>
                   <div className="flex flex-col items-center">
-                    <Badge variant="secondary" className="min-w-[60px]">
-                      {agent.chatCount} chats
-                    </Badge>
+                    <span className="text-sm font-medium">
+                      {agent.chatCount}
+                    </span>
+                    <span className="text-xs text-muted-foreground">chats</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {formatCostInINR(agent.totalCost)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">cost</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {(agent.totalTokens || 0).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      tokens
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 text-green-600">
@@ -2153,9 +2194,7 @@ const UserDetailPage = ({
     UserAgentLeaderboard[]
   >([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<
-    "normal" | "agent" | "leaderboard"
-  >("agent")
+  const [activeTab, setActiveTab] = useState<"normal" | "agent">("agent")
   const [showMoreMetrics, setShowMoreMetrics] = useState(false)
 
   useEffect(() => {
@@ -2490,7 +2529,7 @@ const UserDetailPage = ({
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             title="Total Cost"
-            value={`$${safeNumberConversion(userStats.totalCost).toFixed(4)}`}
+            value={formatCostInINR(userStats.totalCost)}
             description="LLM usage cost"
             icon={Activity}
             className="border-purple-200 dark:border-purple-800"
@@ -2504,7 +2543,10 @@ const UserDetailPage = ({
           />
           <MetricCard
             title="Cost per Message"
-            value={`$${userStats.totalMessages > 0 ? (safeNumberConversion(userStats.totalCost) / userStats.totalMessages).toFixed(6) : "0.000000"}`}
+            value={formatCostPerMessageInINR(
+              userStats.totalCost,
+              userStats.totalMessages,
+            )}
             description="Average cost per message"
             icon={Activity}
             className="border-yellow-200 dark:border-yellow-800"
@@ -2554,36 +2596,27 @@ const UserDetailPage = ({
             Normal Message Analysis
           </div>
         </button>
-        <button
-          onClick={() => setActiveTab("leaderboard")}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === "leaderboard"
-              ? "bg-white dark:bg-gray-800 shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Trophy className="h-4 w-4" />
-            Agent Leaderboard
-          </div>
-        </button>
       </div>
 
       {/* Charts Section based on active tab */}
       {activeTab === "agent" ? (
-        <MessageActivityChart
-          data={userStats.recentActivity}
-          timeRange={timeRange}
-          type="agent"
-        />
-      ) : activeTab === "normal" ? (
-        <MessageActivityChart
-          data={userStats.recentActivity}
-          timeRange={timeRange}
-          type="normal"
-        />
+        <div className="space-y-6">
+          <MessageActivityChart
+            data={userStats.recentActivity}
+            timeRange={timeRange}
+            type="agent"
+          />
+          <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        </div>
       ) : (
-        <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        <div className="space-y-6">
+          <MessageActivityChart
+            data={userStats.recentActivity}
+            timeRange={timeRange}
+            type="normal"
+          />
+          <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        </div>
       )}
     </div>
   )
@@ -3396,7 +3429,7 @@ export const Dashboard = ({
           totalCost: 0,
           totalTokens: 0,
           lastActive: chat.createdAt,
-          createdAt: chat.user?.createdAt || chat.createdAt,
+          createdAt: chat.userCreatedAt || chat.createdAt, // Use userCreatedAt (user's join date) instead of chat creation date
         })
       }
 
@@ -3763,6 +3796,10 @@ export const Dashboard = ({
                     timeRange={timeRange}
                     type="normal"
                   />
+                  <AgentUsageCard
+                    agentUsage={stats.agentUsage}
+                    showAll={true}
+                  />
                 </div>
               )}
             </>
@@ -3881,7 +3918,7 @@ export const Dashboard = ({
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                       <MetricCard
                         title="Total Cost"
-                        value={`$${safeNumberConversion(adminStats.totalCost).toFixed(4)}`}
+                        value={formatCostInINR(adminStats.totalCost)}
                         description="System-wide LLM usage cost"
                         icon={Activity}
                       />
@@ -3893,7 +3930,10 @@ export const Dashboard = ({
                       />
                       <MetricCard
                         title="Cost Per Message"
-                        value={`$${adminStats.totalMessages > 0 ? (safeNumberConversion(adminStats.totalCost) / adminStats.totalMessages).toFixed(6) : "0.000000"}`}
+                        value={formatCostPerMessageInINR(
+                          adminStats.totalCost,
+                          adminStats.totalMessages,
+                        )}
                         description="Average cost per message"
                         icon={Activity}
                       />
