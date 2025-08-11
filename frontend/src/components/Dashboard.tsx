@@ -693,74 +693,67 @@ const SharedAgentUsageCard = ({
 
   if (loading) {
     return (
-      <div className="space-y-6 min-h-[500px]">
-        {/* Summary Cards Skeleton - Match exact structure */}
+      <div className="space-y-6">
+        {/* Summary Cards - Show immediately with actual structure */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-          {[...Array(6)].map((_, index) => (
-            <Card key={index} className="animate-pulse">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 bg-muted rounded w-20"></div>
-                <div className="h-4 w-4 bg-muted rounded"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-muted rounded w-12 mb-2"></div>
-                <div className="h-4 bg-muted rounded w-24"></div>
-              </CardContent>
-            </Card>
-          ))}
+          <MetricCard
+            title="My Agents"
+            value="..."
+            description="Public agents you created"
+            icon={Bot}
+          />
+          <MetricCard
+            title="Total Chats"
+            value="..."
+            description="Across all shared agents"
+            icon={MessageSquare}
+          />
+          <MetricCard
+            title="Total Messages"
+            value="..."
+            description="All user interactions total"
+            icon={Activity}
+          />
+          <MetricCard
+            title="Total Users"
+            value="..."
+            description="Users who used your agents"
+            icon={Users}
+          />
+          <MetricCard
+            title="Total Likes"
+            value="..."
+            description="Positive feedback received"
+            icon={ThumbsUp}
+          />
+          <MetricCard
+            title="Satisfaction"
+            value="..."
+            description="Loading..."
+            icon={ThumbsDown}
+          />
         </div>
 
-        {/* Main Content Skeleton - Match exact structure */}
-        <Card className="flex-1">
+        {/* Show More Metrics Button - Match actual layout */}
+        <ShowMoreMetricsToggle showMoreMetrics={false} onToggle={() => {}} />
+
+        {/* Agent List Loading - Simple skeleton */}
+        <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="h-6 bg-muted rounded w-40 mb-2"></div>
-                <div className="h-4 bg-muted rounded w-64"></div>
-              </div>
-              <div className="h-6 bg-muted rounded w-16"></div>
-            </div>
-            {/* Search skeleton */}
-            <div className="mt-4">
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 bg-muted rounded"></div>
-                <div className="w-full pl-10 pr-4 py-2 h-10 bg-muted rounded-md"></div>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              Your Shared Agents
+            </CardTitle>
+            <CardDescription>Loading your agents...</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="max-h-80 overflow-y-auto space-y-4">
-              {/* Agent list skeleton */}
-              {[...Array(3)].map((_, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/20 animate-pulse min-h-[80px]"
-                >
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className="w-8 h-8 bg-muted rounded-full"></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="h-4 bg-muted rounded w-32 mb-2"></div>
-                      <div className="h-3 bg-muted rounded w-48"></div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-right">
-                    <div className="flex flex-col items-center">
-                      <div className="h-4 bg-muted rounded w-8 mb-1"></div>
-                      <div className="h-3 bg-muted rounded w-12"></div>
-                    </div>
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 bg-muted rounded w-8"></div>
-                      <div className="h-4 bg-muted rounded w-8"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Footer skeleton */}
-            <div className="text-center pt-2 border-t">
-              <div className="h-3 bg-muted rounded w-32 mx-auto"></div>
+          <CardContent>
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center space-y-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-sm text-muted-foreground">
+                  Loading agents...
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -3806,25 +3799,23 @@ export const Dashboard = ({
           ) : mainTab === "shared-agents" ? (
             <>
               {/* Shared Agent Usage Tab Content */}
-              <div className="min-h-[600px]">
-                {sharedAgentError ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center text-red-600 dark:text-red-400">
-                        {sharedAgentError}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <SharedAgentUsageCard
-                    sharedAgentData={sharedAgentStats}
-                    loading={sharedAgentLoading}
-                    timeRange={timeRange}
-                    selectedAgent={selectedSharedAgent}
-                    setSelectedAgent={setSelectedSharedAgent}
-                  />
-                )}
-              </div>
+              {sharedAgentError ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center text-red-600 dark:text-red-400">
+                      {sharedAgentError}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <SharedAgentUsageCard
+                  sharedAgentData={sharedAgentStats}
+                  loading={sharedAgentLoading}
+                  timeRange={timeRange}
+                  selectedAgent={selectedSharedAgent}
+                  setSelectedAgent={setSelectedSharedAgent}
+                />
+              )}
             </>
           ) : mainTab === "admin-overview" ? (
             <>
