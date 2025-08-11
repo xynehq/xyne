@@ -148,6 +148,7 @@ import {
   DeleteAgentApi,
   GetWorkspaceUsersApi,
   GetAgentPermissionsApi,
+  GetAgentIntegrationItemsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -166,6 +167,21 @@ import {
   messageFeedbackSchema,
   enhancedMessageFeedbackSchema,
 } from "@/api/chat/types"
+
+import {
+  CreateKnowledgeBaseApi,
+  ListKnowledgeBasesApi,
+  GetKnowledgeBaseApi,
+  UpdateKnowledgeBaseApi,
+  DeleteKnowledgeBaseApi,
+  ListKbItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+  GetKbVespaIds,
+} from "@/api/knowledgeBase"
 
 import {
   isSlackEnabled,
@@ -750,6 +766,7 @@ export const AppRoutes = app
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
+  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
@@ -762,6 +779,21 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  // Knowledge Base Routes
+  .post("/kb", CreateKnowledgeBaseApi)
+  .get("/kb", ListKnowledgeBasesApi)
+  .get("/kb/:kbId", GetKnowledgeBaseApi)
+  .put("/kb/:kbId", UpdateKnowledgeBaseApi)
+  .delete("/kb/:kbId", DeleteKnowledgeBaseApi)
+  .get("/kb/:kbId/items", ListKbItemsApi)
+  .post("/kb/:kbId/items/folder", CreateFolderApi)
+  .post("/kb/:kbId/items/upload", UploadFilesApi)
+  .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/kb/:kbId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
+  .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
+  .post("/kb/vespaIds", GetKbVespaIds)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug
@@ -1123,6 +1155,7 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
@@ -1198,6 +1231,16 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledge-base",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()
