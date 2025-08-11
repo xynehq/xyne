@@ -1261,7 +1261,13 @@ export const GetAdminChats = async (c: Context) => {
             .groupBy(chats.id, users.email, users.name, users.role)
         : await baseQuery.groupBy(chats.id, users.email, users.name, users.role)
 
-    return c.json(result)
+    // Convert totalCost from string to number (PostgreSQL numeric returns string)
+    const processedResult = result.map((chat) => ({
+      ...chat,
+      totalCost: Number(chat.totalCost) || 0,
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin chats")
     return c.json(
@@ -1333,7 +1339,13 @@ export const GetAdminUsers = async (c: Context) => {
         users.deletedAt,
       )
 
-    return c.json(result)
+    // Convert totalCost from string to number (PostgreSQL numeric returns string)
+    const processedResult = result.map((user) => ({
+      ...user,
+      totalCost: Number(user.totalCost) || 0,
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin users")
     return c.json(

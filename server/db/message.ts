@@ -136,13 +136,11 @@ export async function getMessageCountsByChats({
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::int`,
     })
     .from(chats)
-    .leftJoin(messages, eq(chats.id, messages.chatId))
-    .where(
-      and(
-        inArray(chats.externalId, chatExternalIds),
-        isNull(messages.deletedAt),
-      ),
+    .leftJoin(
+      messages,
+      and(eq(chats.id, messages.chatId), isNull(messages.deletedAt)),
     )
+    .where(inArray(chats.externalId, chatExternalIds))
     .groupBy(chats.externalId)
 
   // Convert to a map for easier lookup
@@ -153,7 +151,7 @@ export async function getMessageCountsByChats({
   for (const row of result) {
     countMap[row.chatExternalId] = {
       messageCount: row.messageCount,
-      totalCost: row.totalCost,
+      totalCost: Number(row.totalCost) || 0, // Convert string to number
       totalTokens: row.totalTokens,
     }
   }
@@ -256,11 +254,11 @@ export async function getMessageFeedbackStats({
   result.forEach((row) => {
     feedbackByChat[row.chatExternalId].likes = row.likes
     feedbackByChat[row.chatExternalId].dislikes = row.dislikes
-    feedbackByChat[row.chatExternalId].cost = row.totalCost
+    feedbackByChat[row.chatExternalId].cost = Number(row.totalCost) || 0 // Convert string to number
     feedbackByChat[row.chatExternalId].tokens = row.totalTokens
     totalLikes += row.likes
     totalDislikes += row.dislikes
-    totalCost += row.totalCost
+    totalCost += Number(row.totalCost) || 0 // Convert string to number
     totalTokens += row.totalTokens
   })
 

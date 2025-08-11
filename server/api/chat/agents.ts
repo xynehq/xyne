@@ -441,8 +441,8 @@ async function* getToolContinuationIterator(
     if (chunk.cost) {
       yield { cost: chunk.cost }
     }
-    if (chunk.metadata) {
-      yield { metadata: chunk.metadata }
+    if (chunk.metadata?.usage) {
+      yield { metadata: { usage: chunk.metadata.usage } }
     }
   }
 }
