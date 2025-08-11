@@ -122,7 +122,7 @@ import {
   chatMessageSchema,
   chatUserSchema,
   dataSourceFileSchema,
-  kbFileSchema,
+  kbItemsSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -426,7 +426,7 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === dataSourceFileSchema) {
+        if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbItemsSchema) {
           // Skip datasource and KB files from citations
           continue
         }

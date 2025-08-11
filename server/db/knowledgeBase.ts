@@ -1,47 +1,41 @@
 import {
+  kbCollection,
   kbItems,
-  kbFiles,
-  type KnowledgeBase,
+  type KbCollection,
+  type NewKbCollection,
   type KbItem,
   type NewKbItem,
+  type File,
+  type Folder,
+  // Legacy type aliases for backwards compatibility
+  type KnowledgeBase,
+  type NewKnowledgeBase,
   type KbFile,
   type NewKbFile,
 } from "@/db/schema"
 
-// For the unified schema, KnowledgeBase is a KbItem with type "knowledge_base"
-type NewKnowledgeBase = Omit<
-  NewKbItem,
-  "type" | "parentId" | "path" | "position" | "totalCount"
-> & {
-  type?: "knowledge_base"
-  parentId?: null
-  path?: string
-  position?: number
-  totalCount?: number
-}
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { and, asc, desc, eq, isNull, sql, or } from "drizzle-orm"
 
-// Knowledge Base CRUD operations
+// Knowledge Base Collection CRUD operations
 export const createKnowledgeBase = async (
   trx: TxnOrClient,
-  kb: NewKnowledgeBase,
+  kb: Omit<NewKnowledgeBase, 'vespaDocId'>,
 ): Promise<KnowledgeBase> => {
-  const kbData: NewKbItem = {
+  // Generate vespa doc ID for the KB
+  const vespaDocId = generateKbVespaDocId()
+  
+  const kbData: NewKbCollection = {
     ...kb,
-    type: "knowledge_base",
-    parentId: null,
-    path: "/",
-    position: 0,
-    totalCount: 0,
+    vespaDocId,
   }
 
-  const [result] = await trx.insert(kbItems).values(kbData).returning()
+  const [result] = await trx.insert(kbCollection).values(kbData).returning()
   if (!result) {
     throw new Error("Failed to create knowledge base")
   }
-  return result as KnowledgeBase
+  return result
 }
 
 export const getKnowledgeBaseById = async (
@@ -50,9 +44,9 @@ export const getKnowledgeBaseById = async (
 ): Promise<KnowledgeBase | null> => {
   const [result] = await trx
     .select()
-    .from(kbItems)
-    .where(and(eq(kbItems.id, kbId), eq(kbItems.type, "knowledge_base")))
-  return (result as KnowledgeBase) || null
+    .from(kbCollection)
+    .where(and(eq(kbCollection.id, kbId), isNull(kbCollection.deletedAt)))
+  return result || null
 }
 
 export const getKnowledgeBasesByOwner = async (
@@ -61,81 +55,15 @@ export const getKnowledgeBasesByOwner = async (
 ): Promise<KnowledgeBase[]> => {
   const results = await trx
     .select()
-    .from(kbItems)
+    .from(kbCollection)
     .where(
       and(
-        eq(kbItems.ownerId, ownerId),
-        eq(kbItems.type, "knowledge_base"),
-        isNull(kbItems.parentId),
-        isNull(kbItems.deletedAt),
+        eq(kbCollection.ownerId, ownerId),
+        isNull(kbCollection.deletedAt),
       ),
     )
-    .orderBy(desc(kbItems.updatedAt))
-  return results as KnowledgeBase[]
-}
-
-// list item by the level
-// need to do the level order traversal will always have the parentId
-// based on that we will go down
-export const getParentItems = async (
-  parentId: string,
-  trx: TxnOrClient,
-): Promise<KbItem[]> => {
-  // since I have the id of parent
-  const results = await trx
-    .select()
-    .from(kbItems)
-    .where(and(eq(kbItems.parentId, parentId), isNull(kbItems.deletedAt)))
+    .orderBy(desc(kbCollection.updatedAt))
   return results
-}
-
-export const getAllFolderItems = async (
-  parentId: string[],
-  trx: TxnOrClient,
-) => {
-  const res:string[] = []
-  let queue: any[] = []
-  if(parentId.length==0){
-    return res
-  }
-  for (const id of parentId) {
-    queue.push(id)
-  }
-  while (queue.length > 0) {
-    const curr = queue.shift()
-
-    const resp = await getParentItems(curr, trx)
-    if (resp.length == 0) {
-      res.push(curr)
-      continue
-    }
-    for (const item of resp) {
-      if (item.type == "folder" || item.type == "knowledge_base") {
-        queue.push(item.id)
-        res.push(item.id)
-      } else if (item.type == "file") {
-        res.push(item.id)
-      }
-    }
-  }
-  return res
-}
-
-export const getKbFilesVespaIds = async (
-  KbFilesId: string[],
-  trx: TxnOrClient,
-) => {
-  const resp = await trx
-    .select({ vespaDocId: kbFiles.vespaDocId })
-    .from(kbFiles)
-    .where(
-      sql`${kbFiles.itemId} IN (${sql.join(
-        KbFilesId.map((id) => sql`${id}`),
-        sql`, `,
-      )})`,
-    )
-
-  return resp
 }
 
 export const getAccessibleKnowledgeBases = async (
@@ -145,17 +73,15 @@ export const getAccessibleKnowledgeBases = async (
   // Get user's own KBs and all public KBs
   const results = await trx
     .select()
-    .from(kbItems)
+    .from(kbCollection)
     .where(
       and(
-        eq(kbItems.type, "knowledge_base"),
-        isNull(kbItems.parentId),
-        isNull(kbItems.deletedAt),
-        or(eq(kbItems.ownerId, userId), eq(kbItems.isPrivate, false)),
+        isNull(kbCollection.deletedAt),
+        or(eq(kbCollection.ownerId, userId), eq(kbCollection.isPrivate, false)),
       ),
     )
-    .orderBy(desc(kbItems.updatedAt))
-  return results as KnowledgeBase[]
+    .orderBy(desc(kbCollection.updatedAt))
+  return results
 }
 
 export const updateKnowledgeBase = async (
@@ -164,17 +90,17 @@ export const updateKnowledgeBase = async (
   updates: Partial<NewKnowledgeBase>,
 ): Promise<KnowledgeBase> => {
   const [result] = await trx
-    .update(kbItems)
+    .update(kbCollection)
     .set({
       ...updates,
       updatedAt: sql`NOW()`,
     })
-    .where(and(eq(kbItems.id, kbId), eq(kbItems.type, "knowledge_base")))
+    .where(eq(kbCollection.id, kbId))
     .returning()
   if (!result) {
     throw new Error("Knowledge base not found")
   }
-  return result as KnowledgeBase
+  return result
 }
 
 export const softDeleteKnowledgeBase = async (
@@ -182,17 +108,17 @@ export const softDeleteKnowledgeBase = async (
   kbId: string,
 ): Promise<KnowledgeBase> => {
   const [result] = await trx
-    .update(kbItems)
+    .update(kbCollection)
     .set({
       deletedAt: sql`NOW()`,
       updatedAt: sql`NOW()`,
     })
-    .where(and(eq(kbItems.id, kbId), eq(kbItems.type, "knowledge_base")))
+    .where(eq(kbCollection.id, kbId))
     .returning()
   if (!result) {
     throw new Error("Knowledge base not found")
   }
-  return result as KnowledgeBase
+  return result
 }
 
 // KB Items (Folders and Files) operations
@@ -214,7 +140,7 @@ export const getKbItemById = async (
   const [result] = await trx
     .select()
     .from(kbItems)
-    .where(eq(kbItems.id, itemId))
+    .where(and(eq(kbItems.id, itemId), isNull(kbItems.deletedAt)))
   return result || null
 }
 
@@ -223,13 +149,16 @@ export const getKbItemsByParent = async (
   kbId: string,
   parentId: string | null,
 ): Promise<KbItem[]> => {
-  // For unified schema, if parentId is null, we want items directly under the KB
-  const actualParentId = parentId || kbId
-
   return await trx
     .select()
     .from(kbItems)
-    .where(and(eq(kbItems.parentId, actualParentId), isNull(kbItems.deletedAt)))
+    .where(
+      and(
+        eq(kbItems.kbId, kbId),
+        parentId ? eq(kbItems.parentId, parentId) : isNull(kbItems.parentId),
+        isNull(kbItems.deletedAt)
+      )
+    )
     .orderBy(desc(kbItems.type), asc(kbItems.position), asc(kbItems.name))
 }
 
@@ -239,33 +168,18 @@ export const getKbItemByPath = async (
   path: string,
   name: string,
 ): Promise<KbItem | null> => {
-  // For unified schema, we need to check items under the KB hierarchy
-  const kb = await getKnowledgeBaseById(trx, kbId)
-  if (!kb) return null
-
   const [result] = await trx
     .select()
     .from(kbItems)
     .where(
       and(
+        eq(kbItems.kbId, kbId),
         eq(kbItems.path, path),
         eq(kbItems.name, name),
         isNull(kbItems.deletedAt),
       ),
     )
-
-  // Verify the item belongs to the correct KB by checking the hierarchy
-  if (result) {
-    let currentItem = result
-    while (currentItem.parentId) {
-      if (currentItem.parentId === kbId) return result
-      const parent = await getKbItemById(trx, currentItem.parentId)
-      if (!parent) return null
-      currentItem = parent
-    }
-  }
-
-  return null
+  return result || null
 }
 
 export const updateKbItem = async (
@@ -291,7 +205,6 @@ export const softDeleteKbItem = async (
   trx: TxnOrClient,
   itemId: string,
 ): Promise<KbItem> => {
-  // Get the item first to know its parent
   const item = await getKbItemById(trx, itemId)
   if (!item) {
     throw new Error("KB item not found")
@@ -299,7 +212,6 @@ export const softDeleteKbItem = async (
 
   // If it's a folder, recursively delete all items inside it
   if (item.type === "folder") {
-    // Recursively get all descendants and mark them as deleted
     const markDescendantsAsDeleted = async (
       parentId: string,
     ): Promise<number> => {
@@ -343,8 +255,13 @@ export const softDeleteKbItem = async (
     // Mark all descendants as deleted
     const descendantCount = await markDescendantsAsDeleted(itemId)
 
-    // Update parent folder counts
-    await updateFolderCounts(trx, item.parentId, -(descendantCount + 1))
+    // Update KB total count
+    await updateKbTotalCount(trx, item.kbId, -(descendantCount + 1))
+    
+    // Update parent folder counts (decrement the folder count from parent)
+    if (item.parentId) {
+      await updateParentFolderCounts(trx, item.parentId, -(descendantCount + 1))
+    }
   } else {
     // For files, just mark as deleted
     await trx
@@ -355,8 +272,13 @@ export const softDeleteKbItem = async (
       })
       .where(eq(kbItems.id, itemId))
 
-    // Update parent folder counts
-    await updateFolderCounts(trx, item.parentId, -1)
+    // Update KB total count
+    await updateKbTotalCount(trx, item.kbId, -1)
+    
+    // Update parent folder counts (decrement 1 file from parent)
+    if (item.parentId) {
+      await updateParentFolderCounts(trx, item.parentId, -1)
+    }
   }
 
   // Return the updated item
@@ -368,83 +290,52 @@ export const softDeleteKbItem = async (
   return result
 }
 
-// KB Files operations
-export const createKbFile = async (
+// Helper function to update KB total counts
+export const updateKbTotalCount = async (
   trx: TxnOrClient,
-  file: NewKbFile,
-): Promise<KbFile> => {
-  const [result] = await trx.insert(kbFiles).values(file).returning()
-  if (!result) {
-    throw new Error("Failed to create KB file")
-  }
-  return result
-}
-
-export const getKbFileByItemId = async (
-  trx: TxnOrClient,
-  itemId: string,
-): Promise<KbFile | null> => {
-  const [result] = await trx
-    .select()
-    .from(kbFiles)
-    .where(eq(kbFiles.itemId, itemId))
-  return result || null
-}
-
-export const updateKbFile = async (
-  trx: TxnOrClient,
-  fileId: string,
-  updates: Partial<NewKbFile>,
-): Promise<KbFile> => {
-  const [result] = await trx
-    .update(kbFiles)
-    .set(updates)
-    .where(eq(kbFiles.id, fileId))
-    .returning()
-  if (!result) {
-    throw new Error("KB file not found")
-  }
-  return result
-}
-
-export const softDeleteKbFile = async (
-  trx: TxnOrClient,
-  fileId: string,
-): Promise<KbFile> => {
-  const [result] = await trx
-    .update(kbFiles)
+  kbId: string,
+  delta: number,
+): Promise<void> => {
+  await trx
+    .update(kbCollection)
     .set({
-      deletedAt: sql`NOW()`,
+      totalItems: sql`${kbCollection.totalItems} + ${delta}`,
+      updatedAt: sql`NOW()`,
     })
-    .where(eq(kbFiles.id, fileId))
-    .returning()
-  if (!result) {
-    throw new Error("KB file not found")
-  }
-  return result
+    .where(eq(kbCollection.id, kbId))
 }
 
-// Helper function to update folder counts recursively
-export const updateFolderCounts = async (
+// Helper function to update folder's totalFileCount count
+export const updateFolderTotalCount = async (
+  trx: TxnOrClient,
+  folderId: string,
+  delta: number,
+): Promise<void> => {
+  await trx
+    .update(kbItems)
+    .set({
+      totalFileCount: sql`${kbItems.totalFileCount} + ${delta}`,
+      updatedAt: sql`NOW()`,
+    })
+    .where(and(eq(kbItems.id, folderId), eq(kbItems.type, "folder")))
+}
+
+// Helper function to update all parent folders' totalFileCount count recursively
+export const updateParentFolderCounts = async (
   trx: TxnOrClient,
   parentId: string | null,
   delta: number,
 ): Promise<void> => {
   if (!parentId) return
-
-  // Update the parent folder
-  await trx
-    .update(kbItems)
-    .set({
-      totalCount: sql`${kbItems.totalCount} + ${delta}`,
-      updatedAt: sql`NOW()`,
-    })
-    .where(eq(kbItems.id, parentId))
-
-  // Get the parent to continue up the tree
-  const parent = await getKbItemById(trx, parentId)
-  if (parent && parent.parentId) {
-    await updateFolderCounts(trx, parent.parentId, delta)
+  
+  // Update the immediate parent folder
+  await updateFolderTotalCount(trx, parentId, delta)
+  
+  // Get the parent folder to check if it has a parent
+  const parentFolder = await getKbItemById(trx, parentId)
+  if (parentFolder && parentFolder.parentId) {
+    // Recursively update parent folders
+    await updateParentFolderCounts(trx, parentFolder.parentId, delta)
   }
 }
 
@@ -462,9 +353,6 @@ export const createFolder = async (
   if (!kb) {
     throw new Error("Knowledge base not found")
   }
-
-  // For unified schema, parentId should be the KB id if creating at root level
-  const actualParentId = parentId || kbId
 
   // Calculate path
   let path = "/"
@@ -489,23 +377,48 @@ export const createFolder = async (
   const siblings = await getKbItemsByParent(trx, kbId, parentId)
   const nextPosition = siblings.length
 
+  // Generate vespa doc ID for the folder
+  const vespaDocId = generateFolderVespaDocId()
+
+  // Enhanced folder creation with more populated fields
   const folder = await createKbItem(trx, {
-    parentId: actualParentId,
+    kbId,
+    parentId,
     workspaceId: kb.workspaceId,
     ownerId: kb.ownerId,
     name,
     type: "folder",
     path,
     position: nextPosition,
-    totalCount: 0,
-    isPrivate: true,
+    vespaDocId,
+    totalFileCount: 0, // New folders start with 0 files
+    // Enhanced folder-specific fields
+    originalName: name, // Store original name for folders too
+    mimeType: "application/x-folder", // Use standard folder MIME type
+    fileSize: null, // Folders don't have size
+    checksum: null, // Folders don't have checksum
+    storagePath: null, // Folders don't have storage path
+    storageKey: null, // Folders don't have storage key
+    // Creator information
+    uploadedById: userId, // Who "uploaded" (created) this folder
+    uploadedByEmail: userEmail, // Email of folder creator
     lastUpdatedById: userId,
     lastUpdatedByEmail: userEmail,
+    // Processing information for folders
+    processingInfo: {
+      folderType: metadata.folderType || "user_created",
+      createdVia: metadata.createdVia || "unknown",
+      autoCreatedReason: metadata.autoCreatedReason || null,
+      version: metadata.version || "1.0",
+      description: metadata.description || "",
+      tags: metadata.tags || [],
+    },
+    processedAt: new Date(), // Mark folder as "processed" when created
     metadata,
   })
 
-  // Update parent folder count
-  await updateFolderCounts(trx, actualParentId, 1)
+  // Update KB total count
+  await updateKbTotalCount(trx, kbId, 1)
 
   return folder
 }
@@ -525,15 +438,12 @@ export const createFileItem = async (
   metadata: any = {},
   userId?: number,
   userEmail?: string,
-): Promise<{ item: KbItem; file: KbFile }> => {
+): Promise<KbItem> => {
   // Get the KB to ensure it exists and get workspace info
   const kb = await getKnowledgeBaseById(trx, kbId)
   if (!kb) {
     throw new Error("Knowledge base not found")
   }
-
-  // For unified schema, parentId should be the KB id if creating at root level
-  const actualParentId = parentId || kbId
 
   // Calculate path
   let path = "/"
@@ -558,24 +468,16 @@ export const createFileItem = async (
   const siblings = await getKbItemsByParent(trx, kbId, parentId)
   const nextPosition = siblings.length
 
-  // Create item
+  // Create file item
   const item = await createKbItem(trx, {
-    parentId: actualParentId,
+    kbId,
+    parentId,
     workspaceId: kb.workspaceId,
     ownerId: kb.ownerId,
     name,
     type: "file",
     path,
     position: nextPosition,
-    isPrivate: true,
-    lastUpdatedById: userId,
-    lastUpdatedByEmail: userEmail,
-    metadata,
-  })
-
-  // Create file record
-  const file = await createKbFile(trx, {
-    itemId: item.id,
     vespaDocId,
     originalName,
     storagePath,
@@ -587,12 +489,18 @@ export const createFileItem = async (
     uploadedByEmail: userEmail,
     lastUpdatedById: userId,
     lastUpdatedByEmail: userEmail,
+    metadata,
   })
 
-  // Update parent folder count
-  await updateFolderCounts(trx, actualParentId, 1)
+  // Update KB total count
+  await updateKbTotalCount(trx, kbId, 1)
+  
+  // Update parent folder counts (if the file is in a folder)
+  if (parentId) {
+    await updateParentFolderCounts(trx, parentId, 1)
+  }
 
-  return { item, file }
+  return item
 }
 
 // Get all items in a KB recursively
@@ -600,45 +508,129 @@ export const getAllKbItems = async (
   trx: TxnOrClient,
   kbId: string,
 ): Promise<KbItem[]> => {
-  // Recursive function to get all descendants
-  const getAllDescendants = async (parentIds: string[]): Promise<KbItem[]> => {
-    if (parentIds.length === 0) return []
-
-    const children = await trx
-      .select()
-      .from(kbItems)
-      .where(
-        and(
-          sql`${kbItems.parentId} IN (${sql.join(
-            parentIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          isNull(kbItems.deletedAt),
-        ),
-      )
-      .orderBy(desc(kbItems.type), asc(kbItems.position), asc(kbItems.name))
-
-    if (children.length === 0) return []
-
-    const childIds = children.map((child) => child.id)
-    const grandchildren = await getAllDescendants(childIds)
-
-    return [...children, ...grandchildren]
-  }
-
-  // Start with items directly under the KB
-  const rootItems = await trx
+  // Get all items in the KB (not deleted)
+  const items = await trx
     .select()
     .from(kbItems)
-    .where(and(eq(kbItems.parentId, kbId), isNull(kbItems.deletedAt)))
+    .where(and(eq(kbItems.kbId, kbId), isNull(kbItems.deletedAt)))
     .orderBy(desc(kbItems.type), asc(kbItems.position), asc(kbItems.name))
 
-  if (rootItems.length === 0) return []
+  return items
+}
 
-  const rootIds = rootItems.map((item) => item.id)
-  const descendants = await getAllDescendants(rootIds)
+// Helper functions for traversing folder structure
+export const getParentItems = async (
+  parentId: string,
+  trx: TxnOrClient,
+): Promise<KbItem[]> => {
+  const results = await trx
+    .select()
+    .from(kbItems)
+    .where(and(eq(kbItems.parentId, parentId), isNull(kbItems.deletedAt)))
+  return results
+}
 
-  return [...rootItems, ...descendants]
+export const getAllFolderItems = async (
+  parentIds: string[],
+  trx: TxnOrClient,
+) => {
+  const res = []
+  let queue: any[] = []
+  for (const id of parentIds) {
+    queue.push(id)
+  }
+  while (queue.length > 0) {
+    const curr = queue.shift()
+
+    const resp = await getParentItems(curr, trx)
+    if (resp.length == 0) {
+      res.push(curr)
+      continue
+    }
+    for (const item of resp) {
+      if (item.type == "folder") {
+        queue.push(item.id)
+      } else if (item.type == "file") {
+        res.push(item.id)
+      }
+    }
+  }
+  return res
+}
+
+export const getKbFilesVespaIds = async (
+  KbFilesId: string[],
+  trx: TxnOrClient,
+) => {
+  const resp = await trx
+    .select({
+      id: kbItems.id,
+      vespaDocId: kbItems.vespaDocId,
+      originalName: kbItems.originalName,
+      mimeType: kbItems.mimeType,
+      fileSize: kbItems.fileSize,
+    })
+    .from(kbItems)
+    .where(
+      and(
+        sql`${kbItems.id} IN (${sql.join(
+          KbFilesId.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+        eq(kbItems.type, "file"),
+        isNull(kbItems.deletedAt)
+      )
+    )
+
+  return resp
+}
+
+// Legacy compatibility functions
+export const getKbFileByItemId = async (
+  trx: TxnOrClient,
+  itemId: string,
+): Promise<KbFile | null> => {
+  const [result] = await trx
+    .select()
+    .from(kbItems)
+    .where(
+      and(
+        eq(kbItems.id, itemId),
+        eq(kbItems.type, "file"),
+        isNull(kbItems.deletedAt)
+      )
+    )
+  return (result as KbFile) || null
+}
+
+export const createKbFile = async (
+  trx: TxnOrClient,
+  file: NewKbFile,
+): Promise<KbFile> => {
+  // For backwards compatibility, this now creates a file item
+  const fileData: NewKbItem = {
+    ...file,
+    type: "file",
+  }
+  const result = await createKbItem(trx, fileData)
+  return result as KbFile
+}
+
+export const updateKbFile = async (
+  trx: TxnOrClient,
+  itemId: string,
+  updates: Partial<NewKbFile>,
+): Promise<KbFile> => {
+  const result = await updateKbItem(trx, itemId, updates)
+  return result as KbFile
+}
+
+export const softDeleteKbFile = async (
+  trx: TxnOrClient,
+  itemId: string,
+): Promise<KbFile> => {
+  const result = await softDeleteKbItem(trx, itemId)
+  return result as KbFile
 }
 
 // Generate unique storage key
@@ -654,4 +646,9 @@ export const generateVespaDocId = (): string => {
 // Generate Vespa document ID for KB folders
 export const generateFolderVespaDocId = (): string => {
   return `kbfd-${createId()}`
+}
+
+// Generate Vespa document ID for KB collections
+export const generateKbVespaDocId = (): string => {
+  return `kb-${createId()}`
 }

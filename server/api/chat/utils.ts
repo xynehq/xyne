@@ -35,7 +35,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
-  kbFileSchema,
+  kbItemsSchema,
   KnowledgeBaseEntity,
 } from "@/search/types"
 import type { z } from "zod"
@@ -422,7 +422,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
-  } else if (result.fields.sddocname === kbFileSchema) {
+  } else if (result.fields.sddocname == kbItemsSchema) {
     // Handle KB files - include the actual file and KB UUIDs for direct access
     const kbFields = fields as any // Type as VespaKbFileSearch when types are available
     return {

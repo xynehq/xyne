@@ -44,8 +44,7 @@ import {
   SlackEntity,
   datasourceSchema,
   dataSourceFileSchema,
-  type VespaAutocompleteChatContainer,
-  kbFileSchema,
+  kbItemsSchema,
   type VespaKbFileSearch,
 } from "@/search/types"
 import {
@@ -350,7 +349,7 @@ export const VespaSearchResponseToSearchResult = (
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
           } else if (
-            (child.fields as { sddocname?: string }).sddocname === kbFileSchema
+            (child.fields as { sddocname?: string }).sddocname === kbItemsSchema
           ) {
             const kbFields = child.fields as VespaKbFileSearch
             const processedChunks = getSortedScoredChunks(
@@ -361,9 +360,9 @@ export const VespaSearchResponseToSearchResult = (
 
             const mappedResult = {
               docId: kbFields.docId,
-              type: kbFileSchema,
-              app: Apps.KnowledgeBase,
-              entity: kbFields.entity,
+              type: kbItemsSchema,
+              app: "knowledgebase" as any,
+              entity: "kb_items",
               title: kbFields.fileName,
               fileName: kbFields.fileName,
               url: null,

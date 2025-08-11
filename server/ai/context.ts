@@ -18,7 +18,7 @@ import {
   // Corrected import name for datasourceFileSchema
   dataSourceFileSchema,
   type VespaDataSourceFileSearch,
-  kbFileSchema,
+  kbItemsSchema,
   type VespaKbFileSearch,
   chatContainerSchema,
   type VespaChatContainerSearch,
@@ -717,7 +717,7 @@ export const answerContextMap = (
       maxSummaryChunks,
       isSelectedFiles,
     )
-  } else if (searchResult.fields.sddocname === kbFileSchema) {
+  } else if (searchResult.fields.sddocname === kbItemsSchema) {
     return constructKbFileContext(
       searchResult.fields as VespaKbFileSearch,
       searchResult.relevance,

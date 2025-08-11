@@ -29,14 +29,15 @@ import {
   generateStorageKey,
   generateVespaDocId,
   generateFolderVespaDocId,
+  generateKbVespaDocId,
   getAllFolderItems,
   getKbFilesVespaIds,
 } from "@/db/knowledgeBase"
 import type { KnowledgeBase, KbItem, KbFile } from "@/db/schema"
-import { kbItems, kbFiles } from "@/db/schema"
+import { kbItems, kbCollection } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
-import { Apps, kbFileSchema, KnowledgeBaseEntity } from "@/search/types"
+import { Apps, kbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
 import crypto from "crypto"
 import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
@@ -423,10 +424,12 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
 
           try {
             // Delete from Vespa
-            await DeleteDocument(kbFile.vespaDocId, kbFileSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted from Vespa: ${kbFile.vespaDocId}`,
-            )
+            if (kbFile.vespaDocId) {
+              await DeleteDocument(kbFile.vespaDocId, kbItemsSchema)
+              loggerWithChild({ email: userEmail }).info(
+                `Deleted from Vespa: ${kbFile.vespaDocId}`,
+              )
+            }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
               `Failed to delete from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`,
@@ -435,10 +438,12 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
 
           try {
             // Delete from storage
-            await unlink(kbFile.storagePath)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted from storage: ${kbFile.storagePath}`,
-            )
+            if (kbFile.storagePath) {
+              await unlink(kbFile.storagePath)
+              loggerWithChild({ email: userEmail }).info(
+                `Deleted from storage: ${kbFile.storagePath}`,
+              )
+            }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
               `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`,
@@ -505,20 +510,7 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
           )
       }
 
-      // Also soft delete all file records in kb_files table
-      if (fileItemIds.length > 0) {
-        await tx
-          .update(kbFiles)
-          .set({
-            deletedAt: sql`NOW()`,
-          })
-          .where(
-            sql`${kbFiles.itemId} IN (${sql.join(
-              fileItemIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})`,
-          )
-      }
+      // Note: In the new schema, file records are part of kb_items, so no separate table to update
     })
 
     loggerWithChild({ email: userEmail }).info(
@@ -614,13 +606,20 @@ export const CreateFolderApi = async (c: Context) => {
     const rawData = await c.req.json()
     const validatedData = createFolderSchema.parse(rawData)
 
-    // Create Vespa document for the folder
-    const vespaDocId = generateFolderVespaDocId()
-
-    // Store vespaDocId in folder metadata
+    // Enhanced folder metadata with more details (no vespaDocId here!)
     const folderMetadata = {
       ...(validatedData.metadata || {}),
-      vespaDocId: vespaDocId,
+      type: "folder",
+      createdBy: user.email,
+      createdById: user.id,
+      workspaceId: user.workspaceId,
+      kbId: kbId,
+      parentId: validatedData.parentId || null,
+      description: validatedData.metadata?.description || "",
+      tags: validatedData.metadata?.tags || [],
+      folderType: "user_created", // vs "auto_created" during file upload
+      createdVia: "api",
+      version: "1.0",
     }
 
     const folder = await createFolder(
@@ -632,9 +631,10 @@ export const CreateFolderApi = async (c: Context) => {
       user.id,
       user.email,
     )
-
+    
+    // Use the vespaDocId from the folder record (generated in createFolder)
     const vespaDoc = {
-      docId: vespaDocId,
+      docId: folder.vespaDocId!,
       kbId: kbId,
       itemId: folder.id,
       app: Apps.KnowledgeBase,
@@ -642,27 +642,35 @@ export const CreateFolderApi = async (c: Context) => {
       entity: KnowledgeBaseEntity.Folder,
       storagePath: "",
       chunks: [],
-      chunks_pos: [],
-      image_chunks: [],
-      image_chunks_pos: [],
-      description: "",
+      chunks_pos: [], 
+      image_chunks: [], 
+      image_chunks_pos: [], 
+      description: folderMetadata.description || "",
       metadata: JSON.stringify({
         type: "folder",
         createdBy: user.email,
+        createdById: user.id,
         parentId: validatedData.parentId || null,
+        workspaceId: user.workspaceId,
+        kbId: kbId,
+        folderType: "user_created",
+        createdVia: "api",
+        description: folderMetadata.description || "",
+        tags: folderMetadata.tags || [],
       }),
       createdBy: user.email,
-      mimeType: "folder",
+      totalFileCount: 0,
+      mimeType: "folder", 
       fileSize: 0,
       duration: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
 
-    await insert(vespaDoc, kbFileSchema)
+    await insert(vespaDoc, kbItemsSchema)
 
     loggerWithChild({ email: userEmail }).info(
-      `Created folder: ${folder.id} in KB: ${kbId} with Vespa doc: ${vespaDocId}`,
+      `Created folder: ${folder.id} in KB: ${kbId} with Vespa doc: ${folder.vespaDocId}`,
     )
 
     return c.json(folder)
@@ -767,45 +775,72 @@ async function ensureFolderPath(
   if (existingFolder) {
     currentFolderId = existingFolder.id
   } else {
-    // Create Vespa document for the folder created during file upload
-    const vespaDocId = generateFolderVespaDocId()
-
-    // Create the folder with vespaDocId in metadata
-    const newFolder = await createFolder(db, kbId, parentId, folderName, {
-      vespaDocId: vespaDocId,
-    })
+    // Enhanced folder metadata for auto-created folders during file upload (no vespaDocId!)
+    const autoCreatedFolderMetadata = {
+      type: "folder",
+      createdBy: "system",
+      createdById: null, // System-created
+      workspaceId: null, // Will be populated by createFolder
+      kbId: kbId,
+      parentId: parentId || null,
+      description: "Auto-created during file upload",
+      tags: ["auto-created"],
+      folderType: "auto_created", // vs "user_created" from API
+      createdVia: "file_upload",
+      version: "1.0",
+      autoCreatedReason: "folder_structure_from_file_path",
+    }
+    
+    // Create the folder - this will generate its own vespaDocId
+    const newFolder = await createFolder(
+      db, 
+      kbId, 
+      parentId, 
+      folderName, 
+      autoCreatedFolderMetadata
+    )
     currentFolderId = newFolder.id
-
+    
+    // Use the vespaDocId from the newly created folder (no duplication!)
     const vespaDoc = {
-      docId: vespaDocId,
+      docId: newFolder.vespaDocId!, // Use the ID generated by createFolder
       kbId: kbId,
       itemId: newFolder.id,
-      fileName: folderName, // Use folder name as fileName
-      app:Apps.KnowledgeBase,
-      entity: KnowledgeBaseEntity.Folder, // Mark as folder
-      storagePath: "", // Folders don't have storage path
-      chunks: [], // Folders don't have chunks
-      chunks_pos: [], // Folders don't have chunk positions
-      image_chunks: [], // Folders don't have image chunks
-      image_chunks_pos: [], // Folders don't have image chunk positions
-      description: "", // Could be populated if needed
+      fileName: folderName,
+      entity: "folder",
+      storagePath: "",
+      chunks: [],
+      chunks_pos: [],
+      image_chunks: [],
+      image_chunks_pos: [],
+      description: "Auto-created during file upload",
       metadata: JSON.stringify({
         type: "folder",
-        createdBy: "system", // Created during file upload
+        createdBy: "system",
+        createdById: null,
         parentId: parentId || null,
+        workspaceId: newFolder.workspaceId,
+        kbId: kbId,
+        folderType: "auto_created",
+        createdVia: "file_upload",
+        description: "Auto-created during file upload",
+        tags: ["auto-created"],
+        autoCreatedReason: "folder_structure_from_file_path",
+        originalPath: pathParts.join("/"),
       }),
-      createdBy: "system", // Created during file upload
-      mimeType: "folder", // Use "folder" as mime type for folders
-      fileSize: 0, // Folders don't have size
-      duration: 0, // Folders don't have duration
+      createdBy: "system",
+      totalFileCount: 0,
+      mimeType: "folder",
+      fileSize: 0,
+      duration: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
 
-    await insert(vespaDoc, kbFileSchema)
+    await insert(vespaDoc, kbItemsSchema)
 
     loggerWithChild().info(
-      `Created folder during upload: ${newFolder.id} in KB: ${kbId} with Vespa doc: ${vespaDocId}`,
+      `Auto-created folder during upload: ${newFolder.id} in KB: ${kbId} with Vespa doc: ${newFolder.vespaDocId}`,
     )
   }
 
@@ -1091,9 +1126,13 @@ export const UploadFilesApi = async (c: Context) => {
               await softDeleteKbItem(db, existingFile.id)
 
               if (existingKbFile) {
-                await DeleteDocument(existingKbFile.vespaDocId, kbFileSchema)
+                if (existingKbFile.vespaDocId) {
+                  await DeleteDocument(existingKbFile.vespaDocId, kbItemsSchema)
+                }
                 try {
-                  await unlink(existingKbFile.storagePath)
+                  if (existingKbFile.storagePath) {
+                    await unlink(existingKbFile.storagePath)
+                  }
                 } catch (error) {
                   // Ignore file deletion errors
                 }
@@ -1121,7 +1160,7 @@ export const UploadFilesApi = async (c: Context) => {
         await writeFile(storagePath, new Uint8Array(buffer))
 
         // Use transaction for atomic file creation
-        const { item, file: kbFile } = await db.transaction(async (tx) => {
+        const item = await db.transaction(async (tx) => {
           return await createFileItem(
             tx,
             kbId,
@@ -1273,13 +1312,14 @@ export const UploadFilesApi = async (c: Context) => {
             processingMethod: baseMimeType,
           }),
           createdBy: user.email,
+          totalFileCount: 0,
           mimeType: baseMimeType,
           fileSize: file.size,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         }
 
-        await insert(vespaDoc, kbFileSchema)
+        await insert(vespaDoc, kbItemsSchema)
 
         uploadResults.push({
           success: true,
@@ -1444,29 +1484,33 @@ export const DeleteItemApi = async (c: Context) => {
       if (itemToDelete.type === "file" && kbFile) {
         fileItemIds.push(itemToDelete.id)
 
-        try {
-          // Delete from Vespa
-          await DeleteDocument(kbFile.vespaDocId, kbFileSchema)
-          loggerWithChild({ email: userEmail }).info(
-            `Deleted file from Vespa: ${kbFile.vespaDocId}`,
-          )
-        } catch (error) {
-          loggerWithChild({ email: userEmail }).warn(
-            `Failed to delete file from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`,
-          )
-        }
+          try {
+            // Delete from Vespa
+            if (kbFile.vespaDocId) {
+              await DeleteDocument(kbFile.vespaDocId, kbItemsSchema)
+              loggerWithChild({ email: userEmail }).info(
+                `Deleted file from Vespa: ${kbFile.vespaDocId}`,
+              )
+            }
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete file from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`,
+            )
+          }
 
-        try {
-          // Delete from storage
-          await unlink(kbFile.storagePath)
-          loggerWithChild({ email: userEmail }).info(
-            `Deleted from storage: ${kbFile.storagePath}`,
-          )
-        } catch (error) {
-          loggerWithChild({ email: userEmail }).warn(
-            `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`,
-          )
-        }
+          try {
+            // Delete from storage
+            if (kbFile.storagePath) {
+              await unlink(kbFile.storagePath)
+              loggerWithChild({ email: userEmail }).info(
+                `Deleted from storage: ${kbFile.storagePath}`,
+              )
+            }
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`,
+            )
+          }
       } else if (itemToDelete.type === "folder") {
         // Delete folder from Vespa
         const folderMetadata = itemToDelete.metadata as Record<string, any>
@@ -1474,7 +1518,7 @@ export const DeleteItemApi = async (c: Context) => {
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbFileSchema)
+            await DeleteDocument(vespaDocId, kbItemsSchema)
             deletedFoldersCount++
             loggerWithChild({ email: userEmail }).info(
               `Deleted folder from Vespa: ${vespaDocId}`,
@@ -1493,20 +1537,7 @@ export const DeleteItemApi = async (c: Context) => {
       // Soft delete the item (and all descendants if it's a folder)
       await softDeleteKbItem(tx, itemId)
 
-      // Also soft delete all file records in kb_files table
-      if (fileItemIds.length > 0) {
-        await tx
-          .update(kbFiles)
-          .set({
-            deletedAt: sql`NOW()`,
-          })
-          .where(
-            sql`${kbFiles.itemId} IN (${sql.join(
-              fileItemIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})`,
-          )
-      }
+      // Note: In the new schema, file records are part of kb_items, so no separate table to update
     })
 
     loggerWithChild({ email: userEmail }).info(
@@ -1623,6 +1654,9 @@ export const GetFileContentApi = async (c: Context) => {
     }
 
     // Read file content
+    if (!kbFile.storagePath) {
+      throw new HTTPException(404, { message: "File storage path not found" })
+    }
     const fileContent = await readFile(kbFile.storagePath)
 
     // Return file content with appropriate headers

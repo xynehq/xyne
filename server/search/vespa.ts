@@ -13,7 +13,7 @@ import {
   chatMessageSchema,
   datasourceSchema,
   dataSourceFileSchema,
-  kbFileSchema,
+  kbItemsSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
@@ -924,10 +924,20 @@ export const HybridDefaultProfileForAgent =  async(
         case Apps.KnowledgeBase:
           // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
           // The actual filtering by specific kbIds happens in buildKbFileYQL.
-          
-            const kbQuery = await buildKbFileYQL()
-            appQueries.push(kbQuery)
-              if (!sources.includes(kbFileSchema)) sources.push(kbFileSchema)
+          if (kbIds && kbIds.length > 0) {
+            const kbQuery = buildKbFileYQL()
+            if (kbQuery) {
+              appQueries.push(kbQuery)
+              if (!sources.includes(kbItemsSchema)) sources.push(kbItemsSchema)
+            }
+          } else {
+            // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search
+            // across all accessible knowledge bases. This might be too broad or not the intended behavior.
+            // For now, if no specific IDs, we don't add a query part for generic KB search.
+            Logger.warn(
+              "Apps.KnowledgeBase specified for agent, but no specific kbIds provided. Skipping generic KnowledgeBase search part.",
+            )
+          }
           break
       }
     }
@@ -938,7 +948,15 @@ export const HybridDefaultProfileForAgent =  async(
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
-  
+
+  // Handle knowledge base IDs
+  if (kbIds && kbIds.length > 0) {
+    const kbQuery = buildKbFileYQL()
+    if (kbQuery) {
+      appQueries.push(kbQuery)
+      if (!sources.includes(kbItemsSchema)) sources.push(kbItemsSchema)
+    }
+  }
 
   // Debug logging
   Logger.debug(`Agent search configuration:`, {

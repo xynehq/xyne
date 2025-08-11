@@ -334,7 +334,7 @@ function RouteComponent() {
 
             if (
               existingCollection &&
-              existingCollection.totalCount >= savedState.batchProgress.total
+              existingCollection.totalItems >= savedState.batchProgress.total
             ) {
               // Upload appears to be complete, clear the state
               setIsUploading(false)
@@ -391,7 +391,7 @@ function RouteComponent() {
 
           if (
             existingCollection &&
-            existingCollection.totalCount >= batchProgress.total
+            existingCollection.totalItems >= batchProgress.total
           ) {
             // Upload is complete, clear the state
             setIsUploading(false)
@@ -448,26 +448,26 @@ function RouteComponent() {
         const response = await api.kb.$get()
         if (response.ok) {
           const data = await response.json()
-          setCollections(
-            data.map((kb: KnowledgeBase) => ({
-              id: kb.id,
-              name: kb.name,
-              description: kb.description,
-              files: kb.totalCount || 0,
-              items: [],
-              isOpen: false,
-              lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              updatedBy: kb.lastUpdatedByEmail || "Unknown",
-              totalCount: kb.totalCount,
-              isPrivate: kb.isPrivate,
-            })),
-          )
+            setCollections(
+              data.map((kb: KnowledgeBase) => ({
+                id: kb.id,
+                name: kb.name,
+                description: kb.description,
+                files: kb.totalItems || 0,
+                items: [],
+                isOpen: false,
+                lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                updatedBy: kb.lastUpdatedByEmail || "Unknown",
+                totalCount: kb.totalItems,
+                isPrivate: kb.isPrivate,
+              })),
+            )
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
         }
