@@ -246,7 +246,6 @@ const AdminRoleMiddleware = async (c: Context, next: Next) => {
   }
   const userRole = user[0].role
   if (userRole !== UserRole.Admin && userRole !== UserRole.SuperAdmin) {
-    console.log("nope")
     throw new HTTPException(403, {
       message: "Access denied. Admin privileges required.",
     })
@@ -1245,8 +1244,6 @@ export const init = async () => {
 
 app2.get("/metrics", async (c) => {
   try {
-    const origin = c.req.header("origin")
-
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
       "Content-Type": metricRegister.contentType,
