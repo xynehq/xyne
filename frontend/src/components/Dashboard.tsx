@@ -19,6 +19,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
 import {
+  safeNumberConversion,
+  formatCostInINR,
+  formatCostPerMessageInINR,
+} from "@/lib/utils"
+import {
   AgentUserFeedbackModal,
   UserFeedbackModal,
 } from "@/components/feedback/FeedbackViewModal"
@@ -228,33 +233,6 @@ const getTimeRangeDescription = (
     default:
       return `Message activity ${assistanceText}`
   }
-}
-
-// Utility function to safely convert cost values (which may be strings from numeric type) to numbers
-const safeNumberConversion = (value: any): number => {
-  if (typeof value === "number") return value
-  if (typeof value === "string") return parseFloat(value) || 0
-  return 0
-}
-
-// Utility function to convert USD to INR and format as currency
-const formatCostInINR = (usdAmount: any): string => {
-  const USD_TO_INR_RATE = 83.0 // Approximate exchange rate (1 USD = 83 INR)
-  const usdValue = safeNumberConversion(usdAmount)
-  const inrValue = usdValue * USD_TO_INR_RATE
-  return `₹${inrValue.toFixed(2)}`
-}
-
-// Utility function for cost per message in INR
-const formatCostPerMessageInINR = (
-  totalCost: any,
-  messageCount: number,
-): string => {
-  if (messageCount === 0) return "₹0.00"
-  const USD_TO_INR_RATE = 83.0
-  const usdValue = safeNumberConversion(totalCost)
-  const inrValue = (usdValue * USD_TO_INR_RATE) / messageCount
-  return `₹${inrValue.toFixed(4)}`
 }
 
 const MetricCard = ({
