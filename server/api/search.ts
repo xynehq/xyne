@@ -14,29 +14,22 @@ import {
   UpdateDocument,
   DeleteDocument,
   updateUserQueryHistory,
-  SearchModes,
   searchVespaAgent,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
-  userQuerySchema,
   userSchema,
   APP_INTEGRATION_MAPPING,
   type VespaSearchResponse,
   type VespaUser,
-  type VespaSchema,
-  type VespaDataSource,
-  datasourceSchema,
-  dataSourceFileSchema,
-  type VespaDataSourceFile,
   SlackEntity,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
-} from "@/search/mappers"
+} from "@xyne/vespa-ts/mappers"
 import {
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
@@ -49,8 +42,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
+import { AnswerSSEvents, AuthType, ConnectorStatus } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -67,6 +59,9 @@ import {
 import { getAgentByExternalId } from "@/db/agent"
 import { getWorkspaceByExternalId } from "@/db/workspace"
 import { Apps } from "@/shared/types"
+import type { VespaSearchResultsSchema } from "@/search/types"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
+import { chunkDocument } from "@/chunks"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -364,7 +359,13 @@ export const SearchApi = async (c: Context) => {
           },
         )
         try {
-          const newResults = VespaSearchResponseToSearchResult(results)
+          const newResults = VespaSearchResponseToSearchResult(
+            results,
+            {
+              chunkDocument: chunkDocument,
+            },
+            email,
+          )
           newResults.groupCount = {} // Agent search currently doesn't provide group counts
           return c.json(newResults)
         } catch (e) {
@@ -387,8 +388,22 @@ export const SearchApi = async (c: Context) => {
     `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
   )
   if (gc) {
+    const connector = await getConnectorByAppAndEmailId(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    const isSlackConnected =
+      connector && connector.status === ConnectorStatus.Connected
     const tasks: Array<any> = [
-      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      groupVespaSearch(
+        decodedQuery,
+        email,
+        config.page,
+        isSlackConnected,
+        timestampRange,
+      ),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
         limit: page,
@@ -415,7 +430,11 @@ export const SearchApi = async (c: Context) => {
 
   // TODO: deduplicate for google admin and contacts
 
-  const newResults = VespaSearchResponseToSearchResult(results, email)
+  const newResults = VespaSearchResponseToSearchResult(
+    results,
+    { chunkDocument: chunkDocument },
+    email,
+  )
   newResults.groupCount = groupCount
   return c.json(newResults)
 }
@@ -433,7 +452,9 @@ export const SearchSlackChannels = async (c: Context) => {
     SlackEntity.Channel,
     {},
   )
-  const newResults = VespaSearchResponseToSearchResult(results)
+  const newResults = VespaSearchResponseToSearchResult(results, {
+    chunkDocument: chunkDocument,
+  })
   return c.json(newResults)
 }
 

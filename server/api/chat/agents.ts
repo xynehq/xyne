@@ -100,7 +100,6 @@ import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
-  SearchModes,
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
@@ -123,15 +122,13 @@ import {
   eventSchema,
   fileSchema,
   GooglePeopleEntity,
-  isValidApp,
-  isValidEntity,
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
   SystemEntity,
   VespaSearchResultsSchema,
   type VespaSearchResult,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
   insertChatTrace,

@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
-import { SearchModes } from "@/search/vespa"
+import { SearchModes } from "@/search/types"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
 

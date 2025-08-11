@@ -389,8 +389,8 @@ export const DeleteDocumentApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessage = error.errors
-        .map((err) => `${err.path.join(".")}: ${err.message}`)
+      const errorMessage = (error as any).errors
+        .map((err: any) => `${err.path.join(".")}: ${err.message}`)
         .join(", ")
       loggerWithChild().warn(
         `Validation error in DeleteDocumentApi: ${errorMessage}`,

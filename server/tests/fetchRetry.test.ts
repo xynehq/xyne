@@ -26,7 +26,7 @@ mock.module("../logger", () => ({
   },
 }))
 
-const { default: VespaClient } = await import("@/search/vespaClient")
+const { default: VespaClient } = await import("@xyne/vespa-ts/client")
 
 describe("VespaClient", () => {
   let vespaClient: any

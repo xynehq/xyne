@@ -1,4 +1,4 @@
-import VespaClient from "@/search/vespaClient"
+import VespaClient from "@xyne/vespa-ts/client"
 import { GetDocument, UpdateDocument, DeleteDocument } from "@/search/vespa"
 import type { VespaSearchResponse, VespaSchema } from "@/search/types"
 import {

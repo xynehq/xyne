@@ -1,4 +1,4 @@
-import { searchVespa, SearchModes, GetRandomDocument } from "@/search/vespa"
+import { searchVespa, GetRandomDocument } from "@/search/vespa"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -11,7 +11,7 @@ import {
 import fs from "fs"
 import path from "path" // Ensure path module is imported
 import crypto from "crypto" // Import crypto module
-
+import { SearchModes } from "@/search/types"
 // Configuration
 const Logger = getLogger(Subsystem.Eval)
 

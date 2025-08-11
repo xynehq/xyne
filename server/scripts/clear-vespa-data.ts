@@ -9,7 +9,7 @@ import type {
   VespaSchema,
   VespaUserQueryHistory,
   VespaGetResult,
-} from "../search/types" // VespaFile is already here
+} from "@/search/types" // VespaFile is already here
 import {
   // VespaSchema, // No longer imported as a value
   fileSchema,
@@ -23,7 +23,7 @@ import {
   chatMessageSchema,
   chatUserSchema,
   chatAttachment,
-} from "../search/types"
+} from "@/search/types"
 
 async function getVespaSchemas(): Promise<string[]> {
   // Returns prefixed names e.g. "my_content.file"
@@ -42,8 +42,8 @@ async function getVespaSchemas(): Promise<string[]> {
   }
 }
 
-import VespaClient from "../search/vespaClient"
-import { GetDocument, UpdateDocument, DeleteDocument } from "../search/vespa" // Added import
+import VespaClient from "@xyne/vespa-ts/client" // Import the Vespa client
+import { GetDocument, UpdateDocument, DeleteDocument } from "@/search/vespa" // Added import
 
 const vespaClient = new VespaClient() // Instantiate the client
 

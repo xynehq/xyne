@@ -1,5 +1,5 @@
-import { Apps, DriveEntity } from "@/search/types"
-import { HybridDefaultProfile, SearchModes } from "@/search/vespa"
+import { Apps, DriveEntity, SearchModes } from "@/search/types"
+import { HybridDefaultProfile } from "@/search/vespa"
 import { expect, test, describe } from "bun:test"
 
 describe("HybridDefaultProfile", () => {
