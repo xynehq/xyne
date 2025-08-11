@@ -228,6 +228,8 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
+const app2 = new Hono<{ Variables: Variables }>()
+
 const AuthMiddleware = jwt({
   secret: accessTokenSecret,
   cookie: AccessTokenCookieName,
@@ -1241,14 +1243,9 @@ export const init = async () => {
   }
 }
 
-app.get("/metrics", async (c) => {
+app2.get("/metrics", async (c) => {
   try {
     const origin = c.req.header("origin")
-
-    // Check if origin contains localhost
-    if (!origin || !origin.includes("localhost")) {
-      return c.text("Access denied", 403)
-    }
 
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
@@ -1280,6 +1277,15 @@ const server = Bun.serve({
   development: true,
   error: errorHandler,
 })
+
+const server2 = Bun.serve({
+  fetch: app2.fetch,
+  port: config.metricsPort, // new port from config
+  idleTimeout: 180,
+  development: true,
+  error: errorHandler,
+})
+
 Logger.info(`listening on port: ${config.port}`)
 
 const errorEvents: string[] = [
