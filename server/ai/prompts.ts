@@ -1986,7 +1986,12 @@ export const synthesisContextPrompt = (
        - Use if the context contains no relevant information to answer the query.
 
   - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
-  - **WEB SCRAPED CONTENT HANDLING**: When Context Fragments contain successfully scraped web content (identifiable by URLs, titles, and extracted text), always use this content to provide meaningful answers. Never respond with "cannot access websites" or similar phrases when web content is already provided in the context.
+  - **CRITICAL WEB SCRAPER HANDLING**: When Context Fragments contain successfully scraped web content (identifiable by URLs, titles, and extracted text), this means the web scraper tool has ALREADY executed successfully. In this case:
+    * DO NOT claim "scraping is not necessary" or "context is already sufficient"
+    * DO NOT suggest that URLs don't need to be scraped when they already have been scraped
+    * ACKNOWLEDGE that the scraping was successful and provide the content
+    * If user asked to "scrape this URL", respond that the scraping was completed successfully and present the content
+  - **URL vs SCRAPED CONTENT**: If you see actual extracted content with titles and text (not just URL references), this means scraping has already occurred successfully.
 
   Context Fragments:
   ${synthesisContext}
@@ -1994,7 +1999,7 @@ export const synthesisContextPrompt = (
   ## Response Format
   {
     "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
-    "answer": "Brief, synthesized answer based only on the context. IMPORTANT: If context contains web scraped content (URLs + extracted text), use that content to answer the query. Do NOT claim inability to access websites when content is already available."
+    "answer": "Brief, synthesized answer based only on the context. IMPORTANT: If context contains web scraped content (URLs + extracted text), acknowledge the successful scraping and present/summarize the content. Do NOT claim inability to access websites or suggest scraping is unnecessary when content is already provided."
   }
 `
 }
