@@ -17,11 +17,13 @@ export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
 export const chatAttachment = "chat_attachment"
-// previous queries
+// Previous queries
 export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
 export const dataSourceFileSchema = "datasource_file"
-export const kbItemsSchema = "kb_items"
+// Knowledge Base feature schemas - contains collections with folders and files
+export const kbItemsSchema = "kb_items" // Collection items (folders and files)
+export const kbFileSchema = "kb_items" // Legacy alias for collection files
 
 export type VespaSchema =
   | typeof fileSchema
@@ -168,10 +170,10 @@ export enum MailAttachmentEntity {
   NotValid = "notvalid",
 }
 export enum KnowledgeBaseEntity {
-  File = "file",
-  Folder = 'folder',
-  KnowledgeBase = 'knowledgebase',
-  Collection = 'collection'
+  File = "file",                    // Files within collections
+  Folder = 'folder',               // Folders within collections  
+  Collection = 'collection',       // Collections (main containers)
+  KnowledgeBase = 'knowledgebase', // Legacy alias for collection
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
@@ -400,17 +402,20 @@ export type VespaDataSourceFileSearch = z.infer<
 // Base schema for KbFile (for insertion)
 export const VespaKbFileSchemaBase = z.object({
   docId: z.string(),
-  kbId: z.string(),
+  clId: z.string(),
   itemId: z.string(),
-  app:z.nativeEnum(Apps),
+  app: z.nativeEnum(Apps),
   entity: z.nativeEnum(KnowledgeBaseEntity),
   fileName: z.string(),
+  description: z.string(),
   storagePath: z.string(),
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()),
   chunks_pos: z.array(z.number()),
+  image_chunks_pos: z.array(z.number()),
   metadata: z.string(),
   createdBy: z.string(),
-  totalFileCount: z.number(),
+  duration: z.number(),
   mimeType: z.string(),
   fileSize: z.number(),
   createdAt: z.number(),

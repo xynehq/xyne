@@ -30,7 +30,7 @@ import { selectPublicAgentSchema } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { users } from "@/db/schema"
 import { UserAgentRole } from "@/shared/types"
-import { getKbItemById } from "@/db/knowledgeBase"
+import { getCollectionItemById } from "@/db/knowledgeBase"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
 const { JwtPayloadKey } = config
@@ -562,7 +562,7 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
         const items = await Promise.all(
           itemIds.map(async (itemId: string) => {
             try {
-              const item = await getKbItemById(db, itemId)
+              const item = await getCollectionItemById(db, itemId)
               if (item) {
                 return {
                   id: item.id,
@@ -597,9 +597,9 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
           // If item has a parentId, try to find the root KB
           if (item.parentId) {
             try {
-              let parent = await getKbItemById(db, item.parentId)
+              let parent = await getCollectionItemById(db, item.parentId)
               while (parent && parent.parentId) {
-                const nextParent = await getKbItemById(db, parent.parentId)
+                const nextParent = await getCollectionItemById(db, parent.parentId)
                 if (!nextParent) break
                 parent = nextParent
               }

@@ -169,12 +169,12 @@ import {
 } from "@/api/chat/types"
 
 import {
-  CreateKnowledgeBaseApi,
-  ListKnowledgeBasesApi,
-  GetKnowledgeBaseApi,
-  UpdateKnowledgeBaseApi,
-  DeleteKnowledgeBaseApi,
-  ListKbItemsApi,
+  CreateCollectionApi,
+  ListCollectionsApi,
+  GetCollectionApi,
+  UpdateCollectionApi,
+  DeleteCollectionApi,
+  ListCollectionItemsApi,
   CreateFolderApi,
   UploadFilesApi,
   DeleteItemApi,
@@ -779,13 +779,13 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
-  // Knowledge Base Routes
-  .post("/kb", CreateKnowledgeBaseApi)
-  .get("/kb", ListKnowledgeBasesApi)
-  .get("/kb/:kbId", GetKnowledgeBaseApi)
-  .put("/kb/:kbId", UpdateKnowledgeBaseApi)
-  .delete("/kb/:kbId", DeleteKnowledgeBaseApi)
-  .get("/kb/:kbId/items", ListKbItemsApi)
+  // Collection Routes (Knowledge Base)
+  .post("/kb", CreateCollectionApi)
+  .get("/kb", ListCollectionsApi)
+  .get("/kb/:kbId", GetCollectionApi)
+  .put("/kb/:kbId", UpdateCollectionApi)
+  .delete("/kb/:kbId", DeleteCollectionApi)
+  .get("/kb/:kbId/items", ListCollectionItemsApi)
   .post("/kb/:kbId/items/folder", CreateFolderApi)
   .post("/kb/:kbId/items/upload", UploadFilesApi)
   .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint

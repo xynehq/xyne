@@ -15,9 +15,9 @@ import { sql } from "drizzle-orm";
 import { users } from "./users";
 import { workspaces } from "./workspaces";
 
-// Knowledge Base Collections table - only stores KB containers
-export const kbCollection = pgTable(
-  "kb_collection",
+// Collections table - stores collections within the knowledge base feature
+export const collections = pgTable(
+  "collections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     workspaceId: integer("workspace_id")
@@ -28,7 +28,7 @@ export const kbCollection = pgTable(
       .references(() => users.id),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
-    vespaDocId: varchar("vespa_doc_id", { length: 100 }).notNull(), // For KB-level indexing
+    vespaDocId: varchar("vespa_doc_id", { length: 100 }).notNull(), // For collection-level indexing
     isPrivate: boolean("is_private").default(true).notNull(),
     totalItems: integer("total_items").default(0).notNull(),
     lastUpdatedByEmail: varchar("last_updated_by_email", { length: 255 }),
@@ -41,31 +41,31 @@ export const kbCollection = pgTable(
   },
   (table) => ({
     // Ensure unique names per workspace (excluding soft-deleted items)
-    uniqueWorkspaceName: uniqueIndex("unique_workspace_kb_name_not_deleted")
+    uniqueWorkspaceName: uniqueIndex("unique_workspace_collection_name_not_deleted")
       .on(table.workspaceId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
-    // Index for finding KBs by owner
-    idxOwnerKbs: index("idx_owner_kbs").on(table.ownerId),
-    // Index for workspace KBs
-    idxWorkspaceKbs: index("idx_workspace_kbs").on(table.workspaceId),
+    // Index for finding collections by owner
+    idxOwnerCollections: index("idx_owner_collections").on(table.ownerId),
+    // Index for workspace collections
+    idxWorkspaceCollections: index("idx_workspace_collections").on(table.workspaceId),
     // Index for soft deletes
-    idxDeletedAt: index("idx_kb_deleted_at").on(table.deletedAt),
+    idxDeletedAt: index("idx_collection_deleted_at").on(table.deletedAt),
     // Index for privacy filtering
-    idxPrivacy: index("idx_kb_privacy").on(table.isPrivate),
+    idxPrivacy: index("idx_collection_privacy").on(table.isPrivate),
     // Index for vespa doc id
-    idxVespaDocId: index("idx_kb_vespa_doc_id").on(table.vespaDocId),
+    idxVespaDocId: index("idx_collection_vespa_doc_id").on(table.vespaDocId),
   })
 );
 
-// KB Items table - stores folders and files only
-export const kbItems = pgTable(
-  "kb_items",
+// Collection Items table - stores folders and files within collections
+export const collectionItems = pgTable(
+  "collection_items",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    kbId: uuid("kb_id")
+    collectionId: uuid("collection_id")
       .notNull()
-      .references(() => kbCollection.id, { onDelete: "cascade" }),
-    parentId: uuid("parent_id"), // null for root items, references other kb_items for nested structure
+      .references(() => collections.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id"), // null for root items, references other collection_items for nested structure
     workspaceId: integer("workspace_id")
       .notNull()
       .references(() => workspaces.id),
@@ -80,7 +80,7 @@ export const kbItems = pgTable(
     position: integer("position").default(0).notNull(),
     vespaDocId: varchar("vespa_doc_id", { length: 100 }), // For both folders and files
     totalFileCount: integer("total_file_count").default(0).notNull(),
-    // File-specific fields (consolidated from kb_files)
+    // File-specific fields (consolidated from separate files table)
     originalName: varchar("original_name", { length: 255 }),
     storagePath: text("storage_path"),
     storageKey: varchar("storage_key", { length: 100 }),
@@ -103,21 +103,21 @@ export const kbItems = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => ({
-    // Ensure unique names at the same level within a KB (excluding soft-deleted items)
-    uniqueKbParentName: uniqueIndex("unique_kb_parent_name_not_deleted")
-      .on(table.kbId, table.parentId, table.name)
+    // Ensure unique names at the same level within a collection (excluding soft-deleted items)
+    uniqueCollectionParentName: uniqueIndex("unique_collection_parent_name_not_deleted")
+      .on(table.collectionId, table.parentId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
-    // Index for finding items by KB
-    idxItemsKb: index("idx_items_kb").on(table.kbId),
+    // Index for finding items by collection
+    idxItemsCollection: index("idx_items_collection").on(table.collectionId),
     // Index for finding items by parent
     idxItemsParent: index("idx_items_parent").on(
       table.parentId,
       table.position
     ),
-    // Index for finding items by type within KB
-    idxItemsKbType: index("idx_items_kb_type").on(table.kbId, table.type),
+    // Index for finding items by type within collection
+    idxItemsCollectionType: index("idx_items_collection_type").on(table.collectionId, table.type),
     // Index for path-based queries
-    idxItemsPath: index("idx_items_path").on(table.kbId, table.path),
+    idxItemsPath: index("idx_items_path").on(table.collectionId, table.path),
     // Index for soft deletes
     idxItemsDeletedAt: index("idx_items_deleted_at").on(table.deletedAt),
     // Index for vespa doc id
@@ -128,31 +128,25 @@ export const kbItems = pgTable(
 );
 
 // Self-referential foreign key for parent-child relationship
-export const kbItemsRelations = {
+export const collectionItemsRelations = {
   parent: {
-    fields: [kbItems.parentId],
-    references: [kbItems.id],
+    fields: [collectionItems.parentId],
+    references: [collectionItems.id],
     onDelete: "cascade" as const,
   },
-  kbCollection: {
-    fields: [kbItems.kbId],
-    references: [kbCollection.id],
+  collection: {
+    fields: [collectionItems.collectionId],
+    references: [collections.id],
     onDelete: "cascade" as const,
   },
 };
 
 // Type definitions for use in the application
-export type KbCollection = typeof kbCollection.$inferSelect;
-export type NewKbCollection = typeof kbCollection.$inferInsert;
-export type KbItem = typeof kbItems.$inferSelect;
-export type NewKbItem = typeof kbItems.$inferInsert;
+export type Collection = typeof collections.$inferSelect;
+export type NewCollection = typeof collections.$inferInsert;
+export type CollectionItem = typeof collectionItems.$inferSelect;
+export type NewCollectionItem = typeof collectionItems.$inferInsert;
 
 // Helper types
-export type Folder = KbItem & { type: "folder" };
-export type File = KbItem & { type: "file" };
-
-// Legacy type alias for backwards compatibility during transition
-export type KnowledgeBase = KbCollection;
-export type NewKnowledgeBase = NewKbCollection;
-export type KbFile = KbItem & { type: "file" };
-export type NewKbFile = Omit<NewKbItem, "type"> & { type?: "file" };
+export type Folder = CollectionItem & { type: "folder" };
+export type File = CollectionItem & { type: "file" };

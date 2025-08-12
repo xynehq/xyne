@@ -1,5 +1,4 @@
-// Updated types for the new schema structure
-export interface KnowledgeBase {
+export interface Collection {
   id: string;
   workspaceId: number;
   ownerId: number;
@@ -18,14 +17,14 @@ export interface KnowledgeBase {
   totalCount?: number; // alias for totalItems
 }
 
-export interface KbItem {
+export interface CollectionItem {
   id: string;
-  kbId: string; // Reference to the knowledge base
+  collectionId: string; // Reference to the collection
   parentId: string | null;
   workspaceId: number;
   ownerId: number;
   name: string;
-  type: "folder" | "file"; // Only folder and file, no knowledge_base
+  type: "folder" | "file"; // Only folder and file types
   path: string;
   position: number;
   vespaDocId: string | null;
@@ -55,11 +54,11 @@ export interface KbItem {
   lastUpdated?: string;
   updatedBy?: string;
   isOpen?: boolean;
-  children?: KbItem[];
+  children?: CollectionItem[];
 }
 
 // Type alias for files
-export interface KbFile extends KbItem {
+export interface File extends CollectionItem {
   type: "file";
   originalName: string | null;
   storagePath: string | null;
@@ -72,11 +71,16 @@ export interface KbFile extends KbItem {
 }
 
 // Type alias for folders
-export interface KbFolder extends KbItem {
+export interface Folder extends CollectionItem {
   type: "folder";
 }
 
-// Legacy type for backward compatibility during transition
+// Legacy types for backward compatibility during transition
+export type KnowledgeBase = Collection;
+export type KbItem = CollectionItem;
+export type KbFile = File;
+export type KbFolder = Folder;
+
 export interface LegacyKbItem {
   id: string;
   parentId: string | null;

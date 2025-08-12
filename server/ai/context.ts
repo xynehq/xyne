@@ -603,7 +603,7 @@ const constructKbFileContext = (
 
   return `Source: Knowledge Base
 File: ${fields.fileName || "N/A"}
-Knowledge Base ID: ${fields.kbId || "N/A"}
+Knowledge Base ID: ${fields.clId || "N/A"}
 Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}

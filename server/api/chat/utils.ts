@@ -55,7 +55,7 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
-import { getAllFolderItems, getKbFilesVespaIds } from "@/db/knowledgeBase"
+import { getAllCollectionAndFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
 
 function slackTs(ts: string | number) {
@@ -428,11 +428,11 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
     return {
       docId: kbFields.docId,
       title: kbFields.fileName || "KB File",
-      url: `/kb/${kbFields.kbId}`,
+      url: `/kb/${kbFields.clId}`,
       app: Apps.KnowledgeBase,
       entity: SystemEntity.SystemInfo,
       itemId: kbFields.itemId,
-      kbId: kbFields.kbId,
+      kbId: kbFields.clId,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -509,7 +509,7 @@ export const extractFileIdsFromMessage = async (
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
-  const kbFolderIds: string[] = []
+  const collectionFolderIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
@@ -564,13 +564,26 @@ export const extractFileIdsFromMessage = async (
       }
 
       if (obj?.value?.app == Apps.KnowledgeBase) {
-        // now if it is folder then get all the items in it  else if file of kb then add as it is
+        // now if it is folder then get all the items in it  else if file of collection then add as it is
         if (
           (obj?.value?.entity == KnowledgeBaseEntity.Folder ||
             obj?.value?.entity == KnowledgeBaseEntity.KnowledgeBase || obj?.value?.entity == KnowledgeBaseEntity.Collection) &&
           obj?.value?.itemId
         ) {
-          kbFolderIds.push(obj.value.itemId)
+          // Add prefix based on entity type
+          if (obj?.value?.entity == KnowledgeBaseEntity.Collection) {
+            const prefixedId = `cl-${obj.value.itemId}`;
+            collectionFolderIds.push(prefixedId);
+            console.log(`Added collection with prefix: ${prefixedId}`);
+          } else if (obj?.value?.entity == KnowledgeBaseEntity.Folder) {
+            const prefixedId = `clfd-${obj.value.itemId}`;
+            collectionFolderIds.push(prefixedId);
+            console.log(`Added collection folder with prefix: ${prefixedId}`);
+          } else {
+            // KnowledgeBase entity - keep original behavior for backward compatibility
+            collectionFolderIds.push(obj.value.itemId);
+            console.log(`Added legacy item (no prefix): ${obj.value.itemId}`);
+          }
         } else if (obj?.value?.entity == KnowledgeBaseEntity.File) {
           fileIds.push(obj.value.docId)
         }
@@ -642,12 +655,12 @@ export const extractFileIdsFromMessage = async (
     }
   }
 
-  console.log("console.log",kbFolderIds.join(" ,"))
-  const kbfileIds = await getAllFolderItems(kbFolderIds, db)
-  console.log("console.log",kbfileIds.join(" ,"))
-  if (kbFolderIds.length > 0) {
-    const ids = await getKbFilesVespaIds(kbfileIds, db)
-    const vespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+  console.log("Collection and folder IDs to process:", collectionFolderIds.join(" ,"))
+  const collectionFileIds = await getAllCollectionAndFolderItems(collectionFolderIds, db)
+  console.log("File IDs extracted from collections/folders:", collectionFileIds.join(" ,"))
+  if (collectionFolderIds.length > 0) {
+    const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
+    const vespaIds = ids.filter((item) => item.vespaDocId !== null).map((item) => item.vespaDocId!)
     fileIds.push(...vespaIds)
   }
 

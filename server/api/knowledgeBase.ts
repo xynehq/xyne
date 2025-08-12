@@ -12,29 +12,35 @@ import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import {
-  createKnowledgeBase,
-  getKnowledgeBaseById,
-  getKnowledgeBasesByOwner,
-  getAccessibleKnowledgeBases,
-  updateKnowledgeBase,
-  softDeleteKnowledgeBase,
+  // New primary function names
+  createCollection,
+  getCollectionById,
+  getCollectionsByOwner,
+  getAccessibleCollections,
+  updateCollection,
+  softDeleteCollection,
   createFolder,
   createFileItem,
-  getKbItemById,
-  getKbItemsByParent,
-  getKbItemByPath,
-  updateKbItem,
-  softDeleteKbItem,
-  getKbFileByItemId,
+  getCollectionItemById,
+  getCollectionItemsByParent,
+  getCollectionItemByPath,
+  updateCollectionItem,
+  softDeleteCollectionItem,
+  getCollectionFileByItemId,
   generateStorageKey,
-  generateVespaDocId,
+  generateFileVespaDocId,
   generateFolderVespaDocId,
-  generateKbVespaDocId,
+  generateCollectionVespaDocId,
   getAllFolderItems,
-  getKbFilesVespaIds,
-} from "@/db/knowledgeBase"
-import type { KnowledgeBase, KbItem, KbFile } from "@/db/schema"
-import { kbItems, kbCollection } from "@/db/schema"
+  getCollectionFilesVespaIds,
+  // Legacy aliases for backward compatibility
+  } from "@/db/knowledgeBase"
+import type { 
+  Collection, 
+  CollectionItem, 
+  File as DbFile, 
+} from "@/db/schema"
+import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
 import { Apps, kbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
@@ -59,12 +65,12 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
 
 const { JwtPayloadKey } = config
 
-// Storage configuration
+// Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB max file size
 const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
 
-// Initialize storage directory
+// Initialize storage directory for Knowledge Base files
 ;(async () => {
   try {
     await mkdir(KB_STORAGE_ROOT, { recursive: true })
@@ -79,15 +85,15 @@ const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
   }
 })()
 
-// Schema definitions
-const createKnowledgeBaseSchema = z.object({
+// Schema definitions for Knowledge Base feature
+const createCollectionSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   isPrivate: z.boolean().optional().default(true),
   metadata: z.record(z.any()).optional(),
 })
 
-const updateKnowledgeBaseSchema = z.object({
+const updateCollectionSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   isPrivate: z.boolean().optional(),
@@ -109,7 +115,7 @@ function calculateChecksum(buffer: ArrayBuffer): string {
 
 function getStoragePath(
   workspaceId: string,
-  kbId: string,
+  collectionId: string,
   storageKey: string,
   fileName: string,
 ): string {
@@ -119,7 +125,7 @@ function getStoragePath(
   return join(
     KB_STORAGE_ROOT,
     workspaceId,
-    kbId,
+    collectionId,
     year.toString(),
     month,
     `${storageKey}_${fileName}`,
@@ -128,15 +134,15 @@ function getStoragePath(
 
 // API Handlers
 
-// Create a new Knowledge Base
-export const CreateKnowledgeBaseApi = async (c: Context) => {
+// Create a new Collection
+export const CreateCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
 
   // Get user from database like other APIs do
   const users = await getUserByEmail(db, userEmail)
   if (!users || users.length === 0) {
     loggerWithChild({ email: userEmail }).error(
-      "No user found for email in CreateKnowledgeBaseApi",
+      "No user found for email in CreateCollectionApi",
     )
     throw new HTTPException(404, { message: "User not found" })
   }
@@ -145,16 +151,16 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
   try {
     const rawData = await c.req.json()
     loggerWithChild({ email: userEmail }).info(
-      `Creating KB with raw data: ${JSON.stringify(rawData)}`,
+      `Creating Collection with raw data: ${JSON.stringify(rawData)}`,
     )
 
-    const validatedData = createKnowledgeBaseSchema.parse(rawData)
-    const vespaDocId = generateFolderVespaDocId()
+    const validatedData = createCollectionSchema.parse(rawData)
+    const vespaDocId = generateCollectionVespaDocId()
     loggerWithChild({ email: userEmail }).info(
       `User object: ${JSON.stringify({ id: user.id, email: user.email, role: user.role })}`,
     )
 
-    const kbData = {
+    const collectionData = {
       name: validatedData.name,
       description: validatedData.description || null,
       workspaceId: user.workspaceId,
@@ -169,45 +175,47 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
     }
 
     loggerWithChild({ email: userEmail }).info(
-      `Creating KB with data: ${JSON.stringify(kbData)}`,
+      `Creating Collection with data: ${JSON.stringify(collectionData)}`,
     )
 
-    const kb = await createKnowledgeBase(db, kbData)
+    // Use transaction to ensure both database and Vespa operations succeed together
+    const collection = await db.transaction(async (tx) => {
+      const createdCollection = await createCollection(tx, collectionData)
 
-    const vespaDoc = {
-      docId: vespaDocId,
-      kbId: kb.id,
-      itemId: kb.id,
-      fileName: validatedData.name,
-      app: Apps.KnowledgeBase,
-      entity: KnowledgeBaseEntity.Collection, // You may need to add this to your enum
-      storagePath: "",
-      chunks: [],
-      chunks_pos: [],
-      image_chunks: [],
-      image_chunks_pos: [],
-      description: validatedData.description || "",
-      metadata: JSON.stringify({
-        type: "knowledge_base",
-        isPrivate: validatedData.isPrivate ?? true,
+      const vespaDoc = {
+        docId: vespaDocId,
+        clId: createdCollection.id,
+        itemId: createdCollection.id,
+        fileName: validatedData.name,
+        app: Apps.KnowledgeBase,
+        entity: KnowledgeBaseEntity.Collection,
+        description: validatedData.description || "",
+        storagePath: "",
+        chunks: [],
+        image_chunks: [],
+        chunks_pos: [],
+        image_chunks_pos: [],
+        metadata: JSON.stringify({
+          version: "1.0",
+          lastModified: Date.now(),
+          ...validatedData.metadata
+        }),
         createdBy: user.email,
-        ownerId: user.id,
-        workspaceId: user.workspaceId,
-      }),
-      createdBy: user.email,
-      mimeType: "knowledge_base",
-      fileSize: 0,
-      duration: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
+        duration: 0,
+        mimeType: "knowledge_base",
+        fileSize: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
 
-    await insert(vespaDoc, kbFileSchema)
+      await insert(vespaDoc, kbItemsSchema)
+      return createdCollection
+    })
     loggerWithChild({ email: userEmail }).info(
-      `Created Knowledge Base: ${kb.id} for user ${userEmail}`,
+      `Created Collection: ${collection.id} for user ${userEmail}`,
     )
 
-    return c.json(kb)
+    return c.json(collection)
   } catch (error) {
     if (error instanceof z.ZodError) {
       loggerWithChild({ email: userEmail }).error(
@@ -220,16 +228,16 @@ export const CreateKnowledgeBaseApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to create Knowledge Base: ${errMsg}`,
+      `Failed to create Collection: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: `Failed to create Knowledge Base: ${errMsg}`,
+      message: `Failed to create Collection: ${errMsg}`,
     })
   }
 }
 
-// List Knowledge Bases for a user
-export const ListKnowledgeBasesApi = async (c: Context) => {
+// List Collections for a user
+export const ListCollectionsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const showOnlyOwn = c.req.query("ownOnly") === "true"
 
@@ -241,26 +249,26 @@ export const ListKnowledgeBasesApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kbs = showOnlyOwn
-      ? await getKnowledgeBasesByOwner(db, user.id)
-      : await getAccessibleKnowledgeBases(db, user.id)
-    return c.json(kbs)
+    const collections = showOnlyOwn
+      ? await getCollectionsByOwner(db, user.id)
+      : await getAccessibleCollections(db, user.id)
+    return c.json(collections)
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to list Knowledge Bases: ${errMsg}`,
+      `Failed to list Collections: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: "Failed to list Knowledge Bases",
+      message: "Failed to list Collections",
     })
   }
 }
 
-// Get a specific Knowledge Base
-export const GetKnowledgeBaseApi = async (c: Context) => {
+// Get a specific Collection
+export const GetCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -270,37 +278,37 @@ export const GetKnowledgeBaseApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if KB is public
-    if (kb.ownerId !== user.id && kb.isPrivate) {
+    // Check access: owner can always access, others only if Collection is public
+    if (collection.ownerId !== user.id && collection.isPrivate) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
-    return c.json(kb)
+    return c.json(collection)
   } catch (error) {
     if (error instanceof HTTPException) throw error
 
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to get Knowledge Base: ${errMsg}`,
+      `Failed to get Collection: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: "Failed to get Knowledge Base",
+      message: "Failed to get Collection",
     })
   }
 }
 
-// Update a Knowledge Base
-export const UpdateKnowledgeBaseApi = async (c: Context) => {
+// Update a Collection
+export const UpdateCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -310,32 +318,32 @@ export const UpdateKnowledgeBaseApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
     // Check ownership
-    if (kb.ownerId !== user.id) {
+    if (collection.ownerId !== user.id) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
     const rawData = await c.req.json()
-    const validatedData = updateKnowledgeBaseSchema.parse(rawData)
+    const validatedData = updateCollectionSchema.parse(rawData)
 
-    const updatedKb = await updateKnowledgeBase(db, kbId, {
+    const updatedCollection = await updateCollection(db, collectionId, {
       ...validatedData,
       lastUpdatedById: user.id,
       lastUpdatedByEmail: user.email,
     })
 
     loggerWithChild({ email: userEmail }).info(
-      `Updated Knowledge Base: ${kbId}`,
+      `Updated Collection: ${collectionId}`,
     )
 
-    return c.json(updatedKb)
+    return c.json(updatedCollection)
   } catch (error) {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
@@ -347,18 +355,18 @@ export const UpdateKnowledgeBaseApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to update Knowledge Base: ${errMsg}`,
+      `Failed to update Collection: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: "Failed to update Knowledge Base",
+      message: "Failed to update Collection",
     })
   }
 }
 
-// Delete a Knowledge Base
-export const DeleteKnowledgeBaseApi = async (c: Context) => {
+// Delete a Collection
+export const DeleteCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -368,38 +376,38 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
     // Check ownership
-    if (kb.ownerId !== user.id) {
+    if (collection.ownerId !== user.id) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
     // Get all items in the knowledge base before deletion
     const allItems = await db
       .select()
-      .from(kbItems)
-      .where(and(isNull(kbItems.deletedAt)))
+      .from(collectionItems)
+      .where(and(isNull(collectionItems.deletedAt)))
 
-    // Filter items that belong to this KB by checking hierarchy
-    const kbItemsToDelete: KbItem[] = []
+    // Filter items that belong to this Collection by checking hierarchy
+    const collectionItemsToDelete: CollectionItem[] = []
     for (const item of allItems) {
-      if (item.id === kbId) {
-        kbItemsToDelete.push(item)
+      if (item.id === collectionId) {
+        collectionItemsToDelete.push(item)
         continue
       }
 
-      // Check if item belongs to this KB by traversing up the hierarchy
+      // Check if item belongs to this Collection by traversing up the hierarchy
       let currentItem = item
-      let belongsToKb = false
+      let belongsToCollection = false
       while (currentItem.parentId) {
-        if (currentItem.parentId === kbId) {
-          belongsToKb = true
+        if (currentItem.parentId === collectionId) {
+          belongsToCollection = true
           break
         }
         const parent = allItems.find((i) => i.id === currentItem.parentId)
@@ -407,8 +415,8 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
         currentItem = parent
       }
 
-      if (belongsToKb) {
-        kbItemsToDelete.push(item)
+      if (belongsToCollection) {
+        collectionItemsToDelete.push(item)
       }
     }
 
@@ -416,37 +424,37 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
     let deletedFilesCount = 0
     const fileItemIds: string[] = []
 
-    for (const item of kbItemsToDelete) {
+    for (const item of collectionItemsToDelete) {
       if (item.type === "file") {
-        const kbFile = await getKbFileByItemId(db, item.id)
-        if (kbFile) {
+        const collectionFile = await getCollectionFileByItemId(db, item.id)
+        if (collectionFile) {
           fileItemIds.push(item.id)
 
           try {
             // Delete from Vespa
-            if (kbFile.vespaDocId) {
-              await DeleteDocument(kbFile.vespaDocId, kbItemsSchema)
+            if (collectionFile.vespaDocId) {
+              await DeleteDocument(collectionFile.vespaDocId, kbItemsSchema)
               loggerWithChild({ email: userEmail }).info(
-                `Deleted from Vespa: ${kbFile.vespaDocId}`,
+                `Deleted from Vespa: ${collectionFile.vespaDocId}`,
               )
             }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`,
+              `Failed to delete from Vespa: ${collectionFile.vespaDocId} - ${getErrorMessage(error)}`,
             )
           }
 
           try {
             // Delete from storage
-            if (kbFile.storagePath) {
-              await unlink(kbFile.storagePath)
+            if (collectionFile.storagePath) {
+              await unlink(collectionFile.storagePath)
               loggerWithChild({ email: userEmail }).info(
-                `Deleted from storage: ${kbFile.storagePath}`,
+                `Deleted from storage: ${collectionFile.storagePath}`,
               )
             }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`,
+              `Failed to delete file from storage: ${collectionFile.storagePath} - ${getErrorMessage(error)}`,
             )
           }
 
@@ -460,7 +468,7 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbFileSchema)
+            await DeleteDocument(vespaDocId, kbItemsSchema)
             loggerWithChild({ email: userEmail }).info(
               `Deleted folder from Vespa: ${vespaDocId}`,
             )
@@ -478,7 +486,7 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbFileSchema)
+            await DeleteDocument(vespaDocId, kbItemsSchema)
             loggerWithChild({ email: userEmail }).info(
               `Deleted Knowledge Base from Vespa: ${vespaDocId}`,
             )
@@ -493,33 +501,33 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
 
     // Use transaction to ensure both tables are updated atomically
     await db.transaction(async (tx) => {
-      // Soft delete all items in the KB (including the KB itself)
-      if (kbItemsToDelete.length > 0) {
-        const itemIds = kbItemsToDelete.map((item) => item.id)
+      // Soft delete all items in the Collection (including the Collection itself)
+      if (collectionItemsToDelete.length > 0) {
+        const itemIds = collectionItemsToDelete.map((item) => item.id)
         await tx
-          .update(kbItems)
+          .update(collectionItems)
           .set({
             deletedAt: sql`NOW()`,
             updatedAt: sql`NOW()`,
           })
           .where(
-            sql`${kbItems.id} IN (${sql.join(
+            sql`${collectionItems.id} IN (${sql.join(
               itemIds.map((id) => sql`${id}`),
               sql`, `,
             )})`,
           )
       }
 
-      // Note: In the new schema, file records are part of kb_items, so no separate table to update
+      // Note: In the new schema, file records are part of collection_items, so no separate table to update
     })
 
     loggerWithChild({ email: userEmail }).info(
-      `Deleted Knowledge Base: ${kbId} (${kbItemsToDelete.length} total items deleted, ${deletedFilesCount} files removed from Vespa and storage)`,
+      `Deleted Collection: ${collectionId} (${collectionItemsToDelete.length} total items deleted, ${deletedFilesCount} files removed from Vespa and storage)`,
     )
 
     return c.json({
       success: true,
-      deletedCount: kbItemsToDelete.length,
+      deletedCount: collectionItemsToDelete.length,
       deletedFiles: deletedFilesCount,
     })
   } catch (error) {
@@ -536,10 +544,10 @@ export const DeleteKnowledgeBaseApi = async (c: Context) => {
   }
 }
 
-// List items in a Knowledge Base
-export const ListKbItemsApi = async (c: Context) => {
+// List items in a Collection
+export const ListCollectionItemsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
   const parentId = c.req.query("parentId") || null
 
   // Get user from database
@@ -550,19 +558,19 @@ export const ListKbItemsApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if KB is public
-    if (kb.ownerId !== user.id && kb.isPrivate) {
+    // Check access: owner can always access, others only if Collection is public
+    if (collection.ownerId !== user.id && collection.isPrivate) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
-    const items = await getKbItemsByParent(db, kbId, parentId)
+    const items = await getCollectionItemsByParent(db, collectionId, parentId)
     return c.json(items)
   } catch (error) {
     if (error instanceof HTTPException) throw error
@@ -570,10 +578,10 @@ export const ListKbItemsApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to list KB items: ${errMsg}`,
+      `Failed to list Collection items: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: "Failed to list Knowledge Base items",
+      message: "Failed to list Collection items",
     })
   }
 }
@@ -581,7 +589,7 @@ export const ListKbItemsApi = async (c: Context) => {
 // Create a folder
 export const CreateFolderApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -591,15 +599,15 @@ export const CreateFolderApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
     // Check ownership
-    if (kb.ownerId !== user.id) {
+    if (collection.ownerId !== user.id) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
@@ -613,7 +621,7 @@ export const CreateFolderApi = async (c: Context) => {
       createdBy: user.email,
       createdById: user.id,
       workspaceId: user.workspaceId,
-      kbId: kbId,
+      kbId: collectionId,
       parentId: validatedData.parentId || null,
       description: validatedData.metadata?.description || "",
       tags: validatedData.metadata?.tags || [],
@@ -622,55 +630,51 @@ export const CreateFolderApi = async (c: Context) => {
       version: "1.0",
     }
 
-    const folder = await createFolder(
-      db,
-      kbId,
-      validatedData.parentId || null,
-      validatedData.name,
-      folderMetadata,
-      user.id,
-      user.email,
-    )
-    
-    // Use the vespaDocId from the folder record (generated in createFolder)
-    const vespaDoc = {
-      docId: folder.vespaDocId!,
-      kbId: kbId,
-      itemId: folder.id,
-      app: Apps.KnowledgeBase,
-      fileName: validatedData.name,
-      entity: KnowledgeBaseEntity.Folder,
-      storagePath: "",
-      chunks: [],
-      chunks_pos: [], 
-      image_chunks: [], 
-      image_chunks_pos: [], 
-      description: folderMetadata.description || "",
-      metadata: JSON.stringify({
-        type: "folder",
-        createdBy: user.email,
-        createdById: user.id,
-        parentId: validatedData.parentId || null,
-        workspaceId: user.workspaceId,
-        kbId: kbId,
-        folderType: "user_created",
-        createdVia: "api",
+    // Use transaction to ensure both folder creation and Vespa insertion succeed together
+    const folder = await db.transaction(async (tx) => {
+      const createdFolder = await createFolder(
+        tx,
+        collectionId,
+        validatedData.parentId || null,
+        validatedData.name,
+        folderMetadata,
+        user.id,
+        user.email,
+      )
+      
+      // Use the vespaDocId from the folder record (generated in createFolder)
+      const vespaDoc = {
+        docId: createdFolder.vespaDocId!,
+        clId: collectionId,
+        itemId: createdFolder.id,
+        app: Apps.KnowledgeBase,
+        fileName: validatedData.name,
+        entity: KnowledgeBaseEntity.Folder,
         description: folderMetadata.description || "",
-        tags: folderMetadata.tags || [],
-      }),
-      createdBy: user.email,
-      totalFileCount: 0,
-      mimeType: "folder", 
-      fileSize: 0,
-      duration: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
+        storagePath: "",
+        chunks: [],
+        image_chunks: [], 
+        chunks_pos: [], 
+        image_chunks_pos: [], 
+        metadata: JSON.stringify({
+          version: "1.0",
+          lastModified: Date.now(),
+          tags: folderMetadata.tags || [],
+        }),
+        createdBy: user.email,
+        duration: 0,
+        mimeType: "folder", 
+        fileSize: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
 
-    await insert(vespaDoc, kbItemsSchema)
+      await insert(vespaDoc, kbItemsSchema)
+      return createdFolder
+    })
 
     loggerWithChild({ email: userEmail }).info(
-      `Created folder: ${folder.id} in KB: ${kbId} with Vespa doc: ${folder.vespaDocId}`,
+      `Created folder: ${folder.id} in Collection: ${collectionId} with Vespa doc: ${folder.vespaDocId}`,
     )
 
     return c.json(folder)
@@ -744,7 +748,7 @@ setInterval(() => {
 // Helper function to ensure folder exists or create it
 async function ensureFolderPath(
   db: any,
-  kbId: string,
+  collectionId: string,
   pathParts: string[],
   parentId: string | null = null,
   folderCache?: Map<string, string>,
@@ -763,7 +767,7 @@ async function ensureFolderPath(
   const folderName = pathParts[0]
 
   // Check if folder already exists at this level (case-insensitive)
-  const existingItems = await getKbItemsByParent(db, kbId, parentId)
+  const existingItems = await getCollectionItemsByParent(db, collectionId, parentId)
   const existingFolder = existingItems.find(
     (item) =>
       item.type === "folder" &&
@@ -781,7 +785,7 @@ async function ensureFolderPath(
       createdBy: "system",
       createdById: null, // System-created
       workspaceId: null, // Will be populated by createFolder
-      kbId: kbId,
+      kbId: collectionId,
       parentId: parentId || null,
       description: "Auto-created during file upload",
       tags: ["auto-created"],
@@ -791,56 +795,52 @@ async function ensureFolderPath(
       autoCreatedReason: "folder_structure_from_file_path",
     }
     
-    // Create the folder - this will generate its own vespaDocId
-    const newFolder = await createFolder(
-      db, 
-      kbId, 
-      parentId, 
-      folderName, 
-      autoCreatedFolderMetadata
-    )
-    currentFolderId = newFolder.id
-    
-    // Use the vespaDocId from the newly created folder (no duplication!)
-    const vespaDoc = {
-      docId: newFolder.vespaDocId!, // Use the ID generated by createFolder
-      kbId: kbId,
-      itemId: newFolder.id,
-      fileName: folderName,
-      entity: "folder",
-      storagePath: "",
-      chunks: [],
-      chunks_pos: [],
-      image_chunks: [],
-      image_chunks_pos: [],
-      description: "Auto-created during file upload",
-      metadata: JSON.stringify({
-        type: "folder",
-        createdBy: "system",
-        createdById: null,
-        parentId: parentId || null,
-        workspaceId: newFolder.workspaceId,
-        kbId: kbId,
-        folderType: "auto_created",
-        createdVia: "file_upload",
+    // Use transaction to ensure both folder creation and Vespa insertion succeed together  
+    const newFolder = await db.transaction(async (tx: any) => {
+      const createdFolder = await createFolder(
+        tx, 
+        collectionId, 
+        parentId, 
+        folderName, 
+        autoCreatedFolderMetadata
+      )
+      
+      // Use the vespaDocId from the newly created folder (no duplication!)
+      const vespaDoc = {
+        docId: createdFolder.vespaDocId!, // Use the ID generated by createFolder
+        clId: collectionId,
+        itemId: createdFolder.id,
+        fileName: folderName,
+        app: Apps.KnowledgeBase,
+        entity: KnowledgeBaseEntity.Folder,
         description: "Auto-created during file upload",
-        tags: ["auto-created"],
-        autoCreatedReason: "folder_structure_from_file_path",
-        originalPath: pathParts.join("/"),
-      }),
-      createdBy: "system",
-      totalFileCount: 0,
-      mimeType: "folder",
-      fileSize: 0,
-      duration: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
+        storagePath: "",
+        chunks: [],
+        image_chunks: [],
+        chunks_pos: [],
+        image_chunks_pos: [],
+        metadata: JSON.stringify({
+          version: "1.0", 
+          lastModified: Date.now(),
+          autoCreated: true,
+          originalPath: pathParts.join("/"),
+        }),
+        createdBy: "system",
+        duration: 0,
+        mimeType: "folder",
+        fileSize: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
 
-    await insert(vespaDoc, kbItemsSchema)
+      await insert(vespaDoc, kbItemsSchema)
+      return createdFolder
+    })
+    
+    currentFolderId = newFolder.id
 
     loggerWithChild().info(
-      `Auto-created folder during upload: ${newFolder.id} in KB: ${kbId} with Vespa doc: ${newFolder.vespaDocId}`,
+      `Auto-created folder during upload: ${newFolder.id} in Collection: ${collectionId} with Vespa doc: ${newFolder.vespaDocId}`,
     )
   }
 
@@ -852,7 +852,7 @@ async function ensureFolderPath(
   // Recursively process remaining path parts
   return ensureFolderPath(
     db,
-    kbId,
+    collectionId,
     pathParts.slice(1),
     currentFolderId,
     folderCache,
@@ -862,7 +862,7 @@ async function ensureFolderPath(
 // Upload files
 export const UploadFilesApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
   const requestPath = c.req.path
 
   // Handle different endpoints
@@ -877,15 +877,15 @@ export const UploadFilesApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
     // Check ownership
-    if (kb.ownerId !== user.id) {
+    if (collection.ownerId !== user.id) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
@@ -1051,7 +1051,7 @@ export const UploadFilesApi = async (c: Context) => {
         if (pathParts.length > 0) {
           targetParentId = await ensureFolderPath(
             db,
-            kbId,
+            collectionId,
             pathParts,
             parentId,
             folderCache,
@@ -1066,13 +1066,13 @@ export const UploadFilesApi = async (c: Context) => {
         // Check for duplicate by name in the same folder first
         let targetPath = "/"
         if (targetParentId) {
-          const parent = await getKbItemById(db, targetParentId)
+          const parent = await getCollectionItemById(db, targetParentId)
           if (parent) {
             targetPath = parent.path + parent.name + "/"
           }
         }
 
-        const existingItems = await getKbItemsByParent(db, kbId, targetParentId)
+        const existingItems = await getCollectionItemsByParent(db, collectionId, targetParentId)
         // Create a mutable copy of existing names that we can update during batch processing
         const currentNames = [...existingItems.map((item) => item.name)]
 
@@ -1085,18 +1085,18 @@ export const UploadFilesApi = async (c: Context) => {
         }
 
         let fileName = originalFileName
-        const existingFile = await getKbItemByPath(
+        const existingFile = await getCollectionItemByPath(
           db,
-          kbId,
+          collectionId,
           targetPath,
           fileName,
         )
 
         if (existingFile) {
           // File with same name exists - check checksum to decide action
-          const existingKbFile = await getKbFileByItemId(db, existingFile.id)
+          const existingCollectionFile = await getCollectionFileByItemId(db, existingFile.id)
 
-          if (existingKbFile && existingKbFile.checksum === checksum) {
+          if (existingCollectionFile && existingCollectionFile.checksum === checksum) {
             // Same content - skip the upload
             uploadResults.push({
               success: false,
@@ -1123,15 +1123,15 @@ export const UploadFilesApi = async (c: Context) => {
               fileName = generateUniqueName(originalFileName, currentNames)
             } else if (duplicateStrategy === DuplicateStrategy.OVERWRITE) {
               // Delete the existing file to replace it
-              await softDeleteKbItem(db, existingFile.id)
+              await softDeleteCollectionItem(db, existingFile.id)
 
-              if (existingKbFile) {
-                if (existingKbFile.vespaDocId) {
-                  await DeleteDocument(existingKbFile.vespaDocId, kbItemsSchema)
+              if (existingCollectionFile) {
+                if (existingCollectionFile.vespaDocId) {
+                  await DeleteDocument(existingCollectionFile.vespaDocId, kbItemsSchema)
                 }
                 try {
-                  if (existingKbFile.storagePath) {
-                    await unlink(existingKbFile.storagePath)
+                  if (existingCollectionFile.storagePath) {
+                    await unlink(existingCollectionFile.storagePath)
                   }
                 } catch (error) {
                   // Ignore file deletion errors
@@ -1143,12 +1143,12 @@ export const UploadFilesApi = async (c: Context) => {
 
         // Generate unique identifiers
         const storageKey = generateStorageKey()
-        const vespaDocId = generateVespaDocId()
+        const vespaDocId = generateFileVespaDocId()
 
         // Calculate storage path
         const storagePath = getStoragePath(
           user.workspaceExternalId,
-          kbId,
+          collectionId,
           storageKey,
           fileName,
         )
@@ -1159,38 +1159,12 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Use transaction for atomic file creation
-        const item = await db.transaction(async (tx) => {
-          return await createFileItem(
-            tx,
-            kbId,
-            targetParentId,
-            fileName,
-            vespaDocId,
-            fileName,
-            storagePath,
-            storageKey,
-            file.type || "application/octet-stream",
-            file.size,
-            checksum,
-            {
-              originalPath: filePath,
-              folderStructure: pathParts.join("/"),
-              originalFileName:
-                originalFileName !== fileName ? originalFileName : undefined,
-              wasOverwritten:
-                existingFile &&
-                duplicateStrategy === DuplicateStrategy.OVERWRITE,
-            },
-            user.id,
-            user.email,
-          )
-        })
-
-        // Process file based on type
+        // Process file based on type first to get chunks
         const baseMimeType = getBaseMimeType(file.type || "text/plain")
         let chunks: string[] = []
         let chunks_pos: number[] = []
+        let image_chunks: string[] = []
+        let image_chunks_pos: number[] = []
 
         try {
           if (baseMimeType === "application/pdf") {
@@ -1202,6 +1176,8 @@ export const UploadFilesApi = async (c: Context) => {
             )
             chunks = result.text_chunks
             chunks_pos = result.text_chunk_pos
+            image_chunks = result.image_chunks || []
+            image_chunks_pos = result.image_chunk_pos || []
           } else if (isDocxFile(baseMimeType)) {
             // Process DOCX
             const result = await extractTextAndImagesWithChunksFromDocx(
@@ -1211,6 +1187,8 @@ export const UploadFilesApi = async (c: Context) => {
             )
             chunks = result.text_chunks
             chunks_pos = result.text_chunk_pos
+            image_chunks = result.image_chunks || []
+            image_chunks_pos = result.image_chunk_pos || []
           } else if (isPptxFile(baseMimeType)) {
             // Process PPTX
             const result = await extractTextAndImagesWithChunksFromPptx(
@@ -1220,6 +1198,8 @@ export const UploadFilesApi = async (c: Context) => {
             )
             chunks = result.text_chunks
             chunks_pos = result.text_chunk_pos
+            image_chunks = result.image_chunks || []
+            image_chunks_pos = result.image_chunk_pos || []
           } else if (isSheetFile(baseMimeType)) {
             // Process spreadsheet
             const workbook = XLSX.readFile(storagePath)
@@ -1294,32 +1274,66 @@ export const UploadFilesApi = async (c: Context) => {
           chunks_pos = [0]
         }
 
-        // Create Vespa document
-        const vespaDoc = {
-          docId: vespaDocId,
-          kbId: kbId,
-          itemId: item.id,
-          fileName: targetPath === '/' ? kb.name + targetPath + filePath : kb.name + targetPath + fileName,
-          app:Apps.KnowledgeBase,
-          entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
-          storagePath: storagePath,
-          chunks: chunks,
-          chunks_pos: chunks_pos,
-          metadata: JSON.stringify({
-            originalFileName: file.name,
-            uploadedBy: user.email,
-            chunksCount: chunks.length,
-            processingMethod: baseMimeType,
-          }),
-          createdBy: user.email,
-          totalFileCount: 0,
-          mimeType: baseMimeType,
-          fileSize: file.size,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        }
+        // Use transaction for atomic file creation AND Vespa insertion
+        const item = await db.transaction(async (tx) => {
+          const createdItem = await createFileItem(
+            tx,
+            collectionId,
+            targetParentId,
+            fileName,
+            vespaDocId,
+            fileName,
+            storagePath,
+            storageKey,
+            file.type || "application/octet-stream",
+            file.size,
+            checksum,
+            {
+              originalPath: filePath,
+              folderStructure: pathParts.join("/"),
+              originalFileName:
+                originalFileName !== fileName ? originalFileName : undefined,
+              wasOverwritten:
+                existingFile &&
+                duplicateStrategy === DuplicateStrategy.OVERWRITE,
+            },
+            user.id,
+            user.email,
+          )
 
-        await insert(vespaDoc, kbItemsSchema)
+          // Create Vespa document within the same transaction
+          const vespaDoc = {
+            docId: vespaDocId,
+            clId: collectionId,
+            itemId: createdItem.id,
+            fileName: targetPath === '/' ? collection.name + targetPath + filePath : collection.name + targetPath + fileName,
+            app: Apps.KnowledgeBase,
+            entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
+            description: "", // Default description for uploaded files
+            storagePath: storagePath,
+            chunks: chunks,
+            chunks_pos: chunks_pos,
+            image_chunks: image_chunks,
+            image_chunks_pos: image_chunks_pos,
+            metadata: JSON.stringify({
+              originalFileName: file.name,
+              uploadedBy: user.email,
+              chunksCount: chunks.length,
+              imageChunksCount: image_chunks.length,
+              processingMethod: baseMimeType,
+              lastModified: Date.now(),
+            }),
+            createdBy: user.email,
+            duration: 0,
+            mimeType: baseMimeType,
+            fileSize: file.size,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+
+          await insert(vespaDoc, kbItemsSchema)
+          return createdItem
+        })
 
         uploadResults.push({
           success: true,
@@ -1335,7 +1349,7 @@ export const UploadFilesApi = async (c: Context) => {
         })
 
         loggerWithChild({ email: userEmail }).info(
-          `Uploaded file: ${fileName} to KB: ${kbId}`,
+          `Uploaded file: ${fileName} to KB: ${collectionId}`,
         )
       } catch (error) {
         const errMsg = getErrorMessage(error)
@@ -1384,7 +1398,7 @@ export const UploadFilesApi = async (c: Context) => {
 // Delete an item
 export const DeleteItemApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
   const itemId = c.req.param("itemId")
 
   // Get user from database
@@ -1395,58 +1409,58 @@ export const DeleteItemApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
     // Check ownership
-    if (kb.ownerId !== user.id) {
+    if (collection.ownerId !== user.id) {
       throw new HTTPException(403, {
         message: "You don't have access to this Knowledge Base",
       })
     }
 
-    const item = await getKbItemById(db, itemId)
+    const item = await getCollectionItemById(db, itemId)
     if (!item) {
       throw new HTTPException(404, { message: "Item not found" })
     }
 
-    // Verify item belongs to this KB by traversing up the hierarchy
+    // Verify item belongs to this Collection by traversing up the hierarchy
     let currentItem = item
-    let belongsToKb = false
+    let belongsToCollection = false
     while (currentItem.parentId) {
-      if (currentItem.parentId === kbId) {
-        belongsToKb = true
+      if (currentItem.parentId === collectionId) {
+        belongsToCollection = true
         break
       }
-      const parent = await getKbItemById(db, currentItem.parentId)
+      const parent = await getCollectionItemById(db, currentItem.parentId)
       if (!parent) break
       currentItem = parent
     }
 
-    if (!belongsToKb) {
+    if (!belongsToCollection) {
       throw new HTTPException(404, {
         message: "Item not found in this knowledge base",
       })
     }
 
     // Collect all items to delete (including descendants if it's a folder)
-    const itemsToDelete: { item: KbItem; kbFile?: KbFile }[] = []
+    const itemsToDelete: { item: CollectionItem; collectionFile?: DbFile }[] = []
 
     if (item.type === "file") {
       // For files, just add the single file
-      const kbFile = await getKbFileByItemId(db, itemId)
-      itemsToDelete.push({ item, kbFile: kbFile || undefined })
+      const collectionFile = await getCollectionFileByItemId(db, itemId)
+      itemsToDelete.push({ item, collectionFile: collectionFile || undefined })
     } else if (item.type === "folder") {
       // For folders, get all descendants recursively
-      const getAllDescendants = async (parentId: string): Promise<KbItem[]> => {
+      const getAllDescendants = async (parentId: string): Promise<CollectionItem[]> => {
         const children = await db
           .select()
-          .from(kbItems)
-          .where(and(eq(kbItems.parentId, parentId), isNull(kbItems.deletedAt)))
+          .from(collectionItems)
+          .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
 
-        const allDescendants: KbItem[] = [...children]
+        const allDescendants: CollectionItem[] = [...children]
 
         // Recursively get descendants of each child folder
         for (const child of children) {
@@ -1465,10 +1479,10 @@ export const DeleteItemApi = async (c: Context) => {
 
       for (const descendantItem of descendants) {
         if (descendantItem.type === "file") {
-          const kbFile = await getKbFileByItemId(db, descendantItem.id)
+          const collectionFile = await getCollectionFileByItemId(db, descendantItem.id)
           itemsToDelete.push({
             item: descendantItem,
-            kbFile: kbFile || undefined,
+            collectionFile: collectionFile || undefined,
           })
         } else {
           itemsToDelete.push({ item: descendantItem })
@@ -1480,35 +1494,35 @@ export const DeleteItemApi = async (c: Context) => {
     const fileItemIds: string[] = []
     let deletedFoldersCount = 0
 
-    for (const { item: itemToDelete, kbFile } of itemsToDelete) {
-      if (itemToDelete.type === "file" && kbFile) {
+    for (const { item: itemToDelete, collectionFile } of itemsToDelete) {
+      if (itemToDelete.type === "file" && collectionFile) {
         fileItemIds.push(itemToDelete.id)
 
           try {
             // Delete from Vespa
-            if (kbFile.vespaDocId) {
-              await DeleteDocument(kbFile.vespaDocId, kbItemsSchema)
+            if (collectionFile.vespaDocId) {
+              await DeleteDocument(collectionFile.vespaDocId, kbItemsSchema)
               loggerWithChild({ email: userEmail }).info(
-                `Deleted file from Vespa: ${kbFile.vespaDocId}`,
+                `Deleted file from Vespa: ${collectionFile.vespaDocId}`,
               )
             }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from Vespa: ${kbFile.vespaDocId} - ${getErrorMessage(error)}`,
+              `Failed to delete file from Vespa: ${collectionFile.vespaDocId} - ${getErrorMessage(error)}`,
             )
           }
 
           try {
             // Delete from storage
-            if (kbFile.storagePath) {
-              await unlink(kbFile.storagePath)
+            if (collectionFile.storagePath) {
+              await unlink(collectionFile.storagePath)
               loggerWithChild({ email: userEmail }).info(
-                `Deleted from storage: ${kbFile.storagePath}`,
+                `Deleted from storage: ${collectionFile.storagePath}`,
               )
             }
           } catch (error) {
             loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from storage: ${kbFile.storagePath} - ${getErrorMessage(error)}`,
+              `Failed to delete file from storage: ${collectionFile.storagePath} - ${getErrorMessage(error)}`,
             )
           }
       } else if (itemToDelete.type === "folder") {
@@ -1535,13 +1549,13 @@ export const DeleteItemApi = async (c: Context) => {
     // Use transaction to soft delete items and update kb_files
     await db.transaction(async (tx) => {
       // Soft delete the item (and all descendants if it's a folder)
-      await softDeleteKbItem(tx, itemId)
+      await softDeleteCollectionItem(tx, itemId)
 
       // Note: In the new schema, file records are part of kb_items, so no separate table to update
     })
 
     loggerWithChild({ email: userEmail }).info(
-      `Deleted item: ${itemId} from KB: ${kbId} (${itemsToDelete.length} total items deleted)`,
+      `Deleted item: ${itemId} from Collection: ${collectionId} (${itemsToDelete.length} total items deleted)`,
     )
 
     return c.json({
@@ -1566,7 +1580,7 @@ export const DeleteItemApi = async (c: Context) => {
 // Get file preview URL
 export const GetFilePreviewApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
   const itemId = c.req.param("itemId")
 
   // Get user from database
@@ -1577,44 +1591,44 @@ export const GetFilePreviewApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const kb = await getKnowledgeBaseById(db, kbId)
-    if (!kb) {
-      throw new HTTPException(404, { message: "Knowledge Base not found" })
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if KB is public
-    if (kb.ownerId !== user.id && kb.isPrivate) {
+    // Check access: owner can always access, others only if Collection is public
+    if (collection.ownerId !== user.id && collection.isPrivate) {
       throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
+        message: "You don't have access to this Collection",
       })
     }
 
-    const item = await getKbItemById(db, itemId)
+    const item = await getCollectionItemById(db, itemId)
     if (!item || item.type !== "file") {
       throw new HTTPException(404, { message: "File not found" })
     }
 
-    // Verify item belongs to this KB by traversing up the hierarchy
+    // Verify item belongs to this Collection by traversing up the hierarchy
     let currentItem = item
-    let belongsToKb = false
+    let belongsToCollection = false
     while (currentItem.parentId) {
-      if (currentItem.parentId === kbId) {
-        belongsToKb = true
+      if (currentItem.parentId === collectionId) {
+        belongsToCollection = true
         break
       }
-      const parent = await getKbItemById(db, currentItem.parentId)
+      const parent = await getCollectionItemById(db, currentItem.parentId)
       if (!parent) break
       currentItem = parent
     }
 
-    if (!belongsToKb) {
+    if (!belongsToCollection) {
       throw new HTTPException(404, {
         message: "File not found in this knowledge base",
       })
     }
 
-    const kbFile = await getKbFileByItemId(db, itemId)
-    if (!kbFile) {
+    const collectionFile = await getCollectionFileByItemId(db, itemId)
+    if (!collectionFile) {
       throw new HTTPException(404, { message: "File data not found" })
     }
 
@@ -1622,9 +1636,9 @@ export const GetFilePreviewApi = async (c: Context) => {
     // For now, just return the storage path that can be used for preview
     // In a real implementation, this might return a signed URL or preview service URL
     return c.json({
-      previewUrl: `/api/v1/kb/${kbId}/files/${itemId}/content`,
-      mimeType: kbFile.mimeType,
-      fileName: kbFile.originalName,
+      previewUrl: `/api/v1/kb/${collectionId}/files/${itemId}/content`,
+      mimeType: collectionFile.mimeType,
+      fileName: collectionFile.originalName,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
@@ -1643,27 +1657,27 @@ export const GetFilePreviewApi = async (c: Context) => {
 // Get file content for preview
 export const GetFileContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const kbId = c.req.param("kbId")
+  const collectionId = c.req.param("kbId")
   const itemId = c.req.param("itemId")
 
  
   try{
-    const kbFile = await getKbFileByItemId(db, itemId)
-    if (!kbFile) {
+    const collectionFile = await getCollectionFileByItemId(db, itemId)
+    if (!collectionFile) {
       throw new HTTPException(404, { message: "File data not found" })
     }
 
     // Read file content
-    if (!kbFile.storagePath) {
+    if (!collectionFile.storagePath) {
       throw new HTTPException(404, { message: "File storage path not found" })
     }
-    const fileContent = await readFile(kbFile.storagePath)
+    const fileContent = await readFile(collectionFile.storagePath)
 
     // Return file content with appropriate headers
-    return new Response(fileContent, {
+    return new Response(new Uint8Array(fileContent), {
       headers: {
-        "Content-Type": kbFile.mimeType || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${kbFile.originalName}"`,
+        "Content-Type": collectionFile.mimeType || "application/octet-stream",
+        "Content-Disposition": `inline; filename="${collectionFile.originalName}"`,
         "Cache-Control": "private, max-age=3600",
       },
     })
@@ -1691,8 +1705,8 @@ export const GetKbVespaIds = async (c: Context) => {
   }
   try {
     const fileIds = await getAllFolderItems(parentIds, db)
-    const ids = await getKbFilesVespaIds(fileIds, db)
-    const vespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+    const ids = await getCollectionFilesVespaIds(fileIds, db)
+    const vespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
     return c.json(
       {
         data: vespaIds,

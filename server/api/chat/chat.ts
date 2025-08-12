@@ -427,7 +427,7 @@ const checkAndYieldCitations = async function* (
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
         if (item.fields.sddocname === dataSourceFileSchema || item.fields.sddocname === kbItemsSchema) {
-          // Skip datasource and KB files from citations
+          // Skip datasource and collection files from citations
           continue
         }
         yield {
@@ -1142,7 +1142,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
-  let agentSpecificKbIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
   let channelIds:string[] = []
   let selectedItem ={}
   if (agentPrompt) {
@@ -1156,7 +1160,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
-
     // This is how we are parsing currently
     if (
       agentPromptData.appIntegrations &&
@@ -1174,15 +1177,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
-          } else if (
-            lowerIntegration.startsWith("kb-") ||
-            lowerIntegration.startsWith("kb_")
-          ) {
-            // kb- is the prefix for knowledge base externalId
-            // Remove the prefix before storing
-            const kbId = integration.replace(/^kb[-_]/, '')
-            agentSpecificKbIds.push(kbId)
-          } else {
+          } 
+          else {
             // Handle generic app names
             switch (lowerIntegration) {
               case Apps.GoogleDrive.toLowerCase():
@@ -1241,9 +1237,40 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       selectedItem=selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp); 
       agentAppEnums =[... new Set(selectedApps)]
-      // Handle selectedItems logic...
+      
+      // Extract collection selections from knowledge_base selections  
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      } else {
+        console.log('No KnowledgeBase items found in selectedItems');
+      }
     }
   }
+  console.log(agentSpecificCollectionSelections);
 
   let message = input
 
@@ -1334,7 +1361,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
-        kbIds: agentSpecificKbIds,
+        collectionSelections: agentSpecificCollectionSelections,
         selectedItem:selectedItem
       },
     )
@@ -1394,7 +1421,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
-            kbIds: agentSpecificKbIds,
+            collectionSelections: agentSpecificCollectionSelections,
             selectedItem:selectedItem
           },
         )
@@ -1457,7 +1484,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
-              kbIds: agentSpecificKbIds,
+              collectionSelections: agentSpecificCollectionSelections,
               selectedItem:selectedItem
             }))
 
@@ -1513,7 +1540,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds,
-            kbIds: agentSpecificKbIds,
+            collectionSelections: agentSpecificCollectionSelections,
             selectedItem:selectedItem
           }
         )
@@ -1626,7 +1653,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            kbIds: agentSpecificKbIds,
+            collectionSelections: agentSpecificCollectionSelections,
             channelIds: channelIds,
             selectedItem:selectedItem
           },
@@ -1680,7 +1707,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            kbIds: agentSpecificKbIds,
+            collectionSelections: agentSpecificCollectionSelections,
             channelIds:channelIds,
             selectedItem:selectedItem
           },
@@ -2308,6 +2335,11 @@ async function* generatePointQueryTimeExpansion(
 
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
   let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
@@ -2393,7 +2425,35 @@ async function* generatePointQueryTimeExpansion(
       selectedItem=selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums =[... new Set(selectedApps)]
-      // Handle selectedItems logic...
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
     }
 
 
@@ -2825,6 +2885,11 @@ async function* generateMetadataQueryAnswer(
     isValidApp(app as Apps) || isValidEntity(entity as any)
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
   let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
@@ -2909,7 +2974,35 @@ async function* generateMetadataQueryAnswer(
       selectedItem=selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums =[... new Set(selectedApps)]
-      // Handle selectedItems logic...
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
     }
 
 

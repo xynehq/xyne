@@ -63,7 +63,7 @@ import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { ProductionVespaClient } from "./productionVespaClient"
-import { getAllFolderItems, getKbFilesVespaIds } from "@/db/knowledgeBase"
+import { getAllFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
@@ -212,7 +212,7 @@ const AllSources = [
   chatContainerSchema,
   // Not adding datasource or datasource_file to AllSources by default,
   // as they are for a specific app functionality.
-  // dataSourceFileSchema and kbFileSchema are intentionally excluded from search
+  // dataSourceFileSchema and collection file schemas are intentionally excluded from search
 ].join(", ")
 
 export const autocomplete = async (
@@ -324,7 +324,6 @@ export const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: SearchModes = SearchModes.NativeRank,
-  isAtSearch:boolean=false,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -486,26 +485,8 @@ export const HybridDefaultProfile = (
       )`
   }
 
-// buildKBYQL
-const buildKBYQL = () => {
-  const appOrEntityFilter = buildAppEntityFilter()
-  // const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-  return `
-    (
-      (
-        ({targetHits:${hits}} userInput(@query))
-        or
-        ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-      )
-      ${appOrEntityFilter}
-    )`
-}
-
   // Start with AllSources and filter out excluded app schemas
   let newSources = AllSources
-  if(isAtSearch){
-    newSources=newSources + `, ${kbFileSchema}`
-  }
   if (excludedApps && excludedApps.length > 0) {
     let sourcesToExclude: string[] = []
 
@@ -526,8 +507,6 @@ const buildKBYQL = () => {
         case Apps.GoogleWorkspace:
           sourcesToExclude.push(userSchema)
           break
-        case Apps.KnowledgeBase:
-          sourcesToExclude.push(kbFileSchema)
       }
     })
     newSources = newSources.split(", ")
@@ -562,9 +541,6 @@ const buildKBYQL = () => {
         appQueries.push(buildSlackYQL())
         break
       case Apps.DataSource:
-        break
-      case Apps.KnowledgeBase:
-        appQueries.push(buildKBYQL())
         break
       default:
         appQueries.push(buildDefaultYQL())
@@ -629,10 +605,15 @@ export const HybridDefaultProfileForAgent =  async(
   dataSourceIds: string[] = [],
   intent: Intent | null = null,
   channelIds: string[] = [],
-  kbIds: string[] = [],
+  collectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = [],
   driveIds:string[] = [],
   selectedItem:{} = {},
 ): Promise<YqlProfile> => {
+  console.log(collectionSelections);
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -833,34 +814,61 @@ export const HybridDefaultProfileForAgent =  async(
       )`
   }
 
-  const buildKbFileYQL = async () => {
-    let kbvespaIds:string[]=[]
-    let kbId: string[] = []
-    
-    if(selectedItem && 
-       typeof selectedItem === 'object' && 
-       Apps.KnowledgeBase in selectedItem && 
-       Array.isArray((selectedItem as Record<string, unknown>)[Apps.KnowledgeBase]) && 
-       ((selectedItem as Record<string, unknown>)[Apps.KnowledgeBase] as unknown[]).length > 0) {
-      kbId = (selectedItem as Record<string, unknown>)[Apps.KnowledgeBase] as string[]
+  const buildCollectionFileYQL = async () => {    
+    console.log("collectionSelections:", collectionSelections);
+
+    // Extract all IDs from the key-value pairs
+    const collectionIds: string[] = []
+    const collectionFolderIds: string[] = []
+    const collectionFileIds: string[] = []
+
+    for (const selection of collectionSelections) {
+      if (selection.collectionIds) {
+        collectionIds.push(...selection.collectionIds)
+      }
+      if (selection.collectionFolderIds) {
+        collectionFolderIds.push(...selection.collectionFolderIds)
+      }
+      if (selection.collectionFileIds) {
+        collectionFileIds.push(...selection.collectionFileIds)
+      }
     }
-
-    const kbfileIds = await getAllFolderItems(kbId, db)
-
+    let conditions: string[] = []
     
-    if(kbfileIds.length>0){
-      const ids = await getKbFilesVespaIds(kbfileIds, db)
-       kbvespaIds = ids.map((item: { vespaDocId: string }) => item.vespaDocId)
+    // Handle entire collections - use clId filter (efficient)
+    if (collectionIds.length > 0) {
+      const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      conditions.push(collectionCondition)
+    }
+    
+    // Handle specific folders - need to get file IDs (less efficient but necessary)
+    if (collectionFolderIds.length > 0) {
+      const clFileIds = await getAllFolderItems(collectionFolderIds, db)
+      if (clFileIds.length > 0) {
+        const ids = await getCollectionFilesVespaIds(clFileIds, db)
+        const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
+        
+        if (clVespaIds.length > 0) {
+          const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+          conditions.push(folderCondition)
+        }
+      }
+    }
+    
+    // Handle specific files - use file IDs directly (most efficient for individual files)
+    if (collectionFileIds.length > 0) {
+      const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
+      const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
       
+      if (clVespaIds.length > 0) {
+        const fileCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+        conditions.push(fileCondition)
+      }
     }
-    const kbIdConditions =
-    kbvespaIds && kbvespaIds.length > 0
-      ? `(${kbvespaIds.map((id) => `docId contains '${id.trim()}'`).join(" or ")})`
-      : "true"
     
-   
-
-    // KB files use kbId for filtering
+    const finalCondition = conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+    console.log(finalCondition);
+    // Collection files use clId for collections and docId for folders/files
     return `
       (
         (
@@ -868,7 +876,7 @@ export const HybridDefaultProfileForAgent =  async(
           or
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         ) 
-        and ${kbIdConditions}
+        and ${finalCondition}
       )`
   }
 
@@ -888,7 +896,8 @@ export const HybridDefaultProfileForAgent =  async(
           if (!sources.includes(mailSchema)) sources.push(mailSchema)
           break
         case Apps.GoogleDrive:
-          appQueries.push(await buildGoogleDriveYQL())
+          const googleDriveYQL = await buildGoogleDriveYQL()
+          appQueries.push(googleDriveYQL)
           if (!sources.includes(fileSchema)) sources.push(fileSchema)
           break
         case Apps.GoogleCalendar:
@@ -923,19 +932,19 @@ export const HybridDefaultProfileForAgent =  async(
           break
         case Apps.KnowledgeBase:
           // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
-          // The actual filtering by specific kbIds happens in buildKbFileYQL.
-          if (kbIds && kbIds.length > 0) {
-            const kbQuery = buildKbFileYQL()
-            if (kbQuery) {
-              appQueries.push(kbQuery)
+          // The actual filtering by specific collectionSelections happens in buildCollectionFileYQL.
+          if (collectionSelections && collectionSelections.length > 0) {
+            const collectionQuery = await buildCollectionFileYQL()
+            if (collectionQuery) {
+              appQueries.push(collectionQuery)
               if (!sources.includes(kbItemsSchema)) sources.push(kbItemsSchema)
             }
           } else {
             // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search
-            // across all accessible knowledge bases. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic KB search.
+            // across all accessible collections. This might be too broad or not the intended behavior.
+            // For now, if no specific IDs, we don't add a query part for generic collection search.
             Logger.warn(
-              "Apps.KnowledgeBase specified for agent, but no specific kbIds provided. Skipping generic KnowledgeBase search part.",
+              "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
             )
           }
           break
@@ -948,21 +957,11 @@ export const HybridDefaultProfileForAgent =  async(
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
-
-  // Handle knowledge base IDs
-  if (kbIds && kbIds.length > 0) {
-    const kbQuery = buildKbFileYQL()
-    if (kbQuery) {
-      appQueries.push(kbQuery)
-      if (!sources.includes(kbItemsSchema)) sources.push(kbItemsSchema)
-    }
-  }
-
   // Debug logging
   Logger.debug(`Agent search configuration:`, {
     AllowedApps,
     dataSourceIds,
-    kbIds,
+    collectionSelections,
     appQueriesCount: appQueries.length,
     sources,
   })
@@ -997,11 +996,11 @@ export const HybridDefaultProfileForAgent =  async(
     )
     ;
     `
-
+  console.log(finalYql);
   Logger.debug(`Generated YQL for agent search:`, {
     yql: finalYql,
     sources: sourcesString,
-    hasKbQueries: kbIds && kbIds.length > 0,
+    hasCollectionQueries: collectionSelections && collectionSelections.length > 0,
   })
 
   return {
@@ -1471,10 +1470,13 @@ type VespaQueryConfig = {
   isIntentSearch?: boolean
   intent?: Intent | null
   channelIds?: string[]
-  kbIds?: string[] // Added for agent-specific knowledge base docIds filtering
+  collectionSelections?: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> // Updated to support key-value pairs instead of prefixed strings
   driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?:{}
-  isAtsearch?:boolean
 }
 
 export const searchVespa = async (
@@ -1496,7 +1498,6 @@ export const searchVespa = async (
     recencyDecayRate = 0.02,
     isIntentSearch = false,
     intent = {},
-    isAtsearch=false,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   const hasProdConfig = Boolean(
@@ -1526,7 +1527,6 @@ export const searchVespa = async (
         maxHits,
         recencyDecayRate,
         intent,
-        isAtsearch,
       })
     } catch (err) {
       Logger.warn(
@@ -1552,7 +1552,6 @@ export const searchVespa = async (
     recencyDecayRate,
     isIntentSearch,
     intent,
-    isAtsearch
   })
 }
 async function _searchVespa(
@@ -1574,7 +1573,6 @@ async function _searchVespa(
     recencyDecayRate = 0.02,
     isIntentSearch = false,
     intent = {},
-    isAtsearch=false,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1608,7 +1606,6 @@ async function _searchVespa(
     app, 
     entity,
     rankProfile,
-    isAtsearch|| false,
     timestampRange,
     excludedIds,
     notInMailLabels, 
@@ -1825,7 +1822,7 @@ export const searchVespaAgent = async (
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
     intent = null,
     channelIds = [],
-    kbIds = [], // Ensure kbIds is destructured here
+    collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
     driveIds = [], // docIds
     selectedItem = {}
   }: Partial<VespaQueryConfig>,
@@ -1833,7 +1830,7 @@ export const searchVespaAgent = async (
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
-
+  console.log(collectionSelections)
   let { yql, profile } = await HybridDefaultProfileForAgent(
     email,
     limit,
@@ -1847,7 +1844,7 @@ export const searchVespaAgent = async (
     dataSourceIds, // Pass dataSourceIds here
     intent,
     channelIds,
-    kbIds, // Pass kbIds here
+    collectionSelections, // Pass unified collectionSelections here
     driveIds, 
     selectedItem,
     

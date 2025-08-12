@@ -75,20 +75,26 @@ const Logger = getLogger(Subsystem.Chat)
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
   agentSpecificDataSourceIds: string[]
-  agentSpecificKbIds: string[]
+  agentSpecificCollectionIds: string[]
+  agentSpecificCollectionFolderIds: string[]
+  agentSpecificCollectionFileIds: string[]
   selectedItems: {}
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
-  let agentSpecificKbIds: string[] = []
+  let agentSpecificCollectionIds: string[] = []
+  let agentSpecificCollectionFolderIds: string[] = []
+  let agentSpecificCollectionFileIds: string[] = []
   let selectedItem = {}
 
   if (!agentPrompt) {
     return {
       agentAppEnums,
       agentSpecificDataSourceIds,
-      agentSpecificKbIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
     }
   }
@@ -115,7 +121,9 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     return {
       agentAppEnums,
       agentSpecificDataSourceIds,
-      agentSpecificKbIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
     }
   }
@@ -131,7 +139,9 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     return {
       agentAppEnums,
       agentSpecificDataSourceIds,
-      agentSpecificKbIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
     }
   }
@@ -155,11 +165,27 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       continue
     }
 
-    // Handle knowledge base IDs
-    if (integrationApp.startsWith("kb-") || integrationApp.startsWith("kb_")) {
-      // Remove the prefix before storing
-      const kbId = integration.replace(/^kb[-_]/, "")
-      agentSpecificKbIds.push(kbId)
+    // Handle collection IDs
+    if (integrationApp.startsWith("cl-")) {
+      // Entire collection - remove cl- prefix
+      const collectionId = integration.replace(/^cl[-_]/, "")
+      agentSpecificCollectionIds.push(collectionId)
+      continue
+    }
+
+    // Handle collection folder IDs
+    if (integrationApp.startsWith("clfd-")) {
+      // Collection folder - remove clfd- prefix
+      const collectionFolderId = integration.replace(/^clfd[-_]/, "")
+      agentSpecificCollectionFolderIds.push(collectionFolderId)
+      continue
+    }
+
+    // Handle collection file IDs
+    if (integrationApp.startsWith("clf-")) {
+      // Collection file - remove clf- prefix
+      const collectionFileId = integration.replace(/^clf[-_]/, "")
+      agentSpecificCollectionFileIds.push(collectionFileId)
       continue
     }
 
@@ -179,7 +205,9 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   return {
     agentAppEnums,
     agentSpecificDataSourceIds,
-    agentSpecificKbIds,
+    agentSpecificCollectionIds,
+    agentSpecificCollectionFolderIds,
+    agentSpecificCollectionFileIds,
     selectedItems: selectedItem,
   }
 }
@@ -204,10 +232,13 @@ interface UnifiedSearchOptions {
   intent?: Intent | null
   channelIds?: string[]
   selectedItems?: {}
+  collectionIds?: string[]
+  collectionFolderIds?: string[]
+  collectionFileIds?: string[]
 }
 
 async function executeVespaSearch(
-  options: UnifiedSearchOptions & { kbIds?: string[] },
+  options: UnifiedSearchOptions,
 ): Promise<{
   result: string
   contexts: MinimalAgentFragment[]
@@ -228,7 +259,9 @@ async function executeVespaSearch(
     schema,
     intent,
     channelIds,
-    kbIds,
+    collectionIds,
+    collectionFolderIds,
+    collectionFileIds,
     selectedItems,
   } = options
 
@@ -243,7 +276,9 @@ async function executeVespaSearch(
   execSpan?.setAttribute("hasTimestampRange", !!timestampRange)
   execSpan?.setAttribute("hasExcludedIds", (excludedIds?.length || 0) > 0)
   execSpan?.setAttribute("hasAgentAppEnums", (agentAppEnums?.length || 0) > 0)
-  execSpan?.setAttribute("hasKbIds", (kbIds?.length || 0) > 0)
+  execSpan?.setAttribute("hasCollectionIds", (collectionIds?.length || 0) > 0)
+  execSpan?.setAttribute("hasCollectionFolderIds", (collectionFolderIds?.length || 0) > 0)
+  execSpan?.setAttribute("hasCollectionFileIds", (collectionFileIds?.length || 0) > 0)
 
   if (!email) {
     const errorMsg = "Email is required for search execution."
@@ -293,7 +328,13 @@ async function executeVespaSearch(
               : undefined,
           dataSourceIds: options.dataSourceIds ?? undefined,
           channelIds,
-          kbIds: kbIds ?? undefined,
+          collectionSelections: (collectionIds?.length || collectionFolderIds?.length || collectionFileIds?.length) 
+            ? [{
+                collectionIds: collectionIds?.length ? collectionIds : undefined,
+                collectionFolderIds: collectionFolderIds?.length ? collectionFolderIds : undefined,
+                collectionFileIds: collectionFileIds?.length ? collectionFileIds : undefined
+              }]
+            : undefined,
           selectedItem: selectedItems,
         },
       )
@@ -442,7 +483,9 @@ export const searchTool: AgentTool = {
       const {
         agentAppEnums,
         agentSpecificDataSourceIds,
-        agentSpecificKbIds,
+        agentSpecificCollectionIds,
+        agentSpecificCollectionFolderIds,
+        agentSpecificCollectionFileIds,
         selectedItems,
       } = parseAgentAppIntegrations(agentPrompt)
       const channelIds = agentPrompt
@@ -457,7 +500,9 @@ export const searchTool: AgentTool = {
         span: execSpan,
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds,
-        kbIds: agentSpecificKbIds,
+        collectionIds: agentSpecificCollectionIds,
+        collectionFolderIds: agentSpecificCollectionFolderIds,
+        collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
       })
     } catch (error) {
@@ -662,7 +707,9 @@ export const metadataRetrievalTool: AgentTool = {
       const {
         agentAppEnums,
         agentSpecificDataSourceIds,
-        agentSpecificKbIds,
+        agentSpecificCollectionIds,
+        agentSpecificCollectionFolderIds,
+        agentSpecificCollectionFileIds,
         selectedItems,
       } = parseAgentAppIntegrations(agentPrompt)
 
@@ -697,7 +744,9 @@ export const metadataRetrievalTool: AgentTool = {
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
-        kbIds: agentSpecificKbIds,
+        collectionIds: agentSpecificCollectionIds,
+        collectionFolderIds: agentSpecificCollectionFolderIds,
+        collectionFileIds: agentSpecificCollectionFileIds,
         timestampRange: { from: params.from, to: params.to },
         intent: resolvedIntent,
         channelIds: channelIds,

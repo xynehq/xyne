@@ -246,10 +246,10 @@ function AgentComponent() {
     FetchedDataSource[]
   >([])
   const [showEntitySearchResults, setShowEntitySearchResults] = useState(false)
-  const [selectedItemsInKb, setSelectedItemsInKb] = useState<
+  const [selectedItemsInCollection, setSelectedItemsInCollection] = useState<
     Record<string, Set<string>>
   >({})
-  const [selectedItemDetailsInKb, setSelectedItemDetailsInKb] = useState<
+  const [selectedItemDetailsInCollection, setSelectedItemDetailsInCollection] = useState<
     Record<string, Record<string, any>>
   >({})
   // Store mapping of integration IDs to their names and types
@@ -851,8 +851,8 @@ function AgentComponent() {
     setIsRagOn(true)
     setSelectedModel("Auto")
     setSelectedIntegrations({})
-    setSelectedItemsInKb({})
-    setSelectedItemDetailsInKb({})
+    setSelectedItemsInCollection({})
+    setSelectedItemDetailsInCollection({})
     setEditingAgent(null)
     setSelectedUsers([])
     setSearchQuery("")
@@ -987,8 +987,8 @@ function AgentComponent() {
                 }
               }
               
-              setSelectedItemsInKb(kbSelections)
-              setSelectedItemDetailsInKb(kbDetails)
+              setSelectedItemsInCollection(kbSelections)
+              setSelectedItemDetailsInCollection(kbDetails)
             }
           } else {
             console.warn("Failed to fetch agent integration items:", response.statusText)
@@ -1124,8 +1124,8 @@ function AgentComponent() {
         }
       })  
       setSelectedIntegrations(currentIntegrations)
-      setSelectedItemsInKb(kbSelections)
-      setSelectedItemDetailsInKb(kbDetails)
+      setSelectedItemsInCollection(kbSelections)
+      setSelectedItemDetailsInCollection(kbDetails)
     }
   }, [editingAgent, viewMode, allAvailableIntegrations])
 
@@ -1216,38 +1216,44 @@ function AgentComponent() {
       selectedAll: boolean
     }> = {}
 
-    // Collect knowledge base item IDs
-    const knowledgeBaseItemIds: string[] = []
-    let hasKnowledgeBaseSelections = false
+    // Collect collection item IDs
+    const collectionItemIds: string[] = []
+    let hasCollectionSelections = false
     
     // Collect data source IDs
     const dataSourceIds: string[] = []
     let hasDataSourceSelections = false
-
     // Process each selected integration
     for (const [integrationId, isSelected] of Object.entries(selectedIntegrations)) {
       if (isSelected) {
         const integration = allAvailableIntegrations.find(int => int.id === integrationId)
         if (!integration) continue
 
-        // For knowledge bases, collect item IDs
+
+        // For collections, collect item IDs with appropriate prefixes
         if (integrationId.startsWith('kb_')) {
-          const kbId = integrationId.replace('kb_', '')
-          const selectedItems = selectedItemsInKb[kbId] || new Set()
+          const collectionId = integrationId.replace('kb_', '')
+          const selectedItems = selectedItemsInCollection[collectionId] || new Set()
+          const itemDetails = selectedItemDetailsInCollection[collectionId] || {}
           
           if (selectedItems.size === 0) {
-            // If no specific items are selected, use the KB id
-            const kbId = integration.id.replace('kb_', '')
-            knowledgeBaseItemIds.push(kbId)
-            // console.log(`Adding KB ID: ${kbId} for integration ${integrationId}`)
+            // If no specific items are selected, use the collection id with collection prefix
+            const collectionId = integration.id.replace('kb_', '')
+            collectionItemIds.push(`cl-${collectionId}`) // Collection prefix
           } else {
-            // If specific items are selected, use their IDs
+            // If specific items are selected, use their IDs with appropriate prefixes
             selectedItems.forEach(itemId => {
-              knowledgeBaseItemIds.push(itemId)
-              // console.log(`Adding KB item ID: ${itemId} for integration ${integrationId}`)
+              const itemDetail = itemDetails[itemId]
+              if (itemDetail && itemDetail.type === 'folder') {
+                // This is a folder within the collection
+                collectionItemIds.push(`clfd-${itemId}`) // Collection folder prefix
+              } else {
+                // For files or items without type info, use original ID
+                collectionItemIds.push(`clf-${itemId}`)
+              }
             })
           }
-          hasKnowledgeBaseSelections = true
+          hasCollectionSelections = true
         } 
         // For data sources, collect their IDs
         else if (integrationId.startsWith('ds-') || integration.app === Apps.DataSource) {
@@ -1264,11 +1270,11 @@ function AgentComponent() {
       }
     }
 
-    // Add knowledge base selections if any exist
-    if (hasKnowledgeBaseSelections) {
+    // Add collection selections if any exist
+    if (hasCollectionSelections) {
       appIntegrationsObject['knowledge_base'] = {
-        itemIds: knowledgeBaseItemIds,
-        selectedAll: knowledgeBaseItemIds.length === 0
+        itemIds: collectionItemIds,
+        selectedAll: collectionItemIds.length === 0
       }
     }
     
@@ -1351,12 +1357,12 @@ function AgentComponent() {
       // If it's a knowledge base integration and we're deselecting it, clear its items
       if (integrationId.startsWith('kb_') && !newValue) {
         const kbId = integrationId.replace('kb_', '')
-        setSelectedItemsInKb(prevItems => {
+        setSelectedItemsInCollection(prevItems => {
           const newState = { ...prevItems }
           delete newState[kbId]
           return newState
         })
-        setSelectedItemDetailsInKb(prevDetails => {
+        setSelectedItemDetailsInCollection(prevDetails => {
           const newState = { ...prevDetails }
           delete newState[kbId]
           return newState
@@ -1392,7 +1398,7 @@ function AgentComponent() {
     
     if (isKbItem && kbId && itemId) {
       // Remove the specific item from the KB
-      setSelectedItemsInKb(prev => {
+      setSelectedItemsInCollection(prev => {
         const newState = { ...prev }
         if (newState[kbId]) {
           const newSet = new Set(newState[kbId])
@@ -1413,7 +1419,7 @@ function AgentComponent() {
       })
       
       // Remove item details
-      setSelectedItemDetailsInKb(prev => {
+      setSelectedItemDetailsInCollection(prev => {
         const newState = { ...prev }
         if (newState[kbId] && newState[kbId][itemId]) {
           delete newState[kbId][itemId]
@@ -1433,12 +1439,12 @@ function AgentComponent() {
       // If it's a knowledge base integration, also clear its selections
       if (integrationId.startsWith('kb_')) {
         const kbId = integrationId.replace('kb_', '')
-        setSelectedItemsInKb(prev => {
+        setSelectedItemsInCollection(prev => {
           const newState = { ...prev }
           delete newState[kbId]
           return newState
         })
-        setSelectedItemDetailsInKb(prev => {
+        setSelectedItemDetailsInCollection(prev => {
           const newState = { ...prev }
           delete newState[kbId]
           return newState
@@ -1455,8 +1461,8 @@ function AgentComponent() {
     setSelectedIntegrations(clearedSelection)
     
     // Also clear selected items and their details for all KBs
-    setSelectedItemsInKb({})
-    setSelectedItemDetailsInKb({})
+    setSelectedItemsInCollection({})
+    setSelectedItemDetailsInCollection({})
   }
 
   const currentSelectedIntegrationObjects = useMemo(() => {
@@ -1483,7 +1489,7 @@ function AgentComponent() {
     allAvailableIntegrations.forEach((integration) => {
       if (integration.id.startsWith('kb_') && selectedIntegrations[integration.id]) {
         const kbId = integration.id.replace('kb_', '')
-        const selectedItems = selectedItemsInKb[kbId] || new Set()
+        const selectedItems = selectedItemsInCollection[kbId] || new Set()
         
         if (selectedItems.size === 0) {
           // If no specific items are selected, show the whole KB pill
@@ -1493,7 +1499,7 @@ function AgentComponent() {
           })
         } else {
           // If specific items are selected, show individual file/folder pills
-          const itemDetails = selectedItemDetailsInKb[kbId] || {}
+          const itemDetails = selectedItemDetailsInCollection[kbId] || {}
           
           selectedItems.forEach(itemId => {
             const item = itemDetails[itemId]
@@ -1534,7 +1540,7 @@ function AgentComponent() {
     })
     
     return result
-  }, [selectedIntegrations, allAvailableIntegrations, selectedItemsInKb, selectedItemDetailsInKb, integrationIdToNameMap])
+  }, [selectedIntegrations, allAvailableIntegrations, selectedItemsInCollection, selectedItemDetailsInCollection, integrationIdToNameMap])
 
   useEffect(() => {
     if (!isRagOn) {
@@ -2915,7 +2921,7 @@ function AgentComponent() {
                                                   checked={(() => {
                                                     const kbId = navigationPath.find(item => item.type === 'kb')?.id
                                                     if (!kbId) return false
-                                                    const selectedSet = selectedItemsInKb[kbId] || new Set()
+                                                    const selectedSet = selectedItemsInCollection[kbId] || new Set()
                                                     return selectedSet.has(item.id)
                                                   })()}
                                                   onChange={(e) => {
@@ -2923,9 +2929,9 @@ function AgentComponent() {
                                                     const kbId = navigationPath.find(item => item.type === 'kb')?.id
                                                     if (!kbId) return
                                                     
-                                                    const isCurrentlySelected = selectedItemsInKb[kbId]?.has(item.id)
+                                                    const isCurrentlySelected = selectedItemsInCollection[kbId]?.has(item.id)
                                                     
-                                                    setSelectedItemsInKb(prev => {
+                                                    setSelectedItemsInCollection(prev => {
                                                       const newState = { ...prev }
                                                       if (!newState[kbId]) {
                                                         newState[kbId] = new Set()
@@ -2943,7 +2949,7 @@ function AgentComponent() {
                                                     })
                                                     
                                                     // Also store/remove item details
-                                                    setSelectedItemDetailsInKb(prev => {
+                                                    setSelectedItemDetailsInCollection(prev => {
                                                       const newState = { ...prev }
                                                       if (!newState[kbId]) {
                                                         newState[kbId] = {}
@@ -2961,7 +2967,7 @@ function AgentComponent() {
                                                     // Auto-select/deselect the KB integration
                                                     setSelectedIntegrations(prev => {
                                                       const kbIntegrationId = `kb_${kbId}`
-                                                      const currentSelectedSet = selectedItemsInKb[kbId] || new Set()
+                                                      const currentSelectedSet = selectedItemsInCollection[kbId] || new Set()
                                                       const newSelectedSet = new Set(currentSelectedSet)
                                                       
                                                       if (isCurrentlySelected) {

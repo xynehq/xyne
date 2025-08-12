@@ -44,8 +44,7 @@ import {
   SlackEntity,
   datasourceSchema,
   dataSourceFileSchema,
-  kbItemsSchema,
-  type VespaKbFileSearch,
+  type VespaAutocompleteChatContainer,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -63,7 +62,6 @@ import {
   ChatContainerResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
-  KbFileResponseSchema,
 } from "@/shared/types"
 import type { z } from "zod"
 import type { AppEntityCounts } from "@/search/vespa"
@@ -311,9 +309,6 @@ export const VespaSearchResponseToSearchResult = (
             if (!fields.description) {
               fields.description = ""
             }
-            if(!fields.name){
-              fields.name = ""
-            }
 
             return ChatContainerResponseSchema.parse(fields)
           } else if (
@@ -348,38 +343,6 @@ export const VespaSearchResponseToSearchResult = (
               matchfeatures: dsFields.matchfeatures,
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
-          } else if (
-            (child.fields as { sddocname?: string }).sddocname === kbItemsSchema
-          ) {
-            const kbFields = child.fields as VespaKbFileSearch
-            const processedChunks = getSortedScoredChunks(
-              kbFields.matchfeatures,
-              kbFields.chunks_summary as string[],
-              maxSearchChunks,
-            )
-
-            const mappedResult = {
-              docId: kbFields.docId,
-              type: kbItemsSchema,
-              app: "knowledgebase" as any,
-              entity: "kb_items",
-              title: kbFields.fileName,
-              fileName: kbFields.fileName,
-              url: null,
-              updatedAt: kbFields.updatedAt,
-              createdAt: kbFields.createdAt,
-              mimeType: kbFields.mimeType,
-              size: kbFields.fileSize,
-              ownerEmail: kbFields.createdBy,
-              owner: kbFields.createdBy,
-              photoLink:"abcd.com",
-              relevance: child.relevance,
-              chunks_summary: processedChunks,
-              matchfeatures: kbFields.matchfeatures,
-              kbId: kbFields.kbId,
-              itemId:kbFields.itemId,
-            }
-            return KbFileResponseSchema.parse(mappedResult)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
