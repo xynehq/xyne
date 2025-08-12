@@ -1533,11 +1533,21 @@ export function generateSynthesisBasedOnToolOutput(
 ): Promise<ConverseResponse> {
   params.json = true
 
-  params.systemPrompt = synthesisContextPrompt(
-    userCtx,
-    currentMessage,
-    gatheredFragments,
-  )
+  if (!isAgentPromptEmpty(agentContext)) {
+    const parsedAgentPrompt = parseAgentPrompt(agentContext)
+    params.systemPrompt = synthesisContextPrompt(
+      userCtx,
+      currentMessage,
+      gatheredFragments,
+      parsedAgentPrompt,
+    )
+  } else {
+    params.systemPrompt = synthesisContextPrompt(
+      userCtx,
+      currentMessage,
+      gatheredFragments,
+    )
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,

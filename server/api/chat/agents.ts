@@ -20,6 +20,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
 } from "@/ai/provider"
+import { cleanBuffer } from "@/api/chat/chat"
 import {
   getConnectorByExternalId,
   getConnectorByApp,
@@ -173,7 +174,6 @@ import config from "@/config"
 import {
   buildContext,
   buildUserQuery,
-  cleanBuffer,
   getThreadContext,
   isContextSelected,
   textToImageCitationIndex,
@@ -217,22 +217,39 @@ const checkAndYieldCitationsForAgent = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - 1]
+        // Fix citation indexing to use 0-based array indexing
+        const item = results[citationIndex - 1] // Citations are 1-based, arrays are 0-based
 
-        if (!item?.source?.docId || !item.source?.url) {
-          Logger.info(
-            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+        if (!item?.source?.docId) {
+          loggerWithChild({ email: email }).error(
+            "[checkAndYieldCitationsForAgent] No item found for citation or missing docId",
+            { citationIndex, resultsLength: results.length, item },
           )
           continue
         }
 
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
+        if (!item.source?.url) {
+          loggerWithChild({ email: email }).info(
+            "[checkAndYieldCitationsForAgent] No url found for citation, using docId",
+            { citationIndex, docId: item.source.docId },
+          )
         }
-        yieldedCitations.add(citationIndex)
+
+        try {
+          yield {
+            citation: {
+              index: citationIndex,
+              item: item.source,
+            },
+          }
+          yieldedCitations.add(citationIndex)
+        } catch (error) {
+          loggerWithChild({ email: email }).error(
+            error,
+            "[checkAndYieldCitationsForAgent] Error yielding citation",
+            { citationIndex, error: getErrorMessage(error) },
+          )
+        }
       }
     } else if (imgMatch && yieldedImageCitations) {
       const parts = imgMatch[1].split("_")
@@ -328,7 +345,10 @@ async function* getToolContinuationIterator(
     imageCitation?: ImageCitation
   }
 > {
-  const context = answerContextMapFromFragments(results, maxDefaultSummary)
+  // Use the provided toolOutput (which contains properly formatted web scraper content)
+  // instead of recreating context from fragments, which loses the formatting
+  const context =
+    toolOutput || answerContextMapFromFragments(results, maxDefaultSummary)
   const { imageFileNames } = extractImageFileNames(
     context,
     results.map(
@@ -422,18 +442,58 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        yield { text: chunk.text }
+        // Enhanced JSON parsing similar to other parts of the codebase
+        try {
+          const cleanedBuffer = cleanBuffer(buffer)
+          parsed = jsonParseLLMOutput(cleanedBuffer, ANSWER_TOKEN) || {}
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              // First valid answer - send the whole thing
+              yield { text: parsed.answer }
+            } else {
+              // Subsequent chunks - send only the new part
+              const newText = parsed.answer.slice(currentAnswer.length)
+              if (newText) {
+                yield { text: newText }
+              }
+            }
+            currentAnswer = parsed.answer
+          }
 
-        yield* checkAndYieldCitationsForAgent(
-          buffer,
-          yieldedCitations,
-          results,
-          previousResultsLength,
-          yieldedImageCitations,
-          email ?? "",
-        )
+          // Only process citations if JSON parsing was successful
+          yield* checkAndYieldCitationsForAgent(
+            parsed.answer || currentAnswer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+            yieldedImageCitations,
+            email ?? "",
+          )
+        } catch (jsonParseError) {
+          // If JSON parsing fails, fall back to streaming the raw text
+          yield { text: chunk.text }
+
+          // Still try to process citations from the raw text chunk, but safely
+          try {
+            yield* checkAndYieldCitationsForAgent(
+              chunk.text,
+              yieldedCitations,
+              results,
+              previousResultsLength,
+              yieldedImageCitations,
+              email ?? "",
+            )
+          } catch (citationError) {
+            // Log citation processing errors but don't crash
+            Logger.warn(
+              `Citation processing error: ${getErrorMessage(citationError)}`,
+            )
+          }
+        }
       } catch (e) {
-        Logger.error(`Error parsing LLM output: ${e}`)
+        Logger.error(`Error processing LLM output: ${getErrorMessage(e)}`)
+        // Still yield the chunk text to prevent complete failure
+        yield { text: chunk.text }
         continue
       }
     }
@@ -461,6 +521,7 @@ async function performSynthesis(
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
   attachmentFileIds?: string[],
+  agentContext?: string,
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -484,6 +545,7 @@ async function performSynthesis(
           (fileId, index) => `${index}_${fileId}_${0}`,
         ),
       },
+      agentContext,
     )
 
     if (synthesisResponse.text) {
@@ -997,6 +1059,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           let planningContext = "" // To build the context for planning
           let toolsPrompt = "" // To build the context for available tools
           let fallbackReasoning: string | undefined = undefined // To store fallback reasoning
+          let lastToolOutput = "" // To store the raw result from the last tool execution
           const previousToolCalls: {
             tool: string
             args: Record<string, "any">
@@ -1136,6 +1199,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     logAndStreamReasoning,
                     sub,
                     attachmentFileIds,
+                    agentPromptForLLM,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1609,6 +1673,11 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolExecutionSpan.end()
 
               if (toolExecutionResponse) {
+                // Store the raw tool output for potential use in final answer generation
+                if (toolExecutionResponse.result) {
+                  lastToolOutput = toolExecutionResponse.result
+                }
+
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.ToolResult,
                   toolName: toolName as AgentToolName,
@@ -1716,6 +1785,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   attachmentFileIds,
+                  agentPromptForLLM,
                 )
 
                 await logAndStreamReasoning({
@@ -1903,6 +1973,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   attachmentFileIds,
+                  agentPromptForLLM,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -1942,7 +2013,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             message,
             ctx,
             toolsPrompt,
-            planningContext ?? "",
+            lastToolOutput || planningContext || "",
             gatheredFragments,
             agentPromptForLLM,
             messagesWithNoErrResponse,
@@ -1951,67 +2022,80 @@ export const MessageWithToolsApi = async (c: Context) => {
             email,
           )
           for await (const chunk of continuationIterator) {
-            if (stream.closed) {
-              loggerWithChild({ email: sub }).info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            if (chunk.text) {
-              // if (reasoning && chunk.reasoning) {
-              //   thinking += chunk.text
-              //   stream.writeSSE({
-              //     event: ChatSSEvents.Reasoning,
-              //     data: chunk.text,
-              //   })
-              //   // reasoningSpan.end()
-              // }
-              // if (!chunk.reasoning) {
-              //   answer += chunk.text
-              //   stream.writeSSE({
-              //     event: ChatSSEvents.ResponseUpdate,
-              //     data: chunk.text,
-              //   })
-              // }
-              answer += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: chunk.text,
-              })
-            }
-            if (chunk.citation) {
-              const { index, item } = chunk.citation
-              citations.push(item)
-              citationMap[index] = citations.length - 1
-              loggerWithChild({ email: sub }).info(
-                `Found citations and sending it, current count: ${citations.length}`,
-              )
-              stream.writeSSE({
-                event: ChatSSEvents.CitationsUpdate,
-                data: JSON.stringify({
-                  contextChunks: citations,
-                  citationMap,
-                }),
-              })
-              citationValues[index] = item
-            }
-            if (chunk.imageCitation) {
-              loggerWithChild({ email: email }).info(
-                `Found image citation, sending it`,
-                { citationKey: chunk.imageCitation.citationKey },
-              )
-              imageCitations.push(chunk.imageCitation)
-              stream.writeSSE({
-                event: ChatSSEvents.ImageCitationUpdate,
-                data: JSON.stringify(chunk.imageCitation),
-              })
-            }
+            try {
+              if (stream.closed) {
+                loggerWithChild({ email: sub }).info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                // if (reasoning && chunk.reasoning) {
+                //   thinking += chunk.text
+                //   stream.writeSSE({
+                //     event: ChatSSEvents.Reasoning,
+                //     data: chunk.text,
+                //   })
+                //   // reasoningSpan.end()
+                // }
+                // if (!chunk.reasoning) {
+                //   answer += chunk.text
+                //   stream.writeSSE({
+                //     event: ChatSSEvents.ResponseUpdate,
+                //     data: chunk.text,
+                //   })
+                // }
+                answer += chunk.text
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk.text,
+                })
+              }
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                loggerWithChild({ email: sub }).info(
+                  `Found citations and sending it, current count: ${citations.length}`,
+                )
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+                citationValues[index] = item
+              }
+              if (chunk.imageCitation) {
+                loggerWithChild({ email: email }).info(
+                  `Found image citation, sending it`,
+                  { citationKey: chunk.imageCitation.citationKey },
+                )
+                imageCitations.push(chunk.imageCitation)
+                await stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(chunk.imageCitation),
+                })
+              }
 
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+            } catch (chunkProcessingError) {
+              loggerWithChild({ email: sub }).error(
+                chunkProcessingError,
+                `Error processing chunk in continuation iterator: ${getErrorMessage(chunkProcessingError)}`,
+              )
+              // Continue processing other chunks instead of failing completely
+              continue
             }
           }
+
+          loggerWithChild({ email: sub }).info(
+            `[MessageApi] Continuation iterator completed. Answer length: ${answer.length}, wasStreamClosedPrematurely: ${wasStreamClosedPrematurely}, gatheredFragments: ${gatheredFragments.length}`,
+          )
 
           if (answer || wasStreamClosedPrematurely) {
             // Determine if a message (even partial) should be saved
