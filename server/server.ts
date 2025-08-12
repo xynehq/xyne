@@ -228,7 +228,7 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
-const app2 = new Hono<{ Variables: Variables }>()
+const internalMetricRouter = new Hono<{ Variables: Variables }>()
 
 const AuthMiddleware = jwt({
   secret: accessTokenSecret,
@@ -405,7 +405,7 @@ const handleUpdatedMetrics = async (c: Context) => {
   })
 }
 
-app2.post("/update-metrics", handleUpdatedMetrics)
+internalMetricRouter.post("/update-metrics", handleUpdatedMetrics)
 
 // App validatione endpoint
 
@@ -1240,7 +1240,7 @@ export const init = async () => {
   }
 }
 
-app2.get("/metrics", async (c) => {
+internalMetricRouter.get("/metrics", async (c) => {
   try {
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
@@ -1274,7 +1274,7 @@ const server = Bun.serve({
 })
 
 const server2 = Bun.serve({
-  fetch: app2.fetch,
+  fetch: internalMetricRouter.fetch,
   port: config.metricsPort, // new port from config
   idleTimeout: 180,
   development: true,
