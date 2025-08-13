@@ -410,7 +410,6 @@ export const SearchApi = async (c: Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
-      isAtsearch:true,
     })
   }
 
