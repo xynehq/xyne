@@ -913,26 +913,11 @@ export const HybridDefaultProfileForAgent =  async(
             sources.push(chatContainerSchema)
           break
         case Apps.DataSource:
-          // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
-          // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
-          // if (dataSourceIds && dataSourceIds.length > 0) {
             appQueries.push(buildDataSourceFileYQL())
             if (!sources.includes(dataSourceFileSchema))
               sources.push(dataSourceFileSchema)
-          // } else {
-          //   // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
-          //   // across all accessible data sources. This might be too broad or not the intended behavior.
-          //   // For now, if no specific IDs, we don't add a query part for generic DataSource search.
-          //   // This means an agent configured with "data-source" but no specific IDs won't search them
-          //   // unless other app types are also specified.
-          //   Logger.warn(
-          //     "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
-          //   )
-          // }
           break
         case Apps.KnowledgeBase:
-          // This case is specifically for when 'Apps.KnowledgeBase' is in AllowedApps.
-          // The actual filtering by specific collectionSelections happens in buildCollectionFileYQL.
           if (collectionSelections && collectionSelections.length > 0) {
             const collectionQuery = await buildCollectionFileYQL()
             if (collectionQuery) {
@@ -940,9 +925,6 @@ export const HybridDefaultProfileForAgent =  async(
               if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             }
           } else {
-            // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search
-            // across all accessible collections. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic collection search.
             Logger.warn(
               "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
             )
@@ -957,6 +939,13 @@ export const HybridDefaultProfileForAgent =  async(
     if (!sources.includes(dataSourceFileSchema))
       sources.push(dataSourceFileSchema)
   }
+  if (channelIds.length > 0) {
+    appQueries.push(buildSlackYQL())
+    if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
+    if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
+    if (!sources.includes(chatContainerSchema))
+      sources.push(chatContainerSchema)
+  }
   // Debug logging
   Logger.debug(`Agent search configuration:`, {
     AllowedApps,
@@ -966,14 +955,6 @@ export const HybridDefaultProfileForAgent =  async(
     sources,
   })
 
-  // If no queries were generated, return an empty result
-  if (appQueries.length === 0) {
-    Logger.warn("No valid queries generated for agent search - returning empty result query")
-    return {
-      profile: profile,
-      yql: `select * from sources ${AllSources} where false`, // This will return no results
-    }
-  }
 
   // Combine all queries
   const combinedQuery = appQueries.join("\n    or\n    ")
