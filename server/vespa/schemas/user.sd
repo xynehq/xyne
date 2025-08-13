@@ -139,7 +139,7 @@ schema user {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[384])  {
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
         indexing: (input name || "") . " " .(input email || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -198,7 +198,7 @@ schema user {
 
     rank-profile initial {
        inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
         }
 

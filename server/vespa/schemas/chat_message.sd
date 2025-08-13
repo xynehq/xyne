@@ -337,5 +337,3 @@ schema chat_message {
     # summary reactions {}
   }
 }
-
-  
