@@ -1052,6 +1052,9 @@ export const baselineRAGJson = async (
   )
   if (text) {
     const parsedResponse = jsonParseLLMOutput(text)
+    if (!parsedResponse) {
+      throw new Error("Failed to parse LLM response as JSON")
+    }
     return {
       output: parsedResponse,
       cost: cost!,
@@ -1329,6 +1332,9 @@ export const queryRewriter = async (
 
   if (text) {
     const parsedResponse = jsonParseLLMOutput(text)
+    if (!parsedResponse) {
+      throw new Error("Failed to parse LLM response as JSON")
+    }
     return {
       queries: parsedResponse.queries || [],
       cost: cost!,
@@ -1367,6 +1373,9 @@ export const temporalEventClassification = async (
 
   if (text) {
     const parsedResponse = jsonParseLLMOutput(text)
+    if (!parsedResponse) {
+      throw new Error("Failed to parse LLM response as JSON")
+    }
     return {
       direction: parsedResponse.direction || null,
       cost: cost!,
@@ -1374,6 +1383,329 @@ export const temporalEventClassification = async (
   } else {
     throw new Error("No response from LLM")
   }
+}
+
+// Helper function to extract URLs from text
+function extractUrlsFromText(text: string): string[] {
+  Logger.info(`[extractUrlsFromText] Input text length: ${text.length}`)
+  Logger.info(
+    `[extractUrlsFromText] Input text preview: ${text.substring(0, 1000)}...`,
+  )
+
+  // Handle structured data by extracting text content first
+  let cleanText = text
+  let documentContent = text
+
+  try {
+    // Try to parse as JSON and extract text values if it's structured data
+    if (text.includes('"type"') && text.includes('"value"')) {
+      const matches = text.match(/"value":"([^"]+)"/g)
+      if (matches) {
+        cleanText = matches
+          .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+          .join(" ")
+        Logger.info(
+          `[extractUrlsFromText] Extracted clean text from structured data: ${cleanText.substring(0, 500)}...`,
+        )
+      }
+    }
+
+    // **ENHANCED ATTACHMENT DETECTION**
+    // Look for strong indicators that this is attached document content
+    const attachmentIndicators = [
+      /file.*content/i, // File content indicators
+      /attachment.*content/i, // Attachment content
+      /document.*attached/i, // Document attachment indicators
+      /pdf.*content/i, // PDF content
+      /uploaded.*file/i, // Uploaded file content
+      /document.*content/i, // Document content indicators
+      /https?:\/\/[^\s]+/i, // URLs in content (strong indicator)
+      /www\.[^\s]+/i, // www URLs
+      /article/i, // Article content
+      /tutorial/i, // Tutorial content
+      /guide/i, // Guide content
+      /blog/i, // Blog content
+      /news/i, // News content
+      /reference/i, // Reference content
+      /manual/i, // Manual content
+      /documentation/i, // Documentation content
+      /instructions/i, // Instructions content
+      /\.com\/[^\s]+/i, // URLs with paths
+      /\.org\/[^\s]+/i, // Organization URLs with paths
+      /\.edu\/[^\s]+/i, // Educational URLs with paths
+      /\.gov\/[^\s]+/i, // Government URLs with paths
+      /\.io\/[^\s]+/i, // Tech URLs with paths
+      /\.net\/[^\s]+/i, // Network URLs with paths
+    ]
+
+    // Split text into sections and score them based on attachment/document indicators
+    const sections = cleanText
+      .split(/\n\n|\n---|\n===/)
+      .filter((section) => section.trim().length > 50)
+    let bestSection = cleanText
+    let bestScore = 0
+
+    Logger.info(
+      `[extractUrlsFromText] Found ${sections.length} sections to analyze`,
+    )
+
+    for (const section of sections) {
+      let score = 0
+      for (const indicator of attachmentIndicators) {
+        if (indicator.test(section)) {
+          score += 1
+        }
+      }
+
+      // **STRONG BONUS** for sections with URLs (likely document content)
+      const urlCount = (section.match(/https?:\/\/[^\s]+/g) || []).length
+      if (urlCount > 0) {
+        score += urlCount * 3 // Strong bonus for URLs
+        Logger.info(
+          `[extractUrlsFromText] Section has ${urlCount} URLs, adding bonus score`,
+        )
+      }
+
+      // Penalize sections that look like email signatures or metadata
+      if (
+        section.includes("@") &&
+        section.includes(".com") &&
+        !section.includes("http")
+      ) {
+        score -= 3 // Strong penalty for email-like content without URLs
+      }
+      if (
+        section.toLowerCase().includes("signature") ||
+        section.toLowerCase().includes("confidential")
+      ) {
+        score -= 2 // Penalty for email signatures
+      }
+      if (
+        section.toLowerCase().includes("unsubscribe") ||
+        section.toLowerCase().includes("email marketing")
+      ) {
+        score -= 4 // Strong penalty for email marketing content
+      }
+
+      Logger.info(
+        `[extractUrlsFromText] Section score: ${score} for section: ${section.substring(0, 100)}...`,
+      )
+
+      if (score > bestScore && score > 0) {
+        bestScore = score
+        bestSection = section
+        Logger.info(
+          `[extractUrlsFromText] Found better document section with score ${score}`,
+        )
+      }
+    }
+
+    if (bestScore > 0) {
+      documentContent = bestSection
+      Logger.info(
+        `[extractUrlsFromText] Using prioritized document content with score ${bestScore}: ${documentContent.substring(0, 200)}...`,
+      )
+    } else {
+      Logger.info(
+        `[extractUrlsFromText] No high-scoring sections found, using full text`,
+      )
+    }
+  } catch (e) {
+    Logger.info(
+      `[extractUrlsFromText] Using original text as no structured data found`,
+    )
+  }
+
+  // More comprehensive URL regex patterns to catch different formats
+  const urlPatterns = [
+    /(https?:\/\/[^\s\)\],"\'\>\<\}]+)/g, // Standard HTTP(S) URLs
+    /(www\.[^\s\)\],"\'\>\<\}]+\.[a-z]{2,})/gi, // www. URLs
+    /(https?:\/\/[^\s]+)/g, // Very permissive HTTP(S) pattern
+    /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*/gi, // Direct HTTP URLs
+    /www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[^\s]*/gi, // Direct www URLs
+    /[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\/[^\s\)\],"\'\>\<\}]+/gi, // Domain URLs with paths (any TLD)
+    /[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|co\.uk|de|fr|jp|au|ca)\/[^\s]*/gi, // Common TLD URLs with paths
+  ]
+
+  let urls: string[] = []
+
+  // Try each pattern on prioritized document content first, then fall back to clean text
+  const textSources = [documentContent, cleanText]
+
+  for (const textSource of textSources) {
+    for (let i = 0; i < urlPatterns.length; i++) {
+      const pattern = urlPatterns[i]
+      const matches = textSource.match(pattern)
+      if (matches) {
+        Logger.info(
+          `[extractUrlsFromText] Pattern ${i} found ${matches.length} matches in ${textSource === documentContent ? "document content" : "clean text"}: ${JSON.stringify(matches)}`,
+        )
+        urls.push(...matches)
+      }
+    }
+
+    // If we found URLs in document content, prefer those and stop
+    if (textSource === documentContent && urls.length > 0) {
+      Logger.info(
+        `[extractUrlsFromText] Found URLs in prioritized document content, using those`,
+      )
+      break
+    }
+  }
+
+  Logger.info(
+    `[extractUrlsFromText] Raw extracted URLs before filtering: ${JSON.stringify(urls)}`,
+  )
+
+  // Filter out problematic URLs that we know won't work
+  const problematicPatterns = [
+    /mail\.google\.com/i,
+    /accounts\.google\.com/i,
+    /login\.|\/login/i,
+    /signin\.|\/signin/i,
+    /auth\.|\/auth/i,
+    /\.pdf$/i, // Don't try to scrape PDF URLs directly
+    /localhost/i,
+    /127\.0\.0\.1/i,
+    /\.onion/i,
+    /^\w+\.\w+$/, // Filter out simple domain names without paths like "user.domain"
+    /@/, // Filter out email addresses completely
+    /^https?:\/\/[^\/]*@/, // Filter out URLs with @ symbols (malformed email-like URLs)
+    /\.(jpg|jpeg|png|gif|bmp|svg|ico)$/i, // Filter out image files
+    /\.(mp4|mp3|avi|mov|wmv|flv|webm)$/i, // Filter out media files
+    /\.(zip|rar|tar|gz|exe|dmg)$/i, // Filter out archive/executable files
+    /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/i, // Email address pattern
+  ]
+
+  Logger.info(
+    `[extractUrlsFromText] Raw extracted URLs before filtering: ${JSON.stringify(urls)}`,
+  )
+
+  urls = urls.filter((url) => {
+    // Skip email addresses and email-like URLs
+    if (
+      url.includes("@") ||
+      url.match(/^[^\/]*@[^\/]*$/) ||
+      url.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)
+    ) {
+      Logger.info(`[extractUrlsFromText] Filtering out email-like URL: ${url}`)
+      return false
+    }
+
+    // Skip URLs that are just domain names without proper URL structure
+    if (
+      url.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/) &&
+      !url.startsWith("http") &&
+      !url.startsWith("www")
+    ) {
+      Logger.info(`[extractUrlsFromText] Filtering out bare domain: ${url}`)
+      return false
+    }
+
+    for (const pattern of problematicPatterns) {
+      if (pattern.test(url)) {
+        Logger.info(
+          `[extractUrlsFromText] Filtering out problematic URL: ${url}`,
+        )
+        return false
+      }
+    }
+    return true
+  })
+
+  // Clean and normalize URLs
+  urls = urls.map((url) => {
+    // Remove trailing punctuation and common JSON artifacts
+    url = url.replace(/[,.)}\]"'>]+$/, "")
+    url = url.replace(/","title.*$/, "") // Remove JSON artifacts
+    url = url.replace(/\\".*$/, "") // Remove escaped quotes and following content
+
+    // Add https:// if missing for www. URLs
+    if (url.startsWith("www.")) {
+      return `https://${url}`
+    }
+    return url
+  })
+
+  // Remove duplicates and validate URLs - only keep valid HTTP/HTTPS URLs
+  const validUrls = [...new Set(urls)]
+    .filter((url) => {
+      try {
+        const urlObj = new URL(url)
+        const isValidProtocol =
+          urlObj.protocol === "http:" || urlObj.protocol === "https:"
+        const isLongEnough = url.length > 10
+
+        // **ENHANCED FILTERING**: Be less restrictive for attachment content
+        const hostname = urlObj.hostname.toLowerCase()
+
+        // Only filter out truly problematic domains for attachment content
+        const isSystemDomain =
+          hostname.includes("unsubscribe") ||
+          hostname.includes("tracking") ||
+          hostname.includes("analytics") ||
+          hostname.includes("login.") ||
+          hostname.includes("signin.") ||
+          hostname.includes("auth.")
+
+        // **RELAXED FILTERING**: Allow more URLs from attachment content if they have good paths
+        const hasContentPath =
+          urlObj.pathname &&
+          urlObj.pathname.length > 1 &&
+          urlObj.pathname !== "/"
+        const isContentUrl =
+          hasContentPath ||
+          hostname.includes("blog") ||
+          hostname.includes("docs") ||
+          hostname.includes("documentation") ||
+          hostname.includes("support") ||
+          hostname.includes("help") ||
+          hostname.includes("article") ||
+          hostname.includes("news") ||
+          hostname.includes("tutorial") ||
+          hostname.includes("guide") ||
+          hostname.includes("manual") ||
+          hostname.includes("reference") ||
+          hostname.includes("nasa.gov") ||
+          hostname.includes("gov") ||
+          hostname.includes("edu") ||
+          hostname.includes("wikipedia") ||
+          hostname.includes("github")
+
+        // **PRIORITY LOGIC**: If this looks like content from an attachment, be more permissive
+        const isFromAttachment =
+          documentContent.includes("ATTACHMENT CONTENT") ||
+          documentContent.includes("=== ATTACHMENT CONTENT START")
+
+        if (isFromAttachment && isContentUrl) {
+          Logger.info(
+            `[extractUrlsFromText] Prioritizing attachment content URL: ${url}`,
+          )
+          return isValidProtocol && isLongEnough && !isSystemDomain
+        }
+
+        if (isContentUrl) {
+          Logger.info(`[extractUrlsFromText] Prioritizing content URL: ${url}`)
+          return isValidProtocol && isLongEnough && !isSystemDomain
+        }
+
+        if (isSystemDomain) {
+          Logger.info(
+            `[extractUrlsFromText] Filtering out system domain URL: ${url}`,
+          )
+          return false
+        }
+
+        // Accept any valid URL that's not a system domain and has a good length
+        return isValidProtocol && isLongEnough
+      } catch {
+        Logger.info(`[extractUrlsFromText] Invalid URL format: ${url}`)
+        return false
+      }
+    })
+    .slice(0, 5) // Limit to 5 URLs max  Logger.info(`[extractUrlsFromText] Final extracted URLs: ${JSON.stringify(validUrls)}`)
+
+  return validUrls
 }
 
 export async function generateToolSelectionOutput(
@@ -1420,13 +1752,410 @@ export async function generateToolSelectionOutput(
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
+
+  // **PRIORITY 1: Check attached document content FIRST**
+  // Look for attached document content in userContext - this should be the primary source
+  Logger.info(
+    `[generateToolSelectionOutput] Checking for attached document content in userContext`,
+  )
+  Logger.info(
+    `[generateToolSelectionOutput] UserContext length: ${userContext.length}, preview: ${userContext.substring(0, 500)}...`,
+  )
+
+  // **ENHANCED**: First check if userContext contains attachment content markers
+  const hasAttachmentContent =
+    userContext.includes("ATTACHED DOCUMENT CONTENT:") ||
+    userContext.includes("=== ATTACHMENT CONTENT START")
+
+  if (hasAttachmentContent) {
+    Logger.info(
+      `[generateToolSelectionOutput] Found attachment content markers in userContext`,
+    )
+    const documentUrls = extractUrlsFromText(userContext)
+    if (documentUrls.length > 0) {
+      Logger.info(
+        `[generateToolSelectionOutput] FOUND ${documentUrls.length} URLs in attached document content - PRIORITIZING web scraper`,
+      )
+
+      // Extract clean query text from userQuery if it contains structured data
+      let cleanQuery = userQuery
+      try {
+        if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+          const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+          if (textMatches) {
+            cleanQuery = textMatches
+              .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+              .filter((text) => !text.startsWith("http")) // Remove URLs from query
+              .join(" ")
+              .trim()
+          }
+        }
+      } catch (e) {
+        cleanQuery = userQuery
+      }
+
+      return {
+        queryRewrite: "",
+        tool: "web_scraper",
+        arguments: {
+          urls: documentUrls,
+          query:
+            cleanQuery ||
+            "Please extract and summarize the content from these URLs",
+        },
+        reasoning:
+          "Attached document contains URLs - prioritizing web scraper to get content from document URLs",
+      }
+    } else {
+      Logger.info(
+        `[generateToolSelectionOutput] Attachment content found but no valid URLs extracted, trying alternative extraction`,
+      )
+
+      // Try more aggressive URL extraction from attachment content
+      const attachmentOnlyContent = userContext.includes(
+        "ATTACHED DOCUMENT CONTENT:",
+      )
+        ? userContext
+            .split("ATTACHED DOCUMENT CONTENT:")[1]
+            .split("USER CONTEXT:")[0]
+        : userContext
+
+      const alternativeUrls = extractUrlsFromText(attachmentOnlyContent)
+      if (alternativeUrls.length > 0) {
+        Logger.info(
+          `[generateToolSelectionOutput] Alternative extraction found ${alternativeUrls.length} URLs`,
+        )
+
+        let cleanQuery = userQuery
+        try {
+          if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+            const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+            if (textMatches) {
+              cleanQuery = textMatches
+                .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+                .filter((text) => !text.startsWith("http"))
+                .join(" ")
+                .trim()
+            }
+          }
+        } catch (e) {
+          cleanQuery = userQuery
+        }
+
+        return {
+          queryRewrite: "",
+          tool: "web_scraper",
+          arguments: {
+            urls: alternativeUrls,
+            query:
+              cleanQuery ||
+              "Please extract and summarize the content from these URLs",
+          },
+          reasoning:
+            "Found URLs in attachment content using alternative extraction - using web scraper",
+        }
+      }
+    }
+  } else {
+    // Fallback: try extracting URLs from userContext even without attachment markers
+    const documentUrls = extractUrlsFromText(userContext)
+    if (documentUrls.length > 0) {
+      Logger.info(
+        `[generateToolSelectionOutput] FOUND ${documentUrls.length} URLs in userContext (no attachment markers) - PRIORITIZING web scraper`,
+      )
+
+      // Extract clean query text from userQuery if it contains structured data
+      let cleanQuery = userQuery
+      try {
+        if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+          const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+          if (textMatches) {
+            cleanQuery = textMatches
+              .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+              .filter((text) => !text.startsWith("http")) // Remove URLs from query
+              .join(" ")
+              .trim()
+          }
+        }
+      } catch (e) {
+        cleanQuery = userQuery
+      }
+
+      return {
+        queryRewrite: "",
+        tool: "web_scraper",
+        arguments: {
+          urls: documentUrls,
+          query:
+            cleanQuery ||
+            "Please extract and summarize the content from these URLs",
+        },
+        reasoning:
+          "Found URLs in user context - prioritizing web scraper to get content from URLs",
+      }
+    }
+  }
+
   const { text, cost } = await getProviderByModel(params.modelId).converse(
     messages,
     params,
   )
 
   if (text) {
+    // **PRIORITY 2: Check all available sources as fallback**
+    const allText = `${userQuery} ${userContext} ${toolContext} ${initialPlanning}`
+    const extractedUrls = extractUrlsFromText(allText)
+    const hasUrls = extractedUrls.length > 0
+
+    // Also check for URL indicators
+    const hasUrlIndicators =
+      allText.toLowerCase().includes("document contains urls") ||
+      allText.toLowerCase().includes("link to") ||
+      allText.toLowerCase().includes(".pdf") ||
+      allText.toLowerCase().includes("tutorial") ||
+      allText.toLowerCase().includes("read more") ||
+      allText.toLowerCase().includes("webpage") ||
+      allText.toLowerCase().includes("website") ||
+      allText.toLowerCase().includes("http://") ||
+      allText.toLowerCase().includes("https://")
+
+    const needsWebScraping = hasUrls || hasUrlIndicators
+
+    Logger.info(
+      `[generateToolSelectionOutput] URL Analysis: extractedUrls=${extractedUrls.length}, hasUrls=${hasUrls}, hasUrlIndicators=${hasUrlIndicators}, needsWebScraping=${needsWebScraping}`,
+    )
+
+    // If we need web scraping but LLM didn't select it properly, force it
+    if (needsWebScraping) {
+      Logger.info("URLs detected - forcing web_scraper tool selection")
+
+      if (extractedUrls.length > 0) {
+        // Extract clean query text from userQuery if it contains structured data
+        let cleanQuery = userQuery
+        try {
+          if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+            const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+            if (textMatches) {
+              cleanQuery = textMatches
+                .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+                .filter((text) => !text.startsWith("http")) // Remove URLs from query
+                .join(" ")
+                .trim()
+            }
+          }
+        } catch (e) {
+          // Use original query if parsing fails
+          cleanQuery = userQuery
+        }
+
+        return {
+          queryRewrite: "",
+          tool: "web_scraper",
+          arguments: {
+            urls: extractedUrls,
+            query:
+              cleanQuery ||
+              "Please extract and summarize the content from these URLs",
+          },
+          reasoning:
+            "Detected URLs in document content - using web scraper to get actual content",
+        }
+      } else {
+        // Try to extract URLs again more aggressively or use fallback
+        Logger.warn(
+          "URL indicators found but no URLs extracted - attempting more aggressive extraction",
+        )
+
+        // Try broader patterns for URL-like content - only match actual URLs
+        const broadUrlPatterns = [
+          /https?:\/\/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s]*/gi, // Only HTTP/HTTPS URLs
+          /www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s]*/gi, // Only www URLs
+          /[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|co\.uk|de|fr|jp|au|ca)\/[^\s]*/gi, // Common domains with paths
+        ]
+
+        let fallbackUrls: string[] = []
+        for (const pattern of broadUrlPatterns) {
+          const matches = allText.match(pattern)
+          if (matches) {
+            // Filter out email addresses before adding https://
+            const validMatches = matches.filter((match) => !match.includes("@"))
+            fallbackUrls.push(
+              ...validMatches.map((url) =>
+                url.startsWith("http") ? url : `https://${url}`,
+              ),
+            )
+          }
+        }
+
+        // Clean and validate fallback URLs
+        fallbackUrls = [...new Set(fallbackUrls)]
+          .filter((url) => {
+            try {
+              // Skip anything that looks like an email address
+              if (url.includes("@")) {
+                return false
+              }
+
+              const urlObj = new URL(url)
+              const hostname = urlObj.hostname.toLowerCase()
+
+              // Filter out common email/system domains
+              const isSystemDomain =
+                hostname.includes("gmail") ||
+                hostname.includes("mail.google") ||
+                hostname.includes("outlook") ||
+                hostname.includes("email") ||
+                hostname.includes("unsubscribe")
+
+              // Must be a valid URL with proper protocol
+              const hasValidProtocol =
+                urlObj.protocol === "http:" || urlObj.protocol === "https:"
+
+              return !isSystemDomain && hasValidProtocol && hostname.length > 4
+            } catch {
+              return false
+            }
+          })
+          .slice(0, 3)
+
+        if (fallbackUrls.length > 0) {
+          Logger.info(
+            `[generateToolSelectionOutput] Using fallback URLs: ${JSON.stringify(fallbackUrls)}`,
+          )
+
+          // Extract clean query text
+          let cleanQuery = userQuery
+          try {
+            if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+              const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+              if (textMatches) {
+                cleanQuery = textMatches
+                  .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+                  .filter((text) => !text.startsWith("http"))
+                  .join(" ")
+                  .trim()
+              }
+            }
+          } catch (e) {
+            cleanQuery = userQuery
+          }
+
+          return {
+            queryRewrite: "",
+            tool: "web_scraper",
+            arguments: {
+              urls: fallbackUrls,
+              query:
+                cleanQuery ||
+                "Please extract and summarize the content from these URLs",
+            },
+            reasoning:
+              "Document indicates URL content available - using web scraper with extracted URLs",
+          }
+        } else {
+          Logger.warn(
+            "URL indicators found but no valid URLs could be extracted - falling back to search",
+          )
+          return {
+            queryRewrite: userQuery,
+            tool: "search",
+            arguments: {},
+            reasoning:
+              "Document indicates external content but no valid URLs found - using search",
+          }
+        }
+      }
+    }
+
+    // Normal LLM tool selection processing
     const jsonVal = jsonParseLLMOutput(text)
+    if (!jsonVal) {
+      Logger.warn(
+        "Failed to parse tool selection output as JSON, falling back to conversational response",
+      )
+      return {
+        queryRewrite: "",
+        tool: "conversational",
+        arguments: {},
+        reasoning:
+          "Failed to parse tool selection - using conversational fallback",
+      }
+    }
+
+    // Validate that we have a valid tool name
+    if (!jsonVal.tool || typeof jsonVal.tool !== "string") {
+      Logger.warn(
+        "Invalid or missing tool in LLM response, falling back to conversational",
+      )
+      return {
+        queryRewrite: jsonVal.queryRewrite || "",
+        tool: "conversational",
+        arguments: {},
+        reasoning: "Invalid tool selection - using conversational fallback",
+      }
+    }
+
+    // If the LLM selected web_scraper but didn't provide URLs, try to extract them
+    if (
+      jsonVal.tool === "web_scraper" &&
+      (!jsonVal.arguments?.urls || jsonVal.arguments.urls.length === 0)
+    ) {
+      Logger.info(
+        "LLM selected web_scraper but no URLs provided, attempting to extract URLs from context",
+      )
+
+      if (extractedUrls.length > 0) {
+        Logger.info(
+          `[generateToolSelectionOutput] Extracted URLs for web_scraper: ${JSON.stringify(extractedUrls)}`,
+        )
+
+        // Extract clean query text
+        let cleanQuery = userQuery
+        try {
+          if (userQuery.includes('"type"') && userQuery.includes('"value"')) {
+            const textMatches = userQuery.match(/"value":"([^"]+)"/g)
+            if (textMatches) {
+              cleanQuery = textMatches
+                .map((match) => match.replace(/"value":"([^"]+)"/, "$1"))
+                .filter((text) => !text.startsWith("http"))
+                .join(" ")
+                .trim()
+            }
+          }
+        } catch (e) {
+          cleanQuery = userQuery
+        }
+
+        return {
+          queryRewrite: jsonVal.queryRewrite || "",
+          tool: "web_scraper",
+          arguments: {
+            urls: extractedUrls,
+            query:
+              cleanQuery ||
+              "Please extract and summarize the content from these URLs",
+          },
+          reasoning:
+            jsonVal.reasoning ||
+            "LLM selected web_scraper, extracted URLs from context",
+        }
+      } else {
+        // No URLs found, fallback to appropriate tool
+        Logger.warn(
+          "LLM selected web_scraper but no valid URLs could be extracted",
+        )
+
+        // Fall back to search
+        return {
+          queryRewrite: jsonVal.queryRewrite || userQuery,
+          tool: "search",
+          arguments: jsonVal.arguments || {},
+          reasoning:
+            "LLM selected web_scraper but no URLs available, falling back to search",
+        }
+      }
+    }
+
     return {
       queryRewrite: jsonVal.queryRewrite || "",
       tool: jsonVal.tool,
@@ -1434,7 +2163,15 @@ export async function generateToolSelectionOutput(
       reasoning: jsonVal.reasoning || null,
     }
   } else {
-    throw new Error("Failed to rewrite query")
+    Logger.warn(
+      "No response from LLM for tool selection, falling back to conversational response",
+    )
+    return {
+      queryRewrite: "",
+      tool: "conversational",
+      arguments: {},
+      reasoning: "No LLM response - using conversational fallback",
+    }
   }
 }
 
@@ -1533,21 +2270,11 @@ export function generateSynthesisBasedOnToolOutput(
 ): Promise<ConverseResponse> {
   params.json = true
 
-  if (!isAgentPromptEmpty(agentContext)) {
-    const parsedAgentPrompt = parseAgentPrompt(agentContext)
-    params.systemPrompt = synthesisContextPrompt(
-      userCtx,
-      currentMessage,
-      gatheredFragments,
-      parsedAgentPrompt,
-    )
-  } else {
-    params.systemPrompt = synthesisContextPrompt(
-      userCtx,
-      currentMessage,
-      gatheredFragments,
-    )
-  }
+  params.systemPrompt = synthesisContextPrompt(
+    userCtx,
+    currentMessage,
+    gatheredFragments,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1651,6 +2378,15 @@ export const generateFallback = async (
 
     if (text) {
       const parsedResponse = jsonParseLLMOutput(text)
+      if (!parsedResponse) {
+        Logger.warn(
+          "Failed to parse fallback reasoning response as JSON, using raw text",
+        )
+        return {
+          reasoning: text || "No reasoning provided",
+          cost: cost!,
+        }
+      }
       Logger.info("Fallback reasoning generation completed successfully")
       return {
         reasoning: parsedResponse.reasoning || "No reasoning provided",

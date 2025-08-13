@@ -735,6 +735,28 @@ export const webScraperTool: AgentTool = {
         }
       }
 
+      // Check for inaccessible URLs upfront
+      const inaccessibleUrls = urls.filter((url) => {
+        const urlLower = url.toLowerCase()
+        return (
+          urlLower.includes("mail.google.com") ||
+          urlLower.includes("accounts.google.com") ||
+          urlLower.includes("login.") ||
+          urlLower.includes("/login") ||
+          urlLower.includes("signin.") ||
+          urlLower.includes("/signin") ||
+          urlLower.includes("auth.") ||
+          urlLower.includes("/auth")
+        )
+      })
+
+      if (inaccessibleUrls.length > 0) {
+        return {
+          result: `Cannot scrape the following URLs as they require authentication or are private: ${inaccessibleUrls.join(", ")}. Please provide publicly accessible URLs.`,
+          error: "URLs require authentication",
+        }
+      }
+
       execSpan?.setAttribute("urls_count", urls.length)
       execSpan?.setAttribute("max_pages", maxPages)
       execSpan?.setAttribute("stealth_mode", stealth)
@@ -748,6 +770,30 @@ export const webScraperTool: AgentTool = {
       })
 
       if (scrapedContent && scrapedContent.length > 0) {
+        // Check if scraped content indicates login/authentication pages
+        const hasLoginContent = scrapedContent.some((item) => {
+          const content = (item.content || "").toLowerCase()
+          const title = (item.title || "").toLowerCase()
+          return (
+            (content.includes("sign in") &&
+              content.includes("email or phone")) ||
+            (content.includes("login") && content.includes("password")) ||
+            content.includes("authentication required") ||
+            content.includes("access denied") ||
+            title.includes("gmail") ||
+            title.includes("sign in") ||
+            content.length < 500 // Very short content often indicates redirects or login pages
+          )
+        })
+
+        if (hasLoginContent) {
+          return {
+            result:
+              "The provided URLs appear to require authentication or are redirecting to login pages. Unable to access the content. Please provide publicly accessible URLs.",
+            error: "Authentication required - cannot access content",
+          }
+        }
+
         const contexts: MinimalAgentFragment[] = scrapedContent.map(
           (item: any, index: number) => ({
             id: `web_scraper_${index}_${Date.now()}`,
@@ -766,7 +812,7 @@ export const webScraperTool: AgentTool = {
         const resultText = scrapedContent
           .map(
             (item: any, index: number) =>
-              `URL ${index + 1}: ${item.url}\nTitle: ${item.title}\nContent: ${item.content || "No content available"}`,
+              `[${index}] ${item.title}: ${item.content || "No content available"}`,
           )
           .join("\n\n")
 

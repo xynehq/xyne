@@ -74,6 +74,7 @@ import {
   XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
+  type AttachmentMetadata,
 } from "@/shared/types"
 import {
   MessageRole,
@@ -139,7 +140,6 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
-import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -196,6 +196,7 @@ const {
   maxValidLinks,
   maxUserRequestCount,
 } = config
+
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
@@ -442,7 +443,7 @@ async function* getToolContinuationIterator(
       // if (!reasoning) {
       buffer += chunk.text
       try {
-        // Enhanced JSON parsing similar to other parts of the codebase
+        // JSON parsing similar to other parts of the codebase
         try {
           const cleanedBuffer = cleanBuffer(buffer)
           parsed = jsonParseLLMOutput(cleanedBuffer, ANSWER_TOKEN) || {}
@@ -513,7 +514,6 @@ type SynthesisResponse = {
 }
 
 async function performSynthesis(
-  ctx: any,
   message: string,
   planningContext: string,
   gatheredFragments: MinimalAgentFragment[],
@@ -532,7 +532,7 @@ async function performSynthesis(
     })
 
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
-      ctx,
+      "", // userCtx - empty for now as we don't have access to user context in this scope
       message,
       planningContext,
       {
@@ -594,6 +594,153 @@ async function performSynthesis(
     parseSynthesisOutput = {
       synthesisState: ContextSysthesisState.Partial,
       answer: parseSynthesisOutput?.answer || "",
+    }
+  }
+
+  // Post-synthesis validation: Override obvious synthesis mistakes for web scraper content
+  if (parseSynthesisOutput && gatheredFragments.length > 0) {
+    const webScraperFragments = gatheredFragments.filter(
+      (fragment) => fragment.id && fragment.id.includes("web_scraper"),
+    )
+
+    if (webScraperFragments.length > 0) {
+      const totalContentLength = gatheredFragments.reduce(
+        (sum, fragment) => sum + (fragment.content?.length || 0),
+        0,
+      )
+
+      // Check for inaccessible content patterns (login pages, redirects, etc.)
+      const hasInaccessibleContent = webScraperFragments.some((fragment) => {
+        const content = fragment.content?.toLowerCase() || ""
+        const title = fragment.source?.title || ""
+        const url = fragment.source?.url || ""
+
+        // More specific patterns for actual login/authentication pages
+        const isLoginPage =
+          (content.includes("sign in") &&
+            content.includes("email") &&
+            content.includes("password") &&
+            content.includes("google")) ||
+          (content.includes("login") &&
+            content.includes("password") &&
+            content.includes("username") &&
+            content.length < 1000) ||
+          (content.includes("authentication required") &&
+            content.includes("please log in") &&
+            content.includes("login page")) ||
+          (content.includes("access denied") &&
+            content.length < 300 &&
+            content.includes("unauthorized")) // Very specific error pages
+
+        // Explicit private/restricted URL patterns
+        const isPrivateUrl =
+          (typeof url === "string" && url.includes("mail.google.com")) ||
+          (typeof url === "string" &&
+            url.includes("drive.google.com") &&
+            url.includes("sharing")) ||
+          (typeof title === "string" &&
+            title.toLowerCase().includes("gmail")) ||
+          (typeof title === "string" &&
+            title.toLowerCase().includes("sign in to google"))
+
+        // Check for actual error pages (very short content with specific error messages)
+        const isErrorPage =
+          content.length < 200 &&
+          (content.includes("403 forbidden") ||
+            content.includes("401 unauthorized") ||
+            content.includes("404 not found"))
+
+        const result = isLoginPage || isPrivateUrl || isErrorPage
+
+        // Debug logging when content is flagged as inaccessible
+        if (result) {
+          console.log(
+            `[DEBUG] Flagged as inaccessible: URL=${url}, Title=${title}, Content length=${content.length}`,
+          )
+          console.log(
+            `[DEBUG] Reasons: loginPage=${isLoginPage}, privateUrl=${isPrivateUrl}, errorPage=${isErrorPage}`,
+          )
+          console.log(
+            `[DEBUG] Content preview: ${content.substring(0, 200)}...`,
+          )
+        }
+
+        return result
+      })
+
+      // If we detected inaccessible content (like Gmail login), mark as not found to stop the loop
+      if (
+        hasInaccessibleContent &&
+        parseSynthesisOutput.synthesisState === ContextSysthesisState.Partial
+      ) {
+        await logAndStreamReasoning({
+          type: AgentReasoningStepType.LogMessage,
+          message: `Override synthesis decision: Web scraper hit inaccessible content (login page/authentication), marking as not found to prevent infinite loop.`,
+        })
+
+        parseSynthesisOutput = {
+          synthesisState: ContextSysthesisState.NotFound,
+          answer:
+            "The URL appears to be inaccessible or requires authentication. Unable to retrieve the requested information from this source.",
+        }
+      }
+      // Override synthesis decision if we have substantial accessible web scraper content
+      else if (
+        (parseSynthesisOutput.synthesisState ===
+          ContextSysthesisState.Partial ||
+          parseSynthesisOutput.synthesisState ===
+            ContextSysthesisState.NotFound) &&
+        totalContentLength > 500 &&
+        !hasInaccessibleContent
+      ) {
+        await logAndStreamReasoning({
+          type: AgentReasoningStepType.LogMessage,
+          message: `Override synthesis decision: Web scraper provided substantial accessible content (${totalContentLength} chars), marking as complete.`,
+        })
+
+        parseSynthesisOutput = {
+          synthesisState: ContextSysthesisState.Complete,
+          answer: "", // Clear the incorrect answer so final answer generation can use the scraped content
+        }
+      }
+    }
+  }
+
+  // Additional check: If synthesis keeps returning "information_not_found" and we're dealing with CLEARLY private URLs
+  if (
+    parseSynthesisOutput &&
+    parseSynthesisOutput.synthesisState === ContextSysthesisState.NotFound &&
+    gatheredFragments.some((f) => {
+      const url = f.source?.url || ""
+      const title = f.source?.title || ""
+      const content = f.content?.toLowerCase() || ""
+
+      // Only trigger for CLEARLY private/auth-required content
+      const isClearlyPrivate =
+        (typeof url === "string" && url.includes("mail.google.com")) ||
+        (typeof url === "string" &&
+          url.includes("drive.google.com") &&
+          url.includes("sharing")) ||
+        (typeof title === "string" && title.toLowerCase().includes("gmail")) ||
+        (typeof title === "string" &&
+          title.toLowerCase().includes("sign in to google")) ||
+        (content.includes("authentication required") &&
+          content.includes("please log in") &&
+          content.includes("login page") &&
+          content.length < 300)
+
+      return isClearlyPrivate
+    })
+  ) {
+    await logAndStreamReasoning({
+      type: AgentReasoningStepType.LogMessage,
+      message: `Synthesis correctly identified authentication-required content as not found. Stopping further attempts.`,
+    })
+
+    parseSynthesisOutput = {
+      synthesisState: ContextSysthesisState.NotFound,
+      answer:
+        "The referenced URLs require authentication or are private. I cannot access Gmail links or other private URLs directly. Please provide publicly accessible URLs or share the specific content you'd like me to analyze.",
     }
   }
 
@@ -673,7 +820,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
-    const ctx = userContext(userAndWorkspace)
+
+    let ctx = userContext(userAndWorkspace)
+
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -1190,8 +1339,33 @@ export const MessageWithToolsApi = async (c: Context) => {
                       ),
                     )
                   }
+
+                  // CRITICAL: Check if document contains URLs that need scraping before synthesis
+                  const documentContent = planningContext.toLowerCase()
+                  const hasUrlsNeedingScraping =
+                    documentContent.includes("http://") ||
+                    documentContent.includes("https://") ||
+                    documentContent.includes("link to") ||
+                    documentContent.includes("see:") ||
+                    documentContent.includes("read more") ||
+                    documentContent.includes("tutorial") ||
+                    documentContent.includes(".pdf") ||
+                    documentContent.includes("watch how") ||
+                    documentContent.includes("guide at")
+
+                  if (hasUrlsNeedingScraping) {
+                    console.log(
+                      `[DEBUG] Document contains URLs needing scraping. Content preview: ${documentContent.substring(0, 200)}...`,
+                    )
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Document contains URLs that need scraping. Skipping synthesis and proceeding to tool selection.",
+                    })
+                    continue // Skip synthesis and go to tool selection
+                  }
+
                   const parseSynthesisOutput = await performSynthesis(
-                    ctx,
                     message,
                     planningContext,
                     gatheredFragments,
@@ -1347,7 +1521,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
             const toolSelection = await generateToolSelectionOutput(
               message,
-              ctx,
+              `${ctx}\n\nDOCUMENT CONTENT:\n${planningContext}`,
               toolsPrompt,
               agentScratchpad,
               {
@@ -1702,6 +1876,35 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
 
                 if (toolExecutionResponse.error) {
+                  // Check for repeated web scraper authentication failures
+                  if (
+                    toolName === "web_scraper" &&
+                    (toolExecutionResponse.error.includes("authentication") ||
+                      toolExecutionResponse.error.includes(
+                        "require authentication",
+                      ) ||
+                      toolExecutionResponse.result?.includes(
+                        "Cannot scrape the following URLs as they require authentication",
+                      ))
+                  ) {
+                    const webScraperFailures = previousToolCalls.filter(
+                      (call) =>
+                        call.tool === "web_scraper" && call.failureCount > 0,
+                    ).length
+
+                    if (webScraperFailures >= 2) {
+                      await logAndStreamReasoning({
+                        type: AgentReasoningStepType.LogMessage,
+                        message: `Detected repeated web scraper authentication failures. Stopping attempts to prevent infinite loop.`,
+                      })
+                      // Force break the loop by marking as answered with a clear message
+                      answered = true
+                      answer =
+                        "The URLs you've referenced require authentication or are private (like Gmail links). I cannot access these URLs directly. Please provide publicly accessible URLs or share the specific content you'd like me to analyze."
+                      break
+                    }
+                  }
+
                   if (iterationCount < maxIterations) {
                     continue // Continue to the next iteration to re-plan
                   } else {
@@ -1777,7 +1980,6 @@ export const MessageWithToolsApi = async (c: Context) => {
 
               if (planningContext.length) {
                 const parseSynthesisOutput = await performSynthesis(
-                  ctx,
                   message,
                   planningContext,
                   gatheredFragments,
@@ -1965,7 +2167,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                   message: `No tool selected. Re-planning.`,
                 })
                 const parseSynthesisOutput = await performSynthesis(
-                  ctx,
                   message,
                   planningContext,
                   gatheredFragments,
@@ -2047,6 +2248,20 @@ export const MessageWithToolsApi = async (c: Context) => {
                 //   })
                 // }
                 answer += chunk.text
+
+                // Additional safeguard: If we have web scraper content but answer contains PDF access errors, log it
+                if (
+                  gatheredFragments.some(
+                    (f) => f.id && f.id.includes("web_scraper"),
+                  ) &&
+                  answer.toLowerCase().includes("cannot access") &&
+                  answer.toLowerCase().includes("pdf")
+                ) {
+                  loggerWithChild({ email: sub }).warn(
+                    `[DEBUG] Detected PDF access error in answer despite having web scraper content. Answer: ${answer.substring(0, 200)}...`,
+                  )
+                }
+
                 await stream.writeSSE({
                   event: ChatSSEvents.ResponseUpdate,
                   data: chunk.text,

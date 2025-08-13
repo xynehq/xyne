@@ -1897,7 +1897,6 @@ export const withToolQueryPrompt = (
 ): string => {
   return `
   Current date: ${getDateForAI()}.
-
     ${
       agentContext?.prompt.length
         ? `You are an enterprise agent.
@@ -1908,7 +1907,7 @@ export const withToolQueryPrompt = (
           **Agent Context**:
           ${agentContext.prompt}`
         : `You are a permission-aware retrieval-augmented generation (RAG) system.
-            Do not worry about privacy — you are not allowed to reject a user query as all context is already permission-aware.
+            Do not worry about privacy — you are not allowed to reject a user query as all search context is already permission-aware.
             Only respond in plain text unless a specific format is requested.
             Your answer must come from the provided **Context** only.`
     }
@@ -1937,36 +1936,12 @@ export const withToolQueryPrompt = (
       fallbackReasoning
         ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
         : `
-    **CRITICAL FIRST RULE**: If you see web scraper results in the context (formatted as "[1] Title: Content" or "[2] Article Title: Article content"), answer the user's question directly using that content. Do NOT mention scraping, URLs, or whether content is sufficient. Just answer the question.
-
-    **WEB SCRAPER CONTENT DETECTION**: Web scraped content appears in the Context as indexed entries like "[1] Article Title: Content..." or "[2] Blog Post: Content...". This format indicates successfully scraped web content that should be used directly to answer questions.
-
-    **SCRAPED CONTENT IDENTIFICATION PATTERNS**: Look for these patterns that indicate web scraper content:
-    - "[1] [Title]: [Content...]" 
-    - "[2] [Article Name]: [Article text...]"
-    - Any numbered citation followed by a title and substantial content
-    - Content that starts with article titles followed by article text
-    When you see these patterns, treat them as successfully scraped web content.
-
-    **ABSOLUTE REQUIREMENT**: When you see scraped web content in the context, your response MUST focus entirely on the content itself. Never discuss the scraping process, never mention URLs, never say anything about whether scraping was needed or not needed.
-
-    **ANTI-PATTERN OVERRIDE**: If you are about to say anything containing "The content from the URL" followed by "is already present" or "Therefore, no scraping" - STOP IMMEDIATELY. Instead, start with "This article discusses..." and present the scraped content directly.
-
-    **EMERGENCY OVERRIDE**: If you are about to write anything about "scraping not necessary" or "context contains" or "no scraping is necessary" or "content is already included" or "Therefore, no scraping is necessary" or similar - STOP. Instead write "This article discusses..." or "The scraped content shows..." and present the actual content.
-
-    **MANDATORY CONTENT EXTRACTION**: When user says "scrape" and you see scraped content, you MUST extract and present the article content directly. Never discuss whether scraping was needed.
-
-    **FORBIDDEN PHRASES**: Never use phrases like "scraping the URL is not necessary", "context is already sufficient", "Therefore, scraping the URL is not necessary", "scraping is not necessary", "context is sufficient", "scraping the URL is unnecessary", "the provided context already contains", "no scraping is necessary", "content from that URL is already included in the context", "the content from that URL is already included", "content is already included in the context", "therefore no scraping is necessary", "the context contains the full text", "The provided text is a request to scrape a URL, but the content from that URL", "The content from the URL", "is already present in the provided context", "Therefore, no scraping is needed", "is already included in the provided context", "Therefore, no scraping is necessary", "is already present in the provided context [index", "Therefore, no scraping is needed", "Scraping the URL is therefore unnecessary", or any variation suggesting that scraping should or shouldn't be done when scraped content is present. Simply use the scraped content to answer the question.
-
     - **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
-    - **WEB SCRAPED CONTENT**: If the context includes successfully scraped web content (indicated by formatted entries like "[1] Title: Content..." or "[2] Article: Content..."), this is COMPLETE information that should be used to answer the query. Do NOT claim inability to access websites when web content is already provided in context.
-    - **URL DETECTION**: Only if context contains URLs or links but no actual extracted content from those URLs, consider the context INSUFFICIENT and indicate that the URLs should be scraped for actual content.
     - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
     - **INSUFFICIENT CONTEXT**: If the context is incomplete, partially relevant, or doesn't contain the specific information requested:
       * DO NOT provide partial answers or tangentially related information
       * DO NOT list what you found if it doesn't directly answer the query
       * Instead, honestly explain that you don't have sufficient information to answer the query
-      * If URLs are present but not scraped, specifically mention that the actual content from those URLs is needed
       * Explain what specific information would be needed to provide a complete answer
       * Suggest how the user could refine their query to get better results
     - If the query is **asking for structured data**, return output in requested format if the format is not specified always response in plain text.`
@@ -2005,58 +1980,22 @@ export const synthesisContextPrompt = (
       : ""
   }
 
-  **CRITICAL FIRST RULE**: If you see web scraper results in the context fragments (formatted as "[1] Title: Content" or "[2] Article Title: Article content"), answer the user's question directly using that content. Do NOT mention scraping, URLs, or whether content is sufficient. Just answer the question.
-
-  **WEB SCRAPER CONTENT DETECTION**: Web scraped content appears in Context Fragments as indexed entries like "[1] Article Title: Content..." or "[2] Blog Post: Content...". This format indicates successfully scraped web content that should be used directly to answer questions.
-
-  **SCRAPED CONTENT IDENTIFICATION PATTERNS**: Look for these patterns that indicate web scraper content:
-  - "[1] [Title]: [Content...]" 
-  - "[2] [Article Name]: [Article text...]"
-  - Any numbered citation followed by a title and substantial content
-  - Content that starts with article titles followed by article text
-  When you see these patterns, treat them as successfully scraped web content.
-
-  **ABSOLUTE REQUIREMENT**: When you see scraped web content in the context fragments, your response MUST focus entirely on the content itself. Never discuss the scraping process, never mention URLs, never say anything about whether scraping was needed or not needed.
-
-  **ANTI-PATTERN OVERRIDE**: If you are about to say anything containing "The content from the URL" followed by "is already present" or "Therefore, no scraping" - STOP IMMEDIATELY. Instead, start with "This article discusses..." and present the scraped content directly.
-
-  **EMERGENCY OVERRIDE**: If you are about to write anything about "scraping not necessary" or "context contains" or "no scraping is necessary" or "content is already included" or "Therefore, no scraping is necessary" or similar - STOP. Instead write "This article discusses..." or "The scraped content shows..." and present the actual content.
-
-  **MANDATORY CONTENT EXTRACTION**: When user says "scrape" and you see scraped content in the Context Fragments, you MUST extract and present the article content directly. Never discuss whether scraping was needed.
-
-  **ABSOLUTE CONTENT FOCUS**: When Context Fragments contain scraped web content formatted as "[index] Title: Content", your ONLY job is to answer the user's question using that content. Do NOT evaluate whether scraping was needed - that evaluation is forbidden.
-
   Instruction:
   - Analyze the provided "Context Fragments" to answer the current user-query.
   - The "answer" key should contain a **concise and focused** synthesis grounded only in the context. If relevant information is missing, state that explicitly.
-  - **CRITICAL for web scraped content**: If the context contains successfully scraped web content (indicated by formatted entries like "[1] Article Title: Content..." or "[2] Blog Post: Content..."), use this information to answer the query. Do NOT claim inability to access websites when the content is already provided.
   - Your response MUST be a JSON object with the following two keys: "synthesisState" (string) and "answer" (string).
-  - **MANDATORY BEHAVIOR FOR SCRAPED CONTENT**: When you see web scraper results in the context fragments (formatted as "[index] Title: Content"), you MUST directly use that content to answer the user's question. Do NOT make any statements about whether scraping was necessary, sufficient, or should/shouldn't be done.
 
   - The "synthesisState" must be set to one of the following values:
      - ${ContextSysthesisState.Complete}:
        - Use this if the provided Context Fragments include enough information to meaningfully answer the User Query. Some details may be missing, but the main question is clearly addressed.
-       - **For web scraped content**: If the context includes successfully scraped web content (formatted as "[index] Title: Content"), consider this Complete information unless the user asks for something very specific that's not covered.
        - **For date-based queries**, assume the context has already been filtered to match the requested date range—no need to question whether it's complete.
        - If even a single relevant item fully satisfies the user's intent mark the state as **Complete**.
      - ${ContextSysthesisState.Partial}:
        - Use if the context provides **some** helpful information, but less than 80% of what's required to confidently answer the query.
-       - **Do NOT use Partial if web scraped content successfully provides relevant information for the user's query.**
      - ${ContextSysthesisState.NotFound}:
        - Use if the context contains no relevant information to answer the query.
 
   - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
-  - **CRITICAL WEB SCRAPER HANDLING**: When Context Fragments contain successfully scraped web content (identifiable by format "[index] Title: Content..." entries), this means the web scraper tool has ALREADY executed successfully. In this case:
-    * NEVER claim "scraping is not necessary" or "context is already sufficient" or "scraping the URL is not necessary"
-    * NEVER suggest that URLs don't need to be scraped when they already have been scraped
-    * ALWAYS acknowledge that the scraping was completed successfully
-    * Present the scraped content directly to answer the user's query
-    * If user asked to "scrape this URL", respond with the actual scraped content, not a statement about scraping being unnecessary
-    * Focus on answering the user's question using the scraped content, not on whether scraping was needed
-  - **URL vs SCRAPED CONTENT**: If you see formatted content entries like "[1] Article Title: Content..." (not just URL references), this means scraping has already occurred successfully.
-  - **FORBIDDEN PHRASES**: Never use phrases like "scraping the URL is not necessary", "context is already sufficient", "Therefore, scraping the URL is not necessary", "scraping is not necessary", "context is sufficient", "scraping the URL is unnecessary", "the provided context already contains", "no scraping is necessary", "content from that URL is already included in the context", "the content from that URL is already included", "content is already included in the context", "therefore no scraping is necessary", "the context contains the full text", "The provided text is a request to scrape a URL, but the content from that URL", "The content from the URL", "is already present in the provided context", "Therefore, no scraping is needed", "is already included in the provided context", "Therefore, no scraping is necessary", "is already present in the provided context [index", "Therefore, no scraping is needed", or any variation suggesting that scraping should or shouldn't be done when scraped content is present. Simply use the scraped content to answer the question.
-  - **REQUIRED BEHAVIOR**: When scraped content is present, treat it as regular content and answer the user's question directly using that information. Do not reference the scraping process at all.
-  - **FINAL RULE**: If the user says "scrape this URL" and you see scraped content in context, respond with the actual article content, NOT with statements about scraping being unnecessary.
 
   Context Fragments:
   ${synthesisContext}
@@ -2064,7 +2003,7 @@ export const synthesisContextPrompt = (
   ## Response Format
   {
     "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
-    "answer": "Brief, synthesized answer based only on the context. CRITICAL: If context contains successfully scraped web content (formatted as '[index] Title: Content' entries), directly answer the user's question using that content. NEVER mention scraping, URLs, or whether content is sufficient/insufficient - just provide the answer from the scraped content. BANNED PHRASES: 'scraping is unnecessary', 'context is sufficient', 'scraping the URL is unnecessary', 'the provided context already contains', 'no scraping is necessary', 'content is already included in the context', 'content from that URL is already included', 'the context contains the full text', 'therefore no scraping is necessary', 'The provided text is a request to scrape a URL, but the content from that URL', 'The content from the URL', 'is already present in the provided context', 'Therefore, no scraping is needed', 'is already included in the provided context', 'Therefore, no scraping is necessary', 'is already present in the provided context [index', 'Therefore, no scraping is needed'. Instead say 'Here's what the article covers...' or 'This article explains...' and present the content directly."
+    "answer": "Brief, synthesized answer based only on the context."
   }
 `
 }
