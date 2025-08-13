@@ -141,7 +141,6 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       }
     }
   }
-  console.log(selectedApps.join(", "))
   return {
     selectedApps,
     selectedItems,
@@ -629,9 +628,7 @@ export const extractFileIdsFromMessage = async (
     }
   }
 
-  console.log("Collection and folder IDs to process:", collectionFolderIds.join(" ,"))
   const collectionFileIds = await getAllCollectionAndFolderItems(collectionFolderIds, db)
-  console.log("File IDs extracted from collections/folders:", collectionFileIds.join(" ,"))
   if (collectionFolderIds.length > 0) {
     const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
     const vespaIds = ids.filter((item) => item.vespaDocId !== null).map((item) => item.vespaDocId!)

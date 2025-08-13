@@ -165,7 +165,9 @@ const FileNodeComponent = ({
             </div>
           )}
         </div>
-        <div className="col-span-1 text-center">{node.files}</div>
+        <div className="col-span-1 text-center">
+          {node.type === "file" ? 1 : node.files}
+        </div>
         <div className="col-span-2">
           {node.lastUpdated
             ? new Date(node.lastUpdated).toLocaleDateString("en-GB", {

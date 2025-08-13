@@ -208,7 +208,6 @@ export const uploadFileBatch = async (files: File[], collectionId: string, paren
     formData.append('paths', relativePath);
   });
 
-  console.log(`Sending ${files.length} files to /api/v1/cl/${collectionId}/items/upload`);
   
   try {
     const response = await authFetch(`/api/v1/cl/${collectionId}/items/upload`, {
@@ -217,8 +216,6 @@ export const uploadFileBatch = async (files: File[], collectionId: string, paren
     });
 
     const responseText = await response.text();
-    console.log('Upload response status:', response.status);
-    console.log('Upload response:', responseText);
 
     if (!response.ok) {
       throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${responseText}`);
