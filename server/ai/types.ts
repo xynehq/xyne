@@ -213,9 +213,6 @@ interface PillValue {
   threadId?: string
   app?: Apps
   entity?:string
-  itemId?:string
-  clId?:string
-
 }
 
 interface PillQueryItem {

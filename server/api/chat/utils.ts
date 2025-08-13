@@ -562,32 +562,6 @@ export const extractFileIdsFromMessage = async (
         // Regular pill behavior: just add the docId
         fileIds.push(docId)
       }
-
-      if (obj?.value?.app == Apps.KnowledgeBase) {
-        // now if it is folder then get all the items in it  else if file of collection then add as it is
-        if (
-          (obj?.value?.entity == KnowledgeBaseEntity.Folder ||
-            obj?.value?.entity == KnowledgeBaseEntity.KnowledgeBase || obj?.value?.entity == KnowledgeBaseEntity.Collection) &&
-          obj?.value?.itemId
-        ) {
-          // Add prefix based on entity type
-          if (obj?.value?.entity == KnowledgeBaseEntity.Collection) {
-            const prefixedId = `cl-${obj.value.itemId}`;
-            collectionFolderIds.push(prefixedId);
-            console.log(`Added collection with prefix: ${prefixedId}`);
-          } else if (obj?.value?.entity == KnowledgeBaseEntity.Folder) {
-            const prefixedId = `clfd-${obj.value.itemId}`;
-            collectionFolderIds.push(prefixedId);
-            console.log(`Added collection folder with prefix: ${prefixedId}`);
-          } else {
-            // KnowledgeBase entity - keep original behavior for backward compatibility
-            collectionFolderIds.push(obj.value.itemId);
-            console.log(`Added legacy item (no prefix): ${obj.value.itemId}`);
-          }
-        } else if (obj?.value?.entity == KnowledgeBaseEntity.File) {
-          fileIds.push(obj.value.docId)
-        }
-      }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {

@@ -557,7 +557,7 @@ const constructDataSourceFileContext = (
   \nvespa relevance score: ${relevance}\n`
 }
 
-const constructKbFileContext = (
+const constructCollectionFileContext = (
   fields: VespaKbFileSearch,
   relevance: number,
   maxSummaryChunks?: number,
@@ -718,7 +718,7 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === KbItemsSchema) {
-    return constructKbFileContext(
+    return constructCollectionFileContext(
       searchResult.fields as VespaKbFileSearch,
       searchResult.relevance,
       maxSummaryChunks,
