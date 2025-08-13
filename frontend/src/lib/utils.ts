@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { CURRENCY } from "./constants"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -76,4 +77,29 @@ export const splitGroupedCitationsWithSpaces = (text: string): string => {
       return numbers.map((num: string) => `[${num}]`).join(" ")
     },
   )
+}
+
+// Utility function to safely convert cost values (which may be strings from numeric type) to numbers
+export const safeNumberConversion = (value: any): number => {
+  if (typeof value === "number") return value
+  if (typeof value === "string") return parseFloat(value) || 0
+  return 0
+}
+
+// Utility function to convert USD to INR and format as currency
+export const formatCostInINR = (usdAmount: any): string => {
+  const usdValue = safeNumberConversion(usdAmount)
+  const inrValue = usdValue * CURRENCY.USD_TO_INR_RATE
+  return `${CURRENCY.INR_SYMBOL}${inrValue.toFixed(2)}`
+}
+
+// Utility function for cost per message in INR
+export const formatCostPerMessageInINR = (
+  totalCost: any,
+  messageCount: number,
+): string => {
+  if (messageCount === 0) return `${CURRENCY.INR_SYMBOL}0.00`
+  const usdValue = safeNumberConversion(totalCost)
+  const inrValue = (usdValue * CURRENCY.USD_TO_INR_RATE) / messageCount
+  return `${CURRENCY.INR_SYMBOL}${inrValue.toFixed(4)}`
 }

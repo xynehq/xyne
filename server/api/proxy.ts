@@ -1,5 +1,6 @@
 import type { Context } from "hono"
-import { getLogger, Subsystem } from "@/logger"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 
 // Only allow Google profile picture domains for security
 const ALLOWED_DOMAINS = new Set([

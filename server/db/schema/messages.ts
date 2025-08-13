@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   index,
+  numeric,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -65,6 +66,8 @@ export const messages = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     feedback: jsonb("feedback"), // Enhanced feedback data in JSON format (supports both legacy enum values and new structure)
+    tokensUsed: integer("tokens_used").default(0), // Total tokens used for this message
+    cost: numeric("cost", { precision: 10, scale: 6 }).notNull().default("0"), // Actual cost in dollars for this LLM call
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),
