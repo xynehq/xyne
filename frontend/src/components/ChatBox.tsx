@@ -1042,7 +1042,6 @@ export const ChatBox = ({
         query: params,
         credentials: "include",
       })
-      
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -1052,7 +1051,7 @@ export const ChatBox = ({
       }
 
       const data = await response.json()
-      // console.log("Printing the data of search",data)
+
       const fetchedTotalCount = data.count || 0
       setTotalCount(fetchedTotalCount)
 
@@ -1326,7 +1325,6 @@ export const ChatBox = ({
   const handleSelectGlobalResult = (
     result: SearchResult & { isWholeSheetDummy?: boolean },
   ) => {
-    // console.log("selected item",result)
     let resultUrl = result.url
     if (!resultUrl && result.app === Apps.Gmail) {
       const identifier = result.threadId || result.docId
