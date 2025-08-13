@@ -9,7 +9,7 @@ export interface SelectedFile {
   preview?: string
 }
 
-interface KbFileUploadProps {
+interface CollectionFileUploadProps {
   onFilesSelect: (files: File[]) => void
   onRemoveFile: (id: string) => void
   onRemoveAllFiles: () => void
@@ -25,7 +25,7 @@ interface KbFileUploadProps {
   }
 }
 
-const KbFileUpload = ({
+const CollectionFileUpload = ({
   onFilesSelect,
   onRemoveFile,
   onRemoveAllFiles,
@@ -34,7 +34,7 @@ const KbFileUpload = ({
   isUploading = false,
   collectionName,
   batchProgress,
-}: KbFileUploadProps) => {
+}: CollectionFileUploadProps) => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -357,4 +357,4 @@ const KbFileUpload = ({
   )
 }
 
-export default KbFileUpload
+export default CollectionFileUpload

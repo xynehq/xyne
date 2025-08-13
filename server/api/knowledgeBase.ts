@@ -31,8 +31,6 @@ import {
   generateFileVespaDocId,
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
-  getAllFolderItems,
-  getCollectionFilesVespaIds,
   // Legacy aliases for backward compatibility
   } from "@/db/knowledgeBase"
 import type { 
@@ -43,7 +41,7 @@ import type {
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
-import { Apps, kbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
 import crypto from "crypto"
 import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
@@ -208,7 +206,7 @@ export const CreateCollectionApi = async (c: Context) => {
         updatedAt: Date.now(),
       }
 
-      await insert(vespaDoc, kbItemsSchema)
+      await insert(vespaDoc, KbItemsSchema)
       return createdCollection
     })
     loggerWithChild({ email: userEmail }).info(
@@ -268,7 +266,7 @@ export const ListCollectionsApi = async (c: Context) => {
 // Get a specific Collection
 export const GetCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -308,7 +306,7 @@ export const GetCollectionApi = async (c: Context) => {
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -366,7 +364,7 @@ export const UpdateCollectionApi = async (c: Context) => {
 // Delete a Collection
 export const DeleteCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -433,7 +431,7 @@ export const DeleteCollectionApi = async (c: Context) => {
           try {
             // Delete from Vespa
             if (collectionFile.vespaDocId) {
-              await DeleteDocument(collectionFile.vespaDocId, kbItemsSchema)
+              await DeleteDocument(collectionFile.vespaDocId, KbItemsSchema)
               loggerWithChild({ email: userEmail }).info(
                 `Deleted from Vespa: ${collectionFile.vespaDocId}`,
               )
@@ -468,7 +466,7 @@ export const DeleteCollectionApi = async (c: Context) => {
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbItemsSchema)
+            await DeleteDocument(vespaDocId, KbItemsSchema)
             loggerWithChild({ email: userEmail }).info(
               `Deleted folder from Vespa: ${vespaDocId}`,
             )
@@ -481,12 +479,12 @@ export const DeleteCollectionApi = async (c: Context) => {
       }
       else if (item.type === "knowledge_base") {
         // Delete Knowledge Base from Vespa
-        const kbMetadata = item.metadata as Record<string, any>
-        const vespaDocId = kbMetadata?.vespaDocId
+        const clMetadata = item.metadata as Record<string, any>
+        const vespaDocId = clMetadata?.vespaDocId
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbItemsSchema)
+            await DeleteDocument(vespaDocId, KbItemsSchema)
             loggerWithChild({ email: userEmail }).info(
               `Deleted Knowledge Base from Vespa: ${vespaDocId}`,
             )
@@ -547,7 +545,7 @@ export const DeleteCollectionApi = async (c: Context) => {
 // List items in a Collection
 export const ListCollectionItemsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
   const parentId = c.req.query("parentId") || null
 
   // Get user from database
@@ -589,7 +587,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
 // Create a folder
 export const CreateFolderApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -621,7 +619,7 @@ export const CreateFolderApi = async (c: Context) => {
       createdBy: user.email,
       createdById: user.id,
       workspaceId: user.workspaceId,
-      kbId: collectionId,
+      clId: collectionId,
       parentId: validatedData.parentId || null,
       description: validatedData.metadata?.description || "",
       tags: validatedData.metadata?.tags || [],
@@ -669,7 +667,7 @@ export const CreateFolderApi = async (c: Context) => {
         updatedAt: Date.now(),
       }
 
-      await insert(vespaDoc, kbItemsSchema)
+      await insert(vespaDoc, KbItemsSchema)
       return createdFolder
     })
 
@@ -785,7 +783,7 @@ async function ensureFolderPath(
       createdBy: "system",
       createdById: null, // System-created
       workspaceId: null, // Will be populated by createFolder
-      kbId: collectionId,
+      clId: collectionId,
       parentId: parentId || null,
       description: "Auto-created during file upload",
       tags: ["auto-created"],
@@ -833,7 +831,7 @@ async function ensureFolderPath(
         updatedAt: Date.now(),
       }
 
-      await insert(vespaDoc, kbItemsSchema)
+      await insert(vespaDoc, KbItemsSchema)
       return createdFolder
     })
     
@@ -862,7 +860,7 @@ async function ensureFolderPath(
 // Upload files
 export const UploadFilesApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
   const requestPath = c.req.path
 
   // Handle different endpoints
@@ -1127,7 +1125,7 @@ export const UploadFilesApi = async (c: Context) => {
 
               if (existingCollectionFile) {
                 if (existingCollectionFile.vespaDocId) {
-                  await DeleteDocument(existingCollectionFile.vespaDocId, kbItemsSchema)
+                  await DeleteDocument(existingCollectionFile.vespaDocId, KbItemsSchema)
                 }
                 try {
                   if (existingCollectionFile.storagePath) {
@@ -1331,7 +1329,7 @@ export const UploadFilesApi = async (c: Context) => {
             updatedAt: Date.now(),
           }
 
-          await insert(vespaDoc, kbItemsSchema)
+          await insert(vespaDoc, KbItemsSchema)
           return createdItem
         })
 
@@ -1398,7 +1396,7 @@ export const UploadFilesApi = async (c: Context) => {
 // Delete an item
 export const DeleteItemApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
   // Get user from database
@@ -1501,7 +1499,7 @@ export const DeleteItemApi = async (c: Context) => {
           try {
             // Delete from Vespa
             if (collectionFile.vespaDocId) {
-              await DeleteDocument(collectionFile.vespaDocId, kbItemsSchema)
+              await DeleteDocument(collectionFile.vespaDocId, KbItemsSchema)
               loggerWithChild({ email: userEmail }).info(
                 `Deleted file from Vespa: ${collectionFile.vespaDocId}`,
               )
@@ -1532,7 +1530,7 @@ export const DeleteItemApi = async (c: Context) => {
 
         if (vespaDocId) {
           try {
-            await DeleteDocument(vespaDocId, kbItemsSchema)
+            await DeleteDocument(vespaDocId, KbItemsSchema)
             deletedFoldersCount++
             loggerWithChild({ email: userEmail }).info(
               `Deleted folder from Vespa: ${vespaDocId}`,
@@ -1580,7 +1578,7 @@ export const DeleteItemApi = async (c: Context) => {
 // Get file preview URL
 export const GetFilePreviewApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
   // Get user from database
@@ -1657,7 +1655,7 @@ export const GetFilePreviewApi = async (c: Context) => {
 // Get file content for preview
 export const GetFileContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  const collectionId = c.req.param("kbId")
+  const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
  
@@ -1691,33 +1689,6 @@ export const GetFileContentApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file content",
-    })
-  }
-}
-
-export const GetKbVespaIds = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
-  const { parentIds } = await c.req.json() // Assuming the array is sent in the request body
-  if (!Array.isArray(parentIds) || parentIds.length === 0) {
-    throw new HTTPException(400, {
-      message: "Invalid or missing parentIds array",
-    })
-  }
-  try {
-    const fileIds = await getAllFolderItems(parentIds, db)
-    const ids = await getCollectionFilesVespaIds(fileIds, db)
-    const vespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
-    return c.json(
-      {
-        data: vespaIds,
-        success: true,
-      },
-      200,
-    )
-  } catch (error) {
-    return c.json({
-      status: 500,
-      error: error,
     })
   }
 }

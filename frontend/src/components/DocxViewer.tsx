@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react"
 import * as docx from "docx-preview"
+import { authFetch } from "@/utils/authFetch"
 
 interface DocxViewerProps {
   /** Either a URL or File object */
@@ -106,8 +107,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
 
         data = await source.arrayBuffer()
       } else {
-        const res = await fetch(source, {
-          credentials: "include",
+        const res = await authFetch(source, {
           headers: {
             Accept:
               "application/octet-stream, application/vnd.openxmlformats-officedocument.wordprocessingml.document",

@@ -10,7 +10,7 @@ export interface Citation {
   url: string
   title: string
   itemId?: string
-  kbId?: string
+  clId?: string
 }
 
 export const createCitationLink =
@@ -41,7 +41,7 @@ export const createCitationLink =
           ? citations.find((c) => c.url === href)
           : undefined
 
-    if (citation && citation.kbId && citation.itemId) {
+    if (citation && citation.clId && citation.itemId) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>

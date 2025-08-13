@@ -1,5 +1,6 @@
 import { isValidFile } from "../../../shared/filesutils"
-import { SelectedFile } from "@/components/KbFileUpload"
+import { SelectedFile } from "@/components/ClFileUpload"
+import { authFetch } from "./authFetch"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
@@ -190,8 +191,8 @@ export const buildFileTree = (files: { id?: string, name: string, type: 'file' |
   return root.children || [];
 };
 
-// API functions for Knowledge Base operations
-export const uploadFileBatch = async (files: File[], kbId: string, parentId?: string | null): Promise<any> => {
+// API functions for Collection operations
+export const uploadFileBatch = async (files: File[], collectionId: string, parentId?: string | null): Promise<any> => {
   const formData = new FormData();
   
   // If parentId is provided, add it to formData
@@ -207,10 +208,10 @@ export const uploadFileBatch = async (files: File[], kbId: string, parentId?: st
     formData.append('paths', relativePath);
   });
 
-  console.log(`Sending ${files.length} files to /api/v1/kb/${kbId}/items/upload`);
+  console.log(`Sending ${files.length} files to /api/v1/cl/${collectionId}/items/upload`);
   
   try {
-    const response = await fetch(`/api/v1/kb/${kbId}/items/upload`, {
+    const response = await authFetch(`/api/v1/cl/${collectionId}/items/upload`, {
       method: 'POST',
       body: formData,
     });
@@ -235,8 +236,8 @@ export const uploadFileBatch = async (files: File[], kbId: string, parentId?: st
   }
 };
 
-export const createKnowledgeBase = async (name: string, description?: string): Promise<any> => {
-  const response = await fetch('/api/v1/kb', {
+export const createCollection = async (name: string, description?: string): Promise<any> => {
+  const response = await authFetch('/api/v1/cl', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -250,25 +251,25 @@ export const createKnowledgeBase = async (name: string, description?: string): P
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to create knowledge base: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`Failed to create collection: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
   return response.json();
 };
 
-export const deleteKnowledgeBase = async (kbId: string): Promise<void> => {
-  const response = await fetch(`/api/v1/kb/${kbId}`, {
+export const deleteCollection = async (collectionId: string): Promise<void> => {
+  const response = await authFetch(`/api/v1/cl/${collectionId}`, {
     method: 'DELETE',
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to delete knowledge base: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`Failed to delete collection: ${response.status} ${response.statusText} - ${errorText}`);
   }
 };
 
-export const deleteItem = async (kbId: string, itemId: string): Promise<void> => {
-  const response = await fetch(`/api/v1/kb/${kbId}/items/${itemId}`, {
+export const deleteItem = async (collectionId: string, itemId: string): Promise<void> => {
+  const response = await authFetch(`/api/v1/cl/${collectionId}/items/${itemId}`, {
     method: 'DELETE',
   });
 
@@ -278,6 +279,6 @@ export const deleteItem = async (kbId: string, itemId: string): Promise<void> =>
   }
 };
 
-export const addFilesToExistingKnowledgeBase = async (files: SelectedFile[], kbId: string, parentId?: string | null): Promise<any> => {
-  return uploadFileBatch(files.map(f => f.file), kbId, parentId);
+export const addFilesToExistingCollection = async (files: SelectedFile[], collectionId: string, parentId?: string | null): Promise<any> => {
+  return uploadFileBatch(files.map(f => f.file), collectionId, parentId);
 };

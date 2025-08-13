@@ -4,6 +4,8 @@ import { Citation } from "shared/types"
 import PdfViewer from "./PdfViewer"
 import DocxViewer from "./DocxViewer"
 import ReadmeViewer from "./ReadmeViewer"
+import { api } from "@/api"
+import { authFetch } from "@/utils/authFetch"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -29,21 +31,11 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
         setError(null)
         try {
           if (
-            citation.app === "knowledge-base" &&
+            citation.app === "collection" &&
             citation.itemId &&
-            citation.kbId
+            citation.collectionId
           ) {
-            const response = await fetch(
-              `/api/v1/kb/${citation.kbId}/files/${citation.itemId}/content`,
-              {
-                method: "GET",
-                credentials: "include",
-                headers: {
-                  Accept:
-                    "application/octet-stream, text/plain, text/markdown, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                },
-              },
-            )
+            const response = await api.collection[citation.collectionId].files[citation.itemId].content.$get()
 
             if (!response.ok) {
               throw new Error(
@@ -55,9 +47,8 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
             setDocumentContent(blob)
           } else if (citation.url) {
             // For external documents, try to fetch directly
-            const response = await fetch(citation.url, {
+            const response = await authFetch(citation.url, {
               method: "GET",
-              credentials: "include",
             })
 
             if (!response.ok) {

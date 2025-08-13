@@ -77,9 +77,9 @@ export interface Folder extends CollectionItem {
 
 // Legacy types for backward compatibility during transition
 export type KnowledgeBase = Collection;
-export type KbItem = CollectionItem;
-export type KbFile = File;
-export type KbFolder = Folder;
+export type ClItem = CollectionItem;
+export type ClFile = File;
+export type ClFolder = Folder;
 
 export interface LegacyKbItem {
   id: string;

@@ -214,7 +214,7 @@ interface PillValue {
   app?: Apps
   entity?:string
   itemId?:string
-  kbId?:string
+  clId?:string
 
 }
 

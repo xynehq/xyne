@@ -13,7 +13,7 @@ import {
   chatMessageSchema,
   datasourceSchema,
   dataSourceFileSchema,
-  kbItemsSchema,
+  KbItemsSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
@@ -937,7 +937,7 @@ export const HybridDefaultProfileForAgent =  async(
             const collectionQuery = await buildCollectionFileYQL()
             if (collectionQuery) {
               appQueries.push(collectionQuery)
-              if (!sources.includes(kbItemsSchema)) sources.push(kbItemsSchema)
+              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             }
           } else {
             // If Apps.KnowledgeBase is allowed but no specific IDs, this implies a broader search

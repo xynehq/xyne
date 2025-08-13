@@ -4,9 +4,9 @@ import { Plus, X, MoreHorizontal, Edit, Trash2, ArrowLeft } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 import { useState, useCallback, useEffect, memo } from "react"
 import { Input } from "@/components/ui/input"
-import KbFileUpload, {
+import CollectionFileUpload, {
   SelectedFile as FileUploadSelectedFile,
-} from "@/components/KbFileUpload"
+} from "@/components/ClFileUpload"
 import FileUploadSkeleton from "@/components/FileUploadSkeleton"
 import { useToast } from "@/hooks/use-toast"
 import FileTree from "@/components/FileTree"
@@ -22,15 +22,16 @@ import {
   buildFileTree,
   type FileNode,
   uploadFileBatch,
-  createKnowledgeBase,
-  deleteKnowledgeBase,
+  createCollection,
+  deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
-import type { KnowledgeBase, KbItem } from "@/types/knowledgeBase"
+import type { Collection as CollectionType, CollectionItem } from "@/types/knowledgeBase"
 import { api } from "@/api"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
+import { authFetch } from "@/utils/authFetch"
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -323,12 +324,12 @@ function RouteComponent() {
 
         // Check if the collection exists and has files
         try {
-          const response = await api.kb.$get()
+          const response = await api.cl.$get()
           if (response.ok) {
             const data = await response.json()
             const existingCollection = data.find(
-              (kb: KnowledgeBase) =>
-                kb.name.toLowerCase() ===
+              (collection: CollectionType) =>
+                collection.name.toLowerCase() ===
                 savedState.uploadingCollectionName.toLowerCase(),
             )
 
@@ -381,12 +382,12 @@ function RouteComponent() {
 
     const checkUploadProgress = async () => {
       try {
-        const response = await api.kb.$get()
+        const response = await api.cl.$get()
         if (response.ok) {
           const data = await response.json()
           const existingCollection = data.find(
-            (kb: KnowledgeBase) =>
-              kb.name.toLowerCase() === uploadingCollectionName.toLowerCase(),
+            (collection: CollectionType) =>
+              collection.name.toLowerCase() === uploadingCollectionName.toLowerCase(),
           )
 
           if (
@@ -405,23 +406,23 @@ function RouteComponent() {
             clearUploadState()
 
             // Refresh collections to show the new one
-            const updatedCollections = data.map((kb: KnowledgeBase) => ({
-              id: kb.id,
-              name: kb.name,
-              description: kb.description,
-              files: kb.totalCount || 0,
+            const updatedCollections = data.map((collection: CollectionType) => ({
+              id: collection.id,
+              name: collection.name,
+              description: collection.description,
+              files: collection.totalCount || 0,
               items: [],
               isOpen: false,
-              lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
+              lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
                 day: "numeric",
                 month: "short",
                 year: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
               }),
-              updatedBy: kb.lastUpdatedByEmail || "Unknown",
-              totalCount: kb.totalCount,
-              isPrivate: kb.isPrivate,
+              updatedBy: collection.lastUpdatedByEmail || "Unknown",
+              totalCount: collection.totalCount,
+              isPrivate: collection.isPrivate,
             }))
             setCollections(updatedCollections)
 
@@ -445,27 +446,27 @@ function RouteComponent() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
-        const response = await api.kb.$get()
+        const response = await api.cl.$get()
         if (response.ok) {
           const data = await response.json()
             setCollections(
-              data.map((kb: KnowledgeBase) => ({
-                id: kb.id,
-                name: kb.name,
-                description: kb.description,
-                files: kb.totalItems || 0,
+              data.map((collection: CollectionType) => ({
+                id: collection.id,
+                name: collection.name,
+                description: collection.description,
+                files: collection.totalItems || 0,
                 items: [],
                 isOpen: false,
-                lastUpdated: new Date(kb.updatedAt).toLocaleString("en-GB", {
+                lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
                   day: "numeric",
                   month: "short",
                   year: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                updatedBy: kb.lastUpdatedByEmail || "Unknown",
-                totalCount: kb.totalItems,
-                isPrivate: kb.isPrivate,
+                updatedBy: collection.lastUpdatedByEmail || "Unknown",
+                totalCount: collection.totalItems,
+                isPrivate: collection.isPrivate,
               })),
             )
         } else {
@@ -523,8 +524,8 @@ function RouteComponent() {
     handleCloseModal()
 
     try {
-      // First create the knowledge base
-      const kb = await createKnowledgeBase(collectionName.trim(), "")
+      // First create the collection
+      const cl = await createCollection(collectionName.trim(), "")
 
       // Then upload files in batches
       const batches = createBatches(selectedFiles, collectionName.trim())
@@ -539,34 +540,34 @@ function RouteComponent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, kb.id)
+        await uploadFileBatch(batchFiles, cl.id)
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
         }))
       }
 
-      // Fetch the updated KB data from the backend
-      const kbResponse = await api.kb[":id"].$get({ param: { id: kb.id } })
-      const updatedKb = await kbResponse.json()
+      // Fetch the updated Collection data from the backend
+      const clResponse = await api.cl[":id"].$get({ param: { id: cl.id } })
+      const updatedCl = await clResponse.json()
 
       const newCollection: Collection = {
-        id: updatedKb.id,
-        name: updatedKb.name,
-        description: updatedKb.description,
-        files: updatedKb.totalCount || selectedFiles.length,
-        lastUpdated: new Date(updatedKb.updatedAt).toLocaleString("en-GB", {
+        id: updatedCl.id,
+        name: updatedCl.name,
+        description: updatedCl.description,
+        files: updatedCl.totalCount || selectedFiles.length,
+        lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
           day: "numeric",
           month: "short",
           year: "numeric",
           hour: "2-digit",
           minute: "2-digit",
         }),
-        updatedBy: updatedKb.lastUpdatedByEmail || user?.email || "Unknown",
+        updatedBy: updatedCl.lastUpdatedByEmail || user?.email || "Unknown",
         items: [],
         isOpen: false,
-        totalCount: updatedKb.totalCount,
-        isPrivate: updatedKb.isPrivate,
+        totalCount: updatedCl.totalCount,
+        isPrivate: updatedCl.isPrivate,
       }
 
       setCollections((prev) => [newCollection, ...prev])
@@ -656,12 +657,12 @@ function RouteComponent() {
       }
 
       // Refresh the collection by fetching updated data from backend
-      const kbResponse = await api.kb[":id"].$get({
+      const clResponse = await api.cl[":id"].$get({
         param: { id: addingToCollection.id },
       })
-      const updatedKb = await kbResponse.json()
+      const updatedCl = await clResponse.json()
 
-      const itemsResponse = await api.kb[":id"].items.$get({
+      const itemsResponse = await api.cl[":id"].items.$get({
         param: { id: addingToCollection.id },
       })
       const items = await itemsResponse.json()
@@ -671,9 +672,9 @@ function RouteComponent() {
           if (c.id === addingToCollection.id) {
             return {
               ...c,
-              files: updatedKb.totalCount || 0,
+              files: updatedCl.totalCount || 0,
               items: buildFileTree(
-                items.map((item: KbItem) => ({
+                items.map((item: CollectionItem) => ({
                   name: item.name,
                   type: item.type as "file" | "folder",
                   totalCount: item.totalCount,
@@ -683,7 +684,7 @@ function RouteComponent() {
                     item.lastUpdatedByEmail || user?.email || "Unknown",
                 })),
               ),
-              lastUpdated: new Date(updatedKb.updatedAt).toLocaleString(
+              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
                 "en-GB",
                 {
                   day: "numeric",
@@ -693,7 +694,7 @@ function RouteComponent() {
                   minute: "2-digit",
                 },
               ),
-              updatedBy: updatedKb.lastUpdatedByEmail || "Unknown",
+              updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
             }
           }
           return c
@@ -735,12 +736,12 @@ function RouteComponent() {
       }
 
       // Refresh the collection data from backend
-      const kbResponse = await api.kb[":id"].$get({
+      const clResponse = await api.cl[":id"].$get({
         param: { id: deletingItem.collection.id },
       })
-      const updatedKb = await kbResponse.json()
+      const updatedCl = await clResponse.json()
 
-      const itemsResponse = await api.kb[":id"].items.$get({
+      const itemsResponse = await api.cl[":id"].items.$get({
         param: { id: deletingItem.collection.id },
       })
       const items = await itemsResponse.json()
@@ -750,9 +751,9 @@ function RouteComponent() {
           if (c.id === deletingItem.collection.id) {
             return {
               ...c,
-              files: updatedKb.totalCount || 0,
+              files: updatedCl.totalCount || 0,
               items: buildFileTree(
-                items.map((item: KbItem) => ({
+                items.map((item: CollectionItem) => ({
                   name: item.name,
                   type: item.type as "file" | "folder",
                   totalCount: item.totalCount,
@@ -762,7 +763,7 @@ function RouteComponent() {
                     item.lastUpdatedByEmail || user?.email || "Unknown",
                 })),
               ),
-              lastUpdated: new Date(updatedKb.updatedAt).toLocaleString(
+              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
                 "en-GB",
                 {
                   day: "numeric",
@@ -804,20 +805,20 @@ function RouteComponent() {
     if (!editingCollection || !collectionName.trim()) return
 
     try {
-      const response = await api.kb[":id"].$put({
+      const response = await api.cl[":id"].$put({
         param: { id: editingCollection.id },
         json: { name: collectionName.trim() },
       })
 
       if (response.ok) {
-        const updatedKb = await response.json()
+        const updatedCl = await response.json()
         setCollections((prev) =>
           prev.map((c) =>
             c.id === editingCollection.id
               ? {
                   ...c,
-                  name: updatedKb.name,
-                  lastUpdated: new Date(updatedKb.updatedAt).toLocaleString(
+                  name: updatedCl.name,
+                  lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
                     "en-GB",
                     {
                       day: "numeric",
@@ -854,8 +855,8 @@ function RouteComponent() {
     setIsUploading(true)
 
     try {
-      // Delete the knowledge base
-      await deleteKnowledgeBase(deletingCollection.id)
+      // Delete the collection
+      await deleteCollection(deletingCollection.id)
 
       // Remove from state
       setCollections((prev) =>
@@ -898,11 +899,10 @@ function RouteComponent() {
     setLoadingDocument(true)
     try {
       // Fetch the file content directly from the API endpoint
-      const response = await fetch(
-        `/api/v1/kb/${collection.id}/files/${file.id}/content`,
+      const response = await authFetch(
+        `/api/v1/cl/${collection.id}/files/${file.id}/content`,
         {
           method: "GET",
-          credentials: "include",
           headers: {
             Accept: fileName.endsWith(".md")
               ? "text/plain, text/markdown"
@@ -982,7 +982,7 @@ function RouteComponent() {
 
                             if (n.isOpen && n.id) {
                               try {
-                                const response = await api.kb[":id"].items.$get(
+                                const response = await api.cl[":id"].items.$get(
                                   {
                                     param: {
                                       id: selectedDocument.collection.id,
@@ -993,7 +993,7 @@ function RouteComponent() {
                                 if (response.ok) {
                                   const items = await response.json()
 
-                                  n.children = items.map((item: KbItem) => ({
+                                  n.children = items.map((item: CollectionItem) => ({
                                     id: item.id,
                                     name: item.name,
                                     type: item.type as "file" | "folder",
@@ -1136,12 +1136,12 @@ function RouteComponent() {
                         if (coll) {
                           coll.isOpen = !coll.isOpen
                           if (coll.isOpen) {
-                            const response = await api.kb[":id"].items.$get({
+                            const response = await api.cl[":id"].items.$get({
                               param: { id: collection.id },
                             })
                             const data = await response.json()
                             coll.items = buildFileTree(
-                              data.map((item: KbItem) => ({
+                              data.map((item: CollectionItem) => ({
                                 name: item.name,
                                 type: item.type as "file" | "folder",
                                 totalCount: item.totalCount,
@@ -1264,7 +1264,7 @@ function RouteComponent() {
                                     // If opening the folder and it has an ID, fetch its contents
                                     if (n.isOpen && n.id) {
                                       try {
-                                        const response = await api.kb[
+                                        const response = await api.cl[
                                           ":id"
                                         ].items.$get({
                                           param: { id: collection.id },
@@ -1275,7 +1275,7 @@ function RouteComponent() {
 
                                           // Build the children structure
                                           n.children = items.map(
-                                            (item: KbItem) => ({
+                                            (item: CollectionItem) => ({
                                               id: item.id,
                                               name: item.name,
                                               type: item.type as
@@ -1491,7 +1491,7 @@ function RouteComponent() {
                     )}
                   </div>
                 </div>
-                <KbFileUpload
+                <CollectionFileUpload
                   onFilesSelect={handleFilesSelect}
                   onRemoveFile={handleRemoveFile}
                   onRemoveAllFiles={handleRemoveAllFiles}

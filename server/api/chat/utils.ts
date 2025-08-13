@@ -35,7 +35,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
-  kbItemsSchema,
+  KbItemsSchema,
   KnowledgeBaseEntity,
 } from "@/search/types"
 import type { z } from "zod"
@@ -422,17 +422,17 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
-  } else if (result.fields.sddocname == kbItemsSchema) {
-    // Handle KB files - include the actual file and KB UUIDs for direct access
-    const kbFields = fields as any // Type as VespaKbFileSearch when types are available
+  } else if (result.fields.sddocname == KbItemsSchema) {
+    // Handle Collection files - include the actual file and Collection UUIDs for direct access
+    const clFields = fields as any // Type as VespaClFileSearch when types are available
     return {
-      docId: kbFields.docId,
-      title: kbFields.fileName || "KB File",
-      url: `/kb/${kbFields.clId}`,
+      docId: clFields.docId,
+      title: clFields.fileName || "Collection File",
+      url: `/cl/${clFields.clId}`,
       app: Apps.KnowledgeBase,
       entity: SystemEntity.SystemInfo,
-      itemId: kbFields.itemId,
-      kbId: kbFields.clId,
+      itemId: clFields.itemId,
+      clId: clFields.clId,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {

@@ -113,7 +113,6 @@ interface SearchResult {
   type?: string
   email?: string
   photoLink?: string
-  itemId?:string
   userMap?: Record<string, string>
 }
 
@@ -1254,7 +1253,6 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
-      itemId: citation.itemId,
       wholeSheet: wholeSheet,
       threadId: (citation as any).threadId, // Add threadId if available
     }
@@ -1372,7 +1370,6 @@ export const ChatBox = ({
         docId: result.docId,
         mailId: result.mailId,
         app: result.app,
-        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,
@@ -1388,7 +1385,6 @@ export const ChatBox = ({
         docId: result.docId,
         mailId: result.mailId,
         app: result.app,
-        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,
@@ -1405,7 +1401,6 @@ export const ChatBox = ({
         mailId: result.mailId,
         threadId: result.threadId, // Add threadId from result
         app: result.app,
-        itemId:result.itemId,
         entity: result.entity,
         type: "global",
         photoLink: result.photoLink,

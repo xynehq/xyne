@@ -22,8 +22,7 @@ export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
 export const dataSourceFileSchema = "datasource_file"
 // Knowledge Base feature schemas - contains collections with folders and files
-export const kbItemsSchema = "kb_items" // Collection items (folders and files)
-export const kbFileSchema = "kb_items" // Legacy alias for collection files
+export const KbItemsSchema = "kb_items" // Collection items (folders and files)
 
 export type VespaSchema =
   | typeof fileSchema
@@ -39,7 +38,7 @@ export type VespaSchema =
   | typeof chatAttachment
   | typeof datasourceSchema
   | typeof dataSourceFileSchema
-  | typeof kbItemsSchema
+  | typeof KbItemsSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -59,7 +58,7 @@ export enum Apps {
   Github = "github",
   Xyne = "xyne",
   DataSource = "data-source",
-  KnowledgeBase = "knowledge-base",
+  KnowledgeBase = "KnowledgeBase",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -115,7 +114,7 @@ const Schemas = z.union([
   z.literal(chatMessageSchema),
   z.literal(datasourceSchema),
   z.literal(dataSourceFileSchema),
-  z.literal(kbItemsSchema),
+  z.literal(KbItemsSchema),
 ])
 
 export enum MailEntity {
@@ -425,7 +424,7 @@ export const VespaKbFileSchema = z.object({
   docId: z.string(),
   app: z.nativeEnum(Apps),
   entity: z.nativeEnum(KnowledgeBaseEntity),
-  kbId: z.string(),
+  clId: z.string(),
   itemId: z.string(),
   title: z.string(),
   url: z.string().nullable(),
@@ -454,7 +453,7 @@ export type KbFileMatchFeatures = z.infer<typeof KbFileMatchFeaturesSchema>
 
 // Search schema for KbFile
 export const VespaKbFileSearchSchema = VespaKbFileSchemaBase.extend({
-  sddocname: z.literal(kbItemsSchema),
+  sddocname: z.literal(KbItemsSchema),
   matchfeatures: KbFileMatchFeaturesSchema,
   rankfeatures: z.any().optional(),
 })

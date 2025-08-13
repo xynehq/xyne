@@ -231,7 +231,7 @@ function AgentComponent() {
   const [fetchedDataSources, setFetchedDataSources] = useState<
     FetchedDataSource[]
   >([])
-  const [fetchedKnowledgeBases, setFetchedKnowledgeBases] = useState<
+  const [fetchedCollections, setFetchedCollections] = useState<
     Array<{ id: string; name: string; description?: string }>
   >([])
   const [selectedIntegrations, setSelectedIntegrations] = useState<
@@ -256,14 +256,14 @@ function AgentComponent() {
   const [integrationIdToNameMap, setIntegrationIdToNameMap] = useState<
     Record<string, { name: string; type: string }>
   >({})
-  const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'kb-root' | 'kb' | 'folder'}>>([])
+  const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'cl-root' | 'cl' | 'folder'}>>([])
   const [currentItems, setCurrentItems] = useState<any[]>([])
   const [isLoadingItems, setIsLoadingItems] = useState(false)
   const [dropdownSearchQuery, setDropdownSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
 
-  // Global search effect for knowledge base dropdown
+  // Global search effect for collection dropdown
   useEffect(() => {
     const performGlobalSearch = async () => {
       if (!dropdownSearchQuery.trim()) {
@@ -603,10 +603,10 @@ function AgentComponent() {
     const fetchDataSourcesAsync = async () => {
       if (viewMode === "create" || viewMode === "edit") {
         try {
-          // Fetch both data sources and knowledge bases in parallel
-          const [dsResponse, kbResponse] = await Promise.all([
+          // Fetch both data sources and collections in parallel
+          const [dsResponse, clResponse] = await Promise.all([
             api.datasources.$get(),
-            api.kb.$get()
+            api.cl.$get()
           ])
           
           if (dsResponse.ok) {
@@ -621,16 +621,16 @@ function AgentComponent() {
             setFetchedDataSources([])
           }
           
-          if (kbResponse.ok) {
-            const kbData = await kbResponse.json()
-            setFetchedKnowledgeBases(kbData)
+          if (clResponse.ok) {
+            const clData = await clResponse.json()
+            setFetchedCollections(clData)
           } else {
             showToast({
               title: "Error",
-              description: "Failed to fetch knowledge bases.",
+              description: "Failed to fetch collections.",
               variant: "destructive",
             })
-            setFetchedKnowledgeBases([])
+            setFetchedCollections([])
           }
         } catch (error) {
           showToast({
@@ -640,11 +640,11 @@ function AgentComponent() {
           })
           console.error("Fetch data sources error:", error)
           setFetchedDataSources([])
-          setFetchedKnowledgeBases([])
+          setFetchedCollections([])
         }
       } else {
         setFetchedDataSources([])
-        setFetchedKnowledgeBases([])
+        setFetchedCollections([])
       }
     }
     fetchDataSourcesAsync()
@@ -888,12 +888,12 @@ function AgentComponent() {
       return dynamicDataSources
     }
     
-    const knowledgeBaseSources: IntegrationSource[] = fetchedKnowledgeBases.map(
-      (kb) => ({
-        id: `kb_${kb.id}`,
-        name: kb.name,
-        app: "knowledgebase",
-        entity: "kb",
+    const collectionSources: IntegrationSource[] = fetchedCollections.map(
+      (cl) => ({
+        id: `cl_${cl.id}`,
+        name: cl.name,
+        app: "knowledge-base",
+        entity: "cl",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -904,8 +904,8 @@ function AgentComponent() {
         ),
       }),
     )
-    return [...availableIntegrationsList, ...dynamicDataSources, ...knowledgeBaseSources]
-  }, [fetchedDataSources, isRagOn, fetchedKnowledgeBases])
+    return [...availableIntegrationsList, ...dynamicDataSources, ...collectionSources]
+  }, [fetchedDataSources, isRagOn, fetchedCollections])
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
@@ -930,8 +930,8 @@ function AgentComponent() {
             const idToNameMapping: Record<string, { name: string; type: string }> = {};
 
             // Extract items and build ID to name mapping
-            if (data.integrationItems.knowledge_base && data.integrationItems.knowledge_base.groups) {
-              for (const [kbGroupId, items] of Object.entries(data.integrationItems.knowledge_base.groups)) {
+            if (data.integrationItems.collection && data.integrationItems.collection.groups) {
+              for (const [clGroupId, items] of Object.entries(data.integrationItems.collection.groups)) {
                 if (Array.isArray(items)) {
                   items.forEach((item: any) => {
                     const itemType = item.type || "folder"; // Default to 'folder' if not provided
@@ -943,14 +943,14 @@ function AgentComponent() {
                   });
                 }
                 
-                // Also add KB group ID to name mapping if available
-                if (kbGroupId) {
-                  // Try to find the KB name from the fetched knowledge bases
-                  const kb = fetchedKnowledgeBases.find(kb => kb.id === kbGroupId);
-                  if (kb) {
-                    idToNameMapping[kbGroupId] = {
-                      name: kb.name,
-                      type: "knowledge_base"
+                // Also add CL group ID to name mapping if available
+                if (clGroupId) {
+                  // Try to find the CL name from the fetched collections
+                  const cl = fetchedCollections.find(cl => cl.id === clGroupId);
+                  if (cl) {
+                    idToNameMapping[clGroupId] = {
+                      name: cl.name,
+                      type: "collection"
                     };
                   }
                 }
@@ -959,14 +959,14 @@ function AgentComponent() {
             // Update the ID to name mapping state
             setIntegrationIdToNameMap(idToNameMapping);
             
-            // Process knowledge base items if they exist
-            if (data.integrationItems.knowledge_base) {
-              const kbData = data.integrationItems.knowledge_base
-              const kbSelections: Record<string, Set<string>> = {}
-              const kbDetails: Record<string, Record<string, any>> = {}
+            // Process collection items if they exist
+            if (data.integrationItems.collection) {
+              const clData = data.integrationItems.collection
+              const clSelections: Record<string, Set<string>> = {}
+              const clDetails: Record<string, Record<string, any>> = {}
               
-              // Process each knowledge base group
-              for (const [kbId, items] of Object.entries(kbData.groups)) {
+              // Process each collection group
+              for (const [clId, items] of Object.entries(clData.groups)) {
                 if (Array.isArray(items) && items.length > 0) {
                   const selectedItems = new Set<string>()
                   const itemDetails: Record<string, any> = {}
@@ -976,19 +976,19 @@ function AgentComponent() {
                     itemDetails[item.id] = item
                   })
                   
-                  kbSelections[kbId] = selectedItems
-                  kbDetails[kbId] = itemDetails
+                  clSelections[clId] = selectedItems
+                  clDetails[clId] = itemDetails
                   
-                  // Also mark the KB integration as selected
+                  // Also mark the CL integration as selected
                   setSelectedIntegrations(prev => ({
                     ...prev,
-                    [`kb_${kbId}`]: true
+                    [`cl_${clId}`]: true
                   }))
                 }
               }
               
-              setSelectedItemsInCollection(kbSelections)
-              setSelectedItemDetailsInCollection(kbDetails)
+              setSelectedItemsInCollection(clSelections)
+              setSelectedItemDetailsInCollection(clDetails)
             }
           } else {
             console.warn("Failed to fetch agent integration items:", response.statusText)
@@ -1000,7 +1000,7 @@ function AgentComponent() {
       
       fetchAgentIntegrationItems()
     }
-  }, [editingAgent, viewMode, fetchedKnowledgeBases])
+  }, [editingAgent, viewMode, fetchedCollections])
 
   useEffect(() => {
     if (
@@ -1009,8 +1009,8 @@ function AgentComponent() {
       allAvailableIntegrations.length > 0
     ) {
       const currentIntegrations: Record<string, boolean> = {}
-      const kbSelections: Record<string, Set<string>> = {}
-      const kbDetails: Record<string, Record<string, any>> = {}
+      const clSelections: Record<string, Set<string>> = {}
+      const clDetails: Record<string, Record<string, any>> = {}
       
       allAvailableIntegrations.forEach((int) => {
         // Handle legacy array format
@@ -1020,71 +1020,71 @@ function AgentComponent() {
           // Handle both old and new object formats
           const appIntegrations = editingAgent.appIntegrations as Record<string, any>
           
-          // Check if it's a knowledge base
-          if (int.id.startsWith('kb_')) {
-            const kbId = int.id.replace('kb_', '')
+          // Check if it's a collection
+          if (int.id.startsWith('cl_')) {
+            const clId = int.id.replace('cl_', '')
             
-            // Handle new format: knowledge_base key with itemIds array
-            if (appIntegrations['knowledge_base']) {
-              const kbConfig = appIntegrations['knowledge_base']
-              const itemIds = kbConfig.itemIds || []
+            // Handle new format: collection key with itemIds array
+            if (appIntegrations['collection']) {
+              const clConfig = appIntegrations['collection']
+              const itemIds = clConfig.itemIds || []
               
-              // Check if this KB is referenced in the itemIds
-              const isKbSelected = itemIds.includes(int.name) || // KB name is in itemIds (selectAll case)
-                                  itemIds.some((id: string) => id.startsWith(kbId)) // Some items from this KB are selected
+              // Check if this CL is referenced in the itemIds
+              const isClSelected = itemIds.includes(int.name) || // CL name is in itemIds (selectAll case)
+                                  itemIds.some((id: string) => id.startsWith(clId)) // Some items from this CL are selected
               
-              if (isKbSelected) {
+              if (isClSelected) {
                 currentIntegrations[int.id] = true
                 
-                // If only KB name is in itemIds, it means selectAll
+                // If only CL name is in itemIds, it means selectAll
                 if (itemIds.includes(int.name) && itemIds.length === 1) {
-                  kbSelections[kbId] = new Set() // Empty set means selectAll
+                  clSelections[clId] = new Set() // Empty set means selectAll
                 } else {
-                  // Filter itemIds that belong to this KB
-                  const kbItemIds = itemIds.filter((id: string) => 
-                    id !== int.name && (id.startsWith(kbId) || id.includes(kbId))
+                  // Filter itemIds that belong to this CL
+                  const clItemIds = itemIds.filter((id: string) => 
+                    id !== int.name && (id.startsWith(clId) || id.includes(clId))
                   )
                   
-                  if (kbItemIds.length > 0) {
-                    const selectedItems = new Set<string>(kbItemIds)
-                    kbSelections[kbId] = selectedItems
+                  if (clItemIds.length > 0) {
+                    const selectedItems = new Set<string>(clItemIds)
+                    clSelections[clId] = selectedItems
                     
                     // Create mock item details for display
-                    const itemDetailsForKb: Record<string, any> = {}
-                    kbItemIds.forEach((itemId: string, index: number) => {
-                      itemDetailsForKb[itemId] = {
+                    const itemDetailsForCl: Record<string, any> = {}
+                    clItemIds.forEach((itemId: string, index: number) => {
+                      itemDetailsForCl[itemId] = {
                         id: itemId,
                         name: itemId, // Use itemId as name for now
                         type: 'file', // Default to file type
                       }
                     })
-                    kbDetails[kbId] = itemDetailsForKb
+                    clDetails[clId] = itemDetailsForCl
                   }
                 }
               }
             }
-            // Handle old format: knowledgebases key with nested structure
-            else if (appIntegrations['knowledgebases'] && appIntegrations['knowledgebases'][int.name]) {
-              const kbConfig = appIntegrations['knowledgebases'][int.name]
+            // Handle old format: collections key with nested structure
+            else if (appIntegrations['collections'] && appIntegrations['collections'][int.name]) {
+              const clConfig = appIntegrations['collections'][int.name]
               currentIntegrations[int.id] = true
               
               // Parse folders to recreate selections
-              if (kbConfig.folders && kbConfig.folders.length > 0) {
+              if (clConfig.folders && clConfig.folders.length > 0) {
                 const selectedItems = new Set<string>()
                 
                 // For each item in folders array, determine if it's a file or folder
                 // Files have extensions in their names, folders do not
-                kbConfig.folders.forEach((folder: any, index: number) => {
+                clConfig.folders.forEach((folder: any, index: number) => {
                   // Determine if this is a file or folder based on file extension in the name
                   const hasFileExtension = /\.[a-zA-Z0-9]+$/.test(folder.name)
                   const itemType = hasFileExtension ? 'file' : 'folder'
                   const itemId = `${itemType}_${folder.name}_${Date.now()}_${index}`
                   selectedItems.add(itemId)
                   
-                  if (!kbDetails[kbId]) {
-                    kbDetails[kbId] = {}
+                  if (!clDetails[clId]) {
+                    clDetails[clId] = {}
                   }
-                  kbDetails[kbId][itemId] = {
+                  clDetails[clId][itemId] = {
                     id: itemId,
                     name: folder.name,
                     type: itemType,
@@ -1092,10 +1092,10 @@ function AgentComponent() {
                   }
                 })
                 
-                kbSelections[kbId] = selectedItems
-              } else if (kbConfig.selectAll) {
-                // If selectAll is true, mark the KB as selected but no specific items
-                kbSelections[kbId] = new Set()
+                clSelections[clId] = selectedItems
+              } else if (clConfig.selectAll) {
+                // If selectAll is true, mark the CL as selected but no specific items
+                clSelections[clId] = new Set()
               }
             }
           } 
@@ -1124,8 +1124,8 @@ function AgentComponent() {
         }
       })  
       setSelectedIntegrations(currentIntegrations)
-      setSelectedItemsInCollection(kbSelections)
-      setSelectedItemDetailsInCollection(kbDetails)
+      setSelectedItemsInCollection(clSelections)
+      setSelectedItemDetailsInCollection(clDetails)
     }
   }, [editingAgent, viewMode, allAvailableIntegrations])
 
@@ -1231,14 +1231,14 @@ function AgentComponent() {
 
 
         // For collections, collect item IDs with appropriate prefixes
-        if (integrationId.startsWith('kb_')) {
-          const collectionId = integrationId.replace('kb_', '')
+        if (integrationId.startsWith('cl_')) {
+          const collectionId = integrationId.replace('cl_', '')
           const selectedItems = selectedItemsInCollection[collectionId] || new Set()
           const itemDetails = selectedItemDetailsInCollection[collectionId] || {}
           
           if (selectedItems.size === 0) {
             // If no specific items are selected, use the collection id with collection prefix
-            const collectionId = integration.id.replace('kb_', '')
+            const collectionId = integration.id.replace('cl_', '')
             collectionItemIds.push(`cl-${collectionId}`) // Collection prefix
           } else {
             // If specific items are selected, use their IDs with appropriate prefixes
@@ -1354,17 +1354,17 @@ function AgentComponent() {
     setSelectedIntegrations((prev) => {
       const newValue = !prev[integrationId]
       
-      // If it's a knowledge base integration and we're deselecting it, clear its items
-      if (integrationId.startsWith('kb_') && !newValue) {
-        const kbId = integrationId.replace('kb_', '')
+      // If it's a collection integration and we're deselecting it, clear its items
+      if (integrationId.startsWith('cl_') && !newValue) {
+        const clId = integrationId.replace('cl_', '')
         setSelectedItemsInCollection(prevItems => {
           const newState = { ...prevItems }
-          delete newState[kbId]
+          delete newState[clId]
           return newState
         })
         setSelectedItemDetailsInCollection(prevDetails => {
           const newState = { ...prevDetails }
-          delete newState[kbId]
+          delete newState[clId]
           return newState
         })
       }
@@ -1377,42 +1377,42 @@ function AgentComponent() {
   }
 
   const handleRemoveSelectedIntegration = (integrationId: string) => {
-    // Check if it's a KB item (format: kbId_itemId where itemId can contain underscores)
-    // We need to find the actual KB ID from the selected integrations
-    let isKbItem = false
-    let kbId = ''
+    // Check if it's a CL item (format: clId_itemId where itemId can contain underscores)
+    // We need to find the actual CL ID from the selected integrations
+    let isClItem = false
+    let clId = ''
     let itemId = ''
     
-    // Check if this is a KB item by looking for a pattern where the ID starts with a KB ID
+    // Check if this is a CL item by looking for a pattern where the ID starts with a CL ID
     for (const [integId] of Object.entries(selectedIntegrations)) {
-      if (integId.startsWith('kb_') && selectedIntegrations[integId]) {
-        const currentKbId = integId.replace('kb_', '')
-        if (integrationId.startsWith(currentKbId + '_')) {
-          isKbItem = true
-          kbId = currentKbId
-          itemId = integrationId.substring(currentKbId.length + 1) // Remove kbId and the underscore
+      if (integId.startsWith('cl_') && selectedIntegrations[integId]) {
+        const currentClId = integId.replace('cl_', '')
+        if (integrationId.startsWith(currentClId + '_')) {
+          isClItem = true
+          clId = currentClId
+          itemId = integrationId.substring(currentClId.length + 1) // Remove clId and the underscore
           break
         }
       }
     }
     
-    if (isKbItem && kbId && itemId) {
-      // Remove the specific item from the KB
+    if (isClItem && clId && itemId) {
+      // Remove the specific item from the CL
       setSelectedItemsInCollection(prev => {
         const newState = { ...prev }
-        if (newState[kbId]) {
-          const newSet = new Set(newState[kbId])
+        if (newState[clId]) {
+          const newSet = new Set(newState[clId])
           newSet.delete(itemId)
           
           if (newSet.size === 0) {
-            delete newState[kbId]
-            // Also deselect the KB integration if no items are selected
+            delete newState[clId]
+            // Also deselect the CL integration if no items are selected
             setSelectedIntegrations(prevInt => ({
               ...prevInt,
-              [`kb_${kbId}`]: false
+              [`cl_${clId}`]: false
             }))
           } else {
-            newState[kbId] = newSet
+            newState[clId] = newSet
           }
         }
         return newState
@@ -1421,10 +1421,10 @@ function AgentComponent() {
       // Remove item details
       setSelectedItemDetailsInCollection(prev => {
         const newState = { ...prev }
-        if (newState[kbId] && newState[kbId][itemId]) {
-          delete newState[kbId][itemId]
-          if (Object.keys(newState[kbId]).length === 0) {
-            delete newState[kbId]
+        if (newState[clId] && newState[clId][itemId]) {
+          delete newState[clId][itemId]
+          if (Object.keys(newState[clId]).length === 0) {
+            delete newState[clId]
           }
         }
         return newState
@@ -1436,17 +1436,17 @@ function AgentComponent() {
         [integrationId]: false,
       }))
       
-      // If it's a knowledge base integration, also clear its selections
-      if (integrationId.startsWith('kb_')) {
-        const kbId = integrationId.replace('kb_', '')
+      // If it's a collection integration, also clear its selections
+      if (integrationId.startsWith('cl_')) {
+        const clId = integrationId.replace('cl_', '')
         setSelectedItemsInCollection(prev => {
           const newState = { ...prev }
-          delete newState[kbId]
+          delete newState[clId]
           return newState
         })
         setSelectedItemDetailsInCollection(prev => {
           const newState = { ...prev }
-          delete newState[kbId]
+          delete newState[clId]
           return newState
         })
       }
@@ -1460,7 +1460,7 @@ function AgentComponent() {
     )
     setSelectedIntegrations(clearedSelection)
     
-    // Also clear selected items and their details for all KBs
+    // Also clear selected items and their details for all Collections
     setSelectedItemsInCollection({})
     setSelectedItemDetailsInCollection({})
   }
@@ -1470,14 +1470,14 @@ function AgentComponent() {
       id: string
       name: string
       icon: React.ReactNode
-      type?: 'file' | 'folder' | 'integration' | 'kb'
-      kbId?: string
-      kbName?: string
+      type?: 'file' | 'folder' | 'integration' | 'cl'
+      clId?: string
+      clName?: string
     }> = []
     
     // Add regular integrations
     allAvailableIntegrations.forEach((integration) => {
-      if (selectedIntegrations[integration.id] && !integration.id.startsWith('kb_')) {
+      if (selectedIntegrations[integration.id] && !integration.id.startsWith('cl_')) {
         result.push({
           ...integration,
           type: 'integration'
@@ -1485,21 +1485,21 @@ function AgentComponent() {
       }
     })
     
-    // Handle knowledge bases
+    // Handle collections
     allAvailableIntegrations.forEach((integration) => {
-      if (integration.id.startsWith('kb_') && selectedIntegrations[integration.id]) {
-        const kbId = integration.id.replace('kb_', '')
-        const selectedItems = selectedItemsInCollection[kbId] || new Set()
+      if (integration.id.startsWith('cl_') && selectedIntegrations[integration.id]) {
+        const clId = integration.id.replace('cl_', '')
+        const selectedItems = selectedItemsInCollection[clId] || new Set()
         
         if (selectedItems.size === 0) {
-          // If no specific items are selected, show the whole KB pill
+          // If no specific items are selected, show the whole CL pill
           result.push({
             ...integration,
-            type: 'kb'
+            type: 'cl'
           })
         } else {
           // If specific items are selected, show individual file/folder pills
-          const itemDetails = selectedItemDetailsInCollection[kbId] || {}
+          const itemDetails = selectedItemDetailsInCollection[clId] || {}
           
           selectedItems.forEach(itemId => {
             const item = itemDetails[itemId]
@@ -1513,7 +1513,7 @@ function AgentComponent() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-700">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                 </svg>
-              ) : itemType === 'knowledge_base' ? (
+              ) : itemType === 'collection' ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-blue-600">
                   <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                   <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
@@ -1526,12 +1526,12 @@ function AgentComponent() {
               );
               
               result.push({
-                id: `${kbId}_${itemId}`,
+                id: `${clId}_${itemId}`,
                 name: displayName,
                 icon: itemIcon,
                 type: item.type,
-                kbId: kbId,
-                kbName: integration.name
+                clId: clId,
+                clName: integration.name
               })
             }
           })
@@ -2461,7 +2461,7 @@ function AgentComponent() {
                                   size="sm"
                                   onClick={() => {
                                     if (navigationPath.length === 1) {
-                                      // Go back to main menu from KB listing
+                                      // Go back to main menu from CL listing
                                       setNavigationPath([])
                                       setCurrentItems([])
                                       setDropdownSearchQuery("")
@@ -2470,18 +2470,18 @@ function AgentComponent() {
                                       const newPath = navigationPath.slice(0, -1)
                                       setNavigationPath(newPath)
                                       
-                                      if (newPath.length === 1 && newPath[0].type === 'kb-root') {
-                                        // Back to KB listing
+                                      if (newPath.length === 1 && newPath[0].type === 'cl-root') {
+                                        // Back to CL listing
                                         setCurrentItems([])
                                       } else if (newPath.length > 1) {
                                         // Navigate to parent folder
-                                        const kbId = newPath.find(item => item.type === 'kb')?.id
-                                        const parentId = newPath[newPath.length - 1]?.id === kbId ? null : newPath[newPath.length - 1]?.id
+                                        const clId = newPath.find(item => item.type === 'cl')?.id
+                                        const parentId = newPath[newPath.length - 1]?.id === clId ? null : newPath[newPath.length - 1]?.id
                                         
-                                        if (kbId) {
+                                        if (clId) {
                                           setIsLoadingItems(true)
-                                          api.kb[":kbId"].items.$get({
-                                            param: { kbId },
+                                          api.cl[":clId"].items.$get({
+                                            param: { clId: clId },
                                             query: parentId ? { parentId } : {}
                                           }).then((response: Response) => {
                                             if (response.ok) {
@@ -2534,16 +2534,16 @@ function AgentComponent() {
                                                   const newPath = navigationPath.slice(0, newPathIndex + 1);
                                                   setNavigationPath(newPath);
                                                   
-                                                  if (newPath.length === 1 && newPath[0].type === 'kb-root') {
+                                                  if (newPath.length === 1 && newPath[0].type === 'cl-root') {
                                                     setCurrentItems([]);
                                                   } else if (newPath.length > 1) {
-                                                    const kbId = newPath.find(item => item.type === 'kb')?.id;
-                                                    const parentId = newPath[newPath.length - 1]?.id === kbId ? null : newPath[newPath.length - 1]?.id;
+                                                    const clId = newPath.find(item => item.type === 'cl')?.id;
+                                                    const parentId = newPath[newPath.length - 1]?.id === clId ? null : newPath[newPath.length - 1]?.id;
                                                     
-                                                    if (kbId) {
+                                                    if (clId) {
                                                       setIsLoadingItems(true);
-                                                      api.kb[":kbId"].items.$get({
-                                                        param: { kbId },
+                                                      api.cl[":clId"].items.$get({
+                                                        param: { clId: clId },
                                                         query: parentId ? { parentId } : {}
                                                       }).then((response: Response) => {
                                                         if (response.ok) {
@@ -2589,13 +2589,13 @@ function AgentComponent() {
                           {navigationPath.length === 0 ? (
                             // Main menu
                             (() => {
-                              const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                                integration.id.startsWith('kb_')
+                              const collections = allAvailableIntegrations.filter(integration => 
+                                integration.id.startsWith('cl_')
                               )
                               const otherIntegrations = allAvailableIntegrations.filter(integration => 
-                                !integration.id.startsWith('kb_')
+                                !integration.id.startsWith('cl_')
                               )
-                              const hasSelectedKB = knowledgeBases.some(kb => selectedIntegrations[kb.id])
+                              const hasSelectedCL = collections.some(cl => selectedIntegrations[cl.id])
 
                               return (
                                 <>
@@ -2632,12 +2632,12 @@ function AgentComponent() {
                                     )
                                   })}
 
-                                  {/* Knowledge Bases item */}
-                                  {knowledgeBases.length > 0 && (
+                                  {/* Collections item */}
+                                  {collections.length > 0 && (
                                     <DropdownMenuItem
                                       onSelect={(e) => {
                                         e.preventDefault()
-                                        setNavigationPath([{ id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' }])
+                                        setNavigationPath([{ id: 'cl-root', name: 'Collections', type: 'cl-root' }])
                                         setDropdownSearchQuery("")
                                       }}
                                       className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
@@ -2645,12 +2645,12 @@ function AgentComponent() {
                                       <div className="flex items-center">
                                         <input
                                           type="checkbox"
-                                          checked={hasSelectedKB}
+                                          checked={hasSelectedCL}
                                           onChange={() => {}}
                                           className="w-4 h-4 mr-3"
                                         />
                                         <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                        <span className="text-gray-700 dark:text-gray-200">Knowledge Bases</span>
+                                        <span className="text-gray-700 dark:text-gray-200">Collections</span>
                                       </div>
                                       <ChevronRight className="h-4 w-4 text-gray-400" />
                                     </DropdownMenuItem>
@@ -2659,48 +2659,48 @@ function AgentComponent() {
                               )
                             })()
                           ) : (
-                            // Unified Knowledge Bases section - handles both KB listing and file/folder navigation
+                            // Unified Collections section - handles both CL listing and file/folder navigation
                             (() => {
                               // const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                              //   integration.id.startsWith('kb_')
+                              //   integration.id.startsWith('cl_')
                               // )
 
                               // Unified navigation functions
-                              const navigateToKb = async (kbId: string, kbName: string) => {
+                              const navigateToCl = async (clId: string, clName: string) => {
                                 // Update navigation path based on current context
-                                const newPath = navigationPath.length === 1 && navigationPath[0].type === 'kb-root' 
+                                const newPath = navigationPath.length === 1 && navigationPath[0].type === 'cl-root' 
                                   ? [
-                                      { id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' as const },
-                                      { id: kbId, name: kbName, type: 'kb' as const }
+                                      { id: 'cl-root', name: 'Collection', type: 'cl-root' as const },
+                                      { id: clId, name: clName, type: 'cl' as const }
                                     ]
-                                  : [{ id: kbId, name: kbName, type: 'kb' as const }]
+                                  : [{ id: clId, name: clName, type: 'cl' as const }]
                                 
                                 setNavigationPath(newPath)
                                 setIsLoadingItems(true)
                                 try {
-                                  const response = await api.kb[":kbId"].items.$get({
-                                    param: { kbId }
+                                  const response = await api.cl[":clId"].items.$get({
+                                    param: { clId: clId }
                                   })
                                   if (response.ok) {
                                     const data = await response.json()
                                     setCurrentItems(data)
                                   }
                                 } catch (error) {
-                                  console.error('Failed to fetch KB items:', error)
+                                  console.error('Failed to fetch CL items:', error)
                                 } finally {
                                   setIsLoadingItems(false)
                                 }
                               }
 
                               const navigateToFolder = async (folderId: string, folderName: string) => {
-                                const kbId = navigationPath.find(item => item.type === 'kb')?.id
-                                if (!kbId) return
+                                const clId = navigationPath.find(item => item.type === 'cl')?.id
+                                if (!clId) return
                                 
                                 setNavigationPath(prev => [...prev, { id: folderId, name: folderName, type: 'folder' }])
                                 setIsLoadingItems(true)
                                 try {
-                                  const response = await api.kb[":kbId"].items.$get({
-                                    param: { kbId },
+                                  const response = await api.cl[":clId"].items.$get({
+                                    param: { clId },
                                     query: { parentId: folderId }
                                   })
                                   if (response.ok) {
@@ -2714,9 +2714,9 @@ function AgentComponent() {
                                 }
                               }
 
-                              // Determine if we're showing KB list or KB contents
-                              const isShowingKbList = navigationPath.length === 1 && navigationPath[0].type === 'kb-root'
-                              const isShowingKbContents = navigationPath.length > 1 || (navigationPath.length === 1 && navigationPath[0].type === 'kb')
+                              // Determine if we're showing Collection list or Collection contents
+                              const isShowingKbList = navigationPath.length === 1 && navigationPath[0].type === 'cl-root'
+                              const isShowingKbContents = navigationPath.length > 1 || (navigationPath.length === 1 && navigationPath[0].type === 'cl')
 
                               return (
                                 <>
@@ -2727,7 +2727,7 @@ function AgentComponent() {
                                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                         <input
                                           type="text"
-                                          placeholder="Search knowledge bases..."
+                                          placeholder="Search collections..."
                                           value={dropdownSearchQuery}
                                           onChange={(e) => setDropdownSearchQuery(e.target.value)}
                                           className="w-full pl-10 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
@@ -2783,14 +2783,14 @@ function AgentComponent() {
                                     
                                     // If no search query, show navigation-based content
                                     if (navigationPath.length === 0) {
-                                      // Main menu - show regular integrations and Knowledge Bases option
+                                      // Main menu - show regular integrations and Collections option
                                       const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                                        integration.id.startsWith('kb_')
+                                        integration.id.startsWith('cl_')
                                       )
                                       const otherIntegrations = allAvailableIntegrations.filter(integration => 
-                                        !integration.id.startsWith('kb_')
+                                        !integration.id.startsWith('cl_')
                                       )
-                                      const hasSelectedKB = knowledgeBases.some(kb => selectedIntegrations[kb.id])
+                                      const hasSelectedKB = knowledgeBases.some(cl => selectedIntegrations[cl.id])
 
                                       return (
                                         <>
@@ -2827,12 +2827,12 @@ function AgentComponent() {
                                             )
                                           })}
 
-                                          {/* Knowledge Bases item */}
+                                          {/* Collections item */}
                                           {knowledgeBases.length > 0 && (
                                             <DropdownMenuItem
                                               onSelect={(e) => {
                                                 e.preventDefault()
-                                                setNavigationPath([{ id: 'kb-root', name: 'Knowledge Bases', type: 'kb-root' }])
+                                                setNavigationPath([{ id: 'cl-root', name: 'Collections', type: 'cl-root' }])
                                                 setDropdownSearchQuery("")
                                               }}
                                               className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
@@ -2845,21 +2845,21 @@ function AgentComponent() {
                                                   className="w-4 h-4 mr-3"
                                                 />
                                                 <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                                <span className="text-gray-700 dark:text-gray-200">Knowledge Bases</span>
+                                                <span className="text-gray-700 dark:text-gray-200">Collections</span>
                                               </div>
                                               <ChevronRight className="h-4 w-4 text-gray-400" />
                                             </DropdownMenuItem>
                                           )}
                                         </>
                                       )
-                                    } else if (navigationPath.length === 1 && navigationPath[0].type === 'kb-root') {
-                                      // Show knowledge bases list
+                                    } else if (navigationPath.length === 1 && navigationPath[0].type === 'cl-root') {
+                                      // Show collections list
                                       const knowledgeBases = allAvailableIntegrations.filter(integration => 
-                                        integration.id.startsWith('kb_')
+                                        integration.id.startsWith('cl_')
                                       )
                                       
                                       return knowledgeBases.map((integration) => {
-                                        const kbId = integration.id.replace('kb_', '')
+                                        const clId = integration.id.replace('cl_', '')
                                         
                                         return (
                                           <DropdownMenuItem
@@ -2888,7 +2888,7 @@ function AgentComponent() {
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 e.preventDefault()
-                                                navigateToKb(kbId, integration.name)
+                                                navigateToCl(clId, integration.name)
                                               }}
                                               className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                                             >
@@ -2898,7 +2898,7 @@ function AgentComponent() {
                                         )
                                       })
                                     } else {
-                                      // Show KB contents (files/folders)
+                                      // Show Collection contents (files/folders)
                                       return (
                                         <div className="max-h-60 overflow-y-auto">
                                           {isLoadingItems ? (
@@ -2919,55 +2919,55 @@ function AgentComponent() {
                                                 <input
                                                   type="checkbox"
                                                   checked={(() => {
-                                                    const kbId = navigationPath.find(item => item.type === 'kb')?.id
-                                                    if (!kbId) return false
-                                                    const selectedSet = selectedItemsInCollection[kbId] || new Set()
+                                                    const clId = navigationPath.find(item => item.type === 'cl')?.id
+                                                    if (!clId) return false
+                                                    const selectedSet = selectedItemsInCollection[clId] || new Set()
                                                     return selectedSet.has(item.id)
                                                   })()}
                                                   onChange={(e) => {
                                                     e.stopPropagation()
-                                                    const kbId = navigationPath.find(item => item.type === 'kb')?.id
-                                                    if (!kbId) return
+                                                    const clId = navigationPath.find(item => item.type === 'cl')?.id
+                                                    if (!clId) return
                                                     
-                                                    const isCurrentlySelected = selectedItemsInCollection[kbId]?.has(item.id)
+                                                    const isCurrentlySelected = selectedItemsInCollection[clId]?.has(item.id)
                                                     
                                                     setSelectedItemsInCollection(prev => {
                                                       const newState = { ...prev }
-                                                      if (!newState[kbId]) {
-                                                        newState[kbId] = new Set()
+                                                      if (!newState[clId]) {
+                                                        newState[clId] = new Set()
                                                       }
                                                       
-                                                      const selectedSet = new Set(newState[kbId])
+                                                      const selectedSet = new Set(newState[clId])
                                                       if (selectedSet.has(item.id)) {
                                                         selectedSet.delete(item.id)
                                                       } else {
                                                         selectedSet.add(item.id)
                                                       }
                                                       
-                                                      newState[kbId] = selectedSet
+                                                      newState[clId] = selectedSet
                                                       return newState
                                                     })
                                                     
                                                     // Also store/remove item details
                                                     setSelectedItemDetailsInCollection(prev => {
                                                       const newState = { ...prev }
-                                                      if (!newState[kbId]) {
-                                                        newState[kbId] = {}
+                                                      if (!newState[clId]) {
+                                                        newState[clId] = {}
                                                       }
                                                       
                                                       if (isCurrentlySelected) {
-                                                        delete newState[kbId][item.id]
+                                                        delete newState[clId][item.id]
                                                       } else {
-                                                        newState[kbId][item.id] = item
+                                                        newState[clId][item.id] = item
                                                       }
                                                       
                                                       return newState
                                                     })
                                                     
-                                                    // Auto-select/deselect the KB integration
+                                                    // Auto-select/deselect the Collection integration
                                                     setSelectedIntegrations(prev => {
-                                                      const kbIntegrationId = `kb_${kbId}`
-                                                      const currentSelectedSet = selectedItemsInCollection[kbId] || new Set()
+                                                      const clIntegrationId = `cl_${clId}`
+                                                      const currentSelectedSet = selectedItemsInCollection[clId] || new Set()
                                                       const newSelectedSet = new Set(currentSelectedSet)
                                                       
                                                       if (isCurrentlySelected) {
@@ -2978,7 +2978,7 @@ function AgentComponent() {
                                                       
                                                       return {
                                                         ...prev,
-                                                        [kbIntegrationId]: newSelectedSet.size > 0
+                                                        [clIntegrationId]: newSelectedSet.size > 0
                                                       }
                                                     })
                                                   }}
@@ -3018,7 +3018,7 @@ function AgentComponent() {
                     </DropdownMenu>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Knowledge bases appear in the submenu when selecting integrations.
+                    Collections appear in the submenu when selecting integrations.
                   </p>
                 </div>
 

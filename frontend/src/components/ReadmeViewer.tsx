@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import "@uiw/react-markdown-preview/markdown.css"
+import { authFetch } from "@/utils/authFetch"
 
 interface ReadmeViewerProps {
   /** Either a URL or File object */
@@ -54,8 +55,7 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
 
           content = await source.text()
         } else {
-          const res = await fetch(source, {
-            credentials: "include",
+          const res = await authFetch(source, {
             headers: {
               Accept: "text/plain, text/markdown",
             },

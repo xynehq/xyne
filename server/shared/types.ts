@@ -19,7 +19,7 @@ import {
   chatContainerSchema,
   VespaChatContainerSchema,
   VespaKbFileSchema,
-  kbFileSchema,
+  KbItemsSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -271,11 +271,11 @@ export const KbFileResponseSchema = VespaKbFileSchema.pick({
     photoLink: true,
     updatedAt: true,
     itemId:true,
-    kbId:true,
+    clId:true,
 
   })
     .extend({
-      type: z.literal(kbFileSchema),
+      type: z.literal(KbItemsSchema),
       chunk: z.string().optional(),
       chunkIndex: z.number().optional(),
       mimeType: z.string(),

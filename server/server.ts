@@ -180,7 +180,6 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
-  GetKbVespaIds,
 } from "@/api/knowledgeBase"
 
 import {
@@ -779,21 +778,20 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
-  // Collection Routes (Knowledge Base)
-  .post("/kb", CreateCollectionApi)
-  .get("/kb", ListCollectionsApi)
-  .get("/kb/:kbId", GetCollectionApi)
-  .put("/kb/:kbId", UpdateCollectionApi)
-  .delete("/kb/:kbId", DeleteCollectionApi)
-  .get("/kb/:kbId/items", ListCollectionItemsApi)
-  .post("/kb/:kbId/items/folder", CreateFolderApi)
-  .post("/kb/:kbId/items/upload", UploadFilesApi)
-  .post("/kb/:kbId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
-  .post("/kb/:kbId/items/upload/complete", UploadFilesApi) // Complete batch session
-  .delete("/kb/:kbId/items/:itemId", DeleteItemApi)
-  .get("/kb/:kbId/files/:itemId/preview", GetFilePreviewApi)
-  .get("/kb/:kbId/files/:itemId/content", GetFileContentApi)
-  .post("/kb/vespaIds", GetKbVespaIds)
+  // Collection Routes
+  .post("/cl", CreateCollectionApi)
+  .get("/cl", ListCollectionsApi)
+  .get("/cl/:clId", GetCollectionApi)
+  .put("/cl/:clId", UpdateCollectionApi)
+  .delete("/cl/:clId", DeleteCollectionApi)
+  .get("/cl/:clId/items", ListCollectionItemsApi)
+  .post("/cl/:clId/items/folder", CreateFolderApi)
+  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
+  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
   // Admin Routes
   .basePath("/admin")
   // TODO: debug

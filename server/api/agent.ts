@@ -554,8 +554,8 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
 
     // Handle knowledge base integrations
     if (appIntegrations && typeof appIntegrations === 'object' && appIntegrations.knowledge_base) {
-      const kbConfig = appIntegrations.knowledge_base
-      const itemIds = kbConfig.itemIds || []
+      const clConfig = appIntegrations.knowledge_base
+      const itemIds = clConfig.itemIds || []
 
       if (itemIds.length > 0) {
         // Fetch items by their IDs
@@ -587,14 +587,14 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
         const validItems = items.filter(Boolean)
         
         // Group items by their knowledge base (we can determine this from the path or parentId)
-        const kbGroups: Record<string, any[]> = {}
+        const clGroups: Record<string, any[]> = {}
         
         for (const item of validItems) {
-          // Find the root KB ID by traversing up the hierarchy
+          // Find the root Collection ID by traversing up the hierarchy
           let currentItem = item
-          let kbId = item.id
+          let clId = item.id
           
-          // If item has a parentId, try to find the root KB
+          // If item has a parentId, try to find the root Collection
           if (item.parentId) {
             try {
               let parent = await getCollectionItemById(db, item.parentId)
@@ -604,7 +604,7 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
                 parent = nextParent
               }
               if (parent) {
-                kbId = parent.id
+                clId = parent.id
               }
             } catch (error) {
               // If we can't find the parent, use the item's own ID
@@ -614,15 +614,15 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
             }
           }
           
-          if (!kbGroups[kbId]) {
-            kbGroups[kbId] = []
+          if (!clGroups[clId]) {
+            clGroups[clId] = []
           }
-          kbGroups[kbId].push(item)
+          clGroups[clId].push(item)
         }
 
         integrationItems.knowledge_base = {
           type: 'knowledge_base',
-          groups: kbGroups,
+          groups: clGroups,
           totalItems: validItems.length
         }
       }

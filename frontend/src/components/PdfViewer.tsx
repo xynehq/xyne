@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import * as pdfjsLib from "pdfjs-dist"
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist"
 import "pdfjs-dist/web/pdf_viewer.css"
+import { authFetch } from "@/utils/authFetch"
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
 
@@ -81,8 +82,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           data = await source.arrayBuffer()
         } else {
           // For URL sources, fetch and convert to ArrayBuffer
-          const res = await fetch(source, {
-            credentials: "include",
+          const res = await authFetch(source, {
             headers: {
               Accept: "application/pdf, application/octet-stream",
             },
