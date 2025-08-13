@@ -53,12 +53,12 @@ interface FetchedTool {
   updatedAt: string
 }
 
-// Function to update connector status
+// Function to update connector status (Admin only for MCP)
 export const updateConnectorStatus = async (
   connectorId: string,
   status: ConnectorStatus,
 ) => {
-  const res = await api.connector.update_status.$post({
+  const res = await api.admin.connector.update_status.$post({
     form: {
       connectorId,
       status,
@@ -142,7 +142,7 @@ const deleteMCPClient = async (connectorId: string) => {
 
 // Get all connectors
 export const getConnectors = async (): Promise<any> => {
-  const res = await api.connectors.all.$get()
+  const res = await api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -841,7 +841,7 @@ export const MCPClient = ({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        const res = await api.connectors.all.$get()
+        const res = await api.admin.connectors.all.$get()
         if (!res.ok) {
           if (res.status === 401) {
             throw new Error("Unauthorized")
