@@ -869,8 +869,6 @@ export const DashboardDataApi = async (c: Context) => {
     const messageCounts = await getMessageCountsByChats({
       db,
       chatExternalIds,
-      email,
-      workspaceExternalId: workspace.externalId,
     })
 
     // Get feedback statistics for all chats
@@ -984,6 +982,16 @@ export const SharedAgentUsageApi = async (c: Context) => {
       const userUsage = userUsageData[agentId] || []
       const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
 
+      // Calculate total cost and tokens for this agent
+      const totalCost = userUsage.reduce(
+        (sum, usage) => sum + usage.totalCost,
+        0,
+      )
+      const totalTokens = userUsage.reduce(
+        (sum, usage) => sum + usage.totalTokens,
+        0,
+      )
+
       return {
         agentId,
         agentName: agent.name,
@@ -992,6 +1000,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages: messageCounts[agentId] || 0,
         likes: feedback.likes,
         dislikes: feedback.dislikes,
+        totalCost,
+        totalTokens,
         userUsage,
       }
     })
@@ -1001,6 +1011,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
     let totalMessages = 0
     let totalLikes = 0
     let totalDislikes = 0
+    let totalCost = 0
+    let totalTokens = 0
     const uniqueUsers = new Set<number>()
 
     sharedAgents.forEach((agent) => {
@@ -1008,6 +1020,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
       totalMessages += agent.totalMessages
       totalLikes += agent.likes
       totalDislikes += agent.dislikes
+      totalCost += agent.totalCost
+      totalTokens += agent.totalTokens
       agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
     })
 
@@ -1020,6 +1034,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages,
         totalLikes,
         totalDislikes,
+        totalCost,
+        totalTokens,
         uniqueUsers: uniqueUsers.size,
       },
     })
@@ -3877,6 +3893,7 @@ export const MessageApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -4155,6 +4172,13 @@ export const MessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 if (
@@ -4220,6 +4244,16 @@ export const MessageApi = async (c: Context) => {
             answerSpan.end()
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // TODO: incase user loses permission
               // to one of the citations what do we do?
               // somehow hide that citation and change
@@ -4237,6 +4271,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -4459,6 +4495,13 @@ export const MessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
@@ -4628,6 +4671,13 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   if (
@@ -4735,6 +4785,16 @@ export const MessageApi = async (c: Context) => {
             }
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // Determine if a message (even partial) should be saved
               // TODO: incase user loses permission
               // to one of the citations what do we do?
@@ -4754,6 +4814,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
 
@@ -5057,6 +5119,7 @@ export const MessageRetryApi = async (c: Context) => {
     rootSpan.setAttribute("messageId", messageId)
 
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
     if (!originalMessage) {
@@ -5267,6 +5330,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 citations.push(item)
@@ -5317,6 +5387,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5338,6 +5418,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5373,6 +5456,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
@@ -5591,6 +5677,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
             searchSpan.setAttribute("answer_found", parsed.answer)
             searchSpan.setAttribute("answer", answer)
@@ -5702,6 +5795,13 @@ export const MessageRetryApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   citations.push(item)
@@ -5744,6 +5844,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5765,6 +5875,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5800,6 +5913,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
