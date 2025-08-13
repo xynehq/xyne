@@ -780,9 +780,16 @@ export const ChatBox = ({
     const loadInitialData = async () => {
       let processedConnectors: FetchedConnector[] = []
       try {
-        const response = await api.connectors.all.$get(undefined, {
-          credentials: "include",
-        })
+        // Role-based API routing
+        const isAdmin = role === UserRole.Admin || role === UserRole.SuperAdmin
+
+        const response = isAdmin
+          ? await api.admin.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
+          : await api.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
         const data = await response.json()
         if (Array.isArray(data)) {
           processedConnectors = data.map((conn: any) => ({
@@ -814,7 +821,7 @@ export const ChatBox = ({
     }
 
     loadInitialData()
-  }, []) // Empty dependency array ensures this runs once on mount
+  }, [role]) // Added role dependency
 
   // useEffect to save selected MCP connector ID
   useEffect(() => {

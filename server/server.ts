@@ -815,6 +815,34 @@ export const AppRoutes = app
   // for some reason the validation schema
   // is not making the keys mandatory
   .post(
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
+
+  .post(
     "/service_account",
     zValidator("form", addServiceConnectionSchema),
     AddServiceConnection,

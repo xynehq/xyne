@@ -33,7 +33,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        return await getConnectors()
+        return await getConnectors(user.role)
       } catch (error) {
         const message = getErrorMessage(error)
         if (message === "Unauthorized") {
@@ -128,7 +128,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       return
     }
     try {
-      await deleteOauthConnector(googleOAuthConnector.id)
+      await deleteOauthConnector(googleOAuthConnector.id, user.role)
       toast({
         title: "Connector Deleted",
         description: "Google OAuth connector has been removed",
@@ -169,6 +169,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
               handleDelete={handleDelete}
+              userRole={user.role}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (

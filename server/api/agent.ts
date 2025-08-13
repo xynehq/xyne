@@ -13,9 +13,7 @@ import {
   getAgentsSharedToMe,
 } from "@/db/agent"
 
-import {
-  fetchedDataSourceSchema,
-} from "@/db/schema/agents"
+import { fetchedDataSourceSchema } from "@/db/schema/agents"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
