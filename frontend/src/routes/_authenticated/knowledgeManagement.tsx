@@ -677,7 +677,7 @@ function RouteComponent() {
                 items.map((item: CollectionItem) => ({
                   name: item.name,
                   type: item.type as "file" | "folder",
-                  totalCount: item.totalCount,
+                  totalFileCount: item.totalFileCount,
                   updatedAt: item.updatedAt,
                   id: item.id,
                   updatedBy:
@@ -756,7 +756,7 @@ function RouteComponent() {
                 items.map((item: CollectionItem) => ({
                   name: item.name,
                   type: item.type as "file" | "folder",
-                  totalCount: item.totalCount,
+                  totalFileCount: item.totalFileCount,
                   updatedAt: item.updatedAt,
                   id: item.id,
                   updatedBy:
@@ -1144,7 +1144,7 @@ function RouteComponent() {
                               data.map((item: CollectionItem) => ({
                                 name: item.name,
                                 type: item.type as "file" | "folder",
-                                totalCount: item.totalCount,
+                                totalFileCount: item.totalFileCount,
                                 updatedAt: item.updatedAt,
                                 id: item.id,
                                 updatedBy:
@@ -1281,7 +1281,7 @@ function RouteComponent() {
                                               type: item.type as
                                                 | "file"
                                                 | "folder",
-                                              files: item.totalCount,
+                                              files: item.totalFileCount,
                                               lastUpdated: item.updatedAt,
                                               updatedBy:
                                                 item.lastUpdatedByEmail ||

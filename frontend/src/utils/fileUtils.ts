@@ -148,7 +148,7 @@ export interface FileNode {
   isOpen?: boolean;
 }
 
-export const buildFileTree = (files: { id?: string, name: string, type: 'file' | 'folder', totalCount?: number, updatedAt?: string, updatedBy?: string }[]): FileNode[] => {
+export const buildFileTree = (files: { id?: string, name: string, type: 'file' | 'folder', totalFileCount?: number, updatedAt?: string, updatedBy?: string }[]): FileNode[] => {
   const root: FileNode = { name: 'root', type: 'folder', children: [], files: 0, lastUpdated: '', updatedBy: '' };
 
   for (const file of files) {
@@ -167,7 +167,7 @@ export const buildFileTree = (files: { id?: string, name: string, type: 'file' |
           name: part,
           type: isFile ? file.type : 'folder',
           children: isFile ? undefined : [],
-          files: file.totalCount,
+          files: file.totalFileCount,
           lastUpdated: file.updatedAt,
           updatedBy: file.updatedBy,
         };

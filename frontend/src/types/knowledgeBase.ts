@@ -49,7 +49,7 @@ export interface CollectionItem {
   deletedAt: string | null;
   
   // Additional fields for frontend display
-  totalCount?: number;
+  totalFileCount?: number;
   files?: number;
   lastUpdated?: string;
   updatedBy?: string;
