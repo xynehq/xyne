@@ -31,11 +31,11 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
         setError(null)
         try {
           if (
-            citation.app === "collection" &&
+            citation.app === "KnowledgeBase" &&
             citation.itemId &&
-            citation.collectionId
+            citation.clId
           ) {
-            const response = await api.collection[citation.collectionId].files[citation.itemId].content.$get()
+            const response = await api.cl[citation.clId].files[citation.itemId].content.$get()
 
             if (!response.ok) {
               throw new Error(
