@@ -613,7 +613,6 @@ export const HybridDefaultProfileForAgent =  async(
   driveIds:string[] = [],
   selectedItem:{} = {},
 ): Promise<YqlProfile> => {
-  console.log(collectionSelections);
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -977,7 +976,6 @@ export const HybridDefaultProfileForAgent =  async(
     )
     ;
     `
-  console.log(finalYql);
   Logger.debug(`Generated YQL for agent search:`, {
     yql: finalYql,
     sources: sourcesString,
@@ -1811,7 +1809,6 @@ export const searchVespaAgent = async (
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
-  console.log(collectionSelections)
   let { yql, profile } = await HybridDefaultProfileForAgent(
     email,
     limit,
