@@ -1273,7 +1273,7 @@ const server = Bun.serve({
   error: errorHandler,
 })
 
-const server2 = Bun.serve({
+const metricServer = Bun.serve({
   fetch: internalMetricRouter.fetch,
   port: config.metricsPort, // new port from config
   idleTimeout: 180,
