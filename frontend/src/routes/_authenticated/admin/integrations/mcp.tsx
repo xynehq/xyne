@@ -53,7 +53,7 @@ interface FetchedTool {
   updatedAt: string
 }
 
-// Function to update connector status
+// Function to update connector status (Admin only for MCP)
 export const updateConnectorStatus = async (
   connectorId: string,
   status: ConnectorStatus,
