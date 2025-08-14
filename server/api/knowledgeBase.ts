@@ -386,120 +386,23 @@ export const DeleteCollectionApi = async (c: Context) => {
       })
     }
 
-    // Get all items in the knowledge base before deletion
-    const allItems = await db
+    // Get all items that belong to this collection directly via collectionId
+    const collectionItemsToDelete = await db
       .select()
       .from(collectionItems)
-      .where(and(isNull(collectionItems.deletedAt)))
+      .where(
+        and(
+          eq(collectionItems.collectionId, collectionId),
+          isNull(collectionItems.deletedAt)
+        )
+      )
 
-    // Filter items that belong to this Collection by checking hierarchy
-    const collectionItemsToDelete: CollectionItem[] = []
-    for (const item of allItems) {
-      if (item.id === collectionId) {
-        collectionItemsToDelete.push(item)
-        continue
-      }
-
-      // Check if item belongs to this Collection by traversing up the hierarchy
-      let currentItem = item
-      let belongsToCollection = false
-      while (currentItem.parentId) {
-        if (currentItem.parentId === collectionId) {
-          belongsToCollection = true
-          break
-        }
-        const parent = allItems.find((i) => i.id === currentItem.parentId)
-        if (!parent) break
-        currentItem = parent
-      }
-
-      if (belongsToCollection) {
-        collectionItemsToDelete.push(item)
-      }
-    }
-
-    // Delete all files from Vespa and storage
+    // Use transaction to ensure database operations are atomic
     let deletedFilesCount = 0
-    const fileItemIds: string[] = []
+    let deletedFoldersCount = 0
 
-    for (const item of collectionItemsToDelete) {
-      if (item.type === "file") {
-        const collectionFile = await getCollectionFileByItemId(db, item.id)
-        if (collectionFile) {
-          fileItemIds.push(item.id)
-
-          try {
-            // Delete from Vespa
-            if (collectionFile.vespaDocId) {
-              await DeleteDocument(collectionFile.vespaDocId, KbItemsSchema)
-              loggerWithChild({ email: userEmail }).info(
-                `Deleted from Vespa: ${collectionFile.vespaDocId}`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete from Vespa: ${collectionFile.vespaDocId} - ${getErrorMessage(error)}`,
-            )
-          }
-
-          try {
-            // Delete from storage
-            if (collectionFile.storagePath) {
-              await unlink(collectionFile.storagePath)
-              loggerWithChild({ email: userEmail }).info(
-                `Deleted from storage: ${collectionFile.storagePath}`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from storage: ${collectionFile.storagePath} - ${getErrorMessage(error)}`,
-            )
-          }
-
-          deletedFilesCount++
-        }
-      }
-      else if (item.type === "folder") {
-        // Delete folder from Vespa
-        const folderMetadata = item.metadata as Record<string, any>
-        const vespaDocId = folderMetadata?.vespaDocId
-
-        if (vespaDocId) {
-          try {
-            await DeleteDocument(vespaDocId, KbItemsSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted folder from Vespa: ${vespaDocId}`,
-            )
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete folder from Vespa: ${vespaDocId} - ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-      else if (item.type === "knowledge_base") {
-        // Delete Knowledge Base from Vespa
-        const clMetadata = item.metadata as Record<string, any>
-        const vespaDocId = clMetadata?.vespaDocId
-
-        if (vespaDocId) {
-          try {
-            await DeleteDocument(vespaDocId, KbItemsSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted Knowledge Base from Vespa: ${vespaDocId}`,
-            )
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete Knowledge Base from Vespa: ${vespaDocId} - ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-    }
-
-    // Use transaction to ensure both tables are updated atomically
     await db.transaction(async (tx) => {
-      // Soft delete all items in the Collection (including the Collection itself)
+      // Soft delete all items in the collection first
       if (collectionItemsToDelete.length > 0) {
         const itemIds = collectionItemsToDelete.map((item) => item.id)
         await tx
@@ -516,17 +419,84 @@ export const DeleteCollectionApi = async (c: Context) => {
           )
       }
 
-      // Note: In the new schema, file records are part of collection_items, so no separate table to update
+      // Soft delete the collection itself
+      await softDeleteCollection(tx, collectionId)
     })
 
+    // After successful database transaction, clean up Vespa and storage
+    // These operations are logged but don't fail the deletion if they error
+    for (const item of collectionItemsToDelete) {
+      if (item.type === "file") {
+        try {
+          // Delete from Vespa
+          if (item.vespaDocId) {
+            await DeleteDocument(item.vespaDocId, KbItemsSchema)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted file from Vespa: ${item.vespaDocId}`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Failed to delete file from Vespa: ${item.vespaDocId} - ${getErrorMessage(error)}`,
+          )
+        }
+
+        try {
+          // Delete from storage
+          if (item.storagePath) {
+            await unlink(item.storagePath)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted from storage: ${item.storagePath}`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Failed to delete file from storage: ${item.storagePath} - ${getErrorMessage(error)}`,
+          )
+        }
+
+        deletedFilesCount++
+      } else if (item.type === "folder") {
+        // Delete folder from Vespa
+        if (item.vespaDocId) {
+          try {
+            await DeleteDocument(item.vespaDocId, KbItemsSchema)
+            deletedFoldersCount++
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted folder from Vespa: ${item.vespaDocId}`,
+            )
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete folder from Vespa: ${item.vespaDocId} - ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+    }
+
+    // Delete the collection from Vespa
+    try {
+      if (collection.vespaDocId) {
+        await DeleteDocument(collection.vespaDocId, KbItemsSchema)
+        loggerWithChild({ email: userEmail }).info(
+          `Deleted collection from Vespa: ${collection.vespaDocId}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Failed to delete collection from Vespa: ${collection.vespaDocId} - ${getErrorMessage(error)}`,
+      )
+    }
+
     loggerWithChild({ email: userEmail }).info(
-      `Deleted Collection: ${collectionId} (${collectionItemsToDelete.length} total items deleted, ${deletedFilesCount} files removed from Vespa and storage)`,
+      `Deleted Collection: ${collectionId} (${collectionItemsToDelete.length} items deleted, ${deletedFilesCount} files and ${deletedFoldersCount} folders removed from Vespa and storage)`,
     )
 
     return c.json({
       success: true,
       deletedCount: collectionItemsToDelete.length,
       deletedFiles: deletedFilesCount,
+      deletedFolders: deletedFoldersCount,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
@@ -534,10 +504,10 @@ export const DeleteCollectionApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to delete Knowledge Base: ${errMsg}`,
+      `Failed to delete Collection: ${errMsg}`,
     )
     throw new HTTPException(500, {
-      message: "Failed to delete Knowledge Base",
+      message: "Failed to delete Collection",
     })
   }
 }
@@ -1424,32 +1394,19 @@ export const DeleteItemApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Item not found" })
     }
 
-    // Verify item belongs to this Collection by traversing up the hierarchy
-    let currentItem = item
-    let belongsToCollection = false
-    while (currentItem.parentId) {
-      if (currentItem.parentId === collectionId) {
-        belongsToCollection = true
-        break
-      }
-      const parent = await getCollectionItemById(db, currentItem.parentId)
-      if (!parent) break
-      currentItem = parent
-    }
-
-    if (!belongsToCollection) {
+    // Verify item belongs to this Collection by checking collectionId directly
+    if (item.collectionId !== collectionId) {
       throw new HTTPException(404, {
         message: "Item not found in this knowledge base",
       })
     }
 
     // Collect all items to delete (including descendants if it's a folder)
-    const itemsToDelete: { item: CollectionItem; collectionFile?: DbFile }[] = []
+    const itemsToDelete: CollectionItem[] = []
 
     if (item.type === "file") {
       // For files, just add the single file
-      const collectionFile = await getCollectionFileByItemId(db, itemId)
-      itemsToDelete.push({ item, collectionFile: collectionFile || undefined })
+      itemsToDelete.push(item)
     } else if (item.type === "folder") {
       // For folders, get all descendants recursively
       const getAllDescendants = async (parentId: string): Promise<CollectionItem[]> => {
@@ -1472,94 +1429,80 @@ export const DeleteItemApi = async (c: Context) => {
       }
 
       // Get all descendants including the folder itself
-      itemsToDelete.push({ item })
+      itemsToDelete.push(item)
       const descendants = await getAllDescendants(itemId)
-
-      for (const descendantItem of descendants) {
-        if (descendantItem.type === "file") {
-          const collectionFile = await getCollectionFileByItemId(db, descendantItem.id)
-          itemsToDelete.push({
-            item: descendantItem,
-            collectionFile: collectionFile || undefined,
-          })
-        } else {
-          itemsToDelete.push({ item: descendantItem })
-        }
-      }
+      itemsToDelete.push(...descendants)
     }
 
-    // Delete all files and folders from Vespa and storage
-    const fileItemIds: string[] = []
+    // Use transaction to ensure database operations are atomic first
+    let deletedFilesCount = 0
     let deletedFoldersCount = 0
 
-    for (const { item: itemToDelete, collectionFile } of itemsToDelete) {
-      if (itemToDelete.type === "file" && collectionFile) {
-        fileItemIds.push(itemToDelete.id)
-
-          try {
-            // Delete from Vespa
-            if (collectionFile.vespaDocId) {
-              await DeleteDocument(collectionFile.vespaDocId, KbItemsSchema)
-              loggerWithChild({ email: userEmail }).info(
-                `Deleted file from Vespa: ${collectionFile.vespaDocId}`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from Vespa: ${collectionFile.vespaDocId} - ${getErrorMessage(error)}`,
-            )
-          }
-
-          try {
-            // Delete from storage
-            if (collectionFile.storagePath) {
-              await unlink(collectionFile.storagePath)
-              loggerWithChild({ email: userEmail }).info(
-                `Deleted from storage: ${collectionFile.storagePath}`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete file from storage: ${collectionFile.storagePath} - ${getErrorMessage(error)}`,
-            )
-          }
-      } else if (itemToDelete.type === "folder") {
-        // Delete folder from Vespa
-        const folderMetadata = itemToDelete.metadata as Record<string, any>
-        const vespaDocId = folderMetadata?.vespaDocId
-
-        if (vespaDocId) {
-          try {
-            await DeleteDocument(vespaDocId, KbItemsSchema)
-            deletedFoldersCount++
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted folder from Vespa: ${vespaDocId}`,
-            )
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).warn(
-              `Failed to delete folder from Vespa: ${vespaDocId} - ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-    }
-
-    // Use transaction to soft delete items and update kb_files
     await db.transaction(async (tx) => {
       // Soft delete the item (and all descendants if it's a folder)
       await softDeleteCollectionItem(tx, itemId)
-
-      // Note: In the new schema, file records are part of kb_items, so no separate table to update
     })
 
+    // After successful database transaction, clean up Vespa and storage
+    // These operations are logged but don't fail the deletion if they error
+    for (const itemToDelete of itemsToDelete) {
+      if (itemToDelete.type === "file") {
+        try {
+          // Delete from Vespa
+          if (itemToDelete.vespaDocId) {
+            await DeleteDocument(itemToDelete.vespaDocId, KbItemsSchema)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted file from Vespa: ${itemToDelete.vespaDocId}`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Failed to delete file from Vespa: ${itemToDelete.vespaDocId} - ${getErrorMessage(error)}`,
+          )
+        }
+
+        try {
+          // Delete from storage
+          if (itemToDelete.storagePath) {
+            await unlink(itemToDelete.storagePath)
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted from storage: ${itemToDelete.storagePath}`,
+            )
+          }
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Failed to delete file from storage: ${itemToDelete.storagePath} - ${getErrorMessage(error)}`,
+          )
+        }
+
+        deletedFilesCount++
+      } else if (itemToDelete.type === "folder") {
+        // Delete folder from Vespa
+        if (itemToDelete.vespaDocId) {
+          try {
+            await DeleteDocument(itemToDelete.vespaDocId, KbItemsSchema)
+            deletedFoldersCount++
+            loggerWithChild({ email: userEmail }).info(
+              `Deleted folder from Vespa: ${itemToDelete.vespaDocId}`,
+            )
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              `Failed to delete folder from Vespa: ${itemToDelete.vespaDocId} - ${getErrorMessage(error)}`,
+            )
+          }
+        }
+      }
+    }
+
     loggerWithChild({ email: userEmail }).info(
-      `Deleted item: ${itemId} from Collection: ${collectionId} (${itemsToDelete.length} total items deleted)`,
+      `Deleted item: ${itemId} from Collection: ${collectionId} (${itemsToDelete.length} total items deleted, ${deletedFilesCount} files and ${deletedFoldersCount} folders)`,
     )
 
     return c.json({
       success: true,
       deletedCount: itemsToDelete.length,
-      deletedFiles: itemsToDelete.filter((i) => i.item.type === "file").length,
+      deletedFiles: deletedFilesCount,
+      deletedFolders: deletedFoldersCount,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error

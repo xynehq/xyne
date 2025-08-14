@@ -5,8 +5,6 @@ import {
   ChevronRight,
   ChevronDown,
   Plus,
-  Share2,
-  Info,
   Trash2,
 } from "lucide-react"
 import {
@@ -155,8 +153,6 @@ const FileNodeComponent = ({
                   onClick={() => onAddFiles(node, currentPath)}
                 />
               )}
-              <Share2 size={16} className="cursor-pointer" />
-              <Info size={16} className="cursor-pointer" />
               <Trash2
                 size={16}
                 className="cursor-pointer"
