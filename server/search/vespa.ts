@@ -792,15 +792,12 @@ export const HybridDefaultProfileForAgent =  async(
       )`
   }
 
-  const buildDataSourceFileYQL = () => {
+   const buildDataSourceFileYQL = () => {
     // For DataSourceFile, app and entity might not be directly applicable in the same way,
     // but keeping appOrEntityFilter for consistency if needed for other metadata.
-    const appOrEntityFilter = buildAppEntityFilter()
-    const dataSourceIdConditions =
-      dataSourceIds && dataSourceIds.length > 0
-        ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
-        : "false" // If no specific IDs, this part of the query should not match anything
 
+    const dsIds = (selectedItem as Record<string, unknown>)[Apps.DataSource] as any
+    const dataSourceIdConditions = buildDocsInclusionCondition("dataSourceId", dsIds)
    
     return `
       (
