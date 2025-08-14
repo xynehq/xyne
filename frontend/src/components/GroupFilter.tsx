@@ -105,6 +105,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Channel"
   } else if (app === Apps.Github && entity === SystemEntity.SystemInfo) {
     return "Github"
+  } else if (app === Apps.Xyne && entity === SystemEntity.SystemInfo) {
+    return "Web Scraper"
   } else if (
     app === Apps.DataSource &&
     entity === DataSourceEntity.DataSourceFile

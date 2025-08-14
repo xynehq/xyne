@@ -521,7 +521,7 @@ ${retrievedContext}
      * "Read more at [something]"
      * "See guide at [something]"
      * Any embedded URLs (http://, https://)
-   - **If such references exist but no actual content from those URLs is provided → Return null to trigger web scraping**
+   - **If such references exist but no actual content from those URLs is provided → Return null for incomplete information**
    - **Do NOT just reference URLs - actual content from URLs is required to provide complete answers**
    
 3. Response Structure:
@@ -576,7 +576,7 @@ If NO relevant items are found in Retrieved Context or context doesn't match que
 - If no clear answer is found in the retrieved context, set "answer" to null 
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear, or the query lacks context, or if URLs need to be scraped, set "answer" as null 
+If information is missing or unclear, or the query lacks context, set "answer" as null 
 `
 
 // Baseline Reasoing Prompt JSON
@@ -914,7 +914,6 @@ export const SearchQueryToolContextPrompt = (
     **Smart Tool Usage Strategy:**
     
     **External vs Internal Tool Selection:**
-    - **Use Web Scraper Tool when**: User provides URLs, asks to scrape websites, wants information from external web content, mentions specific articles/websites, or asks about content NOT in their connected data sources.
     - **Use Internal Tools when**: User asks about their emails, files, calendar events, or other connected data sources.
     
     **Discovery Before Specifics:**
@@ -979,7 +978,6 @@ export const SearchQueryToolContextPrompt = (
       * "See guide at [something]"
       * Any embedded URLs or web links
     - If such references exist but no actual content from those URLs is provided → Information is INSUFFICIENT
-    - If user asks about topics that these URLs address → USE WEB_SCRAPER TOOL immediately
 
     ## 2. Query Assessment
     Determine what type of information or action the user is requesting:
@@ -988,17 +986,6 @@ export const SearchQueryToolContextPrompt = (
     - Analysis or computation
     - Multi-step operations
     
-    **CRITICAL: External Content Detection**
-    - If user provides URLs (http://, https://) or mentions specific websites → USE WEB_SCRAPER TOOL
-    - If user asks to "scrape", "extract from website", "get content from URL" → USE WEB_SCRAPER TOOL
-    - If user wants information from external websites not in their data sources → USE WEB_SCRAPER TOOL
-    - If search results contain URLs and user wants detailed content → USE WEB_SCRAPER TOOL to get actual content
-    - If URLs are found in emails, documents, or other sources and user asks for information about them → USE WEB_SCRAPER TOOL
-    - **CRITICAL: If context mentions links/URLs but only provides the link text without actual content → ALWAYS USE WEB_SCRAPER TOOL**
-    - **Examples requiring scraping: "link to tutorial", "Watch how to make", "Read more at", "See details at", etc.**
-    - Always prefer scraping actual URLs over just referencing them when user needs detailed information
-    - Otherwise, use internal search tools for connected data sources
-    
     ## 4. Next Action Decision
     ### If Information is Complete:
     - **IMPORTANT**: Only consider information complete if:
@@ -1006,13 +993,10 @@ export const SearchQueryToolContextPrompt = (
       * No URLs were found that could provide additional relevant content, AND
       * No link references (like "Watch how to", "Read more", "tutorial link") exist without actual content
     - **NEVER consider just URL references as complete information** 
-    - If context contains URLs/links that could provide the actual content the user needs → USE WEB_SCRAPER TOOL first
-    - If emails/documents mention "link to tutorial", "watch video", "see guide", etc. → USE WEB_SCRAPER TOOL to get actual content
-    - Only set "tool" and "arguments" to null when no URLs need scraping AND the answer is complete with actual content
+    - Only set "tool" and "arguments" to null when the answer is complete with actual content
     
     ### If More Information Needed:
     - Choose the most appropriate tool for the next step.
-    - If URLs are present in context but not yet scraped → USE WEB_SCRAPER TOOL
     - Provide well-formed arguments.
     - Consider using exclusion parameters to avoid duplicate results.
     - If you lack necessary discovery capabilities, acknowledge this limitation.
