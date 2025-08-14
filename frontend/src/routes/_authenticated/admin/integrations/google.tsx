@@ -72,15 +72,30 @@ const submitServiceAccountForm = async (
 const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
+  userRole: UserRole,
 ) => {
-  const response = await api.oauth.create.$post({
-    form: {
-      clientId: value.clientId,
-      clientSecret: value.clientSecret,
-      scopes: value.scopes,
-      app: Apps.GoogleDrive,
-    },
-  })
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const response = isAdmin
+    ? await api.admin.oauth.create.$post({
+        form: {
+          clientId: value.clientId,
+          clientSecret: value.clientSecret,
+          scopes: value.scopes,
+          app: Apps.GoogleDrive,
+        },
+      })
+    : await api.oauth.create.$post({
+        form: {
+          clientId: value.clientId,
+          clientSecret: value.clientSecret,
+          scopes: value.scopes,
+          app: Apps.GoogleDrive,
+        },
+      })
+
   if (!response.ok) {
     // If unauthorized or status code is 401, navigate to '/auth'
     if (response.status === 401) {
@@ -107,7 +122,10 @@ type OAuthFormData = {
   scopes: string[]
 }
 
-export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
+export const OAuthForm = ({
+  onSuccess,
+  userRole,
+}: { onSuccess: any; userRole: UserRole }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -118,7 +136,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate)
+        await submitOAuthForm(value, navigate, userRole)
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -386,8 +404,15 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
 }
 export const minHeight = 320
 
-export const getConnectors = async (): Promise<any> => {
-  const res = await api.connectors.all.$get()
+export const getConnectors = async (userRole: UserRole): Promise<any> => {
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.connectors.all.$get()
+    : await api.connectors.all.$get()
+
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -397,10 +422,22 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
-export const deleteOauthConnector = async (connectorId: string) => {
-  const res = await api.oauth.connector.delete.$delete({
-    form: { connectorId },
-  })
+export const deleteOauthConnector = async (
+  connectorId: string,
+  userRole: UserRole,
+) => {
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.oauth.connector.delete.$delete({
+        form: { connectorId },
+      })
+    : await api.oauth.connector.delete.$delete({
+        form: { connectorId },
+      })
+
   if (!res.ok) {
     let errorText = res.statusText
     try {
@@ -800,7 +837,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        return await getConnectors()
+        return await getConnectors(user.role)
       } catch (error) {
         const message = getErrorMessage(error)
         if (message === "Unauthorized") {
@@ -973,7 +1010,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       return
     }
     try {
-      await deleteOauthConnector(googleOAuthConnector.id)
+      await deleteOauthConnector(googleOAuthConnector.id, user.role)
       toast({
         title: "Connector Deleted",
         description: "Google OAuth connector has been removed",
@@ -1059,6 +1096,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                     setOAuthIntegrationStatus={setOAuthIntegrationStatus}
                     updateStatus={updateStatus}
                     handleDelete={handleDelete}
+                    userRole={user.role}
                   />
                 </TabsContent>
               </div>

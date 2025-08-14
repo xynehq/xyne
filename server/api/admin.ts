@@ -1232,7 +1232,7 @@ export const GetAdminChats = async (c: Context) => {
       conditions.push(eq(chats.userId, userId))
     }
 
-    // Build the query with feedback aggregation
+    // Build the query with feedback aggregation and cost tracking
     const baseQuery = db
       .select({
         id: chats.id,
@@ -1244,9 +1244,12 @@ export const GetAdminChats = async (c: Context) => {
         userEmail: users.email,
         userName: users.name,
         userRole: users.role,
+        userCreatedAt: users.createdAt, // Add user's actual creation date
         messageCount: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -1256,10 +1259,29 @@ export const GetAdminChats = async (c: Context) => {
       conditions.length > 0
         ? await baseQuery
             .where(and(...conditions))
-            .groupBy(chats.id, users.email, users.name, users.role)
-        : await baseQuery.groupBy(chats.id, users.email, users.name, users.role)
+            .groupBy(
+              chats.id,
+              users.email,
+              users.name,
+              users.role,
+              users.createdAt,
+            )
+        : await baseQuery.groupBy(
+            chats.id,
+            users.email,
+            users.name,
+            users.role,
+            users.createdAt,
+          )
 
-    return c.json(result)
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((chat) => ({
+      ...chat,
+      totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin chats")
     return c.json(
@@ -1315,6 +1337,8 @@ export const GetAdminUsers = async (c: Context) => {
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
       })
       .from(users)
       .leftJoin(chats, eq(users.id, chats.userId))
@@ -1329,7 +1353,14 @@ export const GetAdminUsers = async (c: Context) => {
         users.deletedAt,
       )
 
-    return c.json(result)
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((user) => ({
+      ...user,
+      totalCost: Number(user.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(user.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin users")
     return c.json(
