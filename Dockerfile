@@ -50,11 +50,11 @@ RUN apt-get update && apt-get install -y \
 
 
 # Copy data restoration script and make it executable
-COPY deployment/restore-data.sh /usr/src/app/deployment/restore-data.sh
-RUN chmod +x /usr/src/app/deployment/restore-data.sh
+#COPY deployment/restore-data.sh /usr/src/app/deployment/restore-data.sh
+#RUN chmod +x /usr/src/app/deployment/restore-data.sh
 
 # Copy sample data archive if it exists (conditional copy during build)
-COPY deployment/sample-data.tar.gz* /usr/src/app/deployment/
+#COPY deployment/sample-data.tar.gz* /usr/src/app/deployment/
 
 # Set ownership for bun user
 RUN chown -R bun:bun /usr/src/app

@@ -54,7 +54,6 @@ if [ ! -f "$INIT_MARKER_FILE" ]; then
   
   # Create marker file to indicate initialization is complete
   mkdir -p /usr/src/app/server/storage
-  bash scripts/seedAll.sh $ADMIN_EMAIL $ADMIN_PASS
   touch "$INIT_MARKER_FILE"
   echo "✅ Initial setup completed"
 else
