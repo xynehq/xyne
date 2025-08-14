@@ -403,7 +403,7 @@ export const VespaKbFileSchemaBase = z.object({
   docId: z.string(),
   clId: z.string(),
   itemId: z.string(),
-  app: z.nativeEnum(Apps),
+  app: z.literal(Apps.KnowledgeBase),
   entity: z.nativeEnum(KnowledgeBaseEntity),
   fileName: z.string(),
   description: z.string(),

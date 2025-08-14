@@ -272,6 +272,7 @@ export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
     mimeType: true,
   })
     .extend({
+      app: z.literal(Apps.KnowledgeBase),
       type: z.literal(KbItemsSchema),
       chunk: z.string().optional(),
       chunkIndex: z.number().optional(),

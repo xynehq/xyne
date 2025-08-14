@@ -215,7 +215,8 @@ export const softDeleteCollectionItem = async (
         .from(collectionItems)
         .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
 
-      let count = children.length
+      // We only want to decrement file counts for parents
+      let filesDeleted = children.filter((c) => c.type === "file").length
 
       // Mark children as deleted
       if (children.length > 0) {
@@ -230,12 +231,12 @@ export const softDeleteCollectionItem = async (
         // Recursively delete descendants of folder children
         for (const child of children) {
           if (child.type === "folder") {
-            count += await markDescendantsAsDeleted(child.id)
+            filesDeleted += await markDescendantsAsDeleted(child.id)
           }
         }
       }
 
-      return count
+      return filesDeleted
     }
 
     // Mark the folder itself as deleted
@@ -247,15 +248,21 @@ export const softDeleteCollectionItem = async (
       })
       .where(eq(collectionItems.id, itemId))
 
-    // Mark all descendants as deleted
-    const descendantCount = await markDescendantsAsDeleted(itemId)
+    // Mark all descendants as deleted and get count of files only
+    const descendantFilesCount = await markDescendantsAsDeleted(itemId)
 
-    // Update collection total count
-    await updateCollectionTotalCount(trx, item.collectionId, -(descendantCount + 1))
+    // Get direct children count for collection total (includes both files and folders)
+    const directChildren = await trx
+      .select()
+      .from(collectionItems)
+      .where(and(eq(collectionItems.parentId, itemId), isNull(collectionItems.deletedAt)))
+
+    // Update collection total count (all descendants + the folder itself)
+    await updateCollectionTotalCount(trx, item.collectionId, -(directChildren.length + 1))
     
-    // Update parent folder counts (decrement the folder count from parent)
+    // Update parent folder counts (decrement only file count from parent)
     if (item.parentId) {
-      await updateParentFolderCounts(trx, item.parentId, -(descendantCount + 1))
+      await updateParentFolderCounts(trx, item.parentId, -descendantFilesCount)
     }
   } else {
     // For files, just mark as deleted
@@ -526,44 +533,59 @@ export const getAllCollectionAndFolderItems = async (
   parentIds: string[],
   trx: TxnOrClient,
 ) => {
-  const res = []
-  let queue: any[] = []
-  for (const id of parentIds) {
-    // Check if this is a prefixed ID (collection or collection folder)
-    let actualId = id
-    let isCollection = false
-    let isCollectionFolder = false
-    
-    if (id.startsWith('cl-')) {
-      actualId = id.substring(3) // Remove 'cl-' prefix
-      isCollection = true
-    } else if (id.startsWith('clfd-')) {
-      actualId = id.substring(5) // Remove 'clfd-' prefix
-      isCollectionFolder = true
-    } else {
-    }
-    
-    queue.push({ id: actualId, isCollection, isCollectionFolder })
-  }
-  
-  while (queue.length > 0) {
-    const curr = queue.shift()
-    const currId = curr.id
+  const result: string[] = []
+  type Q = { itemId: string }
+  const queue: Q[] = []
 
-    const resp = await getParentItems(currId, trx)
-    if (resp.length == 0) {
-      res.push(currId)
+  // Seed traversal
+  for (const input of parentIds) {
+    if (input.startsWith("cl-")) {
+      // Collection vespa docId -> fetch top-level items
+      const [col] = await trx
+        .select({ id: collections.id })
+        .from(collections)
+        .where(and(eq(collections.vespaDocId, input), isNull(collections.deletedAt)))
+      if (!col) continue
+      const roots = await trx
+        .select({ id: collectionItems.id })
+        .from(collectionItems)
+        .where(and(eq(collectionItems.collectionId, col.id), isNull(collectionItems.parentId), isNull(collectionItems.deletedAt)))
+      roots.forEach((r) => queue.push({ itemId: r.id }))
+    } else if (input.startsWith("clfd-")) {
+      // Folder vespa docId -> resolve to item id
+      const [folder] = await trx
+        .select({ id: collectionItems.id })
+        .from(collectionItems)
+        .where(and(eq(collectionItems.vespaDocId, input), isNull(collectionItems.deletedAt)))
+      if (folder) queue.push({ itemId: folder.id })
+    } else {
+      // Assume it's a DB item id (UUID)
+      queue.push({ itemId: input })
+    }
+  }
+
+  // BFS: collect all file item ids under the given seeds
+  while (queue.length > 0) {
+    const { itemId } = queue.shift()!
+    const children = await trx
+      .select()
+      .from(collectionItems)
+      .where(and(eq(collectionItems.parentId, itemId), isNull(collectionItems.deletedAt)))
+    if (children.length === 0) {
+      // If no children: either this is a file leaf or an invalid id; only push if it's a file
+      const node = await getCollectionItemById(trx, itemId)
+      if (node && node.type === "file") result.push(itemId)
       continue
     }
-    for (const item of resp) {
-      if (item.type == "folder") {
-        queue.push({ id: item.id, isCollection: false, isCollectionFolder: false })
-      } else if (item.type == "file") {
-        res.push(item.id)
+    for (const child of children) {
+      if (child.type === "folder") {
+        queue.push({ itemId: child.id })
+      } else if (child.type === "file") {
+        result.push(child.id)
       }
     }
   }
-  return res
+  return result
 }
 
 // Keep the old function for backward compatibility
