@@ -11,7 +11,7 @@ import {
 
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
-import { and, asc, desc, eq, isNull, sql, or } from "drizzle-orm"
+import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
 
 // Collection CRUD operations
 export const createCollection = async (
@@ -537,12 +537,10 @@ export const getAllCollectionAndFolderItems = async (
     if (id.startsWith('cl-')) {
       actualId = id.substring(3) // Remove 'cl-' prefix
       isCollection = true
-      console.log(`Processing collection with prefix removed: ${id} -> ${actualId}`);
     } else if (id.startsWith('clfd-')) {
       actualId = id.substring(5) // Remove 'clfd-' prefix
       isCollectionFolder = true
     } else {
-      console.log(`Processing item without prefix: ${id}`);
     }
     
     queue.push({ id: actualId, isCollection, isCollectionFolder })
@@ -565,7 +563,6 @@ export const getAllCollectionAndFolderItems = async (
       }
     }
   }
-  console.log(`getAllCollectionAndFolderItems result: ${res.join(', ')}`);
   return res
 }
 
@@ -613,10 +610,7 @@ export const getCollectionFilesVespaIds = async (
     .from(collectionItems)
     .where(
       and(
-        sql`${collectionItems.id} IN (${sql.join(
-          collectionFileIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})`,
+        inArray(collectionItems.id, collectionFileIds),
         eq(collectionItems.type, "file"),
         isNull(collectionItems.deletedAt)
       )

@@ -43,18 +43,10 @@ import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
 import crypto from "crypto"
-import { chunkDocument } from "@/chunks"
-import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
-import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
-import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import * as XLSX from "xlsx"
+import { FileProcessorService } from "@/services/fileProcessor"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
-  isTextFile,
-  isSheetFile,
-  isDocxFile,
-  isPptxFile,
 } from "@/integrations/dataSource/config"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
@@ -1127,120 +1119,16 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Process file based on type first to get chunks
-        const baseMimeType = getBaseMimeType(file.type || "text/plain")
-        let chunks: string[] = []
-        let chunks_pos: number[] = []
-        let image_chunks: string[] = []
-        let image_chunks_pos: number[] = []
-
-        try {
-          if (baseMimeType === "application/pdf") {
-            // Process PDF
-            const result = await extractTextAndImagesWithChunksFromPDF(
-              new Uint8Array(buffer),
-              vespaDocId,
-              false,
-            )
-            chunks = result.text_chunks
-            chunks_pos = result.text_chunk_pos
-            image_chunks = result.image_chunks || []
-            image_chunks_pos = result.image_chunk_pos || []
-          } else if (isDocxFile(baseMimeType)) {
-            // Process DOCX
-            const result = await extractTextAndImagesWithChunksFromDocx(
-              new Uint8Array(buffer),
-              vespaDocId,
-              false,
-            )
-            chunks = result.text_chunks
-            chunks_pos = result.text_chunk_pos
-            image_chunks = result.image_chunks || []
-            image_chunks_pos = result.image_chunk_pos || []
-          } else if (isPptxFile(baseMimeType)) {
-            // Process PPTX
-            const result = await extractTextAndImagesWithChunksFromPptx(
-              new Uint8Array(buffer),
-              vespaDocId,
-              false,
-            )
-            chunks = result.text_chunks
-            chunks_pos = result.text_chunk_pos
-            image_chunks = result.image_chunks || []
-            image_chunks_pos = result.image_chunk_pos || []
-          } else if (isSheetFile(baseMimeType)) {
-            // Process spreadsheet
-            const workbook = XLSX.readFile(storagePath)
-            const allChunks: string[] = []
-
-            for (const sheetName of workbook.SheetNames) {
-              const worksheet = workbook.Sheets[sheetName]
-              if (!worksheet) continue
-
-              const sheetData: string[][] = XLSX.utils.sheet_to_json(
-                worksheet,
-                {
-                  header: 1,
-                  defval: "",
-                  raw: false,
-                },
-              )
-
-              const validRows = sheetData.filter((row) =>
-                row.some((cell) => cell && cell.toString().trim().length > 0),
-              )
-
-              for (const row of validRows) {
-                const textualCells = row
-                  .filter(
-                    (cell) =>
-                      cell &&
-                      isNaN(Number(cell)) &&
-                      cell.toString().trim().length > 0,
-                  )
-                  .map((cell) => cell.toString().trim())
-
-                if (textualCells.length > 0) {
-                  allChunks.push(textualCells.join(" "))
-                }
-              }
-            }
-
-            chunks = allChunks
-            chunks_pos = allChunks.map((_, idx) => idx)
-          } else if (isTextFile(baseMimeType)) {
-            // Process text file
-            const content = await file.text()
-            const processedChunks = chunkDocument(content.trim())
-            chunks = processedChunks.map((v) => v.chunk)
-            chunks_pos = chunks.map((_, idx) => idx)
-          } else {
-            // For unsupported types, try to extract text content
-            try {
-              const content = await file.text()
-              if (content.trim()) {
-                const processedChunks = chunkDocument(content.trim())
-                chunks = processedChunks.map((v) => v.chunk)
-                chunks_pos = chunks.map((_, idx) => idx)
-              }
-            } catch {
-              // If text extraction fails, create a basic chunk with file info
-              chunks = [
-                `File: ${file.name}, Type: ${baseMimeType}, Size: ${file.size} bytes`,
-              ]
-              chunks_pos = [0]
-            }
-          }
-        } catch (error) {
-          loggerWithChild({ email: userEmail }).warn(
-            `Failed to process file content for ${file.name}: ${getErrorMessage(error)}`,
-          )
-          // Create basic chunk on processing error
-          chunks = [
-            `File: ${file.name}, Type: ${baseMimeType}, Size: ${file.size} bytes`,
-          ]
-          chunks_pos = [0]
-        }
+        // Process file using the service
+        const processingResult = await FileProcessorService.processFile(
+          buffer,
+          file.type || "text/plain",
+          fileName,
+          vespaDocId,
+          storagePath
+        )
+        
+        const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
 
         // Use transaction for atomic file creation AND Vespa insertion
         const item = await db.transaction(async (tx) => {
@@ -1288,12 +1176,12 @@ export const UploadFilesApi = async (c: Context) => {
               uploadedBy: user.email,
               chunksCount: chunks.length,
               imageChunksCount: image_chunks.length,
-              processingMethod: baseMimeType,
+              processingMethod: getBaseMimeType(file.type || "text/plain"),
               lastModified: Date.now(),
             }),
             createdBy: user.email,
             duration: 0,
-            mimeType: baseMimeType,
+            mimeType: getBaseMimeType(file.type || "text/plain"),
             fileSize: file.size,
             createdAt: Date.now(),
             updatedAt: Date.now(),

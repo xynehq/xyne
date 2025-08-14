@@ -420,25 +420,6 @@ export const VespaKbFileSchemaBase = z.object({
   createdAt: z.number(),
   updatedAt: z.number(),
 })
-export const VespaKbFileSchema = z.object({
-  docId: z.string(),
-  app: z.nativeEnum(Apps),
-  entity: z.nativeEnum(KnowledgeBaseEntity),
-  clId: z.string(),
-  itemId: z.string(),
-  title: z.string(),
-  url: z.string().nullable(),
-  chunks: z.array(z.string()),
-  owner: z.string().nullable(),
-  ownerEmail: z.string().nullable(),
-  photoLink: z.string().nullable(),
-  permissions: z.array(z.string()),
-  mimeType: z.string().nullable(),
-  metadata: Metadata,
-  createdAt: z.number(),
-  updatedAt: z.number(),
-})
-
 
 export type VespaKbFile = z.infer<typeof VespaKbFileSchemaBase>
 

@@ -11,7 +11,7 @@ import {
   uniqueIndex,
   boolean,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { users } from "./users";
 import { workspaces } from "./workspaces";
 
@@ -127,19 +127,53 @@ export const collectionItems = pgTable(
   })
 );
 
-// Self-referential foreign key for parent-child relationship
-export const collectionItemsRelations = {
-  parent: {
-    fields: [collectionItems.parentId],
-    references: [collectionItems.id],
-    onDelete: "cascade" as const,
-  },
-  collection: {
+// Relations definitions using Drizzle ORM relations() function
+export const collectionsRelations = relations(collections, ({ many, one }) => ({
+  items: many(collectionItems),
+  owner: one(users, {
+    fields: [collections.ownerId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [collections.workspaceId],
+    references: [workspaces.id],
+  }),
+  lastUpdatedBy: one(users, {
+    fields: [collections.lastUpdatedById],
+    references: [users.id],
+  }),
+}));
+
+export const collectionItemsRelations = relations(collectionItems, ({ one, many }) => ({
+  collection: one(collections, {
     fields: [collectionItems.collectionId],
     references: [collections.id],
-    onDelete: "cascade" as const,
-  },
-};
+  }),
+  parent: one(collectionItems, {
+    fields: [collectionItems.parentId],
+    references: [collectionItems.id],
+    relationName: "parent_child",
+  }),
+  children: many(collectionItems, {
+    relationName: "parent_child",
+  }),
+  owner: one(users, {
+    fields: [collectionItems.ownerId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [collectionItems.workspaceId],
+    references: [workspaces.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [collectionItems.uploadedById],
+    references: [users.id],
+  }),
+  lastUpdatedBy: one(users, {
+    fields: [collectionItems.lastUpdatedById],
+    references: [users.id],
+  }),
+}));
 
 // Type definitions for use in the application
 export type Collection = typeof collections.$inferSelect;

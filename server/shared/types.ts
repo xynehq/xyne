@@ -18,8 +18,8 @@ import {
   dataSourceFileSchema,
   chatContainerSchema,
   VespaChatContainerSchema,
-  VespaKbFileSchema,
   KbItemsSchema,
+  VespaKbFileSchemaBase,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -260,25 +260,21 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
-export const KbFileResponseSchema = VespaKbFileSchema.pick({
+export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
     docId: true,
-    title: true,
-    url: true,
+    fileName: true,
     app: true,
     entity: true,
-    owner: true,
-    ownerEmail: true,
-    photoLink: true,
+    createdBy: true,
     updatedAt: true,
-    itemId:true,
-    clId:true,
-
+    itemId: true,
+    clId: true,
+    mimeType: true,
   })
     .extend({
       type: z.literal(KbItemsSchema),
       chunk: z.string().optional(),
       chunkIndex: z.number().optional(),
-      mimeType: z.string(),
       chunks_summary: z.array(scoredChunk).optional(),
       relevance: z.number(),
       matchfeatures: z.any().optional(), // Add matchfeatures

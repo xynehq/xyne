@@ -68,10 +68,22 @@ const CollectionFileUpload = ({
 
       if (isUploading) return
 
-      const traverseFileTree = (entry: any, path: string): Promise<File[]> => {
+      interface FileSystemEntry {
+        isFile: boolean
+        isDirectory: boolean
+        name: string
+        file?: (success: (file: File) => void, error: (err: Error) => void) => void
+        createReader?: () => FileSystemDirectoryReader
+      }
+
+      interface FileSystemDirectoryReader {
+        readEntries: (success: (entries: FileSystemEntry[]) => void, error: (err: Error) => void) => void
+      }
+
+      const traverseFileTree = (entry: FileSystemEntry, path: string): Promise<File[]> => {
         return new Promise((resolve, reject) => {
           if (entry.isFile) {
-            entry.file(
+            entry.file?.(
               (file: File) => {
                 if (!file.name.startsWith(".")) {
                   try {
@@ -91,22 +103,26 @@ const CollectionFileUpload = ({
                   resolve([])
                 }
               },
-              (err: any) => reject(err),
+              (err: Error) => reject(err),
             )
           } else if (entry.isDirectory) {
-            const dirReader = entry.createReader()
-            const allEntries: any[] = []
+            const dirReader = entry.createReader?.()
+            if (!dirReader) {
+              resolve([])
+              return
+            }
+            const allEntries: FileSystemEntry[] = []
             const readAllEntries = () => {
               dirReader.readEntries(
-                async (entries: any[]) => {
+                async (entries: FileSystemEntry[]) => {
                   if (entries.length > 0) {
                     allEntries.push(...entries)
                     readAllEntries() // read next batch
                   } else {
                     // all entries read
                     const promises = allEntries
-                      .filter((e: any) => !e.name.startsWith("."))
-                      .map((subEntry: any) =>
+                      .filter((e) => !e.name.startsWith("."))
+                      .map((subEntry) =>
                         traverseFileTree(subEntry, path + entry.name + "/"),
                       )
                     try {
@@ -117,7 +133,10 @@ const CollectionFileUpload = ({
                     }
                   }
                 },
-                (err: any) => reject(err),
+                (err: Error) => {
+                  console.error(`Error reading directory ${entry.name}:`, err)
+                  reject(err)
+                },
               )
             }
             readAllEntries()
