@@ -1,4 +1,4 @@
-import VespaClient from "@/search/vespaClient"
+import VespaClient from "@xyne/vespa-ts/client"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { Context, Next } from "hono"

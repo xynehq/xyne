@@ -28,7 +28,7 @@ import pc from "picocolors"
 import {
   getSortedScoredChunks,
   getSortedScoredImageChunks,
-} from "@/search/mappers"
+} from "@xyne/vespa-ts/mappers"
 import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string

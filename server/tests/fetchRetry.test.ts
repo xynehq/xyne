@@ -8,6 +8,7 @@ import {
   afterAll,
 } from "bun:test"
 import config from "@/config"
+import VespaClient from "@xyne/vespa-ts/client"
 
 // mocking at top before importing vespaClient
 const mockPinoLogger = {
@@ -26,10 +27,9 @@ mock.module("../logger", () => ({
   },
 }))
 
-const { default: VespaClient } = await import("@/search/vespaClient")
-
 describe("VespaClient", () => {
-  let vespaClient: any
+  let vespaClient: VespaClient
+  const endpoint = `http://${config.vespaBaseHost}:8080`
   const mockPayload = {
     yql: "select * from sources * where true",
     query: "What is Vespa?",
@@ -49,7 +49,7 @@ describe("VespaClient", () => {
   }))
 
   beforeAll(() => {
-    vespaClient = new VespaClient()
+    vespaClient = new VespaClient(endpoint)
   })
 
   afterAll(() => {

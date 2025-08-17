@@ -104,7 +104,6 @@ import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
-  SearchModes,
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
@@ -114,6 +113,7 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  SearchVespaThreads,
 } from "@/search/vespa"
 import {
   Apps,
@@ -133,6 +133,7 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SearchModes,
   SlackEntity,
   SystemEntity,
   userSchema,
@@ -152,7 +153,6 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -163,7 +163,7 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
-import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
+import { appToSchemaMapper, entityToSchemaMapper } from "@xyne/vespa-ts/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 // import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"

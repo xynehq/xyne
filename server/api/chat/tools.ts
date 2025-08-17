@@ -6,12 +6,10 @@ import { delay, getErrorMessage } from "@/utils"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
-  SearchModes,
   searchVespaInFiles,
   getItems,
   SearchVespaThreads,
   getThreadItems,
-  type GetThreadItemsParams,
   searchVespaAgent,
   getSlackUserDetails,
 } from "@/search/vespa"
@@ -32,6 +30,7 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SearchModes,
   SlackEntity,
   SystemEntity,
   userSchema,
@@ -51,7 +50,6 @@ import { getChannelIdsFromAgentPrompt, searchToCitation } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
-import { appToSchemaMapper } from "@/search/mappers"
 import { getToolParameters, internalTools } from "@/api/chat/mapper"
 import type {
   AgentTool,
@@ -63,6 +61,7 @@ import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
 import { resolveNamesToEmails } from "./chat"
 import type { Intent } from "@/ai/types"
+import type { GetThreadItemsParams } from "@xyne/vespa-ts"
 
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)

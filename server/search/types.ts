@@ -237,7 +237,7 @@ const SpreadsheetMetadata = z.object({
   totalSheets: z.number(),
 })
 
-const Metadata = z.union([z.object({}), SpreadsheetMetadata])
+const Metadata = z.union([z.object({}), z.string(), SpreadsheetMetadata])
 
 export const VespaFileSchema = z.object({
   docId: z.string(),
@@ -258,10 +258,10 @@ export const VespaFileSchema = z.object({
 })
 
 const chunkScoresSchema = z.object({
-  cells: z.record(z.number()),
+  cells: z.record(z.string(), z.number()),
 })
 // Match features for file schema
-const FileMatchFeaturesSchema = z.object({
+export const FileMatchFeaturesSchema = z.object({
   "bm25(title)": z.number().optional(),
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
@@ -453,7 +453,7 @@ export const MailSchema = z.object({
   chunks: z.array(z.string()),
   timestamp: z.number(),
   app: z.nativeEnum(Apps),
-  userMap: z.optional(z.record(z.string())),
+  userMap: z.optional(z.record(z.string(), z.string())),
   entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
   from: z.string(),
@@ -1139,4 +1139,12 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   googledocs: Apps.GoogleDrive,
   googlesheets: Apps.GoogleDrive,
   pdf: Apps.GoogleDrive,
+}
+
+export enum SearchModes {
+  NativeRank = "default_native",
+  BM25 = "default_bm25",
+  AI = "default_ai",
+  Random = "default_random",
+  GlobalSorted = "global_sorted",
 }
