@@ -932,14 +932,65 @@ function AgentComponent() {
             if (data.integrationItems.collection && data.integrationItems.collection.groups) {
               for (const [clGroupId, items] of Object.entries(data.integrationItems.collection.groups)) {
                 if (Array.isArray(items)) {
-                  items.forEach((item: any) => {
-                    const itemType = item.type || "folder"; // Default to 'folder' if not provided
-                    // Add to ID andto name and type mapping
-                    idToNameMapping[item.id] = {
-                      name: item.name || "Unnamed",
-                      type: itemType
-                    };
-                  });
+                  // For knowledge-base items, we need to fetch their details via Vespa search
+                  const itemIds = items.map((item: any) => item.id).filter(Boolean);
+                  
+                  if (itemIds.length > 0) {
+                    try {
+                      // Make Vespa call to get knowledge-base item details
+                      const vespaResponse = await api.search.$get({
+                        query: {
+                          query: itemIds.join(' OR '),
+                          app: "knowledge-base",
+                          isAgentIntegSearch: true
+                        }
+                      });
+                      
+                      if (vespaResponse.ok) {
+                        const vespaData = await vespaResponse.json();
+                        const vespaResults = vespaData.results || [];
+                        
+                        // Create a map of vespa results by docId for quick lookup
+                        const vespaResultsMap = new Map();
+                        vespaResults.forEach((result: any) => {
+                          if (result.docId) {
+                            vespaResultsMap.set(result.docId, result);
+                          }
+                        });
+                        
+                        // Map the items with their Vespa details
+                        items.forEach((item: any) => {
+                          const vespaResult = vespaResultsMap.get(item.id);
+                          const itemType = item.type || vespaResult?.type || "folder";
+                          const itemName = vespaResult?.title || vespaResult?.name || vespaResult?.fileName || item.name || "Unnamed";
+                          
+                          idToNameMapping[item.id] = {
+                            name: itemName,
+                            type: itemType
+                          };
+                        });
+                      } else {
+                        // Fallback to original item data if Vespa call fails
+                        items.forEach((item: any) => {
+                          const itemType = item.type || "folder";
+                          idToNameMapping[item.id] = {
+                            name: item.name || "Unnamed",
+                            type: itemType
+                          };
+                        });
+                      }
+                    } catch (vespaError) {
+                      console.error("Failed to fetch knowledge-base item details from Vespa:", vespaError);
+                      // Fallback to original item data
+                      items.forEach((item: any) => {
+                        const itemType = item.type || "folder";
+                        idToNameMapping[item.id] = {
+                          name: item.name || "Unnamed",
+                          type: itemType
+                        };
+                      });
+                    }
+                  }
                 }
                 
                 // Also add CL group ID to name mapping if available
