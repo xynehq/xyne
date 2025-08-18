@@ -17,7 +17,7 @@ const { defaultBestModel } = config
 const modelId = defaultBestModel || Models.Claude_3_5_Sonnet
 
 const myEmail = "email@example.com"
-const workspaceId = "ht........."
+const workspaceId = "ht........." // external workspace ID
 
 if (!myEmail) throw new Error("Please set the email")
 if (!workspaceId) throw new Error("Please add the workspaceId")
