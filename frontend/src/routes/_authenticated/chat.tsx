@@ -1374,40 +1374,6 @@ export const ChatPage = ({
                 </div>
               )}
             </div>
-            {showRagTrace && chatId && selectedMessageId && (
-              <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
-                <RagTraceVirtualization
-                  chatId={chatId}
-                  messageId={selectedMessageId}
-                  onClose={() => {
-                    setShowRagTrace(false)
-                    setSelectedMessageId(null)
-                  }}
-                />
-              </div>
-            )}
-            {!isSharedChat && (
-              <div className="sticky bottom-0 w-full flex justify-center bg-white dark:bg-[#1E1E1E] pt-2">
-                <ChatBox
-                  ref={chatBoxRef}
-                  role={user?.role}
-                  query={query}
-                  setQuery={setQuery}
-                  handleSend={handleSend}
-                  handleStop={stopStream}
-                  isStreaming={isStreaming}
-                  retryIsStreaming={retryIsStreaming}
-                  allCitations={allCitations}
-                  setIsAgenticMode={setIsAgenticMode}
-                  isAgenticMode={isAgenticMode}
-                  chatId={chatId}
-                  agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-                  isReasoningActive={isReasoningActive}
-                  setIsReasoningActive={setIsReasoningActive}
-                  user={user} // Pass user prop
-                />
-              </div>
-            )}
           </div>
           <Sources
             showSources={showSources}
