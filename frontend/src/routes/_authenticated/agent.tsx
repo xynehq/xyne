@@ -925,7 +925,7 @@ function AgentComponent() {
           })
           if (response.ok) {
             const data = await response.json()
-            // console.log("Fetched agent integration items:", data)
+
             const idToNameMapping: Record<string, { name: string; type: string }> = {};
 
             // Extract items and build ID to name mapping
@@ -937,40 +937,6 @@ function AgentComponent() {
                   
                   if (itemIds.length > 0) {
                     try {
-                      // Make Vespa call to get knowledge-base item details
-                      const vespaResponse = await api.search.$get({
-                        query: {
-                          query: itemIds.join(' OR '),
-                          app: "knowledge-base",
-                          isAgentIntegSearch: true
-                        }
-                      });
-                      
-                      if (vespaResponse.ok) {
-                        const vespaData = await vespaResponse.json();
-                        const vespaResults = vespaData.results || [];
-                        
-                        // Create a map of vespa results by docId for quick lookup
-                        const vespaResultsMap = new Map();
-                        vespaResults.forEach((result: any) => {
-                          if (result.docId) {
-                            vespaResultsMap.set(result.docId, result);
-                          }
-                        });
-                        
-                        // Map the items with their Vespa details
-                        items.forEach((item: any) => {
-                          const vespaResult = vespaResultsMap.get(item.id);
-                          const itemType = item.type || vespaResult?.type || "folder";
-                          const itemName = vespaResult?.title || vespaResult?.name || vespaResult?.fileName || item.name || "Unnamed";
-                          
-                          idToNameMapping[item.id] = {
-                            name: itemName,
-                            type: itemType
-                          };
-                        });
-                      } else {
-                        // Fallback to original item data if Vespa call fails
                         items.forEach((item: any) => {
                           const itemType = item.type || "folder";
                           idToNameMapping[item.id] = {
@@ -978,7 +944,7 @@ function AgentComponent() {
                             type: itemType
                           };
                         });
-                      }
+                      
                     } catch (vespaError) {
                       console.error("Failed to fetch knowledge-base item details from Vespa:", vespaError);
                       // Fallback to original item data
