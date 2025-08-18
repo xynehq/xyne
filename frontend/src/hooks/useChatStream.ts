@@ -116,6 +116,12 @@ const parseMessageInput = (htmlString: string) => {
             app: el.dataset.app,
             entity: entity,
             imgSrc: imgSrc,
+            wholeSheet:
+              el.dataset.wholeSheet === "true"
+                ? true
+                : el.dataset.wholeSheet === "false"
+                  ? false
+                  : undefined,
             threadId: el.dataset.threadId,
           },
         })
@@ -163,6 +169,39 @@ const notifySubscribers = (streamId: string) => {
   if (stream) {
     stream.subscribers.forEach((callback) => callback())
   }
+}
+
+export async function createAuthEventSource(url: string): Promise<EventSource> {
+  return new Promise((resolve, reject) => {
+    let triedRefresh = false
+
+    const make = () => {
+      const es = new EventSource(url, { withCredentials: true })
+
+      es.onopen = () => resolve(es)
+
+      es.onerror = async () => {
+        // es.close()
+
+        if (!triedRefresh) {
+          triedRefresh = true
+          // Attempt token refresh
+          const refresh = await fetch("/api/v1/refresh-token", {
+            method: "POST",
+            credentials: "include",
+          })
+          if (!refresh.ok) return reject(new Error("Token refresh failed"))
+
+          // Retry opening the stream
+          make()
+        } else {
+          reject(new Error("SSE connection failed after refresh"))
+        }
+      }
+    }
+
+    make()
+  })
 }
 
 // Start a new stream or continue existing one
@@ -237,9 +276,19 @@ export const startStream = async (
     url.searchParams.append("agentId", agentIdToUse)
   }
 
-  const eventSource = new EventSource(url.toString(), {
-    withCredentials: true,
-  })
+  // Create EventSource with auth handling
+  let eventSource: EventSource
+  try {
+    eventSource = await createAuthEventSource(url.toString())
+  } catch (err) {
+    console.error("Failed to create EventSource:", err)
+    toast({
+      title: "Failed to create EventSource",
+      description: "Failed to create EventSource",
+      variant: "destructive",
+    })
+    return
+  }
 
   const streamState: StreamState = {
     es: eventSource,
@@ -702,9 +751,18 @@ export const useChatStream = (
         )
       }
 
-      const eventSource = new EventSource(url.toString(), {
-        withCredentials: true,
-      })
+      let eventSource: EventSource
+      try {
+        eventSource = await createAuthEventSource(url.toString())
+      } catch (err) {
+        console.error("Failed to create EventSource:", err)
+        toast({
+          title: "Failed to create EventSource",
+          description: "Failed to create EventSource",
+          variant: "destructive",
+        })
+        return
+      }
 
       if (setRetryIsStreaming) {
         setRetryIsStreaming(true)

@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Apps } from "shared/types"
+import { Apps, UserRole } from "shared/types"
 import { LoaderContent } from "@/lib/common"
 import { OAuthIntegrationStatus } from "@/types"
 import { X } from "lucide-react"
@@ -23,6 +23,7 @@ interface OAuthTabProps {
   setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
   updateStatus: string
   handleDelete: () => void
+  userRole: UserRole
 }
 
 const OAuthTab = ({
@@ -31,6 +32,7 @@ const OAuthTab = ({
   setOAuthIntegrationStatus,
   updateStatus,
   handleDelete,
+  userRole,
 }: OAuthTabProps) => {
   const [modalState, setModalState] = useState<{
     open: boolean
@@ -66,6 +68,7 @@ const OAuthTab = ({
           onSuccess={() =>
             setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
           }
+          userRole={userRole}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>

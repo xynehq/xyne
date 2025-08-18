@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { authFetch } from "@/utils/authFetch"
 
 interface AttachmentPreviewProps {
   attachment: AttachmentMetadata
@@ -61,9 +62,12 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   const handleDownload = async () => {
     let url: string | null = null
     try {
-      const response = await fetch(`/api/v1/attachments/${attachment.fileId}`, {
-        credentials: "include",
-      })
+      const response = await authFetch(
+        `/api/v1/attachments/${attachment.fileId}`,
+        {
+          credentials: "include",
+        },
+      )
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error("Please log in to download attachments")

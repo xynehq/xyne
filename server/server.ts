@@ -9,10 +9,14 @@ import {
   chatRenameSchema,
   chatTraceSchema,
   chatSchema,
+  followUpQuestionsSchema,
+  dashboardDataSchema,
+  sharedAgentUsageSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
   chatStopSchema,
+  SearchSlackChannels,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -50,19 +54,36 @@ import {
   IngestMoreChannelApi,
   StartSlackIngestionApi,
   GetProviders,
+  GetAdminChats,
+  GetAdminAgents,
+  GetAdminUsers,
+  GetUserAgentLeaderboard,
+  GetAgentAnalysis,
+  GetAgentFeedbackMessages,
+  GetAgentUserFeedbackMessages,
+  GetAllUserFeedbackMessages,
+  adminQuerySchema,
+  userAgentLeaderboardQuerySchema,
+  agentAnalysisQuerySchema,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
-import { jwt } from "hono/jwt"
+import { jwt, verify } from "hono/jwt"
 import type { JwtVariables } from "hono/jwt"
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
-import { createUser, getUserByEmail } from "@/db/user"
+import {
+  createUser,
+  deleteRefreshTokenFromDB,
+  getPublicUserAndWorkspaceByEmail,
+  getUserByEmail,
+  saveRefreshTokenToDB,
+} from "@/db/user"
 import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
@@ -87,12 +108,16 @@ import {
   ChatFavoritesApi,
   ChatHistory,
   ChatRenameApi,
+  DashboardDataApi,
+  SharedAgentUsageApi,
   GetChatApi,
   MessageApi,
   MessageFeedbackApi,
+  EnhancedMessageFeedbackApi,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
+  GenerateFollowUpQuestionsApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -123,6 +148,7 @@ import {
   DeleteAgentApi,
   GetWorkspaceUsersApi,
   GetAgentPermissionsApi,
+  GetAgentIntegrationItemsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -137,14 +163,31 @@ import {
   handleThumbnailServe,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
-import { messageFeedbackSchema } from "@/api/chat/types"
+import {
+  messageFeedbackSchema,
+  enhancedMessageFeedbackSchema,
+} from "@/api/chat/types"
+
+import {
+  CreateCollectionApi,
+  ListCollectionsApi,
+  GetCollectionApi,
+  UpdateCollectionApi,
+  DeleteCollectionApi,
+  ListCollectionItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+} from "@/api/knowledgeBase"
 
 import {
   isSlackEnabled,
   startSocketMode,
   getSocketModeStatus,
 } from "@/integrations/slack/client"
-
+const { JwtPayloadKey } = config
 // Import Vespa proxy handlers
 import {
   validateApiKey,
@@ -165,6 +208,7 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
+import type { PublicUserWorkspace } from "./db/schema"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -187,9 +231,11 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 const postOauthRedirect = config.postOauthRedirect
 
-const jwtSecret = process.env.JWT_SECRET!
+const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
+const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 
-const CookieName = "auth-token"
+const AccessTokenCookieName = "access-token"
+const RefreshTokenCookieName = "refresh-token"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -197,17 +243,38 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
+const internalMetricRouter = new Hono<{ Variables: Variables }>()
+
 const AuthMiddleware = jwt({
-  secret: jwtSecret,
-  cookie: CookieName,
+  secret: accessTokenSecret,
+  cookie: AccessTokenCookieName,
 })
+
+// Middleware to check if user has admin or superAdmin role
+const AdminRoleMiddleware = async (c: Context, next: Next) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const user = await getUserByEmail(db, sub)
+  if (!user.length) {
+    throw new HTTPException(403, {
+      message: `Access denied. user with email ${sub} does not exist.`,
+    })
+  }
+  const userRole = user[0].role
+  if (userRole !== UserRole.Admin && userRole !== UserRole.SuperAdmin) {
+    throw new HTTPException(403, {
+      message: "Access denied. Admin privileges required.",
+    })
+  }
+
+  await next()
+}
 
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
 // If there is token, verify it is valid or not
 // Redirect to auth page if no token or invalid token
 const AuthRedirect = async (c: Context, next: Next) => {
-  const authToken = getCookie(c, CookieName)
+  const authToken = getCookie(c, AccessTokenCookieName)
 
   // If no auth token is found
   if (!authToken) {
@@ -258,14 +325,48 @@ export const WsApp = app.get(
   }),
 )
 
-const LogOut = async (c: Context) => {
-  deleteCookieByEnv(c, CookieName, {
+const clearCookies = (c: Context) => {
+  const opts = {
     secure: true,
     path: "/",
     httpOnly: true,
-  })
-  Logger.info("Cookie deleted, logged out")
-  return c.json({ ok: true })
+  }
+  deleteCookieByEnv(c, AccessTokenCookieName, opts)
+  deleteCookieByEnv(c, RefreshTokenCookieName, opts)
+  Logger.info("Cookies deleted")
+}
+
+const LogOut = async (c: Context) => {
+  const accessToken = getCookie(c, AccessTokenCookieName)
+  const refreshToken = getCookie(c, RefreshTokenCookieName)
+
+  if (!accessToken || !refreshToken) {
+    Logger.warn("No tokens found during logout")
+    clearCookies(c)
+    return c.redirect(`/auth`)
+  }
+
+  try {
+    const { payload } = await verify(refreshToken, refreshTokenSecret)
+    const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+    const email = sub
+    const userAndWorkspace: PublicUserWorkspace =
+      await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+    const existingUser = userAndWorkspace?.user
+    if (existingUser) {
+      await deleteRefreshTokenFromDB(db, existingUser.email)
+      Logger.info("Deleted refresh token from DB")
+    } else {
+      Logger.warn("User not found during logout")
+    }
+  } catch (err) {
+    Logger.error("Error during logout token verify or DB operation", err)
+  } finally {
+    clearCookies(c)
+    Logger.info("Logged out, redirecting to /auth")
+    return c.redirect(`/auth`)
+  }
 }
 
 // Update Metrics From Script
@@ -318,10 +419,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     blockedPdfs,
   })
 }
-const updateApp = new Hono()
 
-updateApp.post("/update-metrics", handleUpdatedMetrics)
-app.route("/", updateApp)
+internalMetricRouter.post("/update-metrics", handleUpdatedMetrics)
 
 // App validatione endpoint
 
@@ -388,14 +487,24 @@ const handleAppValidation = async (c: Context) => {
     )
     const existingUser = existingUserRes[0]
     const workspaceId = existingUser.workspaceExternalId
-    const jwtToken = await generateToken(
-      existingUser.email,
-      existingUser.role,
-      existingUser.workspaceExternalId,
+
+    const accessToken = await generateTokens(
+      user.email,
+      user.role,
+      user.workspaceExternalId,
     )
+    const refreshToken = await generateTokens(
+      user.email,
+      user.role,
+      user.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
 
     return c.json({
-      jwt_token: jwtToken,
+      access_token: accessToken,
+      refresh_token: refreshToken,
       workspace_id: workspaceId,
     })
   }
@@ -409,9 +518,153 @@ const handleAppValidation = async (c: Context) => {
   )
 }
 
+const handleAppRefreshToken = async (c: Context) => {
+  let body
+  try {
+    body = await c.req.json()
+  } catch {
+    Logger.warn("Failed to parse JSON body")
+    return c.json({ msg: "Invalid request" }, 400)
+  }
+
+  const refreshToken =
+    typeof body.refreshToken === "string" ? body.refreshToken : undefined
+
+  if (!refreshToken) {
+    Logger.warn("No refresh token provided")
+    return c.json({ msg: "Missing refresh token" }, 401)
+  }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = await verify(refreshToken, refreshTokenSecret)
+  } catch (err) {
+    Logger.warn("Invalid or expired refresh token", err)
+    return c.json({ msg: "Invalid or expired refresh token" }, 401)
+  }
+
+  const { sub: email, workspaceId } = payload as {
+    sub: string
+    workspaceId: string
+  }
+
+  const uw = await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+  if (!uw?.user || !uw?.workspace) {
+    Logger.warn("No user/workspace for token payload", { email, workspaceId })
+    return c.json({ msg: "Unauthorized" }, 401)
+  }
+  const existingUser = uw.user
+
+  if (existingUser.refreshToken !== refreshToken) {
+    Logger.warn("Refresh token mismatch", { email })
+    return c.json({ msg: "Unauthorized" }, 401)
+  }
+
+  try {
+    const newAccessToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+    const newRefreshToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+      true,
+    )
+
+    await saveRefreshTokenToDB(db, existingUser.email, newRefreshToken)
+    Logger.info("Mobile tokens refreshed", { email })
+    return c.json(
+      {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      },
+      200,
+    )
+  } catch (err) {
+    Logger.error("Error generating tokens", err)
+    return c.json({ msg: "Internal server error" }, 500)
+  }
+}
+
+const getNewAccessRefreshToken = async (c: Context) => {
+  const refreshToken = getCookie(c, RefreshTokenCookieName)
+
+  const clearAndRedirect = () => {
+    clearCookies(c)
+    Logger.warn("Cleared tokens and redirecting to /auth")
+    return c.redirect(`/auth`)
+  }
+
+  if (!refreshToken) {
+    Logger.warn("No refresh token found")
+    return clearAndRedirect()
+  }
+
+  let payload
+  try {
+    payload = await verify(refreshToken, refreshTokenSecret)
+  } catch (err) {
+    Logger.warn("Failed to verify refresh token", err)
+    return clearAndRedirect()
+  }
+
+  const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+  const email = sub
+  const userAndWorkspace: PublicUserWorkspace =
+    await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+  const existingUser = userAndWorkspace?.user
+  const existingWorkspace = userAndWorkspace?.workspace
+
+  if (!existingUser || !existingWorkspace) {
+    Logger.warn("User or workspace not found for refresh token")
+    return clearAndRedirect()
+  }
+
+  // Check if the refresh token matches the one in DB
+  if (existingUser.refreshToken !== refreshToken) {
+    Logger.warn("Refresh token does not match DB")
+    return clearAndRedirect()
+  }
+
+  try {
+    const newAccessToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+    )
+    const newRefreshToken = await generateTokens(
+      existingUser.email,
+      existingUser.role,
+      existingUser.workspaceExternalId,
+      true,
+    )
+    // Save new refresh token in DB
+    await saveRefreshTokenToDB(db, email, newRefreshToken)
+    const opts = {
+      secure: true,
+      path: "/",
+      httpOnly: true,
+    }
+    setCookieByEnv(c, AccessTokenCookieName, newAccessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, newRefreshToken, opts)
+    Logger.info("Both tokens refreshed successfully")
+    return c.json({
+      msg: "Access Token refreshed",
+    })
+  } catch (err) {
+    Logger.error("Error generating new tokens", err)
+    return clearAndRedirect()
+  }
+}
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
+  .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
+  .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -438,7 +691,22 @@ export const AppRoutes = app
     zValidator("query", chatHistorySchema),
     ChatFavoritesApi,
   )
+  .get(
+    "/chat/dashboard-data",
+    zValidator("query", dashboardDataSchema),
+    DashboardDataApi,
+  )
+  .get(
+    "/chat/shared-agent-usage",
+    zValidator("query", sharedAgentUsageSchema),
+    SharedAgentUsageApi,
+  )
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+  .post(
+    "/chat/followup-questions",
+    zValidator("json", followUpQuestionsSchema),
+    GenerateFollowUpQuestionsApi,
+  )
   // Shared chat routes
   .post(
     "/chat/share/create",
@@ -477,7 +745,17 @@ export const AppRoutes = app
     zValidator("json", messageFeedbackSchema),
     MessageFeedbackApi,
   )
+  .post(
+    "/message/feedback/enhanced",
+    zValidator("json", enhancedMessageFeedbackSchema),
+    EnhancedMessageFeedbackApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
+  .get(
+    "/search/slack-channels",
+    zValidator("query", searchSchema),
+    SearchSlackChannels,
+  )
   .get("/me", GetUserWorkspaceInfo)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
@@ -506,6 +784,7 @@ export const AppRoutes = app
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
+  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
@@ -518,11 +797,84 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+
+  // Collection Routes
+  .post("/cl", CreateCollectionApi)
+  .get("/cl", ListCollectionsApi)
+  .get("/cl/:clId", GetCollectionApi)
+  .put("/cl/:clId", UpdateCollectionApi)
+  .delete("/cl/:clId", DeleteCollectionApi)
+  .get("/cl/:clId/items", ListCollectionItemsApi)
+  .post("/cl/:clId/items/folder", CreateFolderApi)
+  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
+  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+
+  .post(
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
+
   // Admin Routes
   .basePath("/admin")
+  .use("*", AdminRoleMiddleware)
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
+  .post(
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
+
   .post(
     "/service_account",
     zValidator("form", addServiceConnectionSchema),
@@ -534,25 +886,6 @@ export const AppRoutes = app
     ServiceAccountIngestMoreUsersApi,
   )
   // create the provider + connector
-  .post(
-    "/oauth/create",
-    zValidator("form", createOAuthProvider),
-    CreateOAuthProvider,
-  )
-  .post(
-    "/slack/ingest_more_channel",
-    async (c, next) => {
-      console.log("i am ")
-      await next()
-    },
-    zValidator("json", ingestMoreChannelSchema),
-    IngestMoreChannelApi,
-  )
-  .post(
-    "/slack/start_ingestion",
-    zValidator("json", startSlackIngestionSchema),
-    StartSlackIngestionApi,
-  )
   .post(
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
@@ -568,23 +901,15 @@ export const AppRoutes = app
     zValidator("form", addStdioMCPConnectorSchema),
     AddStdioMCPConnector,
   )
-  .get("/connectors/all", GetConnectors)
+
   .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
-  .post(
-    "/connector/update_status",
-    zValidator("form", updateConnectorStatusSchema),
-    UpdateConnectorStatus,
-  )
+
   .delete(
     "/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteConnector,
   )
-  .delete(
-    "/oauth/connector/delete",
-    zValidator("form", deleteConnectorSchema),
-    DeleteOauthConnector,
-  )
+
   .post(
     // Added route for updating tool statuses
     "/tools/update_status",
@@ -596,7 +921,41 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
-  .get("/oauth/global-slack-provider", GetProviders)
+
+  // Admin Dashboard Routes
+  .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
+  .get("/agents", GetAdminAgents)
+  .get("/users", GetAdminUsers)
+  .get(
+    "/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
+  .get(
+    "/users/:userId/agent-leaderboard",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetUserAgentLeaderboard,
+  )
+  .get(
+    "/agents/:agentId/analysis",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentAnalysis,
+  )
+  .get(
+    "/agents/:agentId/feedback",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentFeedbackMessages,
+  )
+  .get(
+    "/agents/:agentId/user-feedback/:userId",
+    zValidator("query", agentAnalysisQuerySchema),
+    GetAgentUserFeedbackMessages,
+  )
+  .get(
+    "/admin/users/:userId/feedback",
+    zValidator("query", userAgentLeaderboardQuerySchema),
+    GetAllUserFeedbackMessages,
+  )
 
 // Vespa Proxy Routes (for production server proxying)
 app
@@ -645,28 +1004,31 @@ app.get(
   StartOAuth,
 )
 
-const generateToken = async (
+const generateTokens = async (
   email: string,
   role: string,
   workspaceId: string,
+  forRefreshToken: boolean = false,
 ) => {
-  Logger.info(
-    {
-      tokenInfo: {
-        // email: email,
+  const payload = forRefreshToken
+    ? {
+        sub: email,
         role: role,
         workspaceId,
-      },
-    },
-    "generating token for the following",
+        tokenType: "refresh",
+        exp: Math.floor(Date.now() / 1000) + config.RefreshTokenTTL,
+      }
+    : {
+        sub: email,
+        role: role,
+        workspaceId,
+        tokenType: "access",
+        exp: Math.floor(Date.now() / 1000) + config.AccessTokenTTL,
+      }
+  const jwtToken = await sign(
+    payload,
+    forRefreshToken ? refreshTokenSecret : accessTokenSecret,
   )
-  const payload = {
-    sub: email,
-    role: role,
-    workspaceId,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60, // Token expires in 2 months
-  }
-  const jwtToken = await sign(payload, jwtSecret)
   return jwtToken
 }
 // we won't allow user to reach the login page if they are already logged in
@@ -725,16 +1087,26 @@ app.get(
         "User found and authenticated",
       )
       const existingUser = existingUserRes[0]
-      const jwtToken = await generateToken(
+      const accessToken = await generateTokens(
         existingUser.email,
         existingUser.role,
         existingUser.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken, {
+      const refreshToken = await generateTokens(
+        existingUser.email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const opts = {
         secure: true,
         path: "/",
         httpOnly: true,
-      })
+      }
+      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
       return c.redirect(postOauthRedirect)
     }
 
@@ -753,16 +1125,26 @@ app.get(
         UserRole.User,
         existingWorkspace.externalId,
       )
-      const jwtToken = await generateToken(
+      const accessToken = await generateTokens(
         user.email,
         user.role,
         user.workspaceExternalId,
       )
-      setCookieByEnv(c, CookieName, jwtToken, {
+      const refreshToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const opts = {
         secure: true,
         path: "/",
         httpOnly: true,
-      })
+      }
+      setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+      setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
       return c.redirect(postOauthRedirect)
     }
 
@@ -784,16 +1166,26 @@ app.get(
       return user
     })
 
-    const jwtToken = await generateToken(
+    const accessToken = await generateTokens(
       userAcc.email,
       userAcc.role,
       userAcc.workspaceExternalId,
     )
-    setCookieByEnv(c, CookieName, jwtToken, {
+    const refreshToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const opts = {
       secure: true,
       path: "/",
       httpOnly: true,
-    })
+    }
+    setCookieByEnv(c, AccessTokenCookieName, accessToken, opts)
+    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, opts)
     return c.redirect(postOauthRedirect)
   },
 )
@@ -811,6 +1203,8 @@ app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
@@ -886,6 +1280,16 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledge-base",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()
@@ -908,7 +1312,7 @@ export const init = async () => {
   }
 }
 
-app.get("/metrics", async (c) => {
+internalMetricRouter.get("/metrics", async (c) => {
   try {
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
@@ -940,6 +1344,15 @@ const server = Bun.serve({
   development: true,
   error: errorHandler,
 })
+
+const metricServer = Bun.serve({
+  fetch: internalMetricRouter.fetch,
+  port: config.metricsPort, // new port from config
+  idleTimeout: 180,
+  development: true,
+  error: errorHandler,
+})
+
 Logger.info(`listening on port: ${config.port}`)
 
 const errorEvents: string[] = [

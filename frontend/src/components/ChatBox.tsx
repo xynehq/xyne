@@ -73,6 +73,7 @@ import {
   createImagePreview,
   cleanupPreviewUrls,
 } from "@/utils/fileUtils"
+import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
   file: File
@@ -320,6 +321,80 @@ export const ChatBox = ({
     "citations",
   )
   const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
+
+  // Unified function to enhance Google Sheets items with dummy "whole sheet" options
+  const enhanceGoogleSheetsResults = useCallback(
+    <
+      T extends {
+        app?: string
+        entity?: string
+        docId: string
+        title?: string
+        name?: string
+        subject?: string
+        filename?: string
+      },
+    >(
+      items: T[],
+    ): (T & { isWholeSheetDummy?: boolean })[] => {
+      const enhanced: (T & { isWholeSheetDummy?: boolean })[] = []
+      const seenWholeSheets = new Set<string>()
+
+      items.forEach((item) => {
+        // If this is a Google Sheet with a specific tab (contains " / " in title)
+        const isGoogleSheet =
+          item.app === Apps.GoogleDrive && item.entity === DriveEntity.Sheets
+        if (isGoogleSheet) {
+          const displayTitle =
+            item.title ||
+            item.name ||
+            item.subject ||
+            item.filename ||
+            "Untitled"
+          const isSpecificSheetTab = displayTitle.includes(" / ")
+
+          if (isSpecificSheetTab) {
+            // Extract the spreadsheet name (before " / ")
+            const sheetName = displayTitle.split(" / ")[0]
+
+            // Extract the base docId (remove the "_X" suffix)
+            const baseDocId = item.docId.replace(/_\d+$/, "")
+
+            // Only add the whole sheet dummy if we haven't seen this spreadsheet yet
+            if (!seenWholeSheets.has(baseDocId)) {
+              seenWholeSheets.add(baseDocId)
+
+              // Create a dummy item for the whole sheet and add it BEFORE the specific tab
+              const wholeSheetItem: T & { isWholeSheetDummy?: boolean } = {
+                ...item,
+                docId: baseDocId,
+                title: sheetName,
+                ...(item.name !== undefined && { name: sheetName }),
+                isWholeSheetDummy: true,
+              }
+
+              // Insert the whole sheet option BEFORE the current item
+              enhanced.push(wholeSheetItem)
+            }
+          }
+        }
+
+        // Add the original item after checking for whole sheet
+        enhanced.push(item)
+      })
+
+      return enhanced
+    },
+    [],
+  )
+
+  // Create enhanced results that include dummy "whole sheet" options for specific sheet tabs
+  const enhancedGlobalResults: (SearchResult & {
+    isWholeSheetDummy?: boolean
+  })[] = useMemo(() => {
+    return enhanceGoogleSheetsResults(globalResults)
+  }, [globalResults, enhanceGoogleSheetsResults])
+
   const [selectedRefIndex, setSelectedRefIndex] = useState(-1)
   const [selectedSources, setSelectedSources] = useState<
     Record<string, boolean>
@@ -449,7 +524,7 @@ export const ChatBox = ({
           formData.append("attachment", selectedFile.file)
 
           // Use the new attachment upload endpoint
-          const response = await fetch("/api/v1/files/upload-attachment", {
+          const response = await authFetch("/api/v1/files/upload-attachment", {
             method: "POST",
             body: formData,
           })
@@ -715,9 +790,16 @@ export const ChatBox = ({
     const loadInitialData = async () => {
       let processedConnectors: FetchedConnector[] = []
       try {
-        const response = await api.admin.connectors.all.$get(undefined, {
-          credentials: "include",
-        })
+        // Role-based API routing
+        const isAdmin = role === UserRole.Admin || role === UserRole.SuperAdmin
+
+        const response = isAdmin
+          ? await api.admin.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
+          : await api.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
         const data = await response.json()
         if (Array.isArray(data)) {
           processedConnectors = data.map((conn: any) => ({
@@ -749,7 +831,7 @@ export const ChatBox = ({
     }
 
     loadInitialData()
-  }, []) // Empty dependency array ensures this runs once on mount
+  }, [role]) // Added role dependency
 
   // useEffect to save selected MCP connector ID
   useEffect(() => {
@@ -936,6 +1018,13 @@ export const ChatBox = ({
     activeAtMentionIndex,
   ])
 
+  // Create enhanced citations that include dummy "whole sheet" options for specific sheet tabs
+  const enhancedDisplayedCitations: (Citation & {
+    isWholeSheetDummy?: boolean
+  })[] = useMemo(() => {
+    return enhanceGoogleSheetsResults(displayedCitations)
+  }, [displayedCitations, enhanceGoogleSheetsResults])
+
   const fetchResults = async (
     searchTermForFetch: string,
     pageToFetch: number,
@@ -1062,7 +1151,7 @@ export const ChatBox = ({
     }
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
+      searchMode === "citations" ? enhancedDisplayedCitations : globalResults
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
@@ -1072,7 +1161,7 @@ export const ChatBox = ({
     } else {
       const currentMaxIndex =
         searchMode === "citations"
-          ? displayedCitations.length - 1
+          ? enhancedDisplayedCitations.length - 1
           : canLoadMore
             ? globalResults.length
             : globalResults.length - 1
@@ -1082,7 +1171,7 @@ export const ChatBox = ({
     }
   }, [
     searchMode,
-    displayedCitations,
+    enhancedDisplayedCitations,
     globalResults,
     showReferenceBox,
     totalCount,
@@ -1141,7 +1230,10 @@ export const ChatBox = ({
   // Helper function to parse content and preserve existing pills as spans - THIS WILL BE REPLACED/REMOVED
   // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
-  const handleAddReference = (citation: Citation) => {
+  const handleAddReference = (
+    citation: Citation & { isWholeSheetDummy?: boolean },
+  ) => {
+    // Handle DataSource navigation
     if (
       citation.app === Apps.DataSource &&
       citation.entity === DataSourceEntity.DataSourceFile
@@ -1152,6 +1244,23 @@ export const ChatBox = ({
     }
 
     const docId = citation.docId
+
+    // Check if this is a Google Sheet and determine wholeSheet property
+    const isGoogleSheet =
+      citation.app === Apps.GoogleDrive &&
+      citation.entity === DriveEntity.Sheets
+    let wholeSheet: boolean | undefined = undefined
+
+    if (isGoogleSheet) {
+      if (citation.isWholeSheetDummy) {
+        wholeSheet = true
+      } else if (citation.title.includes(" / ")) {
+        wholeSheet = false
+      } else {
+        wholeSheet = true // Default for regular sheets
+      }
+    }
+
     const newRef: Reference = {
       id: docId,
       docId: docId,
@@ -1160,6 +1269,7 @@ export const ChatBox = ({
       app: citation.app,
       entity: citation.entity,
       type: "citation",
+      wholeSheet: wholeSheet,
       threadId: (citation as any).threadId, // Add threadId if available
     }
 
@@ -1229,7 +1339,9 @@ export const ChatBox = ({
     setSelectedRefIndex(-1)
   }
 
-  const handleSelectGlobalResult = (result: SearchResult) => {
+  const handleSelectGlobalResult = (
+    result: SearchResult & { isWholeSheetDummy?: boolean },
+  ) => {
     let resultUrl = result.url
     if (!resultUrl && result.app === Apps.Gmail) {
       const identifier = result.threadId || result.docId
@@ -1265,18 +1377,61 @@ export const ChatBox = ({
       return
     }
 
-    const newRef: Reference = {
-      id: refId,
-      title: displayTitle,
-      url: resultUrl,
-      docId: result.docId,
-      mailId: result.mailId,
-      threadId: result.threadId, // Add threadId from result
-      app: result.app,
-      entity: result.entity,
-      type: "global",
-      photoLink: result.photoLink,
-      userMap: result.userMap, // Ensure userMap is passed
+    // Check if this is a Google Sheet with a specific tab (contains " / " in title)
+    const isGoogleSheet =
+      result.app === Apps.GoogleDrive && result.entity === DriveEntity.Sheets
+    const isSpecificSheetTab =
+      isGoogleSheet && displayTitle.includes(" / ") && !result.isWholeSheetDummy
+    const isWholeSheetDummy = result.isWholeSheetDummy || false
+
+    let newRef: Reference
+
+    if (isSpecificSheetTab) {
+      // For specific sheet tabs, create the reference with wholeSheet: false
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        app: result.app,
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: false,
+      }
+    } else if (isWholeSheetDummy) {
+      // For whole sheet dummy results, create reference with wholeSheet: true
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        app: result.app,
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: true,
+      }
+    } else {
+      // For all other types, create normal reference
+      newRef = {
+        id: refId,
+        title: displayTitle,
+        url: resultUrl,
+        docId: result.docId,
+        mailId: result.mailId,
+        threadId: result.threadId, // Add threadId from result
+        app: result.app,
+        entity: result.entity,
+        type: "global",
+        photoLink: result.photoLink,
+        userMap: result.userMap,
+        wholeSheet: isGoogleSheet ? true : undefined,
+      }
     }
 
     const input = inputRef.current
@@ -1346,13 +1501,15 @@ export const ChatBox = ({
     if (!showReferenceBox) return
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
+      searchMode === "citations"
+        ? enhancedDisplayedCitations
+        : enhancedGlobalResults
     const totalItemsCount = items.length
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
       !isGlobalLoading
-    const loadMoreIndex = globalResults.length
+    const loadMoreIndex = enhancedGlobalResults.length
 
     if (e.key === "ArrowDown") {
       e.preventDefault()
@@ -1372,12 +1529,12 @@ export const ChatBox = ({
       e.preventDefault()
       if (selectedRefIndex >= 0 && selectedRefIndex < totalItemsCount) {
         if (searchMode === "citations") {
-          if (displayedCitations[selectedRefIndex]) {
-            handleAddReference(displayedCitations[selectedRefIndex])
+          if (enhancedDisplayedCitations[selectedRefIndex]) {
+            handleAddReference(enhancedDisplayedCitations[selectedRefIndex])
           }
         } else {
-          if (globalResults[selectedRefIndex]) {
-            handleSelectGlobalResult(globalResults[selectedRefIndex])
+          if (enhancedGlobalResults[selectedRefIndex]) {
+            handleSelectGlobalResult(enhancedGlobalResults[selectedRefIndex])
           }
         }
       } else if (
@@ -1533,7 +1690,6 @@ export const ChatBox = ({
     })
 
     htmlMessage = tempDiv.innerHTML
-
     handleSend(
       htmlMessage,
       attachmentsMetadata,
@@ -1653,46 +1809,53 @@ export const ChatBox = ({
           >
             {searchMode === "citations" && activeAtMentionIndex !== -1 && (
               <>
-                {displayedCitations.length > 0 ? (
+                {enhancedDisplayedCitations.length > 0 ? (
                   <>
-                    {displayedCitations.map((citation: Citation, index) => {
-                      const citationApp = (citation as any).app
-                      const citationEntity = (citation as any).entity
-                      return (
-                        <div
-                          key={citation?.docId}
-                          ref={(el) => (referenceItemsRef.current[index] = el)}
-                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
-                            index === selectedRefIndex
-                              ? "bg-[#EDF2F7] dark:bg-slate-700"
-                              : ""
-                          }`}
-                          onClick={() => handleAddReference(citation)}
-                          onMouseEnter={() => setSelectedRefIndex(index)}
-                        >
-                          <div className="flex items-center gap-2">
-                            {citationApp && citationEntity ? (
-                              getIcon(citationApp, citationEntity, {
-                                w: 16,
-                                h: 16,
-                                mr: 0,
-                              })
-                            ) : (
-                              <Link
-                                size={16}
-                                className="text-gray-400 dark:text-gray-500"
-                              />
-                            )}
-                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                              {citation.title || citation.name}
+                    {enhancedDisplayedCitations.map(
+                      (
+                        citation: Citation & { isWholeSheetDummy?: boolean },
+                        index,
+                      ) => {
+                        const citationApp = (citation as any).app
+                        const citationEntity = (citation as any).entity
+                        return (
+                          <div
+                            key={citation?.docId}
+                            ref={(el) =>
+                              (referenceItemsRef.current[index] = el)
+                            }
+                            className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                              index === selectedRefIndex
+                                ? "bg-[#EDF2F7] dark:bg-slate-700"
+                                : ""
+                            }`}
+                            onClick={() => handleAddReference(citation)}
+                            onMouseEnter={() => setSelectedRefIndex(index)}
+                          >
+                            <div className="flex items-center gap-2">
+                              {citationApp && citationEntity ? (
+                                getIcon(citationApp, citationEntity, {
+                                  w: 16,
+                                  h: 16,
+                                  mr: 0,
+                                })
+                              ) : (
+                                <Link
+                                  size={16}
+                                  className="text-gray-400 dark:text-gray-500"
+                                />
+                              )}
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {citation.title || citation.name}
+                              </p>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
+                              {citation.url}
                             </p>
                           </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
-                            {citation.url}
-                          </p>
-                        </div>
-                      )
-                    })}
+                        )
+                      },
+                    )}
                   </>
                 ) : derivedReferenceSearch.length > 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
@@ -1739,7 +1902,7 @@ export const ChatBox = ({
                     </p>
                   )}
                 {globalResults.length > 0 &&
-                  globalResults.map((result, index) => {
+                  enhancedGlobalResults.map((result, index) => {
                     const displayTitle =
                       result.text ||
                       result.name ||
@@ -1800,13 +1963,15 @@ export const ChatBox = ({
                   globalResults.length < totalCount && (
                     <button
                       ref={(el) =>
-                        (referenceItemsRef.current[globalResults.length] = el)
+                        (referenceItemsRef.current[
+                          enhancedGlobalResults.length
+                        ] = el)
                       }
                       onClick={handleLoadMore}
-                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
+                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === enhancedGlobalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
                       disabled={isGlobalLoading}
                       onMouseEnter={() =>
-                        setSelectedRefIndex(globalResults.length)
+                        setSelectedRefIndex(enhancedGlobalResults.length)
                       }
                     >
                       {isGlobalLoading

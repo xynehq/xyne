@@ -45,6 +45,7 @@ import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { errorComponent } from "@/components/error"
 import { LoaderContent } from "@/lib/common"
+import { createAuthEventSource } from "@/hooks/useChatStream"
 
 const logger = console
 
@@ -262,9 +263,13 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
       url.searchParams.append("lastUpdated", newFilter.lastUpdated)
     }
 
-    const eventSource = new EventSource(url.toString(), {
-      withCredentials: true,
-    })
+    let eventSource: EventSource
+    try {
+      eventSource = await createAuthEventSource(url.toString())
+    } catch (err) {
+      console.error("Failed to create EventSource:", err)
+      return
+    }
 
     eventSource.addEventListener(AnswerSSEvents.AnswerUpdate, (event) => {
       const chunk = event.data

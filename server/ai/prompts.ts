@@ -441,6 +441,63 @@ If information is missing, unclear, or the query lacks context:
 
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
+export const generateFollowUpQuestionsSystemPrompt = (
+  userContext: string,
+) => `You are an assistant for an AI-powered workspace data retrieval system. Generate 3 concise, relevant follow-up questions based on the user's conversation history with the data search system.
+
+**Context of the user:** ${userContext}
+
+**System Context:** This is a workplace data search system with access to:
+- Files (documents, spreadsheets, presentations)
+- Emails and email metadata
+- Calendar events and meetings
+- User profiles and contacts
+- Slack messages and workspace data
+
+**Guidelines for Follow-up Questions:**
+1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
+2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for
+3. **Conversational**: Make questions sound like how users would naturally ask (e.g., "what emails did I get from..." instead of "emails from...")
+4. **Immediately Actionable**: Each question should be a complete search query ready to execute
+5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic
+6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
+
+**Question Categories to Generate:**
+- Related people searches: "what documents did John Smith share recently?"
+- Temporal searches: "what are the latest project updates this week?"
+- Related content searches: "show me budget reports from Q4"
+- Email searches: "what emails did I get from the marketing team?"
+- Meeting searches: "what meetings did we have about product launch?"
+- File searches: "what presentations did Sarah create?"
+- Status searches: "what are the deadline updates from January?"
+
+**Response Format:**
+Return exactly 3 follow-up questions in a JSON array format:
+{
+  "followUpQuestions": [
+    "Specific search query users can click",
+    "Another direct search query", 
+    "Third actionable search query"
+  ]
+}
+
+**Example Good Questions (Direct Search Queries):**
+- "What emails did I receive from the project team recently?"
+- "Show me budget documents from this quarter"
+- "What meeting notes do we have about the product roadmap?"
+- "What files has the engineering team shared?"
+- "What status updates came in last week?"
+- "What presentations were made about Q4 goals?"
+
+**Example BAD Questions (Meta Questions - AVOID):**
+- "What specific type of workspace data do you need?"
+- "Can I help you search for recent files or emails?"
+- "Would you like to explore your calendar or contacts?"
+
+**CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
+
+Do not include explanatory text outside the JSON structure.`
+
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -1155,13 +1212,12 @@ export const searchQueryPrompt = (userContext: string): string => {
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring to a single <app> or <entity> and wants to retrieve specific items based on PRECISE METADATA
-      - ONLY use this when you have EXACT identifiers like:
-        - Complete email addresses (e.g., "emails from john@company.com")
-        - Exact user IDs or precise metadata that can be matched exactly
-      - DO NOT use this for person names without email addresses or without exact identifiers. 
-      - This should be called only when you think the tags or metadata can be used for running the YQL/SQL query to get the items.
-      - This is for PRECISE metadata filtering, not content search
+      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
+      - This can be only classified when <app> and <entity> present
+      - Example Queries:
+        - "Show me all emails from last week."
+        - "List all Google Docs modified in October."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
@@ -1171,9 +1227,9 @@ export const searchQueryPrompt = (userContext: string): string => {
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
-            "intent": <intent object with EXACT metadata like complete email addresses>
           }
         }
+
 
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring to a single <app> or <entity> and wants to search content
@@ -1255,23 +1311,35 @@ export const searchQueryPrompt = (userContext: string): string => {
         
         **CRITICAL RULES for Intent Extraction:**
         - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - DO NOT extract intent for queries with only person names: "emails from John", "messages from Sarah", "emails from prateek"
-        - ONLY extract intent when there are ACTUAL EMAIL ADDRESSES like:
-          - Specific email addresses: "emails from john@company.com", "messages from user@domain.com"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
           - Specific subjects: "emails with subject 'meeting'"
-        - If the query contains only person names without email addresses, return empty intent object: {}
         - If the query is asking for ALL items without specific criteria, return empty intent object: {}
         
-        **Email Address Detection Rules:**
-        - ONLY detect valid email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
-        - DO NOT extract person names - these are NOT email addresses
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
         - Extract from phrases like:
           - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
           - "messages from [user@company.com]" → add [user@company.com] to "from" array  
           - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
           - "sent to [team@company.com]" → add [team@company.com] to "to" array
-        - If query contains email addresses but no clear direction indicator, default to "from" array
-        - If query contains only names without @ symbols, DO NOT extract any intent
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
         
         For other apps/entities:
         - Currently no specific intent fields defined
@@ -1926,6 +1994,71 @@ export const synthesisContextPrompt = (
     "synthesisState": "${ContextSysthesisState.Complete}" | "${ContextSysthesisState.Partial}" | "${ContextSysthesisState.NotFound}",
     "answer": "Brief, synthesized answer based only on the context"
   }
+`
+}
+
+// Name-to-Email Resolution Prompt
+// This prompt is used to resolve person names to email addresses using search results from user directory
+export const nameToEmailResolutionPrompt = (
+  userContext: string,
+  searchResults: string,
+  names: string,
+  intent?: { from?: string[]; to?: string[]; cc?: string[]; bcc?: string[] },
+) => {
+  const intentFields = intent
+    ? Object.keys(intent).filter(
+        (key) => intent[key as keyof typeof intent]?.length,
+      )
+    : ["from", "to", "cc", "bcc"]
+
+  const responseFormatFields = intentFields
+    .map((field) => `  "${field}": [<emails goes here>]`)
+    .join(",\n")
+
+  return `You are an assistant that resolves person names to their corresponding email addresses using search context provided.
+
+**User Context:**
+${userContext}
+
+**Names to Resolve:**
+${names}
+
+**Search Context**
+${searchResults}
+
+**Intent Fields:**
+Only populate the following fields: ${intentFields.join(", ")}
+
+**Your Task:**
+Analyze the search results and extract the most relevant email addresses for each name. Consider:
+- Exact name matches have highest priority
+- Partial name matches (first name or last name) are acceptable
+- Consider department/role context if available
+- If multiple matches exist, choose the most relevant based on context
+
+**Response Format:**
+Return a JSON object with "emails" field containing ONLY the fields specified in the intent:
+
+**Rules:**
+- Only include email addresses you can confidently match to the provided names
+- Use exact email addresses from the search results
+- Do not guess or fabricate email addresses
+- If no matches found for any names, return empty array: []
+- Return only the email addresses, not the names
+- CRITICAL: ONLY populate the fields that are specified in the intent (${intentFields.join(", ")})
+- Do NOT populate fields that are not in the intent
+- Each field should only contain emails that match the names specified for that field
+
+**Example:**
+If intent is {"from": ["prasad"]} and results show:
+- Prasad Nagarale <prasad.nagarale@juspay.in> - Engineering
+
+Response Format:
+{
+ "emails": {
+${responseFormatFields}
+  }
+}
 `
 }
 

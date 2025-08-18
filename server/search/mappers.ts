@@ -32,6 +32,8 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
+  type VespaChatContainerSearch,
+  chatContainerSchema,
   DriveEntity,
   MailEntity,
   MailAttachmentEntity,
@@ -42,9 +44,11 @@ import {
   SlackEntity,
   datasourceSchema,
   dataSourceFileSchema,
+  type VespaAutocompleteChatContainer,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
+  AutocompleteChatContainerSchema,
   AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailAttachmentSchema,
@@ -55,6 +59,7 @@ import {
   FileResponseSchema,
   UserResponseSchema,
   DataSourceFileResponseSchema,
+  ChatContainerResponseSchema,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -290,6 +295,27 @@ export const VespaSearchResponseToSearchResult = (
             }
             return ChatMessageResponseSchema.parse(fields)
           } else if (
+            (child.fields as VespaChatContainerSearch).sddocname ===
+            chatContainerSchema
+          ) {
+            const fields = child.fields as VespaChatContainerSearch & {
+              type?: string
+            }
+            fields.type = chatContainerSchema
+            fields.relevance = child.relevance
+            // Ensure fields has the necessary properties
+            if (!fields.entity) {
+              fields.entity = SlackEntity.Channel
+            }
+            if (!fields.topic) {
+              fields.topic = ""
+            }
+            if (!fields.description) {
+              fields.description = ""
+            }
+
+            return ChatContainerResponseSchema.parse(fields)
+          } else if (
             (child.fields as { sddocname?: string }).sddocname ===
             dataSourceFileSchema
           ) {
@@ -405,9 +431,21 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = chatUserSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteChatUserSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteChatContainer).sddocname ===
+          chatContainerSchema
+        ) {
+          const fields = child.fields as VespaAutocompleteChatContainer & {
+            type?: string
+          }
+          fields.type = chatContainerSchema
+          fields.relevance = child.relevance
+          return AutocompleteChatContainerSchema.parse(fields)
         } else {
           throw new Error(
-            `Unknown schema type: ${(child.fields as any)?.sddocname}`,
+            `Unknown schema type: ${
+              (child.fields as any)?.sddocname ?? "undefined"
+            }`,
           )
         }
       })
@@ -480,6 +518,9 @@ export const entityToSchemaMapper = (
     ),
     ...Object.fromEntries(
       Object.values(SlackEntity).map((e) => [e, chatMessageSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(SlackEntity).map((e) => [e, chatContainerSchema]),
     ),
   }
 
