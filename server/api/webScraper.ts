@@ -1,4 +1,4 @@
-import { UnifiedWebScraper, ScrapingMode } from "../scraper/unified-scraper.js"
+import { UnifiedWebScraper } from "../scraper/unified-scraper.js"
 
 export interface ScrapedResult {
   url: string
@@ -11,6 +11,8 @@ export interface ScrapeOptions {
   stealth?: boolean
   maxPages?: number
   contentOnly?: boolean
+  enableCrawling?: boolean
+  query?: string
 }
 
 export async function scrapeUrlContent(
@@ -18,48 +20,39 @@ export async function scrapeUrlContent(
   email: string,
   options: ScrapeOptions = {},
 ): Promise<ScrapedResult[]> {
-  const { stealth = false, maxPages = 5, contentOnly = false } = options
-
-  // Auto-enable stealth for known problematic sites
-  const needsStealthSites = [
-    "medium.com",
-    "linkedin.com",
-    "twitter.com",
-    "x.com",
-    "facebook.com",
-  ]
-  const autoStealth =
-    stealth ||
-    urls.some((url) =>
-      needsStealthSites.some((site) => url.toLowerCase().includes(site)),
-    )
+  const {
+    stealth = false,
+    maxPages = 10,
+    contentOnly = false,
+    enableCrawling = false,
+    query,
+  } = options
 
   try {
-    console.log(`[webScraper] Scraping ${urls.length} URLs with options:`, {
-      ...options,
-      autoStealth,
-    })
+    console.log(
+      `[webScraper] Starting intelligent scraping for ${urls.length} URLs with options:`,
+      {
+        ...options,
+      },
+    )
 
-    // Create scraper with appropriate mode
+    // Auto-enable crawling if query is provided (user likely looking for specific info)
+    const shouldEnableCrawling = enableCrawling || (query && query.length > 0)
+
+    // Create scraper with intelligent escalation
     const scraper = new UnifiedWebScraper({
-      mode: autoStealth ? ScrapingMode.AGGRESSIVE_STEALTH : ScrapingMode.BASIC,
-      maxPages,
-      delay: autoStealth ? 2000 : 1000,
-      stealthMode: autoStealth,
-      randomUserAgent: true,
+      delay: stealth ? 2000 : 1000,
       headless: true,
-      contentOnly,
-      // Enable aggressive interactions for problematic sites
-      interactWithForms: false,
-      clickButtons: false,
-      scrollToTriggerLazyLoad: autoStealth,
-      waitForDynamicContent: autoStealth,
+      maxDepth: shouldEnableCrawling ? 3 : 1, // Deeper crawling if query provided
+      maxPages: shouldEnableCrawling ? Math.max(maxPages, 15) : 5, // More pages if crawling
+      enableCrawling: false, // Start with basic scraping, escalate if needed
     })
 
-    const results = await scraper.scrapeMultipleUrls(urls)
+    // Use intelligent escalation (basic -> crawling if needed)
+    const results = await scraper.scrapeWithIntelligentEscalation(urls, query)
     await scraper.close()
 
-    // Convert to expected format and filter out blocked content
+    // Convert to expected format and filter out only truly unusable content
     const formattedResults: ScrapedResult[] = results
       .map((result) => ({
         url: result.url,
@@ -67,25 +60,51 @@ export async function scrapeUrlContent(
         content: result.content,
       }))
       .filter((result) => {
-        // Filter out obvious bot detection pages
-        const isBlocked =
-          result.title.toLowerCase().includes("just a moment") ||
-          result.content.toLowerCase().includes("verify you are human") ||
+        // Only filter out results that are truly unusable
+        const isReallyBlocked =
+          result.title === "Error" || // Actual scraping error
+          result.content.length < 50 || // Extremely short content
+          (result.content.length < 200 && // Short content that looks like pure bot protection
+            (result.title.toLowerCase().includes("just a moment") ||
+              result.content.toLowerCase().includes("verify you are human") ||
+              result.content
+                .toLowerCase()
+                .includes("please wait while we are checking") ||
+              result.content.toLowerCase().includes("access denied")))
+
+        // Don't filter out content just because Cloudflare/bot protection was detected
+        // if we still extracted substantial content (like our 9,108 char news page)
+        const hasSubstantialContent = result.content.length >= 200
+        const shouldKeep = !isReallyBlocked || hasSubstantialContent
+
+        if (!shouldKeep) {
+          console.log(
+            `[webScraper] Filtering out unusable content for ${result.url} (length: ${result.content.length})`,
+          )
+        } else if (
           result.content.toLowerCase().includes("cloudflare") ||
           result.content.toLowerCase().includes("security check")
-
-        if (isBlocked) {
+        ) {
           console.log(
-            `[webScraper] Detected bot protection for ${result.url}, content may be incomplete`,
+            `[webScraper] Keeping content despite bot detection for ${result.url} (length: ${result.content.length})`,
           )
         }
 
-        return !isBlocked
+        return shouldKeep
       })
 
     console.log(
-      `[webScraper] Successfully scraped ${formattedResults.length} URLs (${results.length - formattedResults.length} blocked)`,
+      `[webScraper] Successfully scraped ${formattedResults.length} URLs (${results.length - formattedResults.length} filtered out)`,
     )
+
+    // Log if crawling was triggered
+    const crawledResults = results.filter((r) => r.metadata.isCrawled)
+    if (crawledResults.length > 0) {
+      console.log(
+        `[webScraper] Crawling found ${crawledResults.length} additional pages through link following`,
+      )
+    }
+
     return formattedResults
   } catch (error) {
     console.error(`[webScraper] Error scraping URLs:`, error)

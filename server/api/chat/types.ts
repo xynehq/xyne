@@ -185,4 +185,5 @@ export interface WebScraperParams {
   query?: string
   max_pages?: number
   stealth_mode?: boolean
+  enable_crawling?: boolean
 }

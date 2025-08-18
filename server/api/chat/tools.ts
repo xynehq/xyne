@@ -764,29 +764,40 @@ export const webScraperTool: AgentTool = {
       const { scrapeUrlContent } = await import("../webScraper")
 
       const scrapedContent = await scrapeUrlContent(urls, email, {
-        stealth,
+        stealth: params.stealth_mode || stealth,
         maxPages,
         contentOnly: true,
+        enableCrawling: params.enable_crawling || false,
+        query: params.query,
       })
 
       if (scrapedContent && scrapedContent.length > 0) {
-        // Check if scraped content indicates login/authentication pages
-        const hasLoginContent = scrapedContent.some((item) => {
+        // Check if ALL scraped content indicates login/authentication pages
+        // Don't reject if we have any meaningful content
+        const allContentIsAuth = scrapedContent.every((item) => {
           const content = (item.content || "").toLowerCase()
           const title = (item.title || "").toLowerCase()
-          return (
+
+          // Only consider it auth-required if it's both short AND has auth indicators
+          const hasAuthIndicators =
             (content.includes("sign in") &&
               content.includes("email or phone")) ||
             (content.includes("login") && content.includes("password")) ||
             content.includes("authentication required") ||
             content.includes("access denied") ||
             title.includes("gmail") ||
-            title.includes("sign in") ||
-            content.length < 500 // Very short content often indicates redirects or login pages
-          )
+            title.includes("sign in")
+
+          // Consider it a login page only if it's very short AND has auth indicators
+          return content.length < 200 && hasAuthIndicators
         })
 
-        if (hasLoginContent) {
+        // Also check if we have ANY substantial content
+        const hasSubstantialContent = scrapedContent.some(
+          (item) => item.content && item.content.length >= 500,
+        )
+
+        if (allContentIsAuth && !hasSubstantialContent) {
           return {
             result:
               "The provided URLs appear to require authentication or are redirecting to login pages. Unable to access the content. Please provide publicly accessible URLs.",
@@ -812,13 +823,22 @@ export const webScraperTool: AgentTool = {
         const resultText = scrapedContent
           .map(
             (item: any, index: number) =>
-              `[${index}] ${item.title}: ${item.content || "No content available"}`,
+              `[${index}] ${item.title} (${item.content.length} chars): ${item.content || "No content available"}`,
           )
           .join("\n\n")
 
+        console.log(
+          `[webScraperTool] Successfully processed ${scrapedContent.length} items:`,
+        )
+        scrapedContent.forEach((item, index) => {
+          console.log(
+            `  [${index}] ${item.url}: ${item.content.length} characters`,
+          )
+        })
+
         execSpan?.setAttribute("scraped_content_count", scrapedContent.length)
         return {
-          result: `Successfully scraped ${scrapedContent.length} URL(s). Here is the complete content:\n\n${resultText}`,
+          result: `Successfully scraped ${scrapedContent.length} URL(s). Found ${scrapedContent.reduce((total, item) => total + (item.content?.length || 0), 0)} total characters. Here is the complete content:\n\n${resultText}`,
           contexts: contexts,
         }
       } else {
