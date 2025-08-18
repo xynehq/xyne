@@ -116,7 +116,7 @@ import { Tip } from "@/components/Tooltip"
 import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import React from "react"
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
@@ -410,6 +410,7 @@ export const ChatPage = ({
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const chatBoxRef = useRef<ChatBoxRef>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
   const [showSources, setShowSources] = useState(false)
@@ -1277,7 +1278,11 @@ export const ChatPage = ({
                         <FollowUpQuestions
                           chatId={chatId}
                           messageId={message.externalId}
-                          onQuestionClick={handleSend}
+                          onQuestionClick={(question: string) => {
+                            // Use ChatBox's sendMessage method which includes all internal state
+                            // (tools, connectors, agent ID, etc.)
+                            chatBoxRef.current?.sendMessage(question)
+                          }}
                           isStreaming={isStreaming || retryIsStreaming}
                           onQuestionsLoaded={scrollToBottom}
                         />
@@ -1349,6 +1354,7 @@ export const ChatPage = ({
                 >
                   <div className="w-full max-w-3xl">
                     <ChatBox
+                      ref={chatBoxRef}
                       role={user?.role}
                       query={query}
                       setQuery={setQuery}
