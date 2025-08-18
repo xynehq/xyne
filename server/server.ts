@@ -148,6 +148,7 @@ import {
   DeleteAgentApi,
   GetWorkspaceUsersApi,
   GetAgentPermissionsApi,
+  GetAgentIntegrationItemsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -166,6 +167,20 @@ import {
   messageFeedbackSchema,
   enhancedMessageFeedbackSchema,
 } from "@/api/chat/types"
+
+import {
+  CreateCollectionApi,
+  ListCollectionsApi,
+  GetCollectionApi,
+  UpdateCollectionApi,
+  DeleteCollectionApi,
+  ListCollectionItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+} from "@/api/knowledgeBase"
 
 import {
   isSlackEnabled,
@@ -769,6 +784,7 @@ export const AppRoutes = app
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
+  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
@@ -781,6 +797,22 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+
+  // Collection Routes
+  .post("/cl", CreateCollectionApi)
+  .get("/cl", ListCollectionsApi)
+  .get("/cl/:clId", GetCollectionApi)
+  .put("/cl/:clId", UpdateCollectionApi)
+  .delete("/cl/:clId", DeleteCollectionApi)
+  .get("/cl/:clId/items", ListCollectionItemsApi)
+  .post("/cl/:clId/items/folder", CreateFolderApi)
+  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
+  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
@@ -808,6 +840,7 @@ export const AppRoutes = app
   )
   .get("/connectors/all", GetConnectors)
   .get("/oauth/global-slack-provider", GetProviders)
+
   // Admin Routes
   .basePath("/admin")
   .use("*", AdminRoleMiddleware)
@@ -1171,6 +1204,7 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
@@ -1246,6 +1280,16 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledge-base",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()

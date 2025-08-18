@@ -13,9 +13,11 @@ import {
   chatMessageSchema,
   datasourceSchema,
   dataSourceFileSchema,
+  KbItemsSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
+  type VespaKbFile,
   SlackEntity,
   chatContainerSchema,
 } from "@/search/types"
@@ -61,6 +63,7 @@ import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { ProductionVespaClient } from "./productionVespaClient"
+import { getAllFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
@@ -209,6 +212,7 @@ const AllSources = [
   chatContainerSchema,
   // Not adding datasource or datasource_file to AllSources by default,
   // as they are for a specific app functionality.
+  // dataSourceFileSchema and collection file schemas are intentionally excluded from search
 ].join(", ")
 
 export const autocomplete = async (
@@ -325,6 +329,7 @@ export const HybridDefaultProfile = (
   notInMailLabels?: string[],
   excludedApps?: Apps[],
   intent?: Intent | null,
+ 
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -504,7 +509,7 @@ export const HybridDefaultProfile = (
           break
       }
     })
-    newSources = AllSources.split(", ")
+    newSources = newSources.split(", ")
       .filter((source) => !sourcesToExclude.includes(source))
       .join(", ")
   }
@@ -587,7 +592,8 @@ const buildIntentFilter = (intent: Intent | null) => {
     ? "and" + " " + intentFilters.join(" and ")
     : ""
 }
-export const HybridDefaultProfileForAgent = (
+export const HybridDefaultProfileForAgent =  async(
+  email:string,
   hits: number,
   app: Apps | null,
   entity: Entity | null,
@@ -599,7 +605,14 @@ export const HybridDefaultProfileForAgent = (
   dataSourceIds: string[] = [],
   intent: Intent | null = null,
   channelIds: string[] = [],
-): YqlProfile => {
+  collectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = [],
+  driveIds:string[] = [],
+  selectedItem:{} = {},
+): Promise<YqlProfile> => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -611,6 +624,15 @@ export const HybridDefaultProfileForAgent = (
     }
     return conditions.join(" and ")
   }
+
+  // helper function to build docId inclusion condition
+  const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
+    if (!ids || ids.length === 0) return ""
+    
+    const conditions = ids.map((id) => `${fieldName} contains '${id.trim()}'`)
+    return conditions.join(" or ")
+  }
+
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
     return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
@@ -672,10 +694,52 @@ export const HybridDefaultProfileForAgent = (
         ${intentFilter}
       )`
   }
-  const buildGoogleDriveYQL = () => {
+  const buildGoogleDriveYQL = async () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-    const intentFilter = buildIntentFilter(intent)
+    // let driveItem:string [] = []
+    // if we have some DriveIds then we are going to fetch all the items in that folder
+         const intentFilter = buildIntentFilter(intent)
+        let driveItem: string[] = []
+         if((selectedItem as any)[Apps.GoogleDrive]){
+          driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+         }
+        const driveIds = []
+       
+       while (driveItem.length) {
+           let curr = driveItem.shift()
+           // Ensure email is defined before passing it to getFolderItems\
+           if (curr) driveIds.push(curr)
+           if (curr && email) {
+             try {
+               const folderItem = await getFolderItems(
+                 [curr],
+                 fileSchema,
+                 DriveEntity.Folder,
+                 email,
+               )
+               if (
+                 folderItem.root &&
+                 folderItem.root.children &&
+                 folderItem.root.children.length > 0
+               ) {
+                 for (const item of folderItem.root.children) {
+                   if (
+                     item.fields &&
+                     (item.fields as any).entity === DriveEntity.Folder
+                   ) {
+                     driveItem.push((item.fields as any).docId)
+                   } else {
+                    driveIds.push((item.fields as any).docId)
+                   }
+                 }
+               }
+             } catch (error) {
+               Logger.error("failed to fetch drive items")
+             }
+           }
+         }
+         const driveIdConditions = buildDocsInclusionCondition('docId',driveIds)
     return `
       (
         (
@@ -686,6 +750,7 @@ export const HybridDefaultProfileForAgent = (
         ${timestampRange ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${driveIdConditions ? `and ${driveIdConditions}` : ""}
         ${intentFilter}
       )
      `
@@ -709,10 +774,10 @@ export const HybridDefaultProfileForAgent = (
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-    const channelIdConditions =
-      channelIds && channelIds.length > 0
-        ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
-        : ""
+    let channelIds:string [] = []
+         const intentFilter = buildIntentFilter(intent)
+         channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
+    const channelIdConditions = buildDocsInclusionCondition("docId" ,channelIds)
 
     return `
       (
@@ -727,17 +792,13 @@ export const HybridDefaultProfileForAgent = (
       )`
   }
 
-  const buildDataSourceFileYQL = () => {
+   const buildDataSourceFileYQL = () => {
     // For DataSourceFile, app and entity might not be directly applicable in the same way,
     // but keeping appOrEntityFilter for consistency if needed for other metadata.
-    const appOrEntityFilter = buildAppEntityFilter()
-    const dataSourceIdConditions =
-      dataSourceIds && dataSourceIds.length > 0
-        ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
-        : "false" // If no specific IDs, this part of the query should not match anything
 
-    // Permissions for datasource_file are based on 'uploadedBy' matching the user's email
-    // and the dataSourceId matching one of the allowed ones.
+    const dsIds = (selectedItem as Record<string, unknown>)[Apps.DataSource] as any
+    const dataSourceIdConditions = buildDocsInclusionCondition("dataSourceId", dsIds)
+   
     return `
       (
         (
@@ -746,6 +807,72 @@ export const HybridDefaultProfileForAgent = (
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         ) 
         and ${dataSourceIdConditions}
+      )`
+  }
+
+  const buildCollectionFileYQL = async () => {    
+    console.log("collectionSelections:", collectionSelections);
+
+    // Extract all IDs from the key-value pairs
+    const collectionIds: string[] = []
+    const collectionFolderIds: string[] = []
+    const collectionFileIds: string[] = []
+
+    for (const selection of collectionSelections) {
+      if (selection.collectionIds) {
+        collectionIds.push(...selection.collectionIds)
+      }
+      if (selection.collectionFolderIds) {
+        collectionFolderIds.push(...selection.collectionFolderIds)
+      }
+      if (selection.collectionFileIds) {
+        collectionFileIds.push(...selection.collectionFileIds)
+      }
+    }
+    let conditions: string[] = []
+    
+    // Handle entire collections - use clId filter (efficient)
+    if (collectionIds.length > 0) {
+      const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      conditions.push(collectionCondition)
+    }
+    
+    // Handle specific folders - need to get file IDs (less efficient but necessary)
+    if (collectionFolderIds.length > 0) {
+      const clFileIds = await getAllFolderItems(collectionFolderIds, db)
+      if (clFileIds.length > 0) {
+        const ids = await getCollectionFilesVespaIds(clFileIds, db)
+        const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
+        
+        if (clVespaIds.length > 0) {
+          const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+          conditions.push(folderCondition)
+        }
+      }
+    }
+    
+    // Handle specific files - use file IDs directly (most efficient for individual files)
+    if (collectionFileIds.length > 0) {
+      const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
+      const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
+      
+      if (clVespaIds.length > 0) {
+        const fileCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+        conditions.push(fileCondition)
+      }
+    }
+    
+    const finalCondition = conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+    console.log(finalCondition);
+    // Collection files use clId for collections and docId for folders/files
+    return `
+      (
+        (
+          ({targetHits:${hits}}userInput(@query))
+          or
+          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+        ) 
+        and ${finalCondition}
       )`
   }
 
@@ -765,7 +892,8 @@ export const HybridDefaultProfileForAgent = (
           if (!sources.includes(mailSchema)) sources.push(mailSchema)
           break
         case Apps.GoogleDrive:
-          appQueries.push(buildGoogleDriveYQL())
+          const googleDriveYQL = await buildGoogleDriveYQL()
+          appQueries.push(googleDriveYQL)
           if (!sources.includes(fileSchema)) sources.push(fileSchema)
           break
         case Apps.GoogleCalendar:
@@ -781,20 +909,20 @@ export const HybridDefaultProfileForAgent = (
             sources.push(chatContainerSchema)
           break
         case Apps.DataSource:
-          // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
-          // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
-          if (dataSourceIds && dataSourceIds.length > 0) {
             appQueries.push(buildDataSourceFileYQL())
             if (!sources.includes(dataSourceFileSchema))
               sources.push(dataSourceFileSchema)
+          break
+        case Apps.KnowledgeBase:
+          if (collectionSelections && collectionSelections.length > 0) {
+            const collectionQuery = await buildCollectionFileYQL()
+            if (collectionQuery) {
+              appQueries.push(collectionQuery)
+              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
+            }
           } else {
-            // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
-            // across all accessible data sources. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic DataSource search.
-            // This means an agent configured with "data-source" but no specific IDs won't search them
-            // unless other app types are also specified.
             Logger.warn(
-              "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
+              "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
             )
           }
           break
@@ -814,9 +942,18 @@ export const HybridDefaultProfileForAgent = (
     if (!sources.includes(chatContainerSchema))
       sources.push(chatContainerSchema)
   }
+  // Debug logging
+  Logger.debug(`Agent search configuration:`, {
+    AllowedApps,
+    dataSourceIds,
+    collectionSelections,
+    appQueriesCount: appQueries.length,
+    sources,
+  })
+
 
   // Combine all queries
-  const combinedQuery = appQueries.join("or")
+  const combinedQuery = appQueries.join("\n    or\n    ")
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
@@ -824,9 +961,7 @@ export const HybridDefaultProfileForAgent = (
   // or no valid AllowedApps were given), then the YQL query will be invalid.
   const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
 
-  return {
-    profile: profile,
-    yql: `
+  const finalYql = `
     select *
     ${fromClause} 
     where
@@ -837,7 +972,16 @@ export const HybridDefaultProfileForAgent = (
       ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
     )
     ;
-    `,
+    `
+  Logger.debug(`Generated YQL for agent search:`, {
+    yql: finalYql,
+    sources: sourcesString,
+    hasCollectionQueries: collectionSelections && collectionSelections.length > 0,
+  })
+
+  return {
+    profile: profile,
+    yql: finalYql,
   }
 }
 
@@ -1302,6 +1446,13 @@ type VespaQueryConfig = {
   isIntentSearch?: boolean
   intent?: Intent | null
   channelIds?: string[]
+  collectionSelections?: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> // Updated to support key-value pairs instead of prefixed strings
+  driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
+  selectedItem?:{}
 }
 
 export const searchVespa = async (
@@ -1428,14 +1579,15 @@ async function _searchVespa(
 
   let { yql, profile } = HybridDefaultProfile(
     limit,
-    app,
+    app, 
     entity,
     rankProfile,
     timestampRange,
     excludedIds,
-    notInMailLabels,
+    notInMailLabels, 
     excludedApps,
     intent,
+    
   )
 
   const hybridDefaultPayload = {
@@ -1646,13 +1798,16 @@ export const searchVespaAgent = async (
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
     intent = null,
     channelIds = [],
+    collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
+    driveIds = [], // docIds
+    selectedItem = {}
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
-
-  let { yql, profile } = HybridDefaultProfileForAgent(
+  let { yql, profile } = await HybridDefaultProfileForAgent(
+    email,
     limit,
     app,
     entity,
@@ -1664,6 +1819,10 @@ export const searchVespaAgent = async (
     dataSourceIds, // Pass dataSourceIds here
     intent,
     channelIds,
+    collectionSelections, // Pass unified collectionSelections here
+    driveIds, 
+    selectedItem,
+    
   )
 
   const hybridDefaultPayload = {
