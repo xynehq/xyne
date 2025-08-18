@@ -556,22 +556,29 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
       const itemIds = clConfig.itemIds || []
 
       if (itemIds.length > 0) {
-        // Fetch items by their IDs
-        const items = await Promise.all(
-          itemIds.map(async (itemId: string) => {
+        // Extract actual item IDs from prefixed format
+        const actualItemIds: string[] = []
+        const collectionIds: string[] = []
+        
+        for (const itemId of itemIds) {
+          if (itemId.startsWith('cl-')) {
+            // This is a collection ID
+            collectionIds.push(itemId.replace('cl-', ''))
+          } else if (itemId.startsWith('clfd-') || itemId.startsWith('clf-')) {
+            // This is a folder or file ID - extract the actual ID
+            actualItemIds.push(itemId.replace(/^(clfd-|clf-)/, ''))
+          } else {
+            // Assume it's already a clean ID
+            actualItemIds.push(itemId)
+          }
+        }
+
+        // Fetch items from database to get basic structure
+        const dbItems = await Promise.all(
+          actualItemIds.map(async (itemId: string) => {
             try {
               const item = await getCollectionItemById(db, itemId)
-              if (item) {
-                return {
-                  id: item.id,
-                  name: item.name,
-                  type: item.type,
-                  parentId: item.parentId,
-                  path: item.path,
-                  metadata: item.metadata
-                }
-              }
-              return null
+              return item
             } catch (error) {
               loggerWithChild({ email }).warn(
                 `Failed to fetch KB item ${itemId}: ${getErrorMessage(error)}`
@@ -581,47 +588,53 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
           })
         )
 
-        // Filter out null items and group by knowledge base
-        const validItems = items.filter(Boolean)
+        // Filter out null items
+        const validDbItems = dbItems.filter(Boolean)
         
-        // Group items by their knowledge base (we can determine this from the path or parentId)
+        // Group items by their collection ID
         const clGroups: Record<string, any[]> = {}
         
-        for (const item of validItems) {
-          // Find the root Collection ID by traversing up the hierarchy
-          let currentItem = item
-          let clId = item.id
+        for (const item of validDbItems) {
+          if (!item) continue // Skip null items
           
-          // If item has a parentId, try to find the root Collection
-          if (item.parentId) {
-            try {
-              let parent = await getCollectionItemById(db, item.parentId)
-              while (parent && parent.parentId) {
-                const nextParent = await getCollectionItemById(db, parent.parentId)
-                if (!nextParent) break
-                parent = nextParent
-              }
-              if (parent) {
-                clId = parent.id
-              }
-            } catch (error) {
-              // If we can't find the parent, use the item's own ID
-              loggerWithChild({ email }).warn(
-                `Failed to find parent for item ${item.id}: ${getErrorMessage(error)}`
-              )
-            }
-          }
+          // Find the root Collection ID by traversing up the hierarchy
+          let clId = item.collectionId
           
           if (!clGroups[clId]) {
             clGroups[clId] = []
           }
-          clGroups[clId].push(item)
+          
+          // Add the item with basic database info
+          // Note: The actual content names will be fetched by the frontend via Vespa
+          clGroups[clId].push({
+            id: item.id,
+            name: item.name || item.originalName || 'Unnamed',
+            type: item.type,
+            parentId: item.parentId,
+            path: item.path,
+            vespaDocId: item.vespaDocId,
+            metadata: item.metadata
+          })
         }
 
-        integrationItems.knowledge_base = {
-          type: 'knowledge_base',
+        // Handle collection-level selections
+        for (const collectionId of collectionIds) {
+          if (!clGroups[collectionId]) {
+            clGroups[collectionId] = []
+          }
+          // Mark this as a collection-level selection
+          clGroups[collectionId].push({
+            id: collectionId,
+            name: 'Entire Collection',
+            type: 'collection',
+            isCollectionLevel: true
+          })
+        }
+
+        integrationItems.collection = {
+          type: 'collection',
           groups: clGroups,
-          totalItems: validItems.length
+          totalItems: validDbItems.length + collectionIds.length
         }
       }
     }
