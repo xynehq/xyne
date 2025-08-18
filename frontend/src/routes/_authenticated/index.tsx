@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router"
 import { Bot, Search as SearchIcon } from "lucide-react"
 import { SearchBar } from "@/components/SearchBar"
 import {
@@ -102,17 +102,6 @@ const Index = () => {
   }, [allAgents, favoriteAgents])
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const agentIdFromUrl = searchParams.get("agentId")
-
-    if (agentIdFromUrl) {
-      setPersistedAgentId(agentIdFromUrl)
-    } else {
-      setPersistedAgentId(null)
-    }
-  }, [])
-
-  useEffect(() => {
     const fetchAgentDetails = async () => {
       if (persistedAgentId) {
         try {
@@ -160,6 +149,15 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
+  const searchParams = useSearch({ from: "/_authenticated/" })
+
+  useEffect(() => {
+    if (searchParams?.agentId) {
+      setPersistedAgentId(searchParams.agentId)
+    } else {
+      setPersistedAgentId(null)
+    }
+  }, [searchParams?.agentId])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -251,10 +249,11 @@ const Index = () => {
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
-      // If agentId is provided, add it to the searchParams
+      // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
       if (agentId) {
-        // Use agentId directly
         searchParams.agentId = agentId
+      } else if (persistedAgentId) {
+        searchParams.agentId = persistedAgentId
       }
       if (isAgenticMode) {
         searchParams.agentic = true
@@ -407,6 +406,7 @@ const Index = () => {
                     setIsReasoningActive={setIsReasoningActive}
                     isAgenticMode={isAgenticMode}
                     setIsAgenticMode={setIsAgenticMode}
+                    agentIdFromChatData={persistedAgentId}
                   />
                 </div>
               )}
@@ -450,5 +450,8 @@ export const Route = createFileRoute("/_authenticated/")({
   component: () => {
     return <Index />
   },
+  validateSearch: (search: Record<string, unknown>) => ({
+    agentId: search.agentId as string | undefined,
+  }),
   errorComponent: errorComponent,
 })
