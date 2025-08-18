@@ -258,24 +258,29 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-export const ChatBox = ({
-  role,
-  query,
-  setQuery,
-  handleSend,
-  isStreaming = false,
-  retryIsStreaming = false,
-  allCitations,
-  handleStop,
-  chatId,
-  agentIdFromChatData, // Destructure new prop
-  isReasoningActive,
-  setIsReasoningActive,
-  user, // Destructure user prop
-  setIsAgenticMode,
-  isAgenticMode = false,
-  overrideIsRagOn,
-}: ChatBoxProps) => {
+export interface ChatBoxRef {
+  sendMessage: (message: string) => void
+}
+
+export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) => {
+  const {
+    role,
+    query,
+    setQuery,
+    handleSend,
+    isStreaming = false,
+    retryIsStreaming = false,
+    allCitations,
+    handleStop,
+    chatId,
+    agentIdFromChatData, // Destructure new prop
+    isReasoningActive,
+    setIsReasoningActive,
+    user, // Destructure user prop
+    setIsAgenticMode,
+    isAgenticMode = false,
+    overrideIsRagOn,
+  } = props
   // Interface for fetched tools
   interface FetchedTool {
     id: number
@@ -1766,6 +1771,34 @@ export const ChatBox = ({
     }
   }, [])
 
+  // Add imperative handle to expose sendMessage method
+  React.useImperativeHandle(ref, () => ({
+    sendMessage: (message: string) => {
+      // Set the query first
+      setQuery(message)
+      // Update the input content
+      if (inputRef.current) {
+        inputRef.current.textContent = message
+        setIsPlaceholderVisible(false)
+      }
+      // Then trigger the send message with all the internal state
+      // Use setTimeout to ensure state updates are applied
+      setTimeout(() => {
+        // Call handleSendMessage which will use the current state values
+        // for agents, tools, connectors, etc.
+        handleSendMessage()
+      }, 0)
+    }
+  }), [
+    // Include dependencies that affect what gets sent
+    selectedConnectorIds,
+    selectedConnectorTools, 
+    persistedAgentId,
+    selectedSources,
+    selectedFiles,
+    handleSendMessage
+  ])
+
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
       {persistedAgentId && displayAgentName && (
@@ -3180,4 +3213,4 @@ export const ChatBox = ({
       />
     </div>
   )
-}
+})
