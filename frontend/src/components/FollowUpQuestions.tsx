@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import { api } from "@/api"
 
 interface FollowUpQuestionsProps {
@@ -19,6 +19,8 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
   const [questions, setQuestions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastFetchRef = useRef<string | null>(null)
 
   // Auto-scroll when questions appear
   useEffect(() => {
@@ -33,21 +35,54 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
 
   useEffect(() => {
     if (chatId && messageId && !isStreaming) {
-      // Only fetch if not streaming and all required data is available
-      fetchFollowUpQuestions()
+      // Clear any existing timeout
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current)
+      }
+
+      // Create a unique key for this fetch request
+      const fetchKey = `${chatId}-${messageId}`
+      
+      // Only fetch if we haven't already fetched for this message
+      if (lastFetchRef.current !== fetchKey) {
+        // Add a small delay to debounce rapid state changes
+        fetchTimeoutRef.current = setTimeout(() => {
+          fetchFollowUpQuestions(fetchKey)
+        }, 300)
+      }
     } else {
       // Clear questions when streaming starts
       setQuestions([])
       setError(null)
       setLoading(false)
+      
+      // Clear any pending fetch
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current)
+        fetchTimeoutRef.current = null
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current)
+        fetchTimeoutRef.current = null
+      }
     }
   }, [chatId, messageId, isStreaming])
 
-  const fetchFollowUpQuestions = async () => {
+  const fetchFollowUpQuestions = useCallback(async (fetchKey: string) => {
     if (!chatId || !messageId || isStreaming) return
+
+    // Double-check that this request is still valid
+    if (lastFetchRef.current === fetchKey) {
+      return // Already fetched for this message
+    }
 
     setLoading(true)
     setError(null)
+    lastFetchRef.current = fetchKey
 
     try {
       const response = await api.chat["followup-questions"].$post({
@@ -69,7 +104,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
     } finally {
       setLoading(false)
     }
-  }
+  }, [chatId, messageId, isStreaming])
 
   if (isStreaming || (!loading && questions.length === 0 && !error)) {
     return null
