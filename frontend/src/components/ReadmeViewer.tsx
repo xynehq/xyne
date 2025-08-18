@@ -205,7 +205,7 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
         [data-color-mode="dark"] .wmde-markdown h5,
         [data-color-mode="dark"] .wmde-markdown h6 {
           color: #c9d1d9 !important;
-          border-bottom-color: ${theme === "dark" ? "#404040" : "#eaecef"} !important;
+          border-bottom-color: #404040 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown a {
@@ -217,42 +217,42 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
         }
         
         [data-color-mode="dark"] .wmde-markdown blockquote {
-          border-left-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
-          color: ${theme === "dark" ? "#8b949e" : "#6a737d"} !important;
+          border-left-color: #404040 !important;
+          color: #8b949e !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown table {
-          border-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
+          border-color: #404040 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown table th,
         [data-color-mode="dark"] .wmde-markdown table td {
-          border-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
+          border-color: #404040 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown table tr:nth-child(2n) {
-          background-color: ${theme === "dark" ? "#2d2d2d" : "#f6f8fa"} !important;
+          background-color: #2d2d2d !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown hr {
-          border-color: ${theme === "dark" ? "#404040" : "#e1e4e8"} !important;
+          border-color: #404040 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown ul,
         [data-color-mode="dark"] .wmde-markdown ol {
-          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
+          color: #c9d1d9 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown li {
-          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
+          color: #c9d1d9 !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown strong {
-          color: ${theme === "dark" ? "#f0f6fc" : "#24292e"} !important;
+          color: #f0f6fc !important;
         }
         
         [data-color-mode="dark"] .wmde-markdown em {
-          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
+          color: #c9d1d9 !important;
         }
         
         @media print {

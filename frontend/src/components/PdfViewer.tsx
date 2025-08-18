@@ -482,7 +482,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     <button
                       onClick={goToPreviousPage}
                       disabled={currentPage <= 1}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                     >
                       Previous
                     </button>
@@ -510,7 +510,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   <button
                     onClick={goToNextPage}
                     disabled={currentPage >= totalPages}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                    className="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                   >
                     Next
                   </button>
@@ -550,7 +550,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 />
                 {pageRendering && (
                   <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#2d2d2d] bg-opacity-75">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 dark:border-gray-300"></div>
                   </div>
                 )}
               </div>
