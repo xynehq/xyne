@@ -18,6 +18,8 @@ import {
   dataSourceFileSchema,
   chatContainerSchema,
   VespaChatContainerSchema,
+  KbItemsSchema,
+  VespaKbFileSchemaBase,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -258,6 +260,28 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
+export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
+    docId: true,
+    fileName: true,
+    app: true,
+    entity: true,
+    createdBy: true,
+    updatedAt: true,
+    itemId: true,
+    clId: true,
+    mimeType: true,
+  })
+    .extend({
+      app: z.literal(Apps.KnowledgeBase),
+      type: z.literal(KbItemsSchema),
+      chunk: z.string().optional(),
+      chunkIndex: z.number().optional(),
+      chunks_summary: z.array(scoredChunk).optional(),
+      relevance: z.number(),
+      matchfeatures: z.any().optional(), // Add matchfeatures
+      rankfeatures: z.any().optional(),
+    })
+    .strip()
 export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
@@ -350,6 +374,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
   ChatContainerResponseSchema,
+  KbFileResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
