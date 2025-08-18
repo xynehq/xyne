@@ -78,7 +78,7 @@ export const parseHighlight = (text: string): ReactNode[] => {
  * Trims text to show the area with highest highlight density
  * Only trims when first few lines don't have highlights
  */
-function trimToHighlightHotspot(text: string): string {
+export function trimToHighlightHotspot(text: string): string {
   // Constants for estimation
   const CHARS_PER_LINE = 80
   const INITIAL_LINES_TO_CHECK = 2
@@ -182,5 +182,16 @@ const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => {
     </p>
   )
 }
+const HighlightedTextForAtMention = ({
+  chunk_summary,
+}: { chunk_summary: string }) => {
+  return (
+    <span className="text-left text-sm text-[#464B53] dark:text-slate-300">
+      {chunk_summary
+        ? parseHighlight(trimToHighlightHotspot(chunk_summary))
+        : " "}
+    </span>
+  )
+}
 
-export default HighlightedText
+export { HighlightedText, HighlightedTextForAtMention }
