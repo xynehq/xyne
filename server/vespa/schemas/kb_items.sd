@@ -1,62 +1,87 @@
-schema file {
-  document file {
+schema kb_items {
+  document kb_items {
+
     field docId type string {
       indexing: attribute | summary
+      # Unique document identifier in Vespa
     }
+    
+    field clId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      # Knowledge base ID for folder-level queries
+    }
+    
+    field itemId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      # Database item ID linking to kb_items table
+    }
+    # knowledge-base
     field app type string {
       indexing: attribute | summary
       attribute: fast-search
       match: exact
     }
-    
+
+    field fileName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index { enable-bm25 }
+    }
+
     field entity type string {
       indexing: attribute | summary
       attribute: fast-search
       match: exact
-    }
-    field title type string {
-      indexing: index | summary | attribute
-      index {
-        enable-bm25
-      }
-    }
-    field parentId type string {
-      indexing: index | summary | attribute
-      index {
-        enable-bm25
-      }
+      # Entity type: file or folder
     }
 
-    # TODO: low weightage url search can also be included
-    # maybe higher for subdomain and then lower for the path
-    # or we just make the path empty for those that are
-    # not good candidates like google drive
-    field url type string {
-      indexing: summary
+    field description type string {
+      indexing: index | summary | attribute
+      index { enable-bm25 }
     }
-
+    
+    field storagePath type string {
+      indexing: attribute | summary
+    }
+    
     field chunks type array<string> {
       indexing: index | summary
-      index: enable-bm25
+      index { enable-bm25 }
     }
 
-    field owner type string {
+    field image_chunks type array<string> {
+      indexing: index | summary
+      index { enable-bm25 }
+    }
+
+    field chunks_pos type array<long> {
       indexing: attribute | summary
     }
 
-    field ownerEmail type string {
+    field image_chunks_pos type array<long> {
       indexing: attribute | summary
     }
-
-    field photoLink type string {
+    
+    field metadata type string {
       indexing: attribute | summary
     }
+    
+    field createdBy type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
 
-    field permissions type array<string> {
+    field duration type long {
       indexing: attribute | summary
     }
 
     field mimeType type string {
+      indexing: attribute | summary
+    }
+    
+    field fileSize type long {
       indexing: attribute | summary
     }
 
@@ -65,49 +90,38 @@ schema file {
       attribute: fast-search
     }
 
-
     field updatedAt type long {
       indexing: attribute | summary
       attribute: fast-search
     }
-
-    field metadata type string {
-      indexing: attribute | summary
-    }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+  # Vector embeddings
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[384]) {
     indexing: input chunks | embed | attribute | index
-    attribute: paged
-    attribute {
-        distance-metric: angular
-    }
-  }
-  
-
-  field title_fuzzy type string {
-    indexing: input title | index
-    index {
-      enable-bm25
-    }
-    match {
-      gram
-      gram-size: 3
-    }
+    attribute { distance-metric: angular }
   }
 
-  fieldset default {
-    fields: title, app, entity, chunks
+  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[384]) {
+    indexing: input image_chunks | embed | attribute | index
+    attribute { distance-metric: angular }
   }
 
-  fieldset autocomplete {
-    fields: title, app, entity
+  # Fuzzy fileName
+  field fileName_fuzzy type string {
+    indexing: input fileName | index
+    index { enable-bm25 }
+    match { gram gram-size: 3 }
   }
+
+  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy }
+  fieldset autocomplete { fields:  fileName }
+  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity }
 
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+      query(e) tensor<bfloat16>(v[384])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
       query(recency_decay_rate) double
     }
@@ -134,30 +148,33 @@ schema file {
     }
 
     function vector_score() {
-      expression: closeness(field, chunk_embeddings)
+      expression: closeness(field, chunk_embeddings) + closeness(field, image_chunk_embeddings)
     }
 
     function combined_bm25() {
-      expression: bm25(title) + bm25(chunks)
+      expression: bm25(fileName) + bm25(chunks) + bm25(image_chunks) + bm25(description)
     }
 
     function matchedFieldCount() {
       expression {
         # The `matches` returns 1 if the field contains a match, otherwise 0
-        matches(title) + matches(chunks)
+        matches(fileName) + matches(chunks) + matches(image_chunks) + matches(description)
       }
     }
 
     function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(fileName) + nativeRank(chunks) + nativeRank(image_chunks) + nativeRank(description)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
       expression: elementwise(bm25(chunks), x, double)
     }
+
+    function image_chunk_scores() {
+      expression: elementwise(bm25(image_chunks), x, double)
+    }
   }
 
- 
   rank-profile default_native inherits initial {
 
     first-phase {
@@ -178,9 +195,11 @@ schema file {
       matchedFieldCount
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
+      nativeRank(description)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
@@ -246,9 +265,11 @@ schema file {
       vector_score
       matchedFieldCount
       combined_nativeRank        
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
+      nativeRank(description)
       chunk_scores
+      image_chunk_scores
       document_age_days_gs
       query(bin_size_days_gs)  
       recency_bin_index_gs
@@ -282,9 +303,11 @@ schema file {
      match-features {
       vector_score
       bm25(chunks)
-      bm25(title)
+      bm25(fileName)
+      bm25(description)
       scale(combined_bm25)
       chunk_scores
+      image_chunk_scores
     }
   }
 
@@ -308,9 +331,11 @@ schema file {
     match-features {
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
+      nativeRank(description)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
@@ -322,44 +347,35 @@ schema file {
     match-features {
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
+      nativeRank(description)
       chunk_scores
+      image_chunk_scores
       doc_recency
     }
   }
 
-  rank-profile title_boosted_hybrid inherits initial {
-  first-phase {
-    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(title)+0.2*nativeRank(chunks)))
-  }
-  
-  global-phase {
-    expression {
-      (
-        (query(alpha) * vector_score) + 
-        ((1 - query(alpha)) * (5 * nativeRank(title)+0.2*nativeRank(chunks)))
-      ) * doc_recency
-    }
-    rerank-count: 1000
-  }
-}
   document-summary default {
     summary chunks_summary {
       bolding: on
       source: chunks
     }
+    summary image_chunks_summary {
+      bolding: on
+      source: image_chunks
+    }
+    summary chunks_pos_summary {
+      source: chunks_pos
+    }
+    summary image_chunks_pos_summary {
+      source: image_chunks_pos
+    }
   }
 
   document-summary autocomplete {
-    summary title {
-        source: title
-    }
-    summary app {
-        source: app
-    }
-    summary entity {
-        source: entity
+    summary fileName {
+        source: fileName
     }
     summary docId {
         source: docId
@@ -369,10 +385,10 @@ schema file {
   # Autocomplete rank profile for fuzzy prefix search
   rank-profile autocomplete {
     first-phase {
-      expression: bm25(title_fuzzy)
+      expression: bm25(fileName_fuzzy)
     }
     match-features {
-      bm25(title_fuzzy)
+      bm25(fileName_fuzzy)
     }
   }
 }

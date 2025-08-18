@@ -86,6 +86,7 @@ interface SelectedFile {
 
 // Add attachment limit constant
 const MAX_ATTACHMENTS = 5
+import { HighlightedTextForAtMention } from "./Highlight"
 
 interface SourceItem {
   id: string
@@ -114,6 +115,15 @@ interface SearchResult {
   email?: string
   photoLink?: string
   userMap?: Record<string, string>
+  text?: string
+  domain?: string
+  createdAt?: string
+  channelId?: string
+}
+
+function slackTs(ts: any) {
+  if (typeof ts === "number") ts = ts.toString()
+  return ts.replace(".", "").padEnd(16, "0")
 }
 
 interface ChatBoxProps {
@@ -1339,8 +1349,18 @@ export const ChatBox = ({
         resultUrl = `https://mail.google.com/mail/u/0/#inbox/${identifier}`
       }
     }
+    if (result.app === Apps.Slack) {
+      if (result.threadId) {
+        // Thread message format
+        resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}?thread_ts=${result.threadId}&cid=${result.channelId}`
+      } else {
+        // Normal message format
+        resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}`
+      }
+    }
 
     const displayTitle =
+      result.text ||
       result.name ||
       result.subject ||
       result.title ||
@@ -1884,6 +1904,7 @@ export const ChatBox = ({
                 {globalResults.length > 0 &&
                   enhancedGlobalResults.map((result, index) => {
                     const displayTitle =
+                      result.text ||
                       result.name ||
                       result.subject ||
                       result.title ||
@@ -1917,12 +1938,18 @@ export const ChatBox = ({
                             })
                           )}
                           <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                            {displayTitle}
+                            <HighlightedTextForAtMention
+                              chunk_summary={displayTitle}
+                            />
                           </p>
                         </div>
                         {result.type !== "user" && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
-                            {result.from ? `From: ${result.from} | ` : ""}
+                            {result.from
+                              ? `From: ${result.from} | `
+                              : result.name
+                                ? `From: ${result.name} |`
+                                : ""}
                             {formatTimestamp(
                               result.timestamp || result.updatedAt,
                             )}
