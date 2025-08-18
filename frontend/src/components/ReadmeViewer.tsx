@@ -110,7 +110,7 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
 
   return (
     <div
-      className={`readme-viewer min-h-screen bg-white dark:bg-[#1E1E1E] ${className}`}
+      className={`readme-viewer relative min-h-full bg-white dark:bg-[#1E1E1E] ${className}`}
       style={style}
       data-color-mode={theme}
     >
