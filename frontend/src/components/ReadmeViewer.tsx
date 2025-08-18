@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import "@uiw/react-markdown-preview/markdown.css"
 import { authFetch } from "@/utils/authFetch"
+import { useTheme } from "@/components/ThemeContext"
 
 interface ReadmeViewerProps {
   /** Either a URL or File object */
@@ -12,8 +13,6 @@ interface ReadmeViewerProps {
   showLoading?: boolean
   /** Custom styles for the container */
   style?: React.CSSProperties
-  /** Theme mode */
-  theme?: "light" | "dark"
 }
 
 export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
@@ -21,11 +20,11 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
   className = "",
   showLoading = true,
   style = {},
-  theme = "light",
 }) => {
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [markdownContent, setMarkdownContent] = useState<string>("")
+  const { theme } = useTheme()
 
   // Use a stable key for the source to avoid unnecessary re-renders
   const sourceKey = useMemo(() => {
@@ -111,18 +110,14 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
 
   return (
     <div
-      className={`readme-viewer ${className}`}
-      style={{
-        backgroundColor: theme === "dark" ? "#1e1e1e" : "white",
-        minHeight: "100vh",
-        ...style,
-      }}
+      className={`readme-viewer min-h-screen bg-white dark:bg-[#1E1E1E] ${className}`}
+      style={style}
       data-color-mode={theme}
     >
       {loading && showLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 bg-opacity-90 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-[#1E1E1E]/90 z-10">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
             <p className="text-gray-600 dark:text-gray-300">
               Loading document...
             </p>
@@ -131,7 +126,7 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
       )}
 
       {error && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#1E1E1E] z-10">
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md">
             <p className="text-red-800 dark:text-red-200 font-semibold">
               Error loading document
@@ -189,10 +184,13 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
         
         .wmde-markdown pre {
           background-color: ${theme === "dark" ? "#2d2d2d" : "#f6f8fa"} !important;
+          border: 1px solid ${theme === "dark" ? "#404040" : "#e1e4e8"} !important;
         }
         
         .wmde-markdown code {
           background-color: ${theme === "dark" ? "#2d2d2d" : "rgba(175, 184, 193, 0.2)"} !important;
+          color: ${theme === "dark" ? "#e1e4e8" : "#24292e"} !important;
+          border: 1px solid ${theme === "dark" ? "#404040" : "#e1e4e8"} !important;
         }
         
         /* Ensure proper text color in dark mode */
@@ -207,6 +205,54 @@ export const ReadmeViewer: React.FC<ReadmeViewerProps> = ({
         [data-color-mode="dark"] .wmde-markdown h5,
         [data-color-mode="dark"] .wmde-markdown h6 {
           color: #c9d1d9 !important;
+          border-bottom-color: ${theme === "dark" ? "#404040" : "#eaecef"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown a {
+          color: #58a6ff !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown a:hover {
+          color: #79c0ff !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown blockquote {
+          border-left-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
+          color: ${theme === "dark" ? "#8b949e" : "#6a737d"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown table {
+          border-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown table th,
+        [data-color-mode="dark"] .wmde-markdown table td {
+          border-color: ${theme === "dark" ? "#404040" : "#dfe2e5"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown table tr:nth-child(2n) {
+          background-color: ${theme === "dark" ? "#2d2d2d" : "#f6f8fa"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown hr {
+          border-color: ${theme === "dark" ? "#404040" : "#e1e4e8"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown ul,
+        [data-color-mode="dark"] .wmde-markdown ol {
+          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown li {
+          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown strong {
+          color: ${theme === "dark" ? "#f0f6fc" : "#24292e"} !important;
+        }
+        
+        [data-color-mode="dark"] .wmde-markdown em {
+          color: ${theme === "dark" ? "#c9d1d9" : "#24292e"} !important;
         }
         
         @media print {

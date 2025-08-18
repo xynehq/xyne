@@ -167,15 +167,17 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       className={`enhanced-docx-viewer ${className}`}
       style={{
         backgroundColor: "white",
-        minHeight: "100vh",
+        minHeight: "100%",
+        height: "auto",
+        width: "100%",
         ...style,
       }}
     >
       {loading && showLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-[#1E1E1E]/90 z-10">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading document...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
           </div>
         </div>
       )}
@@ -197,22 +199,34 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       <style
         dangerouslySetInnerHTML={{
           __html: `
+         .enhanced-docx-viewer {
+           background: white !important;
+           min-height: 100% !important;
+           height: auto !important;
+           width: 100% !important;
+         }
+         
          .docx-preview-wrapper { 
            background: white !important; 
            padding: 0; 
            display: flex; 
            flex-flow: column; 
            align-items: center; 
+           min-height: 100% !important;
+           height: auto !important;
+           width: 100% !important;
          }
          
-         .docx-preview-wrapper > section.docx-preview { 
+         .docx-preview-wrapper > section.docx-preview, 
+         section.docx-viewer { 
            background: white; 
            box-shadow: none !important; 
            padding-top: 40px !important;
            margin: 0;
            padding: 40px 60px;
-           max-width: 850px;
-           width: 100%;
+           /* Allow the consumer to control width; override any inline widths from library */
+           width: auto !important;
+           max-width: none !important;
          }
          
          .docx-preview { 
