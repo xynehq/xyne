@@ -1713,3 +1713,63 @@ export const extractEmailsFromContext = async (
     },
   }
 }
+
+export const generateFollowUpQuestions = async (
+  userQuery: string,
+  systemPrompt: string,
+  params: ModelParams,
+): Promise<{ followUpQuestions: string[] }> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = systemPrompt
+    params.json = true
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: userQuery,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (text) {
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(
+          err,
+          `Failed to parse LLM output for follow-up questions: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+
+      if (jsonVal && Array.isArray(jsonVal.followUpQuestions)) {
+        return {
+          followUpQuestions: jsonVal.followUpQuestions.filter(
+            (q: any) => typeof q === "string" && q.trim().length > 0,
+          ),
+        }
+      } else {
+        Logger.error(
+          `LLM output did not contain valid follow-up questions. Raw output: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+    } else {
+      throw new Error("Could not get response from LLM")
+    }
+  } catch (error) {
+    Logger.error(error, "Error generating follow-up questions")
+    return { followUpQuestions: [] }
+  }
+}

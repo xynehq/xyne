@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Pencil, ArrowLeft } from "lucide-react"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType, IngestionType } from "shared/types"
+import { Apps, AuthType, IngestionType, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
@@ -45,13 +45,26 @@ import { wsClient } from "@/api" // ensure wsClient is imported
 export const updateConnectorStatus = async (
   connectorId: string,
   status: ConnectorStatus,
+  userRole: PublicUser["role"],
 ) => {
-  const res = await api.admin.connector.update_status.$post({
-    form: {
-      connectorId,
-      status,
-    },
-  })
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.connector.update_status.$post({
+        form: {
+          connectorId,
+          status,
+        },
+      })
+    : await api.connector.update_status.$post({
+        form: {
+          connectorId,
+          status,
+        },
+      })
+
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -101,8 +114,15 @@ const submitSlackBotToken = async (
 }
 
 // Add this function to fetch connectors (similar to Google implementation)
-export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
+export const getConnectors = async (userRole: UserRole): Promise<any> => {
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.connectors.all.$get()
+    : await api.connectors.all.$get()
+
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -218,10 +238,17 @@ export const SlackOAuthForm = ({
           payload.scopes = value.scopes.split(",").map((s) => s.trim())
           payload.isGlobalProvider = value.isGlobalProvider // Send checkbox value when providing own
         }
+        // Role-based API routing
+        const isAdmin =
+          userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
 
-        const response = await api.admin.oauth.create.$post({
-          form: payload,
-        })
+        const response = isAdmin
+          ? await api.admin.oauth.create.$post({
+              form: payload,
+            })
+          : await api.oauth.create.$post({
+              form: payload,
+            })
 
         if (!response.ok) {
           if (response.status === 401) {
@@ -456,7 +483,14 @@ const SlackOAuthTab = ({
     useQuery({
       queryKey: ["global-slack-provider"],
       queryFn: async () => {
-        const res = await api.admin.oauth["global-slack-provider"].$get()
+        // Role-based API routing
+        const isAdmin =
+          userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+        const res = isAdmin
+          ? await api.admin.oauth["global-slack-provider"].$get()
+          : await api.oauth["global-slack-provider"].$get()
+
         if (!res.ok) {
           // Handle error, maybe log it or show a toast
           toast({
@@ -479,9 +513,18 @@ const SlackOAuthTab = ({
         isUsingGlobalCred: true,
         app: Apps.Slack,
       }
-      const response = await api.admin.oauth.create.$post({
-        form: payload,
-      })
+      // Role-based API routing
+      const isAdmin =
+        userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+      const response = isAdmin
+        ? await api.admin.oauth.create.$post({
+            form: payload,
+          })
+        : await api.oauth.create.$post({
+            form: payload,
+          })
+
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(
@@ -710,7 +753,7 @@ export const Slack = ({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        return await getConnectors()
+        return await getConnectors(user.role)
       } catch (error) {
         const message = getErrorMessage(error)
         if (message === "Unauthorized") {
@@ -844,13 +887,22 @@ export const Slack = ({
     }
 
     setIsRegularIngestionActive(true)
-
     try {
-      const response = await api.admin.slack.start_ingestion.$post({
-        json: {
-          connectorId: slackConnector.cId,
-        },
-      })
+      // Role-based API routing
+      const isAdmin =
+        user.role === UserRole.Admin || user.role === UserRole.SuperAdmin
+
+      const response = isAdmin
+        ? await api.admin.slack.start_ingestion.$post({
+            json: {
+              connectorId: slackConnector.cId,
+            },
+          })
+        : await api.slack.start_ingestion.$post({
+            json: {
+              connectorId: slackConnector.cId,
+            },
+          })
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -960,6 +1012,7 @@ export const Slack = ({
                     setIsManualIngestionActive={setIsManualIngestionActive}
                     slackProgress={slackProgress}
                     slackUserStats={slackUserPartialIngestionStats}
+                    userRole={user.role}
                   />
                 ) : (
                   <p>Please connect Slack OAuth to enable manual ingestion.</p>
@@ -1059,6 +1112,7 @@ interface ManualIngestionFormProps {
   setIsManualIngestionActive: (active: boolean) => void
   slackProgress: number
   slackUserStats: { [email: string]: any }
+  userRole: PublicUser["role"]
 }
 
 const ManualIngestionForm = ({
@@ -1067,6 +1121,7 @@ const ManualIngestionForm = ({
   setIsManualIngestionActive,
   slackProgress,
   slackUserStats,
+  userRole,
 }: ManualIngestionFormProps) => {
   const { toast } = useToast()
   // const startTimeRef = useRef<number | null>(null)
@@ -1101,14 +1156,27 @@ const ManualIngestionForm = ({
           return
         }
 
-        const response = await api.admin.slack.ingest_more_channel.$post({
-          json: {
-            connectorId: connectorId,
-            channelsToIngest: channelIdsList,
-            startDate: value.startDate,
-            endDate: value.endDate,
-          },
-        })
+        // Role-based API routing
+        const isAdmin =
+          userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+        const response = isAdmin
+          ? await api.admin.slack.ingest_more_channel.$post({
+              json: {
+                connectorId: connectorId,
+                channelsToIngest: channelIdsList,
+                startDate: value.startDate,
+                endDate: value.endDate,
+              },
+            })
+          : await api.slack.ingest_more_channel.$post({
+              json: {
+                connectorId: connectorId,
+                channelsToIngest: channelIdsList,
+                startDate: value.startDate,
+                endDate: value.endDate,
+              },
+            })
 
         if (!response.ok) {
           const errorText = await response.text()

@@ -50,7 +50,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
-import { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
@@ -370,13 +370,13 @@ function AgentComponent() {
     setCurrentPage(1)
   }
 
-  const toggleFavorite = (agentExternalId: string) => {
+  const toggleFavorite = useCallback((agentExternalId: string) => {
     setFavoriteAgents((prevFavorites) =>
       prevFavorites.includes(agentExternalId)
         ? prevFavorites.filter((id) => id !== agentExternalId)
         : [...prevFavorites, agentExternalId],
     )
-  }
+  }, [])
 
   useEffect(() => {
     setSelectedSearchIndex(-1)
@@ -1962,67 +1962,67 @@ function AgentComponent() {
                     <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
                       Specific Entites
                     </Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
-                    Search for and select specific entities for your agent to
-                    use.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
-                    {selectedEntities.length > 0 ? (
-                      selectedEntities.map((entity) => (
-                        <CustomBadge
-                          key={entity.docId}
-                          text={entity.name}
-                          onRemove={() =>
-                            setSelectedEntities((prev) =>
-                              prev.filter((c) => c.docId !== entity.docId),
-                            )
-                          }
-                        />
-                      ))
-                    ) : (
-                      <span className="text-sm text-gray-500 dark:text-gray-300">
-                        Selected entites will be shown here
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative mt-2">
-                    <Input
-                      placeholder="Search for specific entities..."
-                      value={entitySearchQuery}
-                      onChange={(e) => setEntitySearchQuery(e.target.value)}
-                      className="bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
-                    />
-                    {showEntitySearchResults && (
-                      <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
-                        <CardContent className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin">
-                          {entitySearchResults.length > 0 ? (
-                            entitySearchResults.map((entity) => (
-                              <div
-                                key={entity.docId}
-                                className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
-                                onClick={() => {
-                                  setSelectedEntities((prev) => [
-                                    ...prev,
-                                    entity,
-                                  ])
-                                  setEntitySearchQuery("")
-                                }}
-                              >
-                                <p className="text-sm font-medium">
-                                  {entity.name}
-                                </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
+                      Search for and select specific entities for your agent to
+                      use.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
+                      {selectedEntities.length > 0 ? (
+                        selectedEntities.map((entity) => (
+                          <CustomBadge
+                            key={entity.docId}
+                            text={entity.name}
+                            onRemove={() =>
+                              setSelectedEntities((prev) =>
+                                prev.filter((c) => c.docId !== entity.docId),
+                              )
+                            }
+                          />
+                        ))
+                      ) : (
+                        <span className="text-sm text-gray-500 dark:text-gray-300">
+                          Selected entites will be shown here
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative mt-2">
+                      <Input
+                        placeholder="Search for specific entities..."
+                        value={entitySearchQuery}
+                        onChange={(e) => setEntitySearchQuery(e.target.value)}
+                        className="bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
+                      />
+                      {showEntitySearchResults && (
+                        <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
+                          <CardContent className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin">
+                            {entitySearchResults.length > 0 ? (
+                              entitySearchResults.map((entity) => (
+                                <div
+                                  key={entity.docId}
+                                  className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedEntities((prev) => [
+                                      ...prev,
+                                      entity,
+                                    ])
+                                    setEntitySearchQuery("")
+                                  }}
+                                >
+                                  <p className="text-sm font-medium">
+                                    {entity.name}
+                                  </p>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-gray-500">
+                                No entities found.
                               </div>
-                            ))
-                          ) : (
-                            <div className="p-3 text-center text-gray-500">
-                              No entities found.
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )}
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
                   </div>
-                </div>
                 )}
 
                 {!isPublic && (
