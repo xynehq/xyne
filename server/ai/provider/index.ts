@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
+
 const {
   AwsAccessKey,
   AwsSecretKey,
@@ -34,6 +35,7 @@ import type {
   AnswerResponse,
   ConverseResponse,
   Cost,
+  Intent,
   LLMProvider,
   ModelParams,
   QueryRouterResponse,
@@ -75,6 +77,7 @@ import {
   userChatSystem,
   withToolQueryPrompt,
   ragOffPromptJson,
+  nameToEmailResolutionPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1632,5 +1635,124 @@ export const generateFallback = async (
   } catch (error) {
     Logger.error(error, "Error in generateFallback")
     throw error
+  }
+}
+
+export const extractEmailsFromContext = async (
+  names: Intent,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ emails: Intent }> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  const intentNames =
+    [
+      ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
+      ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
+      ...(names.cc?.length ? [`CC: ${names.cc.join(", ")}`] : []),
+      ...(names.bcc?.length ? [`BCC: ${names.bcc.join(", ")}`] : []),
+    ].join(" | ") || "No names provided"
+
+  params.systemPrompt = nameToEmailResolutionPrompt(
+    userCtx,
+    retrievedCtx,
+    intentNames,
+    names,
+  )
+  params.json = false
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `Help me find emails for these names: ${intentNames}`,
+      },
+    ],
+  }
+
+  const updatedMessages: Message[] = [baseMessage]
+  const res = await getProviderByModel(params.modelId).converse(
+    updatedMessages,
+    params,
+  )
+
+  let parsedResponse = []
+  if (!res || !res.text) {
+    Logger.error("No response from LLM for email extraction")
+  }
+  if (res.text) {
+    parsedResponse = jsonParseLLMOutput(res.text)
+  }
+  const emails = parsedResponse.emails || {}
+  return {
+    emails: {
+      bcc: emails.bcc || [],
+      cc: emails.cc || [],
+      from: emails.from || [],
+      to: emails.to || [],
+    },
+  }
+}
+
+export const generateFollowUpQuestions = async (
+  userQuery: string,
+  systemPrompt: string,
+  params: ModelParams,
+): Promise<{ followUpQuestions: string[] }> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = systemPrompt
+    params.json = true
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: userQuery,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (text) {
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(
+          err,
+          `Failed to parse LLM output for follow-up questions: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+
+      if (jsonVal && Array.isArray(jsonVal.followUpQuestions)) {
+        return {
+          followUpQuestions: jsonVal.followUpQuestions.filter(
+            (q: any) => typeof q === "string" && q.trim().length > 0,
+          ),
+        }
+      } else {
+        Logger.error(
+          `LLM output did not contain valid follow-up questions. Raw output: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+    } else {
+      throw new Error("Could not get response from LLM")
+    }
+  } catch (error) {
+    Logger.error(error, "Error generating follow-up questions")
+    return { followUpQuestions: [] }
   }
 }

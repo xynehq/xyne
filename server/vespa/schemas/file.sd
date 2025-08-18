@@ -20,6 +20,12 @@ schema file {
         enable-bm25
       }
     }
+    field parentId type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
 
     # TODO: low weightage url search can also be included
     # maybe higher for subdomain and then lower for the path

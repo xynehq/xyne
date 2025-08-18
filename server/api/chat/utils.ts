@@ -2,6 +2,7 @@ import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
   DataSourceEntity,
   dataSourceFileSchema,
@@ -15,9 +16,11 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
+  type VespaChatContainer,
   type VespaChatMessage,
   type VespaDataSourceFile,
   type VespaEvent,
@@ -32,27 +35,116 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  KbItemsSchema,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { UserQuery } from "@/ai/types"
+import type { Intent, UserQuery } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
   type AgentReasoningStep,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
-import { SearchEmailThreads } from "@/search/vespa"
+import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
 import { getLoggerWithChild } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
+import { getAllCollectionAndFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import { db } from "@/db/client"
+
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
   return ts.replace(".", "").padEnd(16, "0")
+}
+
+export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
+  try {
+    const agent = JSON.parse(agentPrompt)
+    if (!agent || !agent.docIds) {
+      return []
+    }
+    const channelIds = new Set<string>()
+    agent.docIds?.forEach((doc: any) => {
+      if (doc.app === Apps.Slack) {
+        if (doc.entity === SlackEntity.Channel && doc.docId) {
+          channelIds.add(doc.docId)
+        }
+      }
+    })
+    return Array.from(channelIds)
+  } catch (e) {
+    return []
+  }
+}
+
+export interface AppSelection {
+  itemIds: string[]
+  selectedAll: boolean
+}
+
+export interface AppSelectionMap {
+  [appName: string]: AppSelection
+}
+
+export interface ParsedResult {
+  selectedApps: Apps[]
+  selectedItems: { [app: string]: string[] }
+}
+
+export function parseAppSelections(input: AppSelectionMap): ParsedResult {
+  const selectedApps: Apps[] = []
+  const selectedItems: { [app: string]: string[] } = {}
+
+  for (let [appName, selection] of Object.entries(input)) {
+    let app: Apps
+    // Add app to selectedApps list
+    if (appName == "googledrive") {
+      app = Apps.GoogleDrive
+    } else if (appName == "googlesheets") {
+      app = Apps.GoogleDrive
+    } else if (appName == "gmail") {
+      app = Apps.Gmail
+    } else if (appName == "googlecalendar") {
+      app = Apps.GoogleCalendar
+    } else if (appName == "DataSource") {
+      app = Apps.DataSource
+    } else if (appName == "knowledge_base") {
+      app = Apps.KnowledgeBase
+    } else if (appName == "slack") {
+      app = Apps.Slack
+    } else if (appName == "google-workspace") app = Apps.GoogleWorkspace
+    else {
+      app = appName as unknown as Apps
+    }
+
+    selectedApps.push(app)
+    // If selectedAll is true or itemIds is empty, we infer "all selected"
+    // So we don't add anything to selectedItems (empty means all)
+    if (
+      !selection.selectedAll &&
+      selection.itemIds &&
+      selection.itemIds.length > 0
+    ) {
+      // Only add specific itemIds when selectedAll is false and there are specific items
+      if (selectedItems[app]) {
+        selectedItems[app] = [
+          ...new Set([...selectedItems[app], ...selection.itemIds]),
+        ]
+      } else {
+        selectedItems[app] = selection.itemIds
+      }
+    }
+  }
+  return {
+    selectedApps,
+    selectedItems,
+  }
 }
 
 // Interface for email search result fields
@@ -329,6 +421,26 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaDataSourceFile).app,
       entity: DataSourceEntity.DataSourceFile,
     }
+  } else if (result.fields.sddocname == KbItemsSchema) {
+    // Handle Collection files - include the actual file and Collection UUIDs for direct access
+    const clFields = fields as any // Type as VespaClFileSearch when types are available
+    return {
+      docId: clFields.docId,
+      title: clFields.fileName || "Collection File",
+      url: `/cl/${clFields.clId}`,
+      app: Apps.KnowledgeBase,
+      entity: SystemEntity.SystemInfo,
+      itemId: clFields.itemId,
+      clId: clFields.clId,
+    }
+  } else if (result.fields.sddocname === chatContainerSchema) {
+    return {
+      docId: (fields as VespaChatContainer).docId,
+      title: (fields as VespaChatContainer).name,
+      url: `https://${result.fields.domain}.slack.com/archives/${result.fields.docId}`,
+      app: (fields as VespaChatContainer).app,
+      entity: SlackEntity.Channel,
+    }
   } else {
     throw new Error("Invalid search result type for citation")
   }
@@ -387,6 +499,7 @@ export const getFileIdFromLink = (link: string) => {
 }
 export const extractFileIdsFromMessage = async (
   message: string,
+  email?: string,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -394,15 +507,59 @@ export const extractFileIdsFromMessage = async (
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
+  const driveItem: string[] = []
+  const collectionFolderIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
-      fileIds.push(obj?.value?.docId)
+      if (
+        obj?.value &&
+        obj?.value?.entity &&
+        obj?.value?.entity == DriveEntity.Folder
+      ) {
+        driveItem.push(obj?.value?.docId)
+      } else fileIds.push(obj?.value?.docId)
       // Check if this pill has a threadId (for email threads)
       if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
         threadIds.push(obj?.value?.threadId)
+      }
+
+      const pillValue = obj.value
+      const docId = pillValue.docId
+
+      // Check if this is a Google Sheets reference with wholeSheet: true
+      if (pillValue.wholeSheet === true) {
+        // Extract the base docId (remove the "_X" suffix if present)
+        const baseDocId = docId.replace(/_\d+$/, "")
+
+        // Get the spreadsheet metadata to find all sub-sheets
+        const validFile = await getDocumentOrSpreadsheet(baseDocId)
+        if (validFile) {
+          const fields = validFile?.fields as VespaFile
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            // Add all sub-sheet IDs
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${baseDocId}_${i}`)
+            }
+          } else {
+            // Fallback: just add the docId if it's not a spreadsheet
+            fileIds.push(docId)
+          }
+        } else {
+          // Fallback: just add the docId if we can't get metadata
+          fileIds.push(docId)
+        }
+      } else {
+        // Regular pill behavior: just add the docId
+        fileIds.push(docId)
       }
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
@@ -434,6 +591,50 @@ export const extractFileIdsFromMessage = async (
       }
     }
   }
+
+  while (driveItem.length) {
+    let curr = driveItem.shift()
+    // Ensure email is defined before passing it to getFolderItems\
+    if (curr) fileIds.push(curr)
+    if (curr && email) {
+      try {
+        const folderItem = await getFolderItems(
+          [curr],
+          fileSchema,
+          DriveEntity.Folder,
+          email,
+        )
+        if (
+          folderItem.root &&
+          folderItem.root.children &&
+          folderItem.root.children.length > 0
+        ) {
+          for (const item of folderItem.root.children) {
+            if (
+              item.fields &&
+              (item.fields as any).entity === DriveEntity.Folder
+            ) {
+              driveItem.push((item.fields as any).docId)
+            } else {
+              fileIds.push((item.fields as any).docId)
+            }
+          }
+        }
+      } catch (error) {
+        getLoggerWithChild(Subsystem.Chat)({ email }).error(
+          `Falied to fetch the content of Folder`,
+        )
+      }
+    }
+  }
+
+  const collectionFileIds = await getAllCollectionAndFolderItems(collectionFolderIds, db)
+  if (collectionFolderIds.length > 0) {
+    const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
+    const vespaIds = ids.filter((item) => item.vespaDocId !== null).map((item) => item.vespaDocId!)
+    fileIds.push(...vespaIds)
+  }
+
   return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
 }
 
@@ -621,4 +822,56 @@ export const getCitationToImage = async (
     )
     return null
   }
+}
+
+export function extractNamesFromIntent(intent: any): Intent {
+  if (!intent || typeof intent !== "object") return {}
+
+  const result: Intent = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+
+  for (const field of fieldsToCheck) {
+    if (Array.isArray(intent[field]) && intent[field].length > 0) {
+      const uniqueValues = [...new Set(intent[field])].filter((v) => v)
+      if (uniqueValues.length > 0) {
+        result[field] = uniqueValues
+      }
+    }
+  }
+
+  return result
+}
+
+export function isAppSelectionMap(value: any): value is AppSelectionMap {
+
+  if (!value || typeof value !== "object") {
+    return false
+  }
+  // Check if it's an empty object (valid case)
+  if (Object.keys(value).length === 0) {
+    return true
+  }
+  // Check if all properties are valid AppSelection objects
+  for (const [appName, selection] of Object.entries(value)) {
+    // Optionally validate app name is a valid app
+    // if (!isValidApp(appName)) {
+    //   return false;
+    // }
+
+    if (!isValidAppSelection(selection)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function isValidAppSelection(value: any): value is AppSelection {
+  return (
+    value &&
+    typeof value === "object" &&
+    Array.isArray(value.itemIds) &&
+    value.itemIds.every((id: any) => typeof id === "string") &&
+    typeof value.selectedAll === "boolean"
+  )
 }

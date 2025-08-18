@@ -12,7 +12,7 @@ import {
   getToolsByConnectorId as dbGetToolsByConnectorId,
   tools as toolsTable,
 } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
-import { eq, and, inArray, sql } from "drizzle-orm"
+import { eq, and, inArray, sql, gte, lte, isNull } from "drizzle-orm"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -45,8 +45,18 @@ import {
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
+import { users, chats, messages, agents } from "@/db/schema" // Add database schema imports
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
+import {
+  getUserAgentLeaderboard,
+  type UserAgentLeaderboard,
+  getAgentAnalysis,
+  type AgentAnalysisData,
+  getAgentFeedbackMessages,
+  getAgentUserFeedbackMessages,
+  getAllUserFeedbackMessages,
+} from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
   AddServiceConnectionError,
@@ -67,6 +77,65 @@ import { clearUserSyncJob } from "@/db/syncJob"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
+
+// Schema for admin query validation
+export const adminQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  userId: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined)),
+})
+
+// Schema for user agent leaderboard query
+export const userAgentLeaderboardQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+// Schema for agent analysis query
+export const agentAnalysisQuerySchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'from' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for 'to' parameter",
+    })
+    .transform((val) => (val ? new Date(val) : undefined)),
+  workspaceExternalId: z.string().optional(),
+})
 
 export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
@@ -1140,5 +1209,433 @@ export const IngestMoreChannelApi = async (c: Context) => {
       success: false,
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Admin Dashboard API Functions
+
+export const GetAdminChats = async (c: Context) => {
+  try {
+    // Get validated query parameters
+    // @ts-ignore
+    const { from, to, userId } = c.req.valid("query")
+
+    // Build the conditions array
+    const conditions = []
+    if (from) {
+      conditions.push(gte(chats.createdAt, from))
+    }
+    if (to) {
+      conditions.push(lte(chats.createdAt, to))
+    }
+    if (userId) {
+      conditions.push(eq(chats.userId, userId))
+    }
+
+    // Build the query with feedback aggregation and cost tracking
+    const baseQuery = db
+      .select({
+        id: chats.id,
+        externalId: chats.externalId,
+        title: chats.title,
+        createdAt: chats.createdAt,
+        agentId: chats.agentId,
+        userId: chats.userId,
+        userEmail: users.email,
+        userName: users.name,
+        userRole: users.role,
+        userCreatedAt: users.createdAt, // Add user's actual creation date
+        messageCount: sql<number>`COUNT(${messages.id})::int`,
+        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
+        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      })
+      .from(chats)
+      .leftJoin(users, eq(chats.userId, users.id))
+      .leftJoin(messages, eq(chats.id, messages.chatId))
+
+    const result =
+      conditions.length > 0
+        ? await baseQuery
+            .where(and(...conditions))
+            .groupBy(
+              chats.id,
+              users.email,
+              users.name,
+              users.role,
+              users.createdAt,
+            )
+        : await baseQuery.groupBy(
+            chats.id,
+            users.email,
+            users.name,
+            users.role,
+            users.createdAt,
+          )
+
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((chat) => ({
+      ...chat,
+      totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
+  } catch (error) {
+    Logger.error(error, "Error fetching admin chats")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAdminAgents = async (c: Context) => {
+  try {
+    const result = await db
+      .select({
+        id: agents.id,
+        externalId: agents.externalId,
+        name: agents.name,
+        description: agents.description,
+        isPublic: agents.isPublic,
+        createdAt: agents.createdAt,
+        userId: agents.userId,
+        workspaceId: agents.workspaceId,
+      })
+      .from(agents)
+
+    return c.json(result)
+  } catch (error) {
+    Logger.error(error, "Error fetching admin agents")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAdminUsers = async (c: Context) => {
+  try {
+    const result = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        role: users.role,
+        createdAt: users.createdAt,
+        lastLogin: users.lastLogin,
+        isActive: isNull(users.deletedAt),
+        totalChats: sql<number>`COUNT(DISTINCT ${chats.id})::int`,
+        totalMessages: sql<number>`COUNT(${messages.id})::int`,
+        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
+        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      })
+      .from(users)
+      .leftJoin(chats, eq(users.id, chats.userId))
+      .leftJoin(messages, eq(chats.id, messages.chatId))
+      .groupBy(
+        users.id,
+        users.email,
+        users.name,
+        users.role,
+        users.createdAt,
+        users.lastLogin,
+        users.deletedAt,
+      )
+
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((user) => ({
+      ...user,
+      totalCost: Number(user.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(user.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
+  } catch (error) {
+    Logger.error(error, "Error fetching admin users")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+/**
+ * Get agent leaderboard for a specific user showing their usage across all agents
+ */
+export const GetUserAgentLeaderboard = async (c: Context) => {
+  try {
+    const userId = c.req.param("userId")
+    // @ts-ignore
+    const { from, to } = c.req.valid("query")
+
+    if (!userId) {
+      return c.json(
+        {
+          success: false,
+          message: "User ID is required",
+        },
+        400,
+      )
+    }
+
+    // Validate that userId is a valid number string
+    const userIdNumber = Number(userId)
+    if (
+      isNaN(userIdNumber) ||
+      !Number.isInteger(userIdNumber) ||
+      userIdNumber <= 0
+    ) {
+      return c.json(
+        {
+          success: false,
+          message: "User ID must be a valid positive integer",
+        },
+        400,
+      )
+    }
+
+    // Get the user's workspace information
+    const user = await db
+      .select({
+        workspaceExternalId: users.workspaceExternalId,
+      })
+      .from(users)
+      .where(eq(users.id, userIdNumber))
+      .limit(1)
+
+    if (user.length === 0) {
+      return c.json(
+        {
+          success: false,
+          message: "User not found",
+        },
+        404,
+      )
+    }
+
+    const workspaceExternalId = user[0].workspaceExternalId
+
+    const timeRange = from && to ? { from, to } : undefined
+
+    const leaderboard = await getUserAgentLeaderboard({
+      db,
+      userId: userIdNumber,
+      workspaceExternalId,
+      timeRange,
+    })
+
+    return c.json({
+      success: true,
+      data: leaderboard,
+      totalAgents: leaderboard.length,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching user agent leaderboard")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+/**
+ * Get agent analysis data showing agent stats and user leaderboard who have used it
+ */
+export const GetAgentAnalysis = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    // @ts-ignore
+    const { from, to, workspaceExternalId } = c.req.valid("query")
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    const timeRange = from && to ? { from, to } : undefined
+
+    const agentAnalysis = await getAgentAnalysis({
+      db,
+      agentId,
+      workspaceExternalId, // Can be undefined for admin cross-workspace view
+      timeRange,
+    })
+
+    if (!agentAnalysis) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent not found",
+        },
+        404,
+      )
+    }
+
+    return c.json({
+      success: true,
+      data: agentAnalysis,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent analysis")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAgentFeedbackMessages = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    // @ts-ignore
+    const { from, to, workspaceExternalId } = c.req.valid("query")
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    const timeRange = from && to ? { from, to } : undefined
+
+    const feedbackMessages = await getAgentFeedbackMessages({
+      db,
+      agentId,
+      workspaceExternalId, // Can be undefined for admin cross-workspace view
+      timeRange,
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAgentUserFeedbackMessages = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    const userId = c.req.param("userId")
+    // @ts-ignore
+    const { workspaceExternalId } = c.req.valid("query")
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    if (!userId) {
+      return c.json(
+        {
+          success: false,
+          message: "User ID is required",
+        },
+        400,
+      )
+    }
+
+    const feedbackMessages = await getAgentUserFeedbackMessages({
+      db,
+      agentId,
+      userId: parseInt(userId),
+      workspaceExternalId, // Can be undefined for admin cross-workspace view
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+/**
+ * Get all feedback messages for a specific user across all agents (admin use)
+ */
+export const GetAllUserFeedbackMessages = async (c: Context) => {
+  try {
+    const { userId } = c.req.param()
+    const userIdNum = parseInt(userId, 10)
+
+    if (isNaN(userIdNum)) {
+      return c.json(
+        {
+          success: false,
+          message: "Invalid user ID",
+        },
+        400,
+      )
+    }
+
+    // Get all feedback messages for this user across all agents
+    const feedbackMessages = await getAllUserFeedbackMessages({
+      db,
+      userId: userIdNum,
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching all user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
   }
 }

@@ -12,6 +12,8 @@ import {
   getAgentsMadeByMe,
   getAgentsSharedToMe,
 } from "@/db/agent"
+
+import { fetchedDataSourceSchema } from "@/db/schema/agents"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
@@ -26,6 +28,7 @@ import { selectPublicAgentSchema } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { users } from "@/db/schema"
 import { UserAgentRole } from "@/shared/types"
+import { getCollectionItemById } from "@/db/knowledgeBase"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
 const { JwtPayloadKey } = config
@@ -38,11 +41,18 @@ export const createAgentSchema = z.object({
   prompt: z.string().optional(),
   model: z.string().min(1, "Model is required"),
   isPublic: z.boolean().optional().default(false),
-  appIntegrations: z.array(z.string()).optional().default([]),
+  appIntegrations: z.union([
+    z.array(z.string()), // Legacy format
+    z.record(z.object({   // New AppSelectionMap format
+      itemIds: z.array(z.string()),
+      selectedAll: z.boolean()
+    }))
+  ]).optional().default([]),
   allowWebSearch: z.boolean().optional().default(false),
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
+  docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
 
@@ -136,6 +146,7 @@ export const CreateAgentApi = async (c: Context) => {
       allowWebSearch: validatedBody.allowWebSearch,
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
+      docIds: validatedBody.docIds,
     }
 
     // Create agent and sync user permissions in a transaction
@@ -498,6 +509,154 @@ export const GetAgentPermissionsApi = async (c: Context) => {
     )
     return c.json(
       { message: "Could not fetch agent permissions", detail: errMsg },
+      500,
+    )
+  }
+}
+
+export const GetAgentIntegrationItemsApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+    const agentExternalId = c.req.param("agentExternalId")
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+
+    // Check if user has access to this agent
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+      userAndWorkspace.user.id,
+    )
+
+    if (!agent) {
+      return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    // Parse app integrations
+    const appIntegrations = agent.appIntegrations as Record<string, any>
+    const integrationItems: Record<string, any> = {}
+
+    // Handle knowledge base integrations
+    if (appIntegrations && typeof appIntegrations === 'object' && appIntegrations.knowledge_base) {
+      const clConfig = appIntegrations.knowledge_base
+      const itemIds = clConfig.itemIds || []
+
+      if (itemIds.length > 0) {
+        // Fetch items by their IDs
+        const items = await Promise.all(
+          itemIds.map(async (itemId: string) => {
+            try {
+              const item = await getCollectionItemById(db, itemId)
+              if (item) {
+                return {
+                  id: item.id,
+                  name: item.name,
+                  type: item.type,
+                  parentId: item.parentId,
+                  path: item.path,
+                  metadata: item.metadata
+                }
+              }
+              return null
+            } catch (error) {
+              loggerWithChild({ email }).warn(
+                `Failed to fetch KB item ${itemId}: ${getErrorMessage(error)}`
+              )
+              return null
+            }
+          })
+        )
+
+        // Filter out null items and group by knowledge base
+        const validItems = items.filter(Boolean)
+        
+        // Group items by their knowledge base (we can determine this from the path or parentId)
+        const clGroups: Record<string, any[]> = {}
+        
+        for (const item of validItems) {
+          // Find the root Collection ID by traversing up the hierarchy
+          let currentItem = item
+          let clId = item.id
+          
+          // If item has a parentId, try to find the root Collection
+          if (item.parentId) {
+            try {
+              let parent = await getCollectionItemById(db, item.parentId)
+              while (parent && parent.parentId) {
+                const nextParent = await getCollectionItemById(db, parent.parentId)
+                if (!nextParent) break
+                parent = nextParent
+              }
+              if (parent) {
+                clId = parent.id
+              }
+            } catch (error) {
+              // If we can't find the parent, use the item's own ID
+              loggerWithChild({ email }).warn(
+                `Failed to find parent for item ${item.id}: ${getErrorMessage(error)}`
+              )
+            }
+          }
+          
+          if (!clGroups[clId]) {
+            clGroups[clId] = []
+          }
+          clGroups[clId].push(item)
+        }
+
+        integrationItems.knowledge_base = {
+          type: 'knowledge_base',
+          groups: clGroups,
+          totalItems: validItems.length
+        }
+      }
+    }
+
+    // Handle legacy format or other integrations if needed
+    if (Array.isArray(appIntegrations)) {
+      // Legacy format - just return the integration IDs
+      integrationItems.legacy = {
+        type: 'legacy',
+        integrationIds: appIntegrations
+      }
+    } else if (appIntegrations && typeof appIntegrations === 'object') {
+      // Handle other integration types (non-KB)
+      for (const [key, value] of Object.entries(appIntegrations)) {
+        if (key !== 'knowledge_base' && value && typeof value === 'object') {
+          integrationItems[key] = {
+            type: 'regular',
+            config: value
+          }
+        }
+      }
+    }
+
+    return c.json({
+      agentId: agent.externalId,
+      integrationItems
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Get Agent Integration Items Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    return c.json(
+      { message: "Could not fetch agent integration items", detail: errMsg },
       500,
     )
   }

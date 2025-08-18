@@ -14,7 +14,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm"
 
 export const insertChat = async (
   trx: TxnOrClient,
@@ -166,11 +166,21 @@ export const getPublicChats = async (
   email: string,
   pageSize: number,
   offset: number,
+  timeRange?: { from?: Date; to?: Date },
 ): Promise<SelectPublicChat[]> => {
+  const conditions = [eq(chats.email, email), eq(chats.isBookmarked, false)]
+
+  if (timeRange?.from) {
+    conditions.push(gte(chats.createdAt, timeRange.from))
+  }
+  if (timeRange?.to) {
+    conditions.push(lte(chats.createdAt, timeRange.to))
+  }
+
   const chatsArr = await trx
     .select()
     .from(chats)
-    .where(and(eq(chats.email, email), eq(chats.isBookmarked, false)))
+    .where(and(...conditions))
     .limit(pageSize)
     .offset(offset)
     .orderBy(desc(chats.updatedAt))
@@ -190,5 +200,27 @@ export const getFavoriteChats = async (
     .limit(pageSize)
     .offset(offset)
     .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getAllChatsForDashboard = async (
+  trx: TxnOrClient,
+  email: string,
+  timeRange?: { from?: Date; to?: Date },
+): Promise<SelectPublicChat[]> => {
+  const conditions = [eq(chats.email, email)]
+
+  if (timeRange?.from) {
+    conditions.push(gte(chats.createdAt, timeRange.from))
+  }
+  if (timeRange?.to) {
+    conditions.push(lte(chats.createdAt, timeRange.to))
+  }
+
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(and(...conditions))
+    .orderBy(desc(chats.createdAt))
   return z.array(selectPublicChatSchema).parse(chatsArr)
 }

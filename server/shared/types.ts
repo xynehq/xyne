@@ -16,6 +16,10 @@ import {
   chatUserSchema,
   ChatMessageResponseSchema,
   dataSourceFileSchema,
+  chatContainerSchema,
+  VespaChatContainerSchema,
+  KbItemsSchema,
+  VespaKbFileSchemaBase,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -184,6 +188,17 @@ export const AutocompleteChatUserSchema = z
   })
   .strip()
 
+export const AutocompleteChatContainerSchema = z
+  .object({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    name: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -192,6 +207,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteUserQueryHSchema,
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
+  AutocompleteChatContainerSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -207,6 +223,9 @@ export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
 export type ChatUserAutocomplete = z.infer<typeof AutocompleteChatUserSchema>
+export type AutocompleteChatContainer = z.infer<
+  typeof AutocompleteChatContainerSchema
+>
 export type MailAttachmentAutocomplete = z.infer<
   typeof AutocompleteMailAttachmentSchema
 >
@@ -241,6 +260,28 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
+export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
+    docId: true,
+    fileName: true,
+    app: true,
+    entity: true,
+    createdBy: true,
+    updatedAt: true,
+    itemId: true,
+    clId: true,
+    mimeType: true,
+  })
+    .extend({
+      app: z.literal(Apps.KnowledgeBase),
+      type: z.literal(KbItemsSchema),
+      chunk: z.string().optional(),
+      chunkIndex: z.number().optional(),
+      chunks_summary: z.array(scoredChunk).optional(),
+      relevance: z.number(),
+      matchfeatures: z.any().optional(), // Add matchfeatures
+      rankfeatures: z.any().optional(),
+    })
+    .strip()
 export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
@@ -300,6 +341,29 @@ export const DataSourceFileResponseSchema = z
   })
   .strip()
 
+export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
+  docId: true,
+  name: true,
+  app: true,
+  entity: true,
+  updatedAt: true,
+  isPrivate: true,
+  isArchived: true,
+  isGeneral: true,
+  isIm: true,
+  isMpim: true,
+  topic: true,
+  description: true,
+  count: true,
+})
+  .extend({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -309,6 +373,8 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  ChatContainerResponseSchema,
+  KbFileResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
