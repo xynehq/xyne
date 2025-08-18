@@ -152,12 +152,8 @@ const Index = () => {
   const searchParams = useSearch({ from: "/_authenticated/" })
 
   useEffect(() => {
-    if (searchParams?.agentId) {
-      setPersistedAgentId(searchParams.agentId)
-    } else {
-      setPersistedAgentId(null)
-    }
-  }, [searchParams?.agentId])
+    setPersistedAgentId(searchParams.agentId || null);
+  }, [searchParams.agentId]);
 
   useEffect(() => {
     if (!autocompleteQuery) {
