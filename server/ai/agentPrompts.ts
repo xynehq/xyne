@@ -955,7 +955,6 @@ Generate a summary that shows the user that meaningful work was done in the back
 // Agent Step Summary Generation Prompt
 // This prompt is used to generate concise, user-friendly summaries for agent reasoning steps
 export const generateAgentStepSummaryPromptJson = (
-  stepType: string,
   stepDetails: any,
   userQuery: string,
   contextInfo?: string,
@@ -964,7 +963,7 @@ export const generateAgentStepSummaryPromptJson = (
 Your task is to generate a brief, actionable summary (maximum 50-60 characters) that explains what the agent is doing in simple terms.
 
 # Input Information:
-- Step Type: ${stepType}
+- Step Type: ${stepDetails.type}
 - Step Details: ${JSON.stringify(stepDetails, null, 2)}
 - User Query: "${userQuery}"
 - Context: ${contextInfo || "No additional context"}

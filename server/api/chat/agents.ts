@@ -208,7 +208,6 @@ const generateStepSummary = async (
 ): Promise<string> => {
   try {
     const prompt = generateAgentStepSummaryPromptJson(
-      step.type,
       step,
       userQuery,
       contextInfo,
@@ -996,30 +995,6 @@ export const MessageWithToolsApi = async (c: Context) => {
           }
         }
 
-        // Helper function to infer app type from tool name
-        const inferAppFromToolName = (toolName: string): Apps | undefined => {
-          const appPatterns: Record<Apps, string[]> = {
-            [Apps.Gmail]: ['gmail', 'mail'],
-            [Apps.GoogleDrive]: ['drive', 'file'],
-            [Apps.GoogleCalendar]: ['calendar', 'event'],
-            [Apps.Slack]: ['slack'],
-            [Apps.GoogleWorkspace]: ['workspace', 'people'],
-            [Apps.MCP]: ['mcp'],
-            [Apps.Github]: ['github'],
-            [Apps.Xyne]: ['xyne'],
-            [Apps.DataSource]: ['datasource', 'data-source'],
-            [Apps.KnowledgeBase]: ['knowledge', 'kb', 'knowledge-base'],
-          }
-          
-          const lowerToolName = toolName.toLowerCase()
-          for (const [app, patterns] of Object.entries(appPatterns)) {
-            if (patterns.some(pattern => lowerToolName.includes(pattern))) {
-              return app as Apps
-            }
-          }
-          return undefined
-        }
-
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
         loggerWithChild({ email: sub }).info(
@@ -1566,7 +1541,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               let iterationApp: Apps | string | undefined
               let iterationEntity: string | undefined
               
-              iterationApp = toolParams.app || inferAppFromToolName(toolName)
+              iterationApp = toolParams.app
               iterationEntity = toolParams.entity
               
               await logAndStreamReasoning({
