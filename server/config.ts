@@ -31,6 +31,9 @@ let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
 let GeminiApiKey = ""
+let VertexProjectId = ""
+let VertexRegion = ""
+let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
 let fastModelReasoning = false
@@ -92,6 +95,14 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
+} else if (process.env["VERTEX_PROJECT_ID"] && process.env["VERTEX_REGION"]) {
+  VertexAIModel = process.env["VERTEX_AI_MODEL"] as Models
+  VertexProjectId = process.env["VERTEX_PROJECT_ID"]
+  VertexRegion = process.env["VERTEX_REGION"]
+  defaultFastModel = process.env["VERTEX_FAST_MODEL"]
+    ? (process.env["VERTEX_FAST_MODEL"] as Models)
+    : (VertexAIModel as Models)
+  defaultBestModel = VertexAIModel as Models
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -141,6 +152,9 @@ export default {
   FireworksApiKey,
   GeminiAIModel,
   GeminiApiKey,
+  VertexAIModel,
+  VertexProjectId,
+  VertexRegion,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
