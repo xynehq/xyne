@@ -1559,7 +1559,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             if (toolSelection && toolSelection.tool) {
               const toolName = toolSelection.tool
-              const toolParams = toolSelection.arguments
+              const toolParams = (toolSelection.arguments ?? {}) as Record<string, any>
               
               // Extract app info for this iteration
               let iterationApp: Apps | string | undefined
