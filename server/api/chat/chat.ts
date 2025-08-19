@@ -122,6 +122,7 @@ import {
   chatMessageSchema,
   chatUserSchema,
   dataSourceFileSchema,
+  KbItemsSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -195,6 +196,8 @@ import {
   mimeTypeMap,
   extractNamesFromIntent,
   getChannelIdsFromAgentPrompt,
+  parseAppSelections,
+  isAppSelectionMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -422,7 +425,12 @@ const checkAndYieldCitations = async function* (
       if (!yieldedCitations.has(citationIndex)) {
         const item = results[citationIndex - baseIndex]
         if (item) {
-          yield {
+          // TODO: fix this properly, empty citations making streaming broke
+        if (item.fields.sddocname === dataSourceFileSchema) {
+          // Skip datasource and collection files from citations
+          continue
+        }
+        yield {
             citation: {
               index: citationIndex,
               item: searchToCitation(item as VespaSearchResults),
@@ -861,8 +869,6 @@ export const DashboardDataApi = async (c: Context) => {
     const messageCounts = await getMessageCountsByChats({
       db,
       chatExternalIds,
-      email,
-      workspaceExternalId: workspace.externalId,
     })
 
     // Get feedback statistics for all chats
@@ -976,6 +982,16 @@ export const SharedAgentUsageApi = async (c: Context) => {
       const userUsage = userUsageData[agentId] || []
       const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
 
+      // Calculate total cost and tokens for this agent
+      const totalCost = userUsage.reduce(
+        (sum, usage) => sum + usage.totalCost,
+        0,
+      )
+      const totalTokens = userUsage.reduce(
+        (sum, usage) => sum + usage.totalTokens,
+        0,
+      )
+
       return {
         agentId,
         agentName: agent.name,
@@ -984,6 +1000,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages: messageCounts[agentId] || 0,
         likes: feedback.likes,
         dislikes: feedback.dislikes,
+        totalCost,
+        totalTokens,
         userUsage,
       }
     })
@@ -993,6 +1011,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
     let totalMessages = 0
     let totalLikes = 0
     let totalDislikes = 0
+    let totalCost = 0
+    let totalTokens = 0
     const uniqueUsers = new Set<number>()
 
     sharedAgents.forEach((agent) => {
@@ -1000,6 +1020,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
       totalMessages += agent.totalMessages
       totalLikes += agent.likes
       totalDislikes += agent.dislikes
+      totalCost += agent.totalCost
+      totalTokens += agent.totalTokens
       agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
     })
 
@@ -1012,6 +1034,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages,
         totalLikes,
         totalDislikes,
+        totalCost,
+        totalTokens,
         uniqueUsers: uniqueUsers.size,
       },
     })
@@ -1134,7 +1158,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
-  let channelIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let channelIds:string[] = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1146,6 +1176,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+    // This is how we are parsing currently
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -1162,7 +1193,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
-          } else {
+          } 
+          else {
             // Handle generic app names
             switch (lowerIntegration) {
               case Apps.GoogleDrive.toLowerCase():
@@ -1213,7 +1245,48 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { agentPromptData },
       )
     }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp); 
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections  
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      } else {
+        console.log('No KnowledgeBase items found in selectedItems');
+      }
+    }
   }
+  console.log(agentSpecificCollectionSelections);
 
   let message = input
 
@@ -1304,6 +1377,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
+        collectionSelections: agentSpecificCollectionSelections,
+        selectedItem:selectedItem
       },
     )
   }
@@ -1362,6 +1437,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1423,6 +1500,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
+              collectionSelections: agentSpecificCollectionSelections,
+              selectedItem:selectedItem
             }))
 
         // Expand email threads in the results
@@ -1463,22 +1542,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-          results = await searchVespaAgent(
-            query,
-            email,
-            null,
-            null,
-            agentAppEnums,
-            {
-              limit: pageSize,
-              alpha: userAlpha,
-              excludedIds: latestResults
-                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-                ?.filter((v) => !!v),
-              dataSourceIds: agentSpecificDataSourceIds,
-              channelIds,
-            },
-          )
+        results = await searchVespaAgent(
+          query,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+            dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            selectedItem:selectedItem
+          }
+        )
         }
 
         // Expand email threads in the results
@@ -1588,7 +1669,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            collectionSelections: agentSpecificCollectionSelections,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1640,7 +1723,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -2000,7 +2085,7 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames: finalImageFileNames,
+      imageFileNames,
     },
     true,
   )
@@ -2021,13 +2106,10 @@ async function* generateAnswerFromGivenContext(
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    let results =
-      fileIds.length > 0
-        ? await searchVespaInFiles(builtUserQuery, email, fileIds, {
-            limit: fileIds?.length,
-            alpha: userAlpha,
-          })
-        : { root: { children: [] } }
+    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
     searchVespaSpan?.setAttribute("parsed_message", message)
@@ -2072,31 +2154,26 @@ async function* generateAnswerFromGivenContext(
       results.root?.children?.length || 0,
     )
 
-    const iterator =
-      fileIds.length > 0
-        ? baselineRAGJsonStream(
-            builtUserQuery,
-            userCtx,
-            initialContext,
-            {
-              stream: true,
-              modelId: defaultBestModel,
-              reasoning: config.isReasoning && userRequestsReasoning,
-              imageFileNames,
-            },
-            true,
-          )
-        : null
+    const iterator = baselineRAGJsonStream(
+      builtUserQuery,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        imageFileNames,
+      },
+      true,
+    )
 
-    const answer = iterator
-      ? yield* processIterator(
-          iterator,
-          results?.root?.children,
-          previousResultsLength,
-          userRequestsReasoning,
-          email,
-        )
-      : null
+    const answer = yield* processIterator(
+      iterator,
+      results?.root?.children,
+      previousResultsLength,
+      userRequestsReasoning,
+      email,
+    )
     if (answer) {
       searchVespaSpan?.setAttribute("answer_found", true)
       searchVespaSpan?.end()
@@ -2274,6 +2351,12 @@ async function* generatePointQueryTimeExpansion(
 
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2350,6 +2433,46 @@ async function* generatePointQueryTimeExpansion(
         { agentPromptData },
       )
     }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
+    }
+
+
   }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
@@ -2490,6 +2613,7 @@ async function* generatePointQueryTimeExpansion(
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
+              selectedItem:selectedItem,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2499,7 +2623,8 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           }),
         ])
         results.root.children = [
@@ -2776,6 +2901,12 @@ async function* generateMetadataQueryAnswer(
     isValidApp(app as Apps) || isValidEntity(entity as any)
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2852,6 +2983,45 @@ async function* generateMetadataQueryAnswer(
         { agentPromptData },
       )
     }
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
+    }
+
+
   }
 
   // Process timestamp
@@ -2959,6 +3129,7 @@ async function* generateMetadataQueryAnswer(
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -3235,6 +3406,7 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -3721,6 +3893,7 @@ export const MessageApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -3904,7 +4077,6 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           // Notify client if attachment storage failed
           if (attachmentStorageError) {
             await stream.writeSSE({
@@ -3917,14 +4089,11 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)
           ) {
-            loggerWithChild({ email: email }).info(
-              "User has selected some context with query, answering only based on that given context",
-            )
+
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -3946,7 +4115,7 @@ export const MessageApi = async (c: Context) => {
               ctx,
               message,
               0.5,
-              fileIds || [],
+              fileIds,
               userRequestsReasoning,
               understandSpan,
               threadIds,
@@ -4002,6 +4171,13 @@ export const MessageApi = async (c: Context) => {
               }
               if (chunk.cost) {
                 costArr.push(chunk.cost)
+              }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
               }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
@@ -4068,6 +4244,16 @@ export const MessageApi = async (c: Context) => {
             answerSpan.end()
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // TODO: incase user loses permission
               // to one of the citations what do we do?
               // somehow hide that citation and change
@@ -4085,6 +4271,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -4307,6 +4495,13 @@ export const MessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
@@ -4476,6 +4671,13 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   if (
@@ -4583,6 +4785,16 @@ export const MessageApi = async (c: Context) => {
             }
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // Determine if a message (even partial) should be saved
               // TODO: incase user loses permission
               // to one of the citations what do we do?
@@ -4602,6 +4814,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
 
@@ -4905,6 +5119,7 @@ export const MessageRetryApi = async (c: Context) => {
     rootSpan.setAttribute("messageId", messageId)
 
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
     if (!originalMessage) {
@@ -5115,6 +5330,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 citations.push(item)
@@ -5165,6 +5387,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5186,6 +5418,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5221,6 +5456,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
@@ -5439,6 +5677,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
             searchSpan.setAttribute("answer_found", parsed.answer)
             searchSpan.setAttribute("answer", answer)
@@ -5550,6 +5795,13 @@ export const MessageRetryApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   citations.push(item)
@@ -5592,6 +5844,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5613,6 +5875,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5648,6 +5913,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
