@@ -272,22 +272,39 @@ function AgentComponent() {
       }
       setIsSearching(true)
       try {
-        const response = await api.search.$get({
+        // Use the new Knowledge Base search API that searches PostgreSQL
+        const response = await api.cl.search.$get({
           query: {
             query: dropdownSearchQuery,
-            app: "knowledge-base",
-            isAgentIntegSearch:true
+            type: "all", // Search collections, folders, and files
+            limit: 20
           }
         })
         
         if (response.ok) {
           const data = await response.json()
-          setSearchResults(data.results || [])
+          // Transform the results to match the expected format
+          const transformedResults = data.results.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            docId: item.id,
+            title: item.name,
+            entity: item.type,
+            collectionId: item.collectionId,
+            collectionName: item.collectionName,
+            path: item.path,
+            mimeType: item.mimeType,
+            fileSize: item.fileSize,
+            description: item.description,
+            metadata: item.metadata
+          }))
+          setSearchResults(transformedResults)
         } else {
           setSearchResults([])
         }
       } catch (error) {
-        console.error('Global search failed:', error)
+        console.error('Knowledge base search failed:', error)
         setSearchResults([])
       } finally {
         setIsSearching(false)
@@ -2803,19 +2820,102 @@ function AgentComponent() {
                                               Searching...
                                             </div>
                                           ) : searchResults.length > 0 ? (
-                                            searchResults.map((result: any) => (
-                                              <div
-                                                key={result.docId || result.id}
-                                                className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-                                              >
-                                                <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
-                                                  {result.title || result.name || result.fileName || 'Untitled'}
-                                                </span>
-                                                <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                                  {result.type || result.entity}
-                                                </span>
-                                              </div>
-                                            ))
+                                            searchResults.map((result: any) => {
+                                              const handleResultSelect = () => {
+                                                if (result.type === 'collection') {
+                                                  // Toggle collection selection
+                                                  const integrationId = `cl_${result.id}`
+                                                  toggleIntegrationSelection(integrationId)
+                                                } else if (result.type === 'folder' || result.type === 'file') {
+                                                  // For folders and files, first make sure the collection is selected
+                                                  const collectionIntegrationId = `cl_${result.collectionId}`
+                                                  
+                                                  // Ensure collection is selected
+                                                  if (!selectedIntegrations[collectionIntegrationId]) {
+                                                    toggleIntegrationSelection(collectionIntegrationId)
+                                                  }
+                                                  
+                                                  // Then handle the specific item selection
+                                                  const clId = result.collectionId
+                                                  const itemId = result.id
+                                                  
+                                                  setSelectedItemsInCollection(prev => {
+                                                    const currentSelection = prev[clId] || new Set()
+                                                    const newSelection = new Set(currentSelection)
+                                                    
+                                                    if (newSelection.has(itemId)) {
+                                                      newSelection.delete(itemId)
+                                                    } else {
+                                                      newSelection.add(itemId)
+                                                    }
+                                                    
+                                                    return {
+                                                      ...prev,
+                                                      [clId]: newSelection
+                                                    }
+                                                  })
+                                                  
+                                                  setSelectedItemDetailsInCollection(prev => {
+                                                    const newDetails = { ...prev }
+                                                    if (!newDetails[clId]) {
+                                                      newDetails[clId] = {}
+                                                    }
+                                                    newDetails[clId][itemId] = {
+                                                      id: itemId,
+                                                      name: result.name,
+                                                      type: result.type,
+                                                      path: result.path,
+                                                      collectionName: result.collectionName
+                                                    }
+                                                    return newDetails
+                                                  })
+                                                }
+                                                
+                                                // Close search and clear query
+                                                setDropdownSearchQuery("")
+                                                setSearchResults([])
+                                              }
+                                              
+                                              const isSelected = result.type === 'collection' 
+                                                ? selectedIntegrations[`cl_${result.id}`]
+                                                : selectedItemsInCollection[result.collectionId]?.has(result.id)
+                                              
+                                              return (
+                                                <div
+                                                  key={result.id}
+                                                  onClick={handleResultSelect}
+                                                  className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isSelected || false}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 mr-3"
+                                                  />
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center">
+                                                      <span className="text-gray-700 dark:text-gray-200 truncate">
+                                                        {result.name}
+                                                      </span>
+                                                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                                                        {result.type}
+                                                      </span>
+                                                    </div>
+                                                    {result.collectionName && result.type !== 'collection' && (
+                                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                                                        in {result.collectionName}
+                                                        {result.path && ` / ${result.path}`}
+                                                      </div>
+                                                    )}
+                                                    {result.description && (
+                                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                                                        {result.description}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              )
+                                            })
                                           ) : (
                                             <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                                               No results found for "{dropdownSearchQuery}"
