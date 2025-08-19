@@ -194,12 +194,20 @@ interface User {
   email: string
 }
 
+interface CollectionItem {
+  id: string
+  collectionId: string
+  path?: string
+  type?: 'collection' | 'folder' | 'file'
+  name?: string
+}
+
 // Utility function to check if an item is selected either directly or through parent inheritance
 function isItemSelectedWithInheritance(
-  item: any,
+  item: CollectionItem,
   selectedItemsInCollection: Record<string, Set<string>>,
   selectedIntegrations: Record<string, boolean>,
-  selectedItemDetailsInCollection: Record<string, Record<string, any>>
+  selectedItemDetailsInCollection: Record<string, Record<string, CollectionItem>>
 ): boolean {
   const collectionId = item.collectionId
   if (!collectionId) return false
@@ -237,12 +245,6 @@ function isItemSelectedWithInheritance(
         if (normalizedItemPath.startsWith(normalizedFolderPath + '/') || 
             (normalizedFolderPath === '' && normalizedItemPath !== '') ||
             normalizedItemPath === normalizedFolderPath) {
-          return true
-        }
-        
-        // Also check if the item's folder name is contained in the folder's path or name
-        // This handles cases where folder selection should apply to immediate children
-        if (selectedItemDetail.name && itemPath.includes(selectedItemDetail.name)) {
           return true
         }
       }
@@ -1143,8 +1145,63 @@ function AgentComponent() {
           if (int.id.startsWith('cl_')) {
             const clId = int.id.replace('cl_', '')
             
-            // Handle new format: collection key with itemIds array
-            if (appIntegrations['collection']) {
+            // Handle new format: knowledge_base key with itemIds array
+            if (appIntegrations['knowledge_base']) {
+              const clConfig = appIntegrations['knowledge_base']
+              const itemIds = clConfig.itemIds || []
+              
+              // Check if this CL is referenced in the itemIds
+              const isClSelected = itemIds.some((id: string) => 
+                id === `cl-${clId}` || // Collection-level selection
+                id.startsWith(`clfd-${clId}`) || // Folder in this collection
+                id.startsWith(`clf-${clId}`) // File in this collection
+              )
+              
+              if (isClSelected) {
+                currentIntegrations[int.id] = true
+                
+                // Check if it's a collection-level selection
+                const hasCollectionSelection = itemIds.includes(`cl-${clId}`)
+                if (hasCollectionSelection) {
+                  clSelections[clId] = new Set() // Empty set means selectAll
+                } else {
+                  // Filter itemIds that belong to this CL and extract the actual item IDs
+                  const clItemIds = itemIds
+                    .filter((itemId: string) => 
+                      itemId.startsWith(`clfd-`) || itemId.startsWith(`clf-`)
+                    )
+                    .map((itemId: string) => {
+                      // Extract the actual item ID by removing the prefix
+                      if (itemId.startsWith(`clfd-`)) {
+                        return itemId.substring(5) // Remove 'clfd-' prefix
+                      } else if (itemId.startsWith(`clf-`)) {
+                        return itemId.substring(4) // Remove 'clf-' prefix  
+                      }
+                      return itemId
+                    })
+                  
+                  if (clItemIds.length > 0) {
+                    const selectedItems = new Set<string>(clItemIds)
+                    clSelections[clId] = selectedItems
+                    
+                    // Create mock item details for display
+                    const itemDetailsForCl: Record<string, any> = {}
+                    clItemIds.forEach((itemId: string, index: number) => {
+                      const originalId = itemIds.find((id: string) => id.endsWith(itemId))
+                      const itemType = originalId?.startsWith(`clfd-`) ? 'folder' : 'file'
+                      itemDetailsForCl[itemId] = {
+                        id: itemId,
+                        name: itemId, // Use itemId as name for now
+                        type: itemType,
+                      }
+                    })
+                    clDetails[clId] = itemDetailsForCl
+                  }
+                }
+              }
+            }
+            // Handle legacy format: collection key with itemIds array
+            else if (appIntegrations['collection']) {
               const clConfig = appIntegrations['collection']
               const itemIds = clConfig.itemIds || []
               
@@ -3207,18 +3264,18 @@ function AgentComponent() {
                                                             newState[clId][item.id] = item
                                                             return newState
                                                           })
-                                                        } else if (item.type === 'folder' && isCurrentlySelected) {
-                                                          // When deselecting a folder, remove it and any of its children
-                                                          setSelectedItemsInCollection(prev => {
-                                                            const newState = { ...prev }
-                                                            if (!newState[clId]) return newState
-                                                            
-                                                            const selectedSet = new Set(newState[clId])
-                                                            selectedSet.delete(item.id)
-                                                            
-                                                            newState[clId] = selectedSet
-                                                            return newState
-                                                          })
+                                        } else if (item.type === 'folder' && isCurrentlySelected) {
+                                          // When deselecting a folder, remove it from the selection set
+                                          setSelectedItemsInCollection(prev => {
+                                            const newState = { ...prev }
+                                            if (!newState[clId]) return newState
+                                            
+                                            const selectedSet = new Set(newState[clId])
+                                            selectedSet.delete(item.id)
+                                            
+                                            newState[clId] = selectedSet
+                                            return newState
+                                          })
                                                           
                                                           // Remove item details
                                                           setSelectedItemDetailsInCollection(prev => {

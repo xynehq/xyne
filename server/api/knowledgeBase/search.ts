@@ -95,7 +95,6 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     )
 
     const results: SearchKnowledgeBaseResult[] = []
-    let total = 0
 
     // Search collections (if type allows)
     if (type === "all" || type === "collection") {
@@ -127,8 +126,6 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
           metadata: collection.metadata,
         })
       })
-
-      total += filteredCollections.length
     }
 
     // Search folders and files (if type allows)
@@ -175,7 +172,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
           )
         }
 
-        // Execute the query with joins to get collection names
+        // Execute the query with joins to get collection names - fetch ALL matching items
         const itemsQuery = await db
           .select({
             id: collectionItems.id,
@@ -200,8 +197,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
             desc(collectionItems.type), // Folders first, then files
             asc(collectionItems.name)
           )
-          .limit(limit)
-          .offset(offset)
+          // Remove limit and offset here - we'll paginate the final combined results
 
         // Add items to results
         itemsQuery.forEach((item) => {
@@ -221,19 +217,6 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
             metadata: item.metadata,
           })
         })
-
-        // Get total count for pagination
-        if (type !== "all") {
-          const countResult = await db
-            .select({
-              count: collectionItems.id,
-            })
-            .from(collectionItems)
-            .innerJoin(collections, eq(collectionItems.collectionId, collections.id))
-            .where(and(...whereConditions))
-
-          total += countResult.length
-        }
       }
     }
 
