@@ -1281,11 +1281,6 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
-  "/knowledge-base",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
   "/knowledgeManagement",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
