@@ -12,7 +12,9 @@ import {
 } from "@/ai/types"
 import BaseProvider, { findImageByName } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
-const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
+import config from "@/config"
+
+const { MAX_IMAGE_SIZE_BYTES } = config
 
 const Logger = getLogger(Subsystem.AI)
 
