@@ -901,6 +901,127 @@ export const agentQueryRewritePromptJson = (
   }
 `
 
+// Consolidated Step Summary Generation Prompt
+// This prompt is used to generate a single summary for multiple skipped steps in an iteration
+export const generateConsolidatedStepSummaryPromptJson = (
+  steps: any[],
+  userQuery: string,
+  iterationNumber: number,
+  contextInfo?: string,
+) => `You are an AI assistant that creates consolidated summaries for multiple agent reasoning steps.
+
+Your task is to generate a brief summary (3-4 lines maximum) that explains what the agent accomplished in the skipped steps of an iteration.
+
+# Input Information:
+- Steps: ${JSON.stringify(steps, null, 2)}
+- User Query: "${userQuery}"
+- Iteration Number: ${iterationNumber}
+- Context: ${contextInfo || "No additional context"}
+
+# Summary Guidelines:
+1. **Be Concise**: Maximum 3-4 lines
+2. **Be Comprehensive**: Cover the main activities from all steps
+3. **Be User-Friendly**: Use simple, non-technical language
+4. **Focus on Progress**: Highlight what was accomplished
+
+# Example Outputs:
+
+For steps involving tool execution and results:
+"Continued searching through additional data sources and gathered more context. Found relevant information from 3 different tools and processed the results for analysis."
+
+For steps involving planning and synthesis:
+"Analyzed the gathered information and planned the next search strategy. Evaluated multiple approaches to ensure comprehensive coverage of your request."
+
+For mixed activities:
+"Executed additional search tools and processed their results. Gathered supplementary context and refined the search approach for better accuracy."
+
+# Response Format:
+Return ONLY a JSON object with the summary:
+{
+  "summary": "Your consolidated summary here"
+}
+
+# Important Rules:
+- Keep it to 3-4 lines maximum
+- Use active, past tense ("Searched", "Found", "Analyzed")
+- Include general counts when relevant ("3 tools", "multiple sources")
+- Avoid technical jargon
+- Make it reassuring and show progress
+- Don't mention specific step types or internal processes
+- Focus on user value and what was accomplished
+
+Generate a summary that shows the user that meaningful work was done in the background.`
+
+// Agent Step Summary Generation Prompt
+// This prompt is used to generate concise, user-friendly summaries for agent reasoning steps
+export const generateAgentStepSummaryPromptJson = (
+  stepDetails: any,
+  userQuery: string,
+  contextInfo?: string,
+) => `You are an AI assistant that creates concise, user-friendly summaries for agent reasoning steps.
+
+Your task is to generate a brief, actionable summary (maximum 50-60 characters) that explains what the agent is doing in simple terms.
+
+# Input Information:
+- Step Type: ${stepDetails.type}
+- Step Details: ${JSON.stringify(stepDetails, null, 2)}
+- User Query: "${userQuery}"
+- Context: ${contextInfo || "No additional context"}
+
+# Summary Guidelines:
+1. **Be Concise**: Maximum 50-60 characters
+2. **Be User-Friendly**: Use simple, non-technical language
+3. **Be Actionable**: Describe what's happening, not technical details
+4. **Be Specific**: Include relevant details like tool names, counts, etc.
+
+# Step Type Examples and Expected Outputs:
+
+**iteration**: 
+- Input: iteration 2, user query about emails
+- Output: "Planning search strategy (attempt 2)"
+
+**tool_executing**:
+- Input: metadata_retrieval tool, gmail parameters
+- Output: "Searching Gmail for your emails"
+
+**tool_result**:
+- Input: found 5 items, search tool
+- Output: "Found 5 relevant results"
+
+**synthesis**:
+- Input: analyzing 8 fragments
+- Output: "Combining information from 8 sources"
+
+**broadening_search**:
+- Input: previous search too narrow
+- Output: "Expanding search criteria"
+
+**planning**:
+- Input: planning next step
+- Output: "Planning next search approach"
+
+**analyzing_query**:
+- Input: analyzing user question
+- Output: "Understanding your request"
+
+# Response Format:
+Return ONLY a JSON object with the summary:
+{
+  "summary": "Your concise summary here"
+}
+
+# Important Rules:
+- Never exceed 60 characters
+- Use active, present tense ("Searching", "Found", "Planning")
+- Include specific numbers when available ("Found 5 results")
+- Avoid technical jargon ("metadata_retrieval" → "Searching Gmail")
+- Make it human-readable and reassuring
+- Don't mention internal process details
+- Focus on user value, not system operations
+
+Generate a summary that would make sense to a non-technical user watching the agent work.`
+
+
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const agentSearchQueryPrompt = (
