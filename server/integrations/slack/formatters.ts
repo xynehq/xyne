@@ -5,7 +5,7 @@ import type {
   View,
   Block,
   KnownBlock,
-} from "@slack/types";
+} from "@slack/types"
 import {
   SNIPPET_MAX_LENGTH,
   TITLE_MAX_LENGTH,
@@ -25,8 +25,8 @@ import {
   MAX_CITATIONS_IN_MODAL,
   MAX_CITATIONS_IN_SHARED,
   MAX_SOURCES_IN_MODAL,
-  FRONTEND_BASE_URL
-} from "./config";
+  FRONTEND_BASE_URL,
+} from "./config"
 import {
   type SearchResult,
   type Citation,
@@ -36,7 +36,7 @@ import {
   validateCitations,
   validateAgents,
   validateConversationHistory,
-} from "./types";
+} from "./types"
 
 /**
  * Helper function to parse and format result data
@@ -45,48 +45,50 @@ import {
  */
 function parseResultData(result: any) {
   // Extract title with fallbacks
-  let title = "Untitled";
-  if (result.subject) title = result.subject;
-  else if (result.title) title = result.title;
-  else if (result.name) title = result.name;
+  let title = "Untitled"
+  if (result.subject) title = result.subject
+  else if (result.title) title = result.title
+  else if (result.name) title = result.name
 
   // Extract content or snippet
-  let snippet = "";
-  if (result.content) snippet = result.content;
-  else if (result.snippet) snippet = result.snippet;
+  let snippet = ""
+  if (result.content) snippet = result.content
+  else if (result.snippet) snippet = result.snippet
   else if (result.chunks_summary && result.chunks_summary.length > 0) {
-    snippet = result.chunks_summary[0]?.chunk || "";
+    snippet = result.chunks_summary[0]?.chunk || ""
     // Remove any HTML tags
-    snippet = snippet.replace(/<[^>]*>/g, "");
+    snippet = snippet.replace(/<[^>]*>/g, "")
   }
 
   // Clean and truncate snippet
   if (snippet) {
-    snippet = snippet.replace(/\s+/g, " ").trim();
+    snippet = snippet.replace(/\s+/g, " ").trim()
     snippet =
-      snippet.length > SNIPPET_MAX_LENGTH ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...` : snippet;
+      snippet.length > SNIPPET_MAX_LENGTH
+        ? `${snippet.substring(0, SNIPPET_MAX_LENGTH)}...`
+        : snippet
   }
 
   // Get metadata
-  const url = result.url || "";
-  const docType = result.type || "";
-  let author = "Unknown";
-  let dateStr = "";
+  const url = result.url || ""
+  const docType = result.type || ""
+  let author = "Unknown"
+  let dateStr = ""
 
-  if (result.from) author = result.from;
+  if (result.from) author = result.from
   if (result.timestamp) {
-    const date = new Date(result.timestamp);
-    dateStr = date.toLocaleDateString();
+    const date = new Date(result.timestamp)
+    dateStr = date.toLocaleDateString()
   }
 
   // Format metadata text
-  let metadataText = "";
-  if (docType) metadataText += docType + " • ";
-  if (author !== "Unknown") metadataText += "By " + author + " • ";
-  if (dateStr) metadataText += dateStr;
+  let metadataText = ""
+  if (docType) metadataText += docType + " • "
+  if (author !== "Unknown") metadataText += "By " + author + " • "
+  if (dateStr) metadataText += dateStr
 
   // Trim trailing separator if needed
-  metadataText = metadataText.replace(/\s•\s$/, "");
+  metadataText = metadataText.replace(/\s•\s$/, "")
 
   return {
     title,
@@ -96,23 +98,23 @@ function parseResultData(result: any) {
     docType,
     author,
     dateStr,
-  };
+  }
 }
 
 export function createAnalysisParentMessage(
   userId: string,
   text: string,
   analysisType: string,
-  status: "working" | "complete" | "error" | "failed"
+  status: "working" | "complete" | "error" | "failed",
 ): (KnownBlock | Block)[] {
   const statusInfo = {
     working: { icon: "⏳", text: "In Progress" },
     complete: { icon: "✅", text: "Complete" },
     error: { icon: "❌", text: "Error" },
     failed: { icon: "❗", text: "Failed" },
-  };
+  }
 
-  const { icon, text: statusText } = statusInfo[status];
+  const { icon, text: statusText } = statusInfo[status]
 
   return [
     {
@@ -138,7 +140,7 @@ export function createAnalysisParentMessage(
         },
       ],
     },
-  ];
+  ]
 }
 
 /**
@@ -152,7 +154,7 @@ export function createAnalysisParentMessage(
 export function createErrorBlocks(
   error: string,
   errorId: string,
-  title: string = "An error occurred"
+  title: string = "An error occurred",
 ): (KnownBlock | Block)[] {
   return [
     {
@@ -178,7 +180,7 @@ export function createErrorBlocks(
         },
       ],
     },
-  ];
+  ]
 }
 
 /**
@@ -189,7 +191,7 @@ export function createErrorBlocks(
  */
 export function createSearchIntroBlocks(
   userId: string,
-  count: number
+  count: number,
 ): (KnownBlock | Block)[] {
   return [
     {
@@ -199,7 +201,7 @@ export function createSearchIntroBlocks(
         text: `Hey <@${userId}>! I found ${count} results for your query. Check out the thread for details.`,
       },
     },
-  ];
+  ]
 }
 
 /**
@@ -210,7 +212,7 @@ export function createSearchIntroBlocks(
  */
 export function createSearchHeaderBlocks(
   query: string,
-  count: number
+  count: number,
 ): (KnownBlock | Block)[] {
   return [
     {
@@ -230,7 +232,7 @@ export function createSearchHeaderBlocks(
     {
       type: "divider",
     },
-  ];
+  ]
 }
 
 /**
@@ -243,9 +245,9 @@ export function createSearchHeaderBlocks(
 export function createSingleResultBlocks(
   result: any,
   index: number,
-  query: string
+  query: string,
 ): (KnownBlock | Block)[] {
-  const { title, snippet, metadataText, url } = parseResultData(result);
+  const { title, snippet, metadataText, url } = parseResultData(result)
 
   const blocks: any[] = [
     {
@@ -255,7 +257,7 @@ export function createSingleResultBlocks(
         text: `*${index + 1}. ${title}*\n${snippet ? snippet : ""}`,
       },
     },
-  ];
+  ]
 
   if (metadataText) {
     blocks.push({
@@ -266,7 +268,7 @@ export function createSingleResultBlocks(
           text: metadataText,
         },
       ],
-    } as any);
+    } as any)
   }
 
   blocks.push({
@@ -291,9 +293,9 @@ export function createSingleResultBlocks(
         }),
       },
     ],
-  } as any);
+  } as any)
 
-  return blocks;
+  return blocks
 }
 
 /**
@@ -304,9 +306,9 @@ export function createSingleResultBlocks(
  */
 export function createMoreResultsBlocks(
   totalCount: number,
-  shownCount: number
+  shownCount: number,
 ): (KnownBlock | Block)[] {
-  const remaining = totalCount - shownCount;
+  const remaining = totalCount - shownCount
   return [
     {
       type: "section",
@@ -315,7 +317,7 @@ export function createMoreResultsBlocks(
         text: `*${remaining} more results available*`,
       },
     },
-  ];
+  ]
 }
 
 /**
@@ -334,7 +336,7 @@ export function createSharedResultBlocks(
   title: string,
   snippet: string,
   metadata: string,
-  query: string
+  query: string,
 ): (KnownBlock | Block)[] {
   const blocks = [
     {
@@ -351,7 +353,7 @@ export function createSharedResultBlocks(
         text: `Shared by <@${userId}> in response to: "${query}"`,
       },
     },
-  ];
+  ]
 
   // Add metadata if available
   if (metadata) {
@@ -363,12 +365,12 @@ export function createSharedResultBlocks(
           text: metadata,
         },
       ],
-    } as any);
+    } as any)
   }
 
   blocks.push({
     type: "divider",
-  } as any);
+  } as any)
 
   // Add link to view original if URL is available
   if (url) {
@@ -378,10 +380,10 @@ export function createSharedResultBlocks(
         type: "mrkdwn",
         text: `<${url}|View original document> 🔗`,
       },
-    });
+    })
   }
 
-  return blocks;
+  return blocks
 }
 
 /**
@@ -406,7 +408,7 @@ export function createShareConfirmationBlocks(): (KnownBlock | Block)[] {
         },
       ],
     },
-  ];
+  ]
 }
 
 /**
@@ -415,11 +417,14 @@ export function createShareConfirmationBlocks(): (KnownBlock | Block)[] {
  * @param results Array of search results
  * @returns Slack modal view object
  */
-export function createSearchResultsModal(query: string, results: unknown[]): View {
+export function createSearchResultsModal(
+  query: string,
+  results: unknown[],
+): View {
   // Validate and filter results
-  const validResults = validateSearchResults(results);
+  const validResults = validateSearchResults(results)
   // Create blocks for the modal content
-  const blocks: (KnownBlock | Block)[] = [];
+  const blocks: (KnownBlock | Block)[] = []
 
   blocks.push({
     type: "header",
@@ -428,7 +433,7 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
       text: "🔍 Knowledge Base Results",
       emoji: true,
     },
-  });
+  })
 
   blocks.push({
     type: "section",
@@ -436,17 +441,17 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
       type: "mrkdwn",
       text: `*Results for:* "${query}"`,
     },
-  });
+  })
 
   blocks.push({
     type: "divider",
-  });
+  })
 
   // Display up to 5 results in the modal
-  const displayResults = validResults.slice(0, MAX_RESULTS_IN_MODAL);
+  const displayResults = validResults.slice(0, MAX_RESULTS_IN_MODAL)
   for (let i = 0; i < displayResults.length; i++) {
-    const result = displayResults[i];
-    const { title, snippet, metadataText, url } = parseResultData(result);
+    const result = displayResults[i]
+    const { title, snippet, metadataText, url } = parseResultData(result)
 
     // Add result to blocks
     blocks.push({
@@ -455,7 +460,7 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
         type: "mrkdwn",
         text: `*${i + 1}. ${title}*\n${snippet ? snippet : ""}`,
       },
-    });
+    })
 
     if (metadataText) {
       blocks.push({
@@ -466,7 +471,7 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
             text: metadataText,
           },
         ],
-      });
+      })
     }
 
     // Add action buttons for each result
@@ -493,13 +498,13 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
           }),
         },
       ],
-    });
+    })
 
     // Add divider between results (except after the last one)
     if (i < displayResults.length - 1) {
       blocks.push({
         type: "divider",
-      });
+      })
     }
   }
 
@@ -515,7 +520,7 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
           } more results available. Refine your search for better results._`,
         },
       ],
-    });
+    })
   }
 
   // Create the modal view object
@@ -532,7 +537,7 @@ export function createSearchResultsModal(query: string, results: unknown[]): Vie
       emoji: true,
     },
     blocks: blocks,
-  };
+  }
 }
 
 export const createAgentSelectionBlocks = (agents: any[]) => {
@@ -547,7 +552,7 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
     {
       type: "divider",
     },
-  ];
+  ]
 
   if (agents.length === 0) {
     blocks.push({
@@ -556,8 +561,8 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
         type: "mrkdwn",
         text: "_No agents available. Contact your administrator to create agents._",
       },
-    });
-    return blocks;
+    })
+    return blocks
   }
 
   // Create agent selection options
@@ -572,7 +577,7 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
       type: "plain_text",
       text: agent.description || "No description available",
     },
-  }));
+  }))
 
   blocks.push({
     type: "section",
@@ -590,16 +595,16 @@ export const createAgentSelectionBlocks = (agents: any[]) => {
       },
       options: agentOptions,
     },
-  } as any);
+  } as any)
 
-  return blocks;
-};
+  return blocks
+}
 
 export const createAgentConversationModal = (
   agentId: string,
   agentName: string,
   agentDescription?: string,
-  conversationHistory?: Array<{ role: string; content: string }>
+  conversationHistory?: Array<{ role: string; content: string }>,
 ) => {
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -614,11 +619,11 @@ export const createAgentConversationModal = (
     {
       type: "divider",
     },
-  ];
+  ]
 
   // Add conversation history if available
   if (conversationHistory && conversationHistory.length > 0) {
-    const validMessages = validateConversationHistory(conversationHistory);
+    const validMessages = validateConversationHistory(conversationHistory)
     if (validMessages.length > 0) {
       blocks.push({
         type: "section",
@@ -626,13 +631,13 @@ export const createAgentConversationModal = (
           type: "mrkdwn",
           text: "*Conversation History:*",
         },
-      });
+      })
 
       // Show last 3 messages for context
-      const recentMessages = validMessages.slice(-MAX_RECENT_MESSAGES);
+      const recentMessages = validMessages.slice(-MAX_RECENT_MESSAGES)
       recentMessages.forEach((msg) => {
-        const roleIcon = msg.role === "user" ? "👤" : "🤖";
-        const roleText = msg.role === "user" ? "You" : agentName;
+        const roleIcon = msg.role === "user" ? "👤" : "🤖"
+        const roleText = msg.role === "user" ? "You" : agentName
 
         blocks.push({
           type: "section",
@@ -642,12 +647,12 @@ export const createAgentConversationModal = (
               msg.content.length > SNIPPET_MAX_LENGTH ? "..." : ""
             }`,
           },
-        });
-      });
+        })
+      })
 
       blocks.push({
         type: "divider",
-      });
+      })
     }
   }
 
@@ -669,7 +674,7 @@ export const createAgentConversationModal = (
       type: "plain_text",
       text: "Your Message",
     },
-  } as any);
+  } as any)
 
   return {
     type: "modal",
@@ -694,15 +699,15 @@ export const createAgentConversationModal = (
       agent_id: agentId,
       agent_name: agentName,
     }),
-  };
-};
+  }
+}
 
 export const createAgentResponseBlocks = (
   userQuestion: string,
   agentResponse: string,
   conversationId?: string,
   citations?: any[],
-  metadata?: any
+  metadata?: any,
 ) => {
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -729,13 +734,13 @@ export const createAgentResponseBlocks = (
         text: `*Response:*\n${agentResponse}`,
       },
     },
-  ];
+  ]
 
   // Add citations if available
   if (citations && citations.length > 0) {
     blocks.push({
       type: "divider",
-    });
+    })
 
     blocks.push({
       type: "section",
@@ -743,12 +748,12 @@ export const createAgentResponseBlocks = (
         type: "mrkdwn",
         text: "*📚 Sources:*",
       },
-    });
+    })
 
     citations.slice(0, MAX_RECENT_MESSAGES).forEach((citation, index) => {
       const citationText = citation?.url
         ? `<${citation.url}|${citation.title || "Source"}>`
-        : citation?.title || "Source";
+        : citation?.title || "Source"
 
       blocks.push({
         type: "section",
@@ -756,8 +761,8 @@ export const createAgentResponseBlocks = (
           type: "mrkdwn",
           text: `${index + 1}. ${citationText}`,
         },
-      });
-    });
+      })
+    })
 
     if (citations.length > MAX_RECENT_MESSAGES) {
       blocks.push({
@@ -768,12 +773,12 @@ export const createAgentResponseBlocks = (
             text: `_...and ${citations.length - MAX_RECENT_MESSAGES} more sources_`,
           },
         ],
-      } as any);
+      } as any)
     }
   }
 
   // Add action buttons
-  const actionElements = [];
+  const actionElements = []
 
   if (conversationId) {
     actionElements.push({
@@ -785,30 +790,30 @@ export const createAgentResponseBlocks = (
       },
       action_id: "continue_agent_conversation",
       value: conversationId,
-    });
+    })
   }
 
-    actionElements.push({
-      type: "button",
-      text: {
-        type: "plain_text",
-        text: "Share Response",
-        emoji: true,
-      },
-      style: "primary",
-      action_id: "share_agent_response",
-      value: JSON.stringify({
-        question: userQuestion,
-        response: agentResponse,
-        conversation_id: conversationId,
-      }),
-    });
+  actionElements.push({
+    type: "button",
+    text: {
+      type: "plain_text",
+      text: "Share Response",
+      emoji: true,
+    },
+    style: "primary",
+    action_id: "share_agent_response",
+    value: JSON.stringify({
+      question: userQuestion,
+      response: agentResponse,
+      conversation_id: conversationId,
+    }),
+  })
 
   if (actionElements.length > 0) {
     blocks.push({
       type: "actions",
       elements: actionElements,
-    } as any);
+    } as any)
   }
 
   // Add metadata context if available
@@ -823,11 +828,11 @@ export const createAgentResponseBlocks = (
           }_`,
         },
       ],
-    } as any);
+    } as any)
   }
 
-  return blocks;
-};
+  return blocks
+}
 
 /**
  * Clean and format agent response text for Slack markdown display
@@ -846,7 +851,7 @@ export function cleanAgentResponse(response: string): string {
     .replace(/^Response from \/[\w-]+\s*/gm, "") // Remove "Response from /agent-name" lines
     .replace(/^Your Query:\s*/gm, "") // Remove standalone "Your Query:" lines
     .replace(/^Response:\s*/gm, "") // Remove standalone "Response:" lines
-    .trim();
+    .trim()
 }
 
 /**
@@ -868,12 +873,12 @@ export function createAgentResponseModal(
   citations: unknown[],
   messageId: string,
   isFromThread: boolean,
-  page: number = 1
+  page: number = 1,
 ): View {
   // Validate and filter citations
-  const validCitations = validateCitations(citations);
+  const validCitations = validateCitations(citations)
   // Clean up and format the main response body for Slack mrkdwn
-  const displayResponse = cleanAgentResponse(response);
+  const displayResponse = cleanAgentResponse(response)
 
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -881,7 +886,9 @@ export function createAgentResponseModal(
       text: {
         type: "mrkdwn",
         text: `Query: "_${
-          query.length > QUERY_DISPLAY_MAX_LENGTH ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..." : query
+          query.length > QUERY_DISPLAY_MAX_LENGTH
+            ? query.substring(0, QUERY_DISPLAY_MAX_LENGTH) + "..."
+            : query
         }_"`,
       },
     },
@@ -900,62 +907,61 @@ export function createAgentResponseModal(
         }`,
       },
     },
-  ];
+  ]
 
   // Add citations if available (keep original order but limit to prevent excessive scrolling)
   if (validCitations && validCitations.length > 0) {
-    blocks.push({ type: "divider" });
+    blocks.push({ type: "divider" })
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
         text: `*📚 Sources (${validCitations.length}):*`,
       },
-    });
-
+    })
 
     // Paginate citations
-    const startIndex = (page - 1) * MAX_CITATIONS_IN_MODAL;
-    const endIndex = startIndex + MAX_CITATIONS_IN_MODAL;
-    const displayCitations = validCitations.slice(startIndex, endIndex);
+    const startIndex = (page - 1) * MAX_CITATIONS_IN_MODAL
+    const endIndex = startIndex + MAX_CITATIONS_IN_MODAL
+    const displayCitations = validCitations.slice(startIndex, endIndex)
 
     for (let i = 0; i < displayCitations.length; i++) {
-      const citation = displayCitations[i];
-      const rawTitle = citation.title || citation.name || "Untitled";
-      let url = citation.url || "";
-      let title = rawTitle;
+      const citation = displayCitations[i]
+      const rawTitle = citation.title || citation.name || "Untitled"
+      let url = citation.url || ""
+      let title = rawTitle
 
       // Check if URL is an internal document path and convert to frontend URL
-      if (url && url.startsWith('/dataSource/')) {
-        url = `${FRONTEND_BASE_URL}${url}`;
+      if (url && url.startsWith("/dataSource/")) {
+        url = `${FRONTEND_BASE_URL}${url}`
       }
 
       // Check for and parse Slack's <url|text> format
-      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
+      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/)
       if (slackLinkMatch) {
-        url = slackLinkMatch[1];
-        title = slackLinkMatch[2];
+        url = slackLinkMatch[1]
+        title = slackLinkMatch[2]
       }
 
       // Clean the title from any HTML tags and extra whitespace
       title = title
         .replace(/<[^>]+>/g, "")
         .replace(/\s+/g, " ")
-        .trim();
+        .trim()
       if (title.length > TITLE_MAX_LENGTH) {
-        title = `${title.substring(0, TITLE_MAX_LENGTH)}...`;
+        title = `${title.substring(0, TITLE_MAX_LENGTH)}...`
       }
 
-      let snippet = citation.snippet || citation.content || "";
+      let snippet = citation.snippet || citation.content || ""
       if (snippet) {
         snippet = snippet
           .replace(/<[^>]+>/g, "")
           .replace(/\s+/g, " ")
-          .trim();
+          .trim()
         snippet =
           snippet.length > SNIPPET_MAX_LENGTH_SOURCES
             ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SOURCES)}...`
-            : snippet;
+            : snippet
       }
 
       blocks.push({
@@ -966,15 +972,13 @@ export function createAgentResponseModal(
             url ? `<${url}|${title}>` : title
           }*\n${snippet || "_No preview available_"}`,
         },
-      });
+      })
     }
   }
 
   // --- PAGINATION ---
-  const totalPages = Math.ceil(
-    validCitations.length / MAX_CITATIONS_IN_MODAL
-  );
-  const paginationActions: any[] = [];
+  const totalPages = Math.ceil(validCitations.length / MAX_CITATIONS_IN_MODAL)
+  const paginationActions: any[] = []
 
   if (page > 1) {
     paginationActions.push({
@@ -982,7 +986,7 @@ export function createAgentResponseModal(
       text: { type: "plain_text", text: "⬅️ Previous", emoji: true },
       action_id: "previous_source_page",
       value: JSON.stringify({ page: page - 1 }),
-    });
+    })
   }
 
   if (page < totalPages) {
@@ -991,7 +995,7 @@ export function createAgentResponseModal(
       text: { type: "plain_text", text: "Next ➡️", emoji: true },
       action_id: "next_source_page",
       value: JSON.stringify({ page: page + 1 }),
-    });
+    })
   }
 
   if (paginationActions.length > 0) {
@@ -999,12 +1003,12 @@ export function createAgentResponseModal(
       type: "actions",
       block_id: "source_pagination",
       elements: paginationActions,
-    });
+    })
   }
   // --- END PAGINATION ---
 
   // Add sharing actions at the bottom (keep original order)
-  blocks.push({ type: "divider" });
+  blocks.push({ type: "divider" })
   const actions: any[] = [
     {
       type: "button",
@@ -1017,7 +1021,7 @@ export function createAgentResponseModal(
       action_id: "share_agent_from_modal",
       value: messageId,
     },
-  ];
+  ]
 
   if (isFromThread) {
     actions.push({
@@ -1029,14 +1033,14 @@ export function createAgentResponseModal(
       },
       action_id: "share_agent_in_thread_from_modal", // Use the constant here
       value: messageId,
-    });
+    })
   }
 
   blocks.push({
     type: "actions",
     block_id: "agent_response_actions",
     elements: actions,
-  });
+  })
 
   return {
     type: "modal",
@@ -1051,7 +1055,7 @@ export function createAgentResponseModal(
       emoji: true,
     },
     blocks: blocks,
-  };
+  }
 }
 
 /**
@@ -1069,10 +1073,10 @@ export function createSharedAgentResponseBlocks(
   userId: string,
   query: string,
   response: string,
-  citations: any[] = []
+  citations: any[] = [],
 ): (KnownBlock | Block)[] {
   // Clean up and format the main response body for Slack markdown
-  const displayResponse = cleanAgentResponse(response);
+  const displayResponse = cleanAgentResponse(response)
 
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -1104,54 +1108,59 @@ export function createSharedAgentResponseBlocks(
         }`,
       },
     },
-  ];
+  ]
 
   // Format citations
   if (citations && citations.length > 0) {
     blocks.push({
       type: "divider",
-    });
+    })
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
         text: `*📚 Sources (${citations.length}):*`,
       },
-    });
+    })
 
-    const maxCitationsToShow = Math.min(citations.length, MAX_CITATIONS_IN_SHARED);
+    const maxCitationsToShow = Math.min(
+      citations.length,
+      MAX_CITATIONS_IN_SHARED,
+    )
     citations.slice(0, maxCitationsToShow).forEach((citation, index) => {
-      const rawTitle = citation?.title || citation?.name || "Untitled";
-      let url = citation?.url || "";
-      let title = rawTitle;
+      const rawTitle = citation?.title || citation?.name || "Untitled"
+      let url = citation?.url || ""
+      let title = rawTitle
 
       // Check if URL is an internal document path and convert to frontend URL
-      if (url && url.startsWith('/dataSource/')) {
-        url = `${FRONTEND_BASE_URL}${url}`;
+      if (url && url.startsWith("/dataSource/")) {
+        url = `${FRONTEND_BASE_URL}${url}`
       }
 
-      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/);
+      const slackLinkMatch = rawTitle.match(/<(https?:\/\/[^|]+)\|([\s\S]+)>/)
       if (slackLinkMatch) {
-        url = slackLinkMatch[1];
-        title = slackLinkMatch[2];
+        url = slackLinkMatch[1]
+        title = slackLinkMatch[2]
       }
 
       title = title
         .replace(/<[^>]+>/g, "")
         .replace(/\s+/g, " ")
-        .trim();
+        .trim()
       if (title.length > TITLE_MAX_LENGTH_SHARED) {
-        title = `${title.substring(0, TITLE_MAX_LENGTH_SHARED)}...`;
+        title = `${title.substring(0, TITLE_MAX_LENGTH_SHARED)}...`
       }
 
-      let snippet = citation?.snippet || citation?.content || "";
+      let snippet = citation?.snippet || citation?.content || ""
       if (snippet) {
         snippet = snippet
           .replace(/<[^>]+>/g, "")
           .replace(/\s+/g, " ")
-          .trim();
+          .trim()
         snippet =
-          snippet.length > SNIPPET_MAX_LENGTH_SHARED ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SHARED)}...` : snippet;
+          snippet.length > SNIPPET_MAX_LENGTH_SHARED
+            ? `${snippet.substring(0, SNIPPET_MAX_LENGTH_SHARED)}...`
+            : snippet
       }
 
       blocks.push({
@@ -1162,8 +1171,8 @@ export function createSharedAgentResponseBlocks(
             snippet || "_No preview available_"
           }`,
         },
-      });
-    });
+      })
+    })
 
     if (citations.length > maxCitationsToShow) {
       blocks.push({
@@ -1176,7 +1185,7 @@ export function createSharedAgentResponseBlocks(
             } more sources_`,
           },
         ],
-      });
+      })
     }
   }
 
@@ -1193,8 +1202,8 @@ export function createSharedAgentResponseBlocks(
           text: `Shared by <@${userId}>`,
         },
       ],
-    }
-  );
+    },
+  )
 
-  return blocks;
+  return blocks
 }

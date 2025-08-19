@@ -11,6 +11,10 @@ vi.mock("@uiw/react-markdown-preview", () => ({
   ),
 }))
 
+vi.mock("@/components/PdfViewer", () => ({
+  default: () => <div data-testid="pdf-viewer-mock" />,
+}));
+
 // Mock window.matchMedia
 Object.defineProperty(window, "matchMedia", {
   writable: true,
@@ -45,12 +49,8 @@ vi.mock("lucide-react", () => ({
   ChevronDown: (props: any) => (
     <svg data-testid="chevron-down-icon" {...props} />
   ),
-  ThumbsUp: (props: any) => (
-    <svg data-testid="thumbs-up-icon" {...props} />
-  ),
-  ThumbsDown: (props: any) => (
-    <svg data-testid="thumbs-down-icon" {...props} />
-  ),
+  ThumbsUp: (props: any) => <svg data-testid="thumbs-up-icon" {...props} />,
+  ThumbsDown: (props: any) => <svg data-testid="thumbs-down-icon" {...props} />,
 }))
 
 const baseProps = {

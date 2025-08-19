@@ -109,11 +109,14 @@ import {
   searchVespaAgent,
   SearchVespaThreads,
   getAllDocumentsForAgent,
+  searchSlackInVespa,
 } from "@/search/vespa"
 import {
   Apps,
   CalendarEntity,
   chatMessageSchema,
+  chatUserSchema,
+  chatContainerSchema,
   dataSourceFileSchema,
   DriveEntity,
   entitySchema,
@@ -168,8 +171,10 @@ import {
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import {
+  buildContext,
   buildUserQuery,
   cleanBuffer,
+  getThreadContext,
   isContextSelected,
   textToImageCitationIndex,
   UnderstandMessageAndAnswer,
@@ -198,8 +203,7 @@ const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
-  baseIndex: number = 0,
-  yieldedImageCitations?: Set<number>,
+  yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
@@ -234,8 +238,10 @@ const checkAndYieldCitationsForAgent = async function* (
       if (parts.length >= 2) {
         const docIndex = parseInt(parts[0], 10)
         const imageIndex = parseInt(parts[1], 10)
-        const citationIndex = docIndex + baseIndex
-        if (!yieldedImageCitations.has(citationIndex)) {
+        if (
+          !yieldedImageCitations.has(docIndex) ||
+          !yieldedImageCitations.get(docIndex)?.has(imageIndex)
+        ) {
           const item = results[docIndex]
           if (item) {
             try {
@@ -277,11 +283,14 @@ const checkAndYieldCitationsForAgent = async function* (
                 { citationKey: imgMatch[1], error: getErrorMessage(error) },
               )
             }
-            yieldedImageCitations.add(citationIndex)
+            if (!yieldedImageCitations.has(docIndex)) {
+              yieldedImageCitations.set(docIndex, new Set<number>())
+            }
+            yieldedImageCitations.get(docIndex)?.add(imageIndex)
           } else {
-            loggerWithChild({ email: email }).error(
+            loggerWithChild({ email: email }).warn(
               "Found a citation index but could not find it in the search result ",
-              citationIndex,
+              imageIndex,
               results.length,
             )
             continue
@@ -362,14 +371,14 @@ async function* getToolContinuationIterator(
     fallbackReasoning,
   )
 
-  const previousResultsLength = 0 // todo fix this
+  // const previousResultsLength = 0 // todo fix this
   let buffer = ""
   let currentAnswer = ""
   let parsed = { answer: "" }
   let thinking = ""
   let reasoning = config.isReasoning
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Set<number>()
+  let yieldedImageCitations = new Map<number, Set<number>>()
   const ANSWER_TOKEN = '"answer":'
 
   for await (const chunk of continuationIterator) {
@@ -423,7 +432,6 @@ async function* getToolContinuationIterator(
           buffer,
           yieldedCitations,
           results,
-          previousResultsLength,
           yieldedImageCitations,
           email ?? "",
         )
@@ -435,6 +443,9 @@ async function* getToolContinuationIterator(
 
     if (chunk.cost) {
       yield { cost: chunk.cost }
+    }
+    if (chunk.metadata?.usage) {
+      yield { metadata: { usage: chunk.metadata.usage } }
     }
   }
 }
@@ -580,7 +591,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     let attachmentStorageError: Error | null = null
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -606,6 +617,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -1028,33 +1040,100 @@ export const MessageWithToolsApi = async (c: Context) => {
                   results?.root?.children &&
                   results.root.children.length > 0
                 ) {
-                  planningContext = cleanContext(
-                    results.root.children
-                      ?.map(
-                        (v, i) =>
-                          `Index ${i + 1} \n ${answerContextMap(
-                            v as z.infer<typeof VespaSearchResultsSchema>,
-                            0,
-                            true,
-                          )}`,
-                      )
-                      ?.join("\n"),
-                  )
-
-                  gatheredFragments = results.root.children.map(
-                    (child: VespaSearchResult, idx) => ({
-                      id: `${(child.fields as any)?.docId || "Frangment_id_" + idx}`,
-                      content: answerContextMap(
-                        child as z.infer<typeof VespaSearchResultsSchema>,
+                  const contextPromises = results?.root?.children?.map(
+                    async (v, i) => {
+                      let content = answerContextMap(
+                        v as z.infer<typeof VespaSearchResultsSchema>,
                         0,
                         true,
-                      ),
-                      source: searchToCitation(
-                        child as z.infer<typeof VespaSearchResultsSchema>,
-                      ),
-                      confidence: 1.0,
-                    }),
+                      )
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema &&
+                        (v.fields as any).creator
+                      ) {
+                        const creator = await getDocumentOrNull(
+                          chatUserSchema,
+                          (v.fields as any).creator,
+                        )
+                        if (creator) {
+                          content += `\nCreator: ${(creator.fields as any).name}`
+                        }
+                      }
+                      return `Index ${i + 1} \n ${content}`
+                    },
                   )
+                  const resolvedContexts = contextPromises
+                    ? await Promise.all(contextPromises)
+                    : []
+
+                  const chatContexts: VespaSearchResult[] = []
+                  const threadContexts: VespaSearchResult[] = []
+                  if (results?.root?.children) {
+                    for (const v of results.root.children) {
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema
+                      ) {
+                        const channelId = (v.fields as any).docId
+
+                        if (channelId) {
+                          const searchResults = await searchSlackInVespa(
+                            message,
+                            email,
+                            {
+                              limit: 10,
+                              channelIds: [channelId],
+                            },
+                          )
+                          if (searchResults.root.children) {
+                            chatContexts.push(...searchResults.root.children)
+                            const threadMessages = await getThreadContext(
+                              searchResults,
+                              email,
+                              contextFetchSpan,
+                            )
+                            if (
+                              threadMessages &&
+                              threadMessages.root.children
+                            ) {
+                              threadContexts.push(
+                                ...threadMessages.root.children,
+                              )
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  planningContext = cleanContext(resolvedContexts?.join("\n"))
+                  if (chatContexts.length > 0) {
+                    planningContext += "\n" + buildContext(chatContexts, 10)
+                  }
+                  if (threadContexts.length > 0) {
+                    planningContext += "\n" + buildContext(threadContexts, 10)
+                  }
+
+                  gatheredFragments = results.root.children.map(
+                    (child: VespaSearchResult, idx) =>
+                      vespaResultToMinimalAgentFragment(child, idx),
+                  )
+                  if (chatContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...chatContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
+                  if (threadContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...threadContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
                   const parseSynthesisOutput = await performSynthesis(
                     ctx,
                     message,
@@ -1939,6 +2018,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
+            if (chunk.metadata?.usage) {
+              tokenArr.push({
+                inputTokens: chunk.metadata.usage.inputTokens,
+                outputTokens: chunk.metadata.usage.outputTokens,
+              })
+            }
           }
 
           if (answer || wasStreamClosedPrematurely) {
@@ -1950,6 +2035,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             const reasoningLog = structuredReasoningSteps
               .map(convertReasoningStepToText)
               .join("\n")
+
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+            const totalTokens = tokenArr.reduce(
+              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+              0,
+            )
 
             const msg = await insertMessage(db, {
               chatId: chat.id,
@@ -1964,6 +2056,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               thinking: reasoningLog,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              cost: totalCost.toString(),
+              tokensUsed: totalTokens,
             })
             assistantMessageId = msg.externalId
 
@@ -2264,12 +2358,12 @@ async function* nonRagIterator(
     messages,
   )
 
-  const previousResultsLength = 0
+  // const previousResultsLength = 0
   let buffer = ""
   let thinking = ""
   let reasoning = isReasoning
   let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Set<number>()
+  let yieldedImageCitations = new Map<number, Set<number>>()
 
   for await (const chunk of ragOffIterator) {
     try {
@@ -2281,7 +2375,6 @@ async function* nonRagIterator(
               thinking,
               yieldedCitations,
               results,
-              previousResultsLength,
               undefined,
               email!,
             )
@@ -2305,7 +2398,6 @@ async function* nonRagIterator(
                 thinking,
                 yieldedCitations,
                 results,
-                previousResultsLength,
                 undefined,
                 email!,
               )
@@ -2325,7 +2417,6 @@ async function* nonRagIterator(
             buffer,
             yieldedCitations,
             results,
-            previousResultsLength,
             yieldedImageCitations,
             email ?? "",
           )
@@ -2334,6 +2425,9 @@ async function* nonRagIterator(
 
       if (chunk.cost) {
         yield { cost: chunk.cost }
+      }
+      if (chunk.metadata) {
+        yield { metadata: chunk.metadata }
       }
     } catch (e) {
       Logger.error(`Error processing chunk: ${e}`)
@@ -2407,7 +2501,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -2418,6 +2512,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -2706,9 +2801,22 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           if (chunk.cost) {
             costArr.push(chunk.cost)
           }
+          if (chunk.metadata?.usage) {
+            tokenArr.push({
+              inputTokens: chunk.metadata.usage.inputTokens,
+              outputTokens: chunk.metadata.usage.outputTokens,
+            })
+          }
         }
 
         if (answer) {
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2721,6 +2829,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost.toString(),
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
 
@@ -2732,6 +2842,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             }),
           })
         } else if (wasStreamClosedPrematurely) {
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2744,11 +2861,21 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(answer, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost.toString(),
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
         } else {
           const errorMessage =
             "There seems to be an issue on our side. Please try again after some time."
+
+          // Calculate total cost and tokens
+          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+          const totalTokens = tokenArr.reduce(
+            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+            0,
+          )
+
           const msg = await insertMessage(db, {
             chatId: chat.id,
             userId: user.id,
@@ -2761,6 +2888,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             message: processMessage(errorMessage, citationMap),
             thinking: thinking,
             modelId: defaultBestModel,
+            cost: totalCost.toString(),
+            tokensUsed: totalTokens,
           })
           assistantMessageId = msg.externalId
           await stream.writeSSE({
@@ -2871,17 +3000,21 @@ export const AgentMessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
     const fileIds = extractedInfo?.fileIds
+    const agentDocs = agentForDb?.docIds || []
+
+    //add docIds of agents here itself
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
 
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -3145,6 +3278,12 @@ export const AgentMessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens,
+                  outputTokens: chunk.metadata.usage.outputTokens,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 citations.push(item)
@@ -3199,6 +3338,14 @@ export const AgentMessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
+
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+              const totalTokens = tokenArr.reduce(
+                (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+                0,
+              )
+
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -3212,6 +3359,8 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -3443,6 +3592,12 @@ export const AgentMessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens,
+                  outputTokens: chunk.metadata.usage.outputTokens,
+                })
+              }
             }
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
@@ -3530,6 +3685,12 @@ export const AgentMessageApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens,
+                    outputTokens: chunk.metadata.usage.outputTokens,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   citations.push(item)
@@ -3588,6 +3749,13 @@ export const AgentMessageApi = async (c: Context) => {
               // somehow hide that citation and change
               // the answer to reflect that
 
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+              const totalTokens = tokenArr.reduce(
+                (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+                0,
+              )
+
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -3601,6 +3769,8 @@ export const AgentMessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens,
               })
               assistantMessageId = msg.externalId
 

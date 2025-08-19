@@ -187,6 +187,9 @@ vespa-logs
 server/vespa-data
 server/xyne-data
 
+# storage directories
+server/storage/kb_files
+
 server/migrations/
 
 .env.production

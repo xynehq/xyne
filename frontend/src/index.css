@@ -94,6 +94,49 @@ html {
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Custom checkbox styling */
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background-color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+  }
+  
+  .dark input[type="checkbox"] {
+    border-color: #4b5563;
+    background-color: #1f2937;
+  }
+  
+  input[type="checkbox"]:checked {
+    background-color: #FC7878;
+    border-color: #FC7878;
+  }
+  
+  .dark input[type="checkbox"]:checked {
+    background-color: #FC7878;
+    border-color: #FC7878;
+  }
+  
+  input[type="checkbox"]:checked::after {
+    content: '';
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    position: absolute;
+    top: 1px;
+    left: 5px;
+    transform: rotate(45deg);
+  }
 }
 
 /* Chat-specific styles to prevent overflow */
@@ -127,4 +170,13 @@ html {
 .markdown-content a {
   @apply prevent-overflow;
   word-break: break-all;
+}
+
+.favorite-agents-container::-webkit-scrollbar {
+  display: none;
+}
+
+.favorite-agents-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

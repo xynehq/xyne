@@ -18,7 +18,10 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   extractEmailsFromContext,
+  generateFollowUpQuestions,
 } from "@/ai/provider"
+import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
+import { getDateForAI } from "@/utils/index"
 import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
@@ -57,7 +60,8 @@ import {
   getMessageCountsByChats,
   getMessageFeedbackStats,
 } from "@/db/message"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
+import { nanoid } from "nanoid"
 import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
@@ -104,6 +108,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  searchSlackInVespa,
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
@@ -113,8 +118,11 @@ import {
 import {
   Apps,
   CalendarEntity,
+  chatContainerSchema,
   chatMessageSchema,
+  chatUserSchema,
   dataSourceFileSchema,
+  KbItemsSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -126,6 +134,7 @@ import {
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
+  SlackEntity,
   SystemEntity,
   userSchema,
   type Entity,
@@ -144,6 +153,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
+import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -185,6 +195,9 @@ import {
   getCitationToImage,
   mimeTypeMap,
   extractNamesFromIntent,
+  getChannelIdsFromAgentPrompt,
+  parseAppSelections,
+  isAppSelectionMap,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -412,7 +425,12 @@ const checkAndYieldCitations = async function* (
       if (!yieldedCitations.has(citationIndex)) {
         const item = results[citationIndex - baseIndex]
         if (item) {
-          yield {
+          // TODO: fix this properly, empty citations making streaming broke
+        if (item.fields.sddocname === dataSourceFileSchema) {
+          // Skip datasource and collection files from citations
+          continue
+        }
+        yield {
             citation: {
               index: citationIndex,
               item: searchToCitation(item as VespaSearchResults),
@@ -488,6 +506,26 @@ export function cleanBuffer(buffer: string): string {
   let parsableBuffer = buffer
   parsableBuffer = parsableBuffer.replace(/^```(?:json)?[\s\n]*/i, "")
   return parsableBuffer.trim()
+}
+
+export const getThreadContext = async (
+  searchResults: VespaSearchResponse,
+  email: string,
+  span?: Span,
+) => {
+  if (searchResults.root.children) {
+    const threadIds = [
+      ...new Set(
+        searchResults.root.children.map((child: any) => child.fields.threadId),
+      ),
+    ].filter((id) => id)
+    if (threadIds.length > 0) {
+      const threadSpan = span?.startSpan("fetch_slack_threads")
+      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      return threadMessages
+    }
+  }
+  return null
 }
 
 async function* processIterator(
@@ -831,8 +869,6 @@ export const DashboardDataApi = async (c: Context) => {
     const messageCounts = await getMessageCountsByChats({
       db,
       chatExternalIds,
-      email,
-      workspaceExternalId: workspace.externalId,
     })
 
     // Get feedback statistics for all chats
@@ -946,6 +982,16 @@ export const SharedAgentUsageApi = async (c: Context) => {
       const userUsage = userUsageData[agentId] || []
       const feedback = feedbackStats[agentId] || { likes: 0, dislikes: 0 }
 
+      // Calculate total cost and tokens for this agent
+      const totalCost = userUsage.reduce(
+        (sum, usage) => sum + usage.totalCost,
+        0,
+      )
+      const totalTokens = userUsage.reduce(
+        (sum, usage) => sum + usage.totalTokens,
+        0,
+      )
+
       return {
         agentId,
         agentName: agent.name,
@@ -954,6 +1000,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages: messageCounts[agentId] || 0,
         likes: feedback.likes,
         dislikes: feedback.dislikes,
+        totalCost,
+        totalTokens,
         userUsage,
       }
     })
@@ -963,6 +1011,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
     let totalMessages = 0
     let totalLikes = 0
     let totalDislikes = 0
+    let totalCost = 0
+    let totalTokens = 0
     const uniqueUsers = new Set<number>()
 
     sharedAgents.forEach((agent) => {
@@ -970,6 +1020,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
       totalMessages += agent.totalMessages
       totalLikes += agent.likes
       totalDislikes += agent.dislikes
+      totalCost += agent.totalCost
+      totalTokens += agent.totalTokens
       agent.userUsage.forEach((usage) => uniqueUsers.add(usage.userId))
     })
 
@@ -982,6 +1034,8 @@ export const SharedAgentUsageApi = async (c: Context) => {
         totalMessages,
         totalLikes,
         totalDislikes,
+        totalCost,
+        totalTokens,
         uniqueUsers: uniqueUsers.size,
       },
     })
@@ -1052,7 +1106,7 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-function buildContext(
+export function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   startIndex: number = 0,
@@ -1104,6 +1158,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let channelIds:string[] = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1114,7 +1175,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { error, agentPrompt },
       )
     }
-
+    channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+    // This is how we are parsing currently
     if (
       agentPromptData.appIntegrations &&
       Array.isArray(agentPromptData.appIntegrations)
@@ -1131,7 +1193,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
-          } else {
+          } 
+          else {
             // Handle generic app names
             switch (lowerIntegration) {
               case Apps.GoogleDrive.toLowerCase():
@@ -1182,7 +1245,48 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         { agentPromptData },
       )
     }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp); 
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections  
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      } else {
+        console.log('No KnowledgeBase items found in selectedItems');
+      }
+    }
   }
+  console.log(agentSpecificCollectionSelections);
 
   let message = input
 
@@ -1272,6 +1376,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         timestampRange,
         span: initialSearchSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds: channelIds,
+        collectionSelections: agentSpecificCollectionSelections,
+        selectedItem:selectedItem
       },
     )
   }
@@ -1309,6 +1416,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+
       let results
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
@@ -1328,6 +1436,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: vespaSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1388,6 +1499,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
+              collectionSelections: agentSpecificCollectionSelections,
+              selectedItem:selectedItem
             }))
 
         // Expand email threads in the results
@@ -1428,21 +1542,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-          results = await searchVespaAgent(
-            query,
-            email,
-            null,
-            null,
-            agentAppEnums,
-            {
-              limit: pageSize,
-              alpha: userAlpha,
-              excludedIds: latestResults
-                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-                ?.filter((v) => !!v),
-              dataSourceIds: agentSpecificDataSourceIds,
-            },
-          )
+        results = await searchVespaAgent(
+          query,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+            dataSourceIds: agentSpecificDataSourceIds,
+            channelIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            selectedItem:selectedItem
+          }
+        )
         }
 
         // Expand email threads in the results
@@ -1552,6 +1669,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestIds,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1603,6 +1723,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             alpha: userAlpha,
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            collectionSelections: agentSpecificCollectionSelections,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -1728,6 +1851,11 @@ async function* generateAnswerFromGivenContext(
   }
 > {
   const message = input
+  const messageText = parseMessageText(message)
+  loggerWithChild({ email: email }).info(
+    { email },
+    `generateAnswerFromGivenContext - input: ${messageText}`,
+  )
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1765,15 +1893,19 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results =
-    fileIds.length > 0
-      ? await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
-      : { root: { children: [] } }
-  if (!results.root.children) {
-    results.root.children = []
+  const combinedSearchResponse: VespaSearchResult[] = []
+
+  if (fileIds.length > 0) {
+    const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+    if (results.root.children) {
+      combinedSearchResponse.push(...results.root.children)
+    }
   }
+
   loggerWithChild({ email: email }).info(
-    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(threadIds)}`,
+    `generateAnswerFromGivenContext - threadIds received: ${JSON.stringify(
+      threadIds,
+    )}`,
   )
 
   // If we have threadIds, fetch all emails in those threads
@@ -1802,14 +1934,14 @@ async function* generateAnswerFromGivenContext(
         threadResults.root.children.length > 0
       ) {
         const existingDocIds = new Set(
-          results.root.children.map((child: any) => child.fields.docId),
+          combinedSearchResponse.map((child: any) => child.fields.docId),
         )
 
         // Use the helper function to process thread results
         const { addedCount, threadInfo } = processThreadResults(
           threadResults.root.children,
           existingDocIds,
-          results.root.children,
+          combinedSearchResponse,
         )
         loggerWithChild({ email: email }).info(
           `Added ${addedCount} additional emails from ${threadIds.length} threads (no limits applied)`,
@@ -1831,23 +1963,87 @@ async function* generateAnswerFromGivenContext(
 
     threadSpan?.end()
   }
-  const startIndex = isReasoning ? previousResultsLength : 0
-  const initialContext = cleanContext(
-    results?.root?.children
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as z.infer<typeof VespaSearchResultsSchema>,
-            0,
-            true,
-          )}`,
-      )
-      ?.join("\n"),
-  )
+  // const initialContext = cleanContext(
+  //   results?.root?.children
+  //     ?.map(
+  //       (v, i) =>
+  //         `Index ${i + startIndex} \n ${answerContextMap(
+  //           v as z.infer<typeof VespaSearchResultsSchema>,
+  //           0,
+  //           true,
+  //         )}`,
+  //     )
+  //     ?.join("\n"),
+  // )
+  const initialResults = [...(combinedSearchResponse || [])]
+  for (const v of initialResults) {
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema
+    ) {
+      const channelId = (v.fields as any).docId
+      console.log(`Processing chat container with docId: ${channelId}`)
 
+      if (channelId) {
+        const searchResults = await searchSlackInVespa(messageText, email, {
+          limit: 10,
+          channelIds: [channelId],
+        })
+        if (searchResults.root.children) {
+          combinedSearchResponse.push(...searchResults.root.children)
+          const threadMessages = await getThreadContext(
+            searchResults,
+            email,
+            generateAnswerSpan,
+          )
+          if (threadMessages?.root?.children) {
+            combinedSearchResponse.push(...threadMessages.root.children)
+          }
+        }
+      }
+    }
+  }
+
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const contextPromises = combinedSearchResponse?.map(async (v, i) => {
+    let content = answerContextMap(
+      v as z.infer<typeof VespaSearchResultsSchema>,
+      0,
+      true,
+    )
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema &&
+      (v.fields as any).creator
+    ) {
+      try {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )
+        if (creator) {
+          content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      } catch (error) {
+        loggerWithChild({ email }).error(
+          error,
+          `Failed to fetch creator for chat container`,
+        )
+      }
+    }
+    return `Index ${i + startIndex} \n ${content}`
+  })
+
+  const resolvedContexts = contextPromises
+    ? await Promise.all(contextPromises)
+    : []
+
+  const initialContext = cleanContext(resolvedContexts.join("\n"))
   const { imageFileNames } = extractImageFileNames(
     initialContext,
-    results?.root?.children,
+    combinedSearchResponse,
   )
 
   const finalImageFileNames = imageFileNames || []
@@ -1866,13 +2062,13 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.setAttribute("context", initialContext || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
-    results.root?.children?.length || 0,
+    combinedSearchResponse?.length || 0,
   )
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
-      results?.root?.children?.length || 0
+      combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -1889,14 +2085,14 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames: finalImageFileNames,
+      imageFileNames,
     },
     true,
   )
 
   const answer = yield* processIterator(
     iterator,
-    results?.root?.children,
+    combinedSearchResponse,
     previousResultsLength,
     userRequestsReasoning,
     email,
@@ -1910,13 +2106,10 @@ async function* generateAnswerFromGivenContext(
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    let results =
-      fileIds.length > 0
-        ? await searchVespaInFiles(builtUserQuery, email, fileIds, {
-            limit: fileIds?.length,
-            alpha: userAlpha,
-          })
-        : { root: { children: [] } }
+    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
     searchVespaSpan?.setAttribute("parsed_message", message)
@@ -1961,31 +2154,26 @@ async function* generateAnswerFromGivenContext(
       results.root?.children?.length || 0,
     )
 
-    const iterator =
-      fileIds.length > 0
-        ? baselineRAGJsonStream(
-            builtUserQuery,
-            userCtx,
-            initialContext,
-            {
-              stream: true,
-              modelId: defaultBestModel,
-              reasoning: config.isReasoning && userRequestsReasoning,
-              imageFileNames,
-            },
-            true,
-          )
-        : null
+    const iterator = baselineRAGJsonStream(
+      builtUserQuery,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        imageFileNames,
+      },
+      true,
+    )
 
-    const answer = iterator
-      ? yield* processIterator(
-          iterator,
-          results?.root?.children,
-          previousResultsLength,
-          userRequestsReasoning,
-          email,
-        )
-      : null
+    const answer = yield* processIterator(
+      iterator,
+      results?.root?.children,
+      previousResultsLength,
+      userRequestsReasoning,
+      email,
+    )
     if (answer) {
       searchVespaSpan?.setAttribute("answer_found", true)
       searchVespaSpan?.end()
@@ -2009,7 +2197,7 @@ async function* generateAnswerFromGivenContext(
     }
   }
   if (config.isReasoning && userRequestsReasoning) {
-    previousResultsLength += results?.root?.children?.length || 0
+    previousResultsLength += combinedSearchResponse?.length || 0
   }
   generateAnswerSpan?.end()
 }
@@ -2040,6 +2228,25 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     }
   })
   return builtQuery
+}
+
+export const parseMessageText = (message: string): string => {
+  if (!message.startsWith("[{")) {
+    return message
+  }
+  try {
+    const messageArray = JSON.parse(message)
+    if (Array.isArray(messageArray)) {
+      return messageArray
+        .filter((item) => item.type === "text")
+        .map((item) => item.value)
+        .join(" ")
+        .trim()
+    }
+    return message
+  } catch (e) {
+    return message
+  }
 }
 
 const getSearchRangeSummary = (
@@ -2144,6 +2351,12 @@ async function* generatePointQueryTimeExpansion(
 
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2220,6 +2433,46 @@ async function* generatePointQueryTimeExpansion(
         { agentPromptData },
       )
     }
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
+    }
+
+
   }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
@@ -2345,6 +2598,7 @@ async function* generatePointQueryTimeExpansion(
 
     if (agentPrompt) {
       if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         const [agentResults, agentEventResults] = await Promise.all([
           searchVespaAgent(
             message,
@@ -2358,6 +2612,8 @@ async function* generatePointQueryTimeExpansion(
               timestampRange: { from, to },
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
+              channelIds: channelIds,
+              selectedItem:selectedItem,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2367,6 +2623,8 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds:channelIds,
+            selectedItem:selectedItem
           }),
         ])
         results.root.children = [
@@ -2645,6 +2903,12 @@ async function* generateMetadataQueryAnswer(
 
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = []
+  let selectedItem ={}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2721,6 +2985,45 @@ async function* generateMetadataQueryAnswer(
         { agentPromptData },
       )
     }
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      // Use selectedApps and selectedItems
+      selectedItem=selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums =[... new Set(selectedApps)]
+      
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        
+        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+          }
+        }
+        
+        // Create the key-value pair object
+        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+          agentSpecificCollectionSelections.push({
+            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+          })
+        }
+      }
+    }
+
+
   }
 
   // Process timestamp
@@ -2821,6 +3124,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
@@ -2832,6 +3136,8 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -2961,6 +3267,7 @@ async function* generateMetadataQueryAnswer(
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
@@ -2970,6 +3277,7 @@ async function* generateMetadataQueryAnswer(
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
+          channelIds,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3102,6 +3410,7 @@ async function* generateMetadataQueryAnswer(
           },
         )
       } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           query,
           email,
@@ -3112,6 +3421,8 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
+            selectedItem:selectedItem
           },
         )
       }
@@ -3546,7 +3857,7 @@ export const MessageApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
-    loggerWithChild({ email: email }).info("MessageApi..")
+    loggerWithChild({ email: email }).info("MessageApi Chats..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -3599,7 +3910,7 @@ export const MessageApi = async (c: Context) => {
 
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message)
+      ? await extractFileIdsFromMessage(message, email)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
@@ -3618,6 +3929,7 @@ export const MessageApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
@@ -3801,7 +4113,6 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           // Notify client if attachment storage failed
           if (attachmentStorageError) {
             await stream.writeSSE({
@@ -3814,14 +4125,11 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)
           ) {
-            loggerWithChild({ email: email }).info(
-              "User has selected some context with query, answering only based on that given context",
-            )
+
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -3843,7 +4151,7 @@ export const MessageApi = async (c: Context) => {
               ctx,
               message,
               0.5,
-              fileIds || [],
+              fileIds,
               userRequestsReasoning,
               understandSpan,
               threadIds,
@@ -3899,6 +4207,13 @@ export const MessageApi = async (c: Context) => {
               }
               if (chunk.cost) {
                 costArr.push(chunk.cost)
+              }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
               }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
@@ -3965,6 +4280,16 @@ export const MessageApi = async (c: Context) => {
             answerSpan.end()
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // TODO: incase user loses permission
               // to one of the citations what do we do?
               // somehow hide that citation and change
@@ -3982,6 +4307,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -4204,6 +4531,13 @@ export const MessageApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
@@ -4374,6 +4708,13 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   if (
@@ -4481,6 +4822,16 @@ export const MessageApi = async (c: Context) => {
             }
 
             if (answer || wasStreamClosedPrematurely) {
+              // Calculate total cost and tokens
+              const totalCost = costArr.reduce((a, b) => a + b, 0)
+              const totalTokens = tokenArr.reduce(
+                (acc, curr) => ({
+                  inputTokens: acc.inputTokens + curr.inputTokens,
+                  outputTokens: acc.outputTokens + curr.outputTokens,
+                }),
+                { inputTokens: 0, outputTokens: 0 },
+              )
+
               // Determine if a message (even partial) should be saved
               // TODO: incase user loses permission
               // to one of the citations what do we do?
@@ -4500,6 +4851,8 @@ export const MessageApi = async (c: Context) => {
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                cost: totalCost.toString(),
+                tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
 
@@ -4803,6 +5156,7 @@ export const MessageRetryApi = async (c: Context) => {
     rootSpan.setAttribute("messageId", messageId)
 
     const costArr: number[] = []
+    const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     // Fetch the original message
     const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
     if (!originalMessage) {
@@ -4885,7 +5239,7 @@ export const MessageRetryApi = async (c: Context) => {
       fileIds = fileIdsFromDB
       const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
       const extractedInfo = isMsgWithContext
-        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        ? await extractFileIdsFromMessage(prevUserMessage.message, email)
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
@@ -5013,6 +5367,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
               if (chunk.citation) {
                 const { index, item } = chunk.citation
                 citations.push(item)
@@ -5063,6 +5424,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5084,6 +5455,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5119,6 +5493,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
@@ -5337,6 +5714,13 @@ export const MessageRetryApi = async (c: Context) => {
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
+              // Track token usage from metadata
+              if (chunk.metadata?.usage) {
+                tokenArr.push({
+                  inputTokens: chunk.metadata.usage.inputTokens || 0,
+                  outputTokens: chunk.metadata.usage.outputTokens || 0,
+                })
+              }
             }
             searchSpan.setAttribute("answer_found", parsed.answer)
             searchSpan.setAttribute("answer", answer)
@@ -5454,6 +5838,13 @@ export const MessageRetryApi = async (c: Context) => {
                 if (chunk.cost) {
                   costArr.push(chunk.cost)
                 }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
                 if (chunk.citation) {
                   const { index, item } = chunk.citation
                   citations.push(item)
@@ -5496,6 +5887,16 @@ export const MessageRetryApi = async (c: Context) => {
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((a, b) => a + b, 0)
+            const totalTokens = tokenArr.reduce(
+              (acc, curr) => ({
+                inputTokens: acc.inputTokens + curr.inputTokens,
+                outputTokens: acc.outputTokens + curr.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
+            )
+
             if (wasStreamClosedPrematurely) {
               loggerWithChild({ email: email }).info(
                 `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -5517,6 +5918,9 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed:
+                      totalTokens.inputTokens + totalTokens.outputTokens,
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
@@ -5552,6 +5956,9 @@ export const MessageRetryApi = async (c: Context) => {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                           .modelId,
+                      cost: totalCost.toString(),
+                      tokensUsed:
+                        totalTokens.inputTokens + totalTokens.outputTokens,
                       // The createdAt for this response which was error before
                       // should be just 1 unit more than the respective user query's createdAt value
                       // This is done to maintain order of user-assistant pattern of messages in UI
@@ -5804,9 +6211,17 @@ export const MessageFeedbackApi = async (c: Context) => {
       throw new HTTPException(403, { message: "Forbidden" })
     }
 
+    // Convert legacy feedback to new JSON format for consistency
+    const feedbackData = feedback
+      ? {
+          type: feedback,
+          feedback: [""], // Empty array for legacy feedback
+        }
+      : null
+
     await updateMessageByExternalId(db, messageId, {
-      feedback: feedback, // feedback can be 'like', 'dislike', or null
-      updatedAt: new Date(), // Update the updatedAt timestamp
+      feedback: feedbackData,
+      updatedAt: new Date(),
     })
 
     loggerWithChild({ email: email }).info(
@@ -5826,6 +6241,259 @@ export const MessageFeedbackApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: "Could not submit feedback",
+    })
+  }
+}
+
+// New Enhanced Feedback API
+export const EnhancedMessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const requestData = await c.req.valid("json")
+    const { messageId, type, customFeedback, selectedOptions, shareChat } =
+      requestData as {
+        messageId: string
+        type: "like" | "dislike"
+        customFeedback?: string
+        selectedOptions?: string[]
+        shareChat?: boolean
+      }
+
+    // Debug logging
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback request received`,
+      {
+        messageId,
+        type,
+        shareChat,
+        customFeedback: !!customFeedback,
+        selectedOptionsCount: selectedOptions?.length || 0,
+      },
+    )
+
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (
+      message.email !== email ||
+      message.workspaceExternalId !== workspaceId
+    ) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    // Get user and chat info for potential share token generation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user } = userAndWorkspace
+
+    const chat = await getChatByExternalId(db, message.chatExternalId)
+    if (!chat) {
+      throw new HTTPException(404, { message: "Chat not found" })
+    }
+
+    // Create enhanced feedback data
+    const feedbackData: any = {
+      type,
+      feedback: [],
+      share_chat: null,
+    }
+
+    // Add custom feedback as first element if provided
+    if (customFeedback && customFeedback.trim()) {
+      feedbackData.feedback.push(customFeedback.trim())
+    }
+
+    // Add selected predefined options
+    if (selectedOptions && selectedOptions.length > 0) {
+      feedbackData.feedback.push(...selectedOptions)
+    }
+
+    // Ensure at least one feedback item
+    if (feedbackData.feedback.length === 0) {
+      feedbackData.feedback.push("") // Empty string placeholder
+    }
+
+    // Generate share token if user opted to share
+    if (shareChat) {
+      try {
+        // Check if share already exists for this chat+message combination
+        const existingShare = await db
+          .select()
+          .from(sharedChats)
+          .where(
+            and(
+              eq(sharedChats.chatId, chat.id),
+              eq(sharedChats.messageId, message.id),
+            ),
+          )
+          .limit(1)
+
+        let shareToken: string
+
+        if (existingShare.length > 0) {
+          // If it exists but is deleted, reactivate it
+          if (existingShare[0].deletedAt) {
+            await db
+              .update(sharedChats)
+              .set({
+                deletedAt: null,
+                updatedAt: new Date(),
+              })
+              .where(eq(sharedChats.id, existingShare[0].id))
+          }
+          shareToken = existingShare[0].shareToken
+        } else {
+          // Generate unique share token
+          shareToken = nanoid(15)
+
+          // Create shared chat
+          await db.insert(sharedChats).values({
+            chatId: chat.id,
+            messageId: message.id,
+            workspaceId: chat.workspaceId,
+            userId: user.id,
+            shareToken,
+            title: chat.title,
+          })
+        }
+
+        feedbackData.share_chat = shareToken
+
+        loggerWithChild({ email: email }).info(
+          `Share token generated for feedback submission: ${shareToken}`,
+          { messageId, chatId: chat.externalId },
+        )
+      } catch (shareError) {
+        // Log error but don't fail the feedback submission
+        loggerWithChild({ email: email }).error(
+          shareError,
+          `Failed to generate share token for message ${messageId}, continuing with feedback submission`,
+        )
+        // Set share_chat to null if token generation fails
+        feedbackData.share_chat = null
+      }
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedbackData, // Store enhanced feedback with share token
+      updatedAt: new Date(),
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Enhanced feedback '${type}' submitted for message ${messageId} by user ${email}`,
+      { feedbackData, shareRequested: shareChat },
+    )
+
+    likeDislikeCount.inc({ email: email, feedback: type })
+    return c.json({
+      success: true,
+      messageId,
+      feedbackData,
+      shareToken: feedbackData.share_chat,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+
+    loggerWithChild({ email: email }).error(
+      error,
+      `Enhanced Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit enhanced feedback",
+    })
+  }
+}
+
+export const GenerateFollowUpQuestionsApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
+
+    // @ts-ignore - Validation handled by middleware
+    const { chatId, messageId } = c.req.valid("json")
+
+    if (!chatId || !messageId) {
+      throw new HTTPException(400, {
+        message: "chatId and messageId are required",
+      })
+    }
+
+    // Get user and workspace info
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+
+    // Get chat messages for context
+    const messages = await getChatMessagesWithAuth(db, chatId, email)
+
+    if (!messages || messages.length === 0) {
+      throw new HTTPException(404, { message: "No messages found in chat" })
+    }
+
+    // Find the specific message to ensure it exists
+    const messageIndex = messages.findIndex(
+      (msg) => msg.externalId === messageId,
+    )
+    if (messageIndex === -1) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    // Use all messages from the chat for better context
+    const contextMessages = messages
+
+    // Format conversation context with all messages
+    const conversationContext = contextMessages
+      .map(
+        (msg) =>
+          `${msg.messageRole === "user" ? "User" : "Assistant"}: ${msg.message}`,
+      )
+      .join("\n\n")
+
+    // Generate user context
+    const ctx = userContext(userAndWorkspace)
+    // Use the follow-up questions prompt
+    const systemPrompt = generateFollowUpQuestionsSystemPrompt(ctx)
+
+    const userPrompt = `Based on this conversation, generate 3 relevant follow-up questions:
+
+${conversationContext}
+
+The follow-up questions should be specific to this conversation and help the user explore related topics or get more detailed information about what was discussed.`
+
+    // Call LLM to generate follow-up questions
+    const response = await generateFollowUpQuestions(userPrompt, systemPrompt, {
+      modelId: config.defaultFastModel,
+      json: true,
+      stream: false,
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Generated follow-up questions for message ${messageId} in chat ${chatId}`,
+    )
+
+    return c.json(response)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Generate Follow-Up Questions Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not generate follow-up questions",
     })
   }
 }
