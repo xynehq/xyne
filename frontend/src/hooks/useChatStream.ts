@@ -812,11 +812,6 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        // LOG 4: Raw reasoning data during retry
-        console.log("🔄 [useChatStream-retry] Reasoning event data:", {
-          eventData: event.data,
-          messageId,
-        })
         
         appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)

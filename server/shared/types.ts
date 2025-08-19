@@ -410,19 +410,19 @@ export enum ContextSysthesisState {
 // Enhanced reasoning step interfaces with summary support
 export interface AgentReasoningStepEnhanced {
   stepId?: string
-  stepSummary?: string // Quick fallback summary
-  aiGeneratedSummary?: string // LLM-generated summary
+  stepSummary?: string
+  aiGeneratedSummary?: string
   status?: 'in_progress' | 'completed' | 'failed'
   timestamp?: number
-  iteration?: number // Optional iteration number for any step type
-  isIterationSummary?: boolean // Flag to indicate if this is an iteration summary
+  iteration?: number
+  isIterationSummary?: boolean
 }
 
 export interface AgentReasoningIteration extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.Iteration
   iteration: number
-  app?: string // App being searched in this iteration
-  entity?: string // Entity type being searched (optional)
+  app?: string
+  entity?: string
 }
 
 export interface AgentReasoningPlanning extends AgentReasoningStepEnhanced {
