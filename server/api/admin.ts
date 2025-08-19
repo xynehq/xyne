@@ -53,6 +53,9 @@ import {
   type UserAgentLeaderboard,
   getAgentAnalysis,
   type AgentAnalysisData,
+  getAgentFeedbackMessages,
+  getAgentUserFeedbackMessages,
+  getAllUserFeedbackMessages,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -1242,8 +1245,8 @@ export const GetAdminChats = async (c: Context) => {
         userName: users.name,
         userRole: users.role,
         messageCount: sql<number>`COUNT(${messages.id})::int`,
-        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback} = 'like' THEN 1 END)::int`,
-        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 END)::int`,
+        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
+        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -1310,8 +1313,8 @@ export const GetAdminUsers = async (c: Context) => {
         isActive: isNull(users.deletedAt),
         totalChats: sql<number>`COUNT(DISTINCT ${chats.id})::int`,
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
-        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback} = 'like' THEN 1 END)::int`,
-        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 END)::int`,
+        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
+        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
       })
       .from(users)
       .leftJoin(chats, eq(users.id, chats.userId))
@@ -1465,6 +1468,137 @@ export const GetAgentAnalysis = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching agent analysis")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAgentFeedbackMessages = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    // @ts-ignore
+    const { from, to, workspaceExternalId } = c.req.valid("query")
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    const timeRange = from && to ? { from, to } : undefined
+
+    const feedbackMessages = await getAgentFeedbackMessages({
+      db,
+      agentId,
+      workspaceExternalId, // Can be undefined for admin cross-workspace view
+      timeRange,
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAgentUserFeedbackMessages = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    const userId = c.req.param("userId")
+    // @ts-ignore
+    const { workspaceExternalId } = c.req.valid("query")
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    if (!userId) {
+      return c.json(
+        {
+          success: false,
+          message: "User ID is required",
+        },
+        400,
+      )
+    }
+
+    const feedbackMessages = await getAgentUserFeedbackMessages({
+      db,
+      agentId,
+      userId: parseInt(userId),
+      workspaceExternalId, // Can be undefined for admin cross-workspace view
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+/**
+ * Get all feedback messages for a specific user across all agents (admin use)
+ */
+export const GetAllUserFeedbackMessages = async (c: Context) => {
+  try {
+    const { userId } = c.req.param()
+    const userIdNum = parseInt(userId, 10)
+
+    if (isNaN(userIdNum)) {
+      return c.json(
+        {
+          success: false,
+          message: "Invalid user ID",
+        },
+        400,
+      )
+    }
+
+    // Get all feedback messages for this user across all agents
+    const feedbackMessages = await getAllUserFeedbackMessages({
+      db,
+      userId: userIdNum,
+    })
+
+    return c.json({
+      success: true,
+      data: feedbackMessages,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching all user feedback messages")
     return c.json(
       {
         success: false,

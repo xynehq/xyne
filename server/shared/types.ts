@@ -16,6 +16,8 @@ import {
   chatUserSchema,
   ChatMessageResponseSchema,
   dataSourceFileSchema,
+  chatContainerSchema,
+  VespaChatContainerSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -184,6 +186,17 @@ export const AutocompleteChatUserSchema = z
   })
   .strip()
 
+export const AutocompleteChatContainerSchema = z
+  .object({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    name: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -192,6 +205,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteUserQueryHSchema,
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
+  AutocompleteChatContainerSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -207,6 +221,9 @@ export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
 export type ChatUserAutocomplete = z.infer<typeof AutocompleteChatUserSchema>
+export type AutocompleteChatContainer = z.infer<
+  typeof AutocompleteChatContainerSchema
+>
 export type MailAttachmentAutocomplete = z.infer<
   typeof AutocompleteMailAttachmentSchema
 >
@@ -300,6 +317,29 @@ export const DataSourceFileResponseSchema = z
   })
   .strip()
 
+export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
+  docId: true,
+  name: true,
+  app: true,
+  entity: true,
+  updatedAt: true,
+  isPrivate: true,
+  isArchived: true,
+  isGeneral: true,
+  isIm: true,
+  isMpim: true,
+  topic: true,
+  description: true,
+  count: true,
+})
+  .extend({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -309,6 +349,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  ChatContainerResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>

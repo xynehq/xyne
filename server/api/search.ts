@@ -31,6 +31,7 @@ import {
   datasourceSchema,
   dataSourceFileSchema,
   type VespaDataSourceFile,
+  SlackEntity,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -83,6 +84,11 @@ export const userQueryHistorySchema = z.object({
 
 export const chatSchema = z.object({
   chatId: z.string().min(1),
+})
+
+export const followUpQuestionsSchema = z.object({
+  chatId: z.string().min(1),
+  messageId: z.string().min(1),
 })
 
 export const chatBookmarkSchema = z.object({
@@ -327,6 +333,15 @@ export const SearchApi = async (c: Context) => {
         ) {
           dynamicAllowedApps.push(Apps.DataSource)
         }
+        const channelIds =
+          agent.docIds
+            ?.filter(
+              (doc) =>
+                doc.app === Apps.Slack &&
+                doc.entity === SlackEntity.Channel &&
+                doc.docId,
+            )
+            .map((doc) => doc.docId) ?? []
 
         loggerWithChild({ email: email }).info(
           `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`,
@@ -345,6 +360,7 @@ export const SearchApi = async (c: Context) => {
             requestDebug: debug,
             dataSourceIds: dynamicDataSourceIds,
             timestampRange: timestampRange,
+            channelIds: channelIds,
           },
         )
         try {
@@ -401,6 +417,23 @@ export const SearchApi = async (c: Context) => {
 
   const newResults = VespaSearchResponseToSearchResult(results, email)
   newResults.groupCount = groupCount
+  return c.json(newResults)
+}
+
+export const SearchSlackChannels = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  // @ts-ignore
+  const { query } = c.req.valid("query")
+  const decodedQuery = decodeURIComponent(query)
+  const results = await searchVespa(
+    `*${decodedQuery}*`,
+    email,
+    Apps.Slack,
+    SlackEntity.Channel,
+    {},
+  )
+  const newResults = VespaSearchResponseToSearchResult(results)
   return c.json(newResults)
 }
 

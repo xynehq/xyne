@@ -94,6 +94,15 @@ export const messageFeedbackSchema = z.object({
   feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
 })
 
+// Enhanced feedback schema for new feedback system
+export const enhancedMessageFeedbackSchema = z.object({
+  messageId: z.string(),
+  type: z.enum(["like", "dislike"]),
+  customFeedback: z.string().optional(),
+  selectedOptions: z.array(z.string()).optional(),
+  shareChat: z.boolean().optional(), // New field for share chat option
+})
+
 export interface AgentTool {
   name: string
   description: string
