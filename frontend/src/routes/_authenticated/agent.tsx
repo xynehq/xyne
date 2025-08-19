@@ -959,36 +959,81 @@ function AgentComponent() {
             setIntegrationIdToNameMap(idToNameMapping);
             
             // Process collection items if they exist
-            if (data.integrationItems.collection) {
-              const clData = data.integrationItems.collection
+            if (data.integrationItems.collection && data.integrationItems.collection.groups) {
               const clSelections: Record<string, Set<string>> = {}
               const clDetails: Record<string, Record<string, any>> = {}
               
               // Process each collection group
-              for (const [clId, items] of Object.entries(clData.groups)) {
+              for (const [clId, items] of Object.entries(data.integrationItems.collection.groups)) {
                 if (Array.isArray(items) && items.length > 0) {
                   const selectedItems = new Set<string>()
                   const itemDetails: Record<string, any> = {}
                   
-                  items.forEach((item: any) => {
-                    selectedItems.add(item.id)
-                    itemDetails[item.id] = item
-                  })
+                  // Check if this is a collection-level selection
+                  const hasCollectionLevelSelection = items.some((item: any) => item.isCollectionLevel)
                   
-                  clSelections[clId] = selectedItems
-                  clDetails[clId] = itemDetails
+                  if (hasCollectionLevelSelection) {
+                    // This is a collection-level selection (entire collection selected)
+                    // Mark the Collection integration as selected but no specific items
+                    setSelectedIntegrations(prev => ({
+                      ...prev,
+                      [`cl_${clId}`]: true
+                    }))
+                    
+                    // Add collection to name mapping
+                    const collectionItem = items.find((item: any) => item.isCollectionLevel)
+                    if (collectionItem) {
+                      idToNameMapping[clId] = {
+                        name: collectionItem.name,
+                        type: "collection"
+                      };
+                    }
+                  } else {
+                    // These are specific file/folder selections
+                    items.forEach((item: any) => {
+                      if (!item.isCollectionLevel) {
+                        selectedItems.add(item.id)
+                        itemDetails[item.id] = item
+                        
+                        // Add to name mapping
+                        idToNameMapping[item.id] = {
+                          name: item.name || "Unnamed",
+                          type: item.type || "file"
+                        };
+                      }
+                    })
+                    
+                    if (selectedItems.size > 0) {
+                      clSelections[clId] = selectedItems
+                      clDetails[clId] = itemDetails
+                      
+                      // Mark the Collection integration as selected
+                      setSelectedIntegrations(prev => ({
+                        ...prev,
+                        [`cl_${clId}`]: true
+                      }))
+                    }
+                  }
                   
-                  // Also mark the CL integration as selected
-                  setSelectedIntegrations(prev => ({
-                    ...prev,
-                    [`cl_${clId}`]: true
-                  }))
+                  // Add collection to name mapping if not already added
+                  if (!idToNameMapping[clId]) {
+                    const cl = fetchedCollections.find(cl => cl.id === clId);
+                    if (cl) {
+                      idToNameMapping[clId] = {
+                        name: cl.name,
+                        type: "collection"
+                      };
+                    }
+                  }
                 }
               }
               
               setSelectedItemsInCollection(clSelections)
               setSelectedItemDetailsInCollection(clDetails)
             }
+            
+            // Update the ID to name mapping state
+            setIntegrationIdToNameMap(idToNameMapping);
           } else {
             console.warn("Failed to fetch agent integration items:", response.statusText)
           }
