@@ -17,6 +17,7 @@ import {
   SearchApi,
   chatStopSchema,
   SearchSlackChannels,
+  GetDriveItem,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -768,6 +769,7 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
+  .get("/driveitem", GetDriveItem)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(

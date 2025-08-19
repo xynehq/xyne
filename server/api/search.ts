@@ -16,6 +16,7 @@ import {
   updateUserQueryHistory,
   SearchModes,
   searchVespaAgent,
+  getFolderItems,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -32,6 +33,8 @@ import {
   dataSourceFileSchema,
   type VespaDataSourceFile,
   SlackEntity,
+  fileSchema,
+  DriveEntity,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -609,4 +612,31 @@ export const AnswerApi = async (c: Context) => {
       loggerWithChild({ email: email }).error("SSE stream aborted")
     })
   })
+}
+
+export const GetDriveItem = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const body = await c.req.json()
+  const { parentId } = body
+  try {
+    const docIds = []
+    if (parentId) {
+      docIds.push(parentId)
+    }
+    const resp = await getFolderItems(
+      docIds,
+      fileSchema,
+      DriveEntity.Folder,
+      email,
+    )
+    return c.json(resp)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      `Error fetcing Drive item for parentId:${parentId}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error processing agent search results",
+    })
+  }
 }
