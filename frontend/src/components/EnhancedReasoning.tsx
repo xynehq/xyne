@@ -244,7 +244,22 @@ const formatParametersInText = (text: string): string => {
         stepMap.set(step.stepId!, step)
       }
     } catch (e) {
-      // Not JSON, skip silently
+      try {
+        const content = line.trim()
+        const status: "pending" | "success" | "error" | "info" = "info"
+        const step: ReasoningStep = {
+          type: "ReasoningStep",
+          content,
+          timestamp: generateStableId(content, lineIndex),
+          status
+        }
+
+        // Add consolidated summary as a regular step
+        steps.push(step)
+        stepMap.set(step.stepId!, step)
+      } catch (error) {
+        console.error("Failed to create step from line:", line, "Error:", error)
+      }
     }
   })
   
@@ -540,7 +555,7 @@ const ReasoningStepComponent: React.FC<{
               />
             </div>
             <div className="w-full">
-              {isWaitingForSummary && (
+              {isWaitingForSummary && step.type !== "ReasoningStep" && (
                 <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center">
                   <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                   Generating AI summary...
