@@ -142,7 +142,7 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = 0
+        const cost = 0 //TODO :  explitly set cost to 0 for now
         yield {
           text: "",
           cost,
