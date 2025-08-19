@@ -7,12 +7,13 @@ import { fileURLToPath } from 'url';
 import { db, updateConnector } from '@/db/connector';
 import type { SelectConnector } from '../db/schema';
 import type { TxnOrClient } from '@/types';
+import type { Apps } from '@/search/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Configuration - update these values as needed
-const BACKUP_FILE_PATH = '../backups/connectors-backup-2025-08-18T12-52-13-556Z.json';
+const BACKUP_FILE_PATH = '../backups/connectors-backup-2025-08-19T07-12-31-490Z.json';
 
 interface Connector {
   id: number;
@@ -23,7 +24,7 @@ interface Connector {
   name: string;
   type: string;
   authType: string;
-  app: string;
+  app: Apps;
   config: Record<string, any>;
   credentials: any;
   subject: string;
@@ -48,7 +49,7 @@ interface BackupData {
 async function updateConnectorFromBackup(
   trx: TxnOrClient,
   connector: Connector
-): Promise<void> {
+): Promise<SelectConnector> {
   try {
     const updateData: Partial<SelectConnector> = {
       workspaceId: connector.workspaceId,
@@ -111,7 +112,7 @@ async function updateConnectorsFromBackup(): Promise<void> {
     });
 
     console.log('\n✅ Connector update process completed');
-
+    process.exit(0)
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === 'ENOENT') {
@@ -121,6 +122,7 @@ async function updateConnectorsFromBackup(): Promise<void> {
     } else {
       console.error('❌ Error processing backup file:', (error as Error).message);
     }
+    process.exit(1)
   }
 }
 

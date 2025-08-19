@@ -44,7 +44,7 @@ interface ExtractionResult {
 
 export const getAllConnector = async (
   trx: TxnOrClient,
-): Promise<SelectConnector> => {
+): Promise<SelectConnector[]> => {
   const res = await trx
     .select()
     .from(connectors)
@@ -52,14 +52,15 @@ export const getAllConnector = async (
     
     
   if (res.length) {
-    const parsedRes = selectConnectorSchema.safeParse(res[0])
-    if (!parsedRes.success) {
-      
-      throw new NoConnectorsFound({
-        message: `Could not parse connector data `,
-      })
+    let parsedRes: SelectConnector[] = []
+    for(const item of res){
+      const parseResult = selectConnectorSchema.safeParse(item)
+      if (parseResult.success) {
+        parsedRes.push(parseResult.data)
+      }
     }
-    return parsedRes.data
+    
+    return parsedRes
   } else {
     
     throw new NoConnectorsFound({
@@ -95,7 +96,7 @@ try{
 catch(error){
   console.log(error)
 }
-    const allConnectors = [result]
+    const allConnectors = result
 
     Logger.info(`Found ${allConnectors.length} connectors to extract`)
 
