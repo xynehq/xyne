@@ -1002,21 +1002,38 @@ function AgentComponent() {
           })
           if (response.ok) {
             const data = await response.json()
-            // console.log("Fetched agent integration items:", data)
+
             const idToNameMapping: Record<string, { name: string; type: string }> = {};
 
             // Extract items and build ID to name mapping
             if (data.integrationItems.collection && data.integrationItems.collection.groups) {
               for (const [clGroupId, items] of Object.entries(data.integrationItems.collection.groups)) {
                 if (Array.isArray(items)) {
-                  items.forEach((item: any) => {
-                    const itemType = item.type || "folder"; // Default to 'folder' if not provided
-                    // Add to ID andto name and type mapping
-                    idToNameMapping[item.id] = {
-                      name: item.name || "Unnamed",
-                      type: itemType
-                    };
-                  });
+                  // For knowledge-base items, we need to fetch their details via Vespa search
+                  const itemIds = items.map((item: any) => item.id).filter(Boolean);
+                  
+                  if (itemIds.length > 0) {
+                    try {
+                        items.forEach((item: any) => {
+                          const itemType = item.type || "folder";
+                          idToNameMapping[item.id] = {
+                            name: item.name || "Unnamed",
+                            type: itemType
+                          };
+                        });
+                      
+                    } catch (vespaError) {
+                      console.error("Failed to fetch knowledge-base item details from Vespa:", vespaError);
+                      // Fallback to original item data
+                      items.forEach((item: any) => {
+                        const itemType = item.type || "folder";
+                        idToNameMapping[item.id] = {
+                          name: item.name || "Unnamed",
+                          type: itemType
+                        };
+                      });
+                    }
+                  }
                 }
                 
                 // Also add CL group ID to name mapping if available

@@ -1354,6 +1354,7 @@ export const ChatPage = ({
                 >
                   <div className="w-full max-w-3xl">
                     <ChatBox
+                      ref={chatBoxRef}
                       role={user?.role}
                       query={query}
                       setQuery={setQuery}

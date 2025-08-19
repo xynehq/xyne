@@ -1590,7 +1590,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
     return () => document.removeEventListener("mousedown", handleOutsideClick)
   }, [showReferenceBox])
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
@@ -1715,7 +1715,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
       .filter(Boolean) as string[]
     cleanupPreviewUrls(previewUrls)
     setSelectedFiles([])
-  }
+  }, [
+    selectedSources,
+    selectedConnectorIds,
+    selectedConnectorTools,
+    allConnectors,
+    selectedFiles,
+    persistedAgentId,
+    handleSend,
+    uploadFiles,
+    user,
+    setQuery,
+    setSelectedFiles,
+    cleanupPreviewUrls,
+  ])
 
   const handleSourceSelectionChange = (sourceId: string, checked: boolean) => {
     setSelectedSources((prev) => ({
