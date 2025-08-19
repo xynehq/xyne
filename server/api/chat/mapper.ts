@@ -618,7 +618,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.WebScraper]: {
     name: XyneTools.WebScraper,
     description:
-      "Scrape and extract content from external websites and URLs with intelligent escalation from basic scraping to deep crawling when needed. Use this tool when: 1) User provides URLs or links to websites, 2) User asks to scrape, extract, or analyze content from web pages, 3) User wants information from external websites not in their connected data sources, 4) User mentions specific websites, articles, or web content. Automatically handles bot detection and escalates to crawling if initial scraping doesn't find sufficient answers.",
+      "Scrape and extract content from external websites and URLs with intelligent escalation from basic scraping to deep crawling when needed. Use this tool when users provide URLs, ask to scrape web content, want information from external websites, or mention specific websites/articles. Automatically handles bot detection and escalates to crawling if initial scraping doesn't find sufficient content.",
     params: [
       {
         name: "urls",
@@ -765,7 +765,7 @@ export const externalTools: Record<string, ToolDefinition> = {
   [XyneTools.WebScraper]: {
     name: XyneTools.WebScraper,
     description:
-      "Scrape and extract content from external websites and URLs with intelligent escalation and bot handling. Features: 1) Starts with basic scraping, automatically escalates to deep crawling if insufficient content found, 2) Handles bot detection and anti-bot protection, 3) Can crawl through multiple pages following links to find comprehensive information, 4) Filters content based on user query for relevance. Use this tool when: 1) User provides URLs or links to websites, 2) User asks to scrape, extract, or analyze content from web pages, 3) User wants information from external websites not in their connected data sources, 4) User mentions specific websites, articles, or web content, 5) URLs are found in search results and user wants the actual content from those URLs, 6) User asks for detailed information about links found in emails or documents, 7) CRITICAL: If emails/documents contain phrases like 'link to tutorial', 'watch how to', 'read more at', 'see guide', etc. - ALWAYS scrape the actual URL to get complete content instead of just referencing the link. NEVER consider URL references as sufficient information - always get the actual content. Extracts text, links, images, and documents for analysis.",
+      "Scrape and extract content from external websites and URLs with intelligent escalation and bot handling. Features: 1) Starts with basic scraping, automatically escalates to deep crawling if insufficient content found, 2) Handles bot detection and anti-bot protection, 3) Can crawl through multiple pages following links to find comprehensive information, 4) Filters content based on user query for relevance. Use when users provide URLs, ask to scrape web content, want information from external websites, or when URLs are found in search results and user wants the actual content. CRITICAL: If emails/documents contain references like 'link to tutorial', 'watch how to', 'read more at', 'see guide' - ALWAYS scrape the actual URL to get complete content instead of just referencing the link.",
     params: [
       {
         name: "urls",

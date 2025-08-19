@@ -68,7 +68,6 @@ export class UnifiedWebScraper {
       const content = await page.content()
       const title = await page.title()
 
-      // Common bot detection patterns
       const botPatterns = [
         /just a moment/i,
         /cloudflare/i,
@@ -87,7 +86,6 @@ export class UnifiedWebScraper {
         (pattern) => pattern.test(title) || pattern.test(content),
       )
 
-      // Check for Cloudflare challenge
       const hasCloudflareChallenge =
         content.includes("cf-browser-verification") ||
         content.includes("cf-challenge") ||
@@ -101,25 +99,20 @@ export class UnifiedWebScraper {
   }
 
   private async setupAntiDetection(page: Page): Promise<void> {
-    // Basic anti-detection setup
     await page.addInitScript(() => {
-      // Remove webdriver property
       Object.defineProperty(navigator, "webdriver", {
         get: () => undefined,
       })
 
-      // Mock plugins
       Object.defineProperty(navigator, "plugins", {
         get: () => [1, 2, 3, 4, 5],
       })
 
-      // Mock languages
       Object.defineProperty(navigator, "languages", {
         get: () => ["en-US", "en"],
       })
     })
 
-    // Set realistic headers
     await page.setExtraHTTPHeaders({
       "Accept-Language": "en-US,en;q=0.9",
       "Accept-Encoding": "gzip, deflate, br",
@@ -136,15 +129,10 @@ export class UnifiedWebScraper {
     documents: string[]
   }> {
     return await page.evaluate(() => {
-      // Extract content immediately before any bot protection can interfere
-
-      // Extract title
       const title = document.title || ""
 
-      // Extract main content with smart selectors - be more aggressive
       let content = ""
       const contentSelectors = [
-        // Business/Enterprise specific selectors
         ".main-content",
         ".page-content",
         ".content-area",
@@ -154,24 +142,20 @@ export class UnifiedWebScraper {
         ".section-content",
         ".content-wrapper",
         ".content-container",
-        // Common CMS selectors
         "article",
         ".article",
         ".post",
         ".entry",
         ".page",
-        // Role-based selectors
         '[role="main"]',
         "main",
         "#main",
         "#content",
         ".content",
-        // Generic container selectors
         ".container .content",
         ".wrapper .content",
         ".site-content",
         ".primary-content",
-        // Fallback selectors
         ".container",
         ".wrapper",
         "body .content",
@@ -182,18 +166,15 @@ export class UnifiedWebScraper {
         if (element) {
           content = (element as HTMLElement).innerText || ""
           if (content.length > 200) {
-            // Only use if substantial content
             break
           }
         }
       }
 
-      // Fallback to body content if nothing found
       if (!content || content.length < 100) {
         content = document.body?.innerText || ""
       }
 
-      // Extract ALL links aggressively (before bot protection can hide them)
       const links = Array.from(document.querySelectorAll("a[href]"))
         .map((a) => (a as HTMLAnchorElement).href)
         .filter(
@@ -204,15 +185,13 @@ export class UnifiedWebScraper {
             !href.startsWith("mailto:") &&
             !href.startsWith("tel:"),
         )
-        .filter((href, index, arr) => arr.indexOf(href) === index) // Remove duplicates
+        .filter((href, index, arr) => arr.indexOf(href) === index)
 
-      // Extract images
       const images = Array.from(document.querySelectorAll("img[src]"))
         .map((img) => (img as HTMLImageElement).src)
         .filter((src) => src && !src.startsWith("data:"))
         .filter((src, index, arr) => arr.indexOf(src) === index)
 
-      // Extract document links
       const documentExtensions = [
         ".pdf",
         ".doc",
@@ -228,13 +207,12 @@ export class UnifiedWebScraper {
         documentExtensions.some((ext) => link.toLowerCase().includes(ext)),
       )
 
-      // Clean up unwanted elements AFTER extracting links and content
       const selectorsToRemove = [
         "script",
         "style",
-        "nav:not(.content-nav)", // Keep content navigation
+        "nav:not(.content-nav)",
         "footer",
-        "aside:not(.content-aside)", // Keep content-related asides
+        "aside:not(.content-aside)",
         ".ad",
         ".advertisement",
         ".popup",
@@ -261,7 +239,6 @@ export class UnifiedWebScraper {
 
   private async initializeBrowser(): Promise<void> {
     try {
-      // Close any existing browser first
       if (this.browser && this.browser.isConnected()) {
         try {
           await this.browser.close()
@@ -340,10 +317,8 @@ export class UnifiedWebScraper {
         throw new Error(`HTTP ${response.status()}: ${response.statusText()}`)
       }
 
-      // Wait a bit for dynamic content to load
       await page.waitForTimeout(2000)
 
-      // Try to wait for network idle, but don't fail if it times out
       try {
         await page.waitForLoadState("networkidle", { timeout: 5000 })
       } catch (e) {
@@ -352,18 +327,15 @@ export class UnifiedWebScraper {
         )
       }
 
-      // ALWAYS extract content first, before checking bot protection
       const { title, content, links, images, documents } =
         await this.extractContent(page)
 
-      // Check for bot detection AFTER extraction
       const botDetected = await this.detectBotProtection(page)
 
       if (botDetected) {
         console.warn(
           `Bot protection detected on ${url}, but extracted ${content.length} chars of content`,
         )
-        // Don't give up - we might still have useful content and links
       }
 
       const scrapedData: ScrapedData = {
@@ -431,10 +403,8 @@ export class UnifiedWebScraper {
       // Ensure we have a browser instance first
       await this.ensureBrowserReady()
 
-      // Initialize dataset for crawler
       this.dataset = await Dataset.open("web-crawler-results")
 
-      // Simple manual crawling instead of PlaywrightCrawler to avoid browser conflicts
       const visitedUrls = new Set<string>()
       const urlsToVisit = [...startUrls]
 
@@ -442,7 +412,6 @@ export class UnifiedWebScraper {
         urlsToVisit.length > 0 &&
         results.length < (this.options.maxPages || 8)
       ) {
-        // Increased max pages
         const currentUrl = urlsToVisit.shift()!
 
         if (visitedUrls.has(currentUrl)) {
@@ -498,23 +467,20 @@ export class UnifiedWebScraper {
             data.content.length > 100 && data.title !== "Error"
 
           if (hasUsefulContent) {
-            // Always add if we got meaningful content
             data.metadata.isCrawled = true
             data.metadata.depth = visitedUrls.size - 1
-            data.metadata.isRelevant = isRelevant // Track relevance but don't filter by it
+            data.metadata.isRelevant = isRelevant
             results.push(data)
             console.log(
               `✓ Crawled content: ${data.content.length} chars, relevant: ${isRelevant}, bot: ${data.metadata.botDetected}`,
             )
           }
 
-          // ALWAYS extract links for further crawling, even if bot protection detected
           const currentDepth = data.metadata.depth || 0
           if (
             data.links.length > 0 &&
             currentDepth < (this.options.maxDepth || 4)
           ) {
-            // Increased max depth
             console.log(
               `Extracting links from ${currentUrl} (depth ${currentDepth}, max depth ${this.options.maxDepth || 4})`,
             )
@@ -560,7 +526,6 @@ export class UnifiedWebScraper {
                 return notVisited
               })
               .filter((link) => {
-                // Smarter link filtering based on query relevance
                 if (query && query.length > 0) {
                   const queryTerms = query
                     .toLowerCase()
@@ -568,12 +533,10 @@ export class UnifiedWebScraper {
                     .filter((term) => term.length > 2)
                   const linkLower = link.toLowerCase()
 
-                  // Check if URL contains any query terms
                   const hasQueryTerms = queryTerms.some((term) =>
                     linkLower.includes(term),
                   )
 
-                  // Extract meaningful path segments for relevance scoring
                   const pathSegments = link
                     .split("/")
                     .filter(
@@ -583,11 +546,8 @@ export class UnifiedWebScraper {
                         !segment.match(/^\d+$/),
                     )
 
-                  // Comprehensive relevant keywords for any business/content discovery
                   const relevantKeywords = [
-                    // Query-specific matching
                     ...queryTerms,
-                    // General content keywords
                     "about",
                     "service",
                     "product",
@@ -749,30 +709,233 @@ export class UnifiedWebScraper {
       const basicResults = await this.scrapeMultipleUrls(urls)
 
       // Check if we got meaningful content
-      const goodResults = basicResults.filter(
-        (result) =>
-          result.content.length > 300 && // Reduced from 500 - be less strict
-          !result.metadata.botDetected && // Not blocked by bots
-          result.title !== "Error" && // Not an error result
-          (!query ||
-            result.content.toLowerCase().includes(query.toLowerCase())), // Relevant to query
+      const goodResults = basicResults.filter((result) => {
+        if (result.content.length <= 300 || result.title === "Error") {
+          return false
+        }
+
+        if (!query) {
+          return true
+        }
+
+        const queryLower = query.toLowerCase()
+        const contentLower = result.content.toLowerCase()
+        const titleLower = result.title.toLowerCase()
+        const urlLower = result.url.toLowerCase()
+
+        // For specific queries (like news, releases, specific years), be more strict
+        const specificTerms = queryLower
+          .split(" ")
+          .filter((term) => {
+            // Clean up punctuation and filter by length and common words
+            const cleanTerm = term.replace(/[^\w]/g, "") // Remove punctuation
+            return (
+              cleanTerm.length > 2 &&
+              ![
+                "what",
+                "are",
+                "the",
+                "how",
+                "when",
+                "where",
+                "why",
+                "and",
+                "for",
+                "with",
+              ].includes(cleanTerm)
+            )
+          })
+          .map((term) => term.replace(/[^\w]/g, "")) // Clean all terms
+
+        // Check for content relevance first (most important)
+        const hasContentMatch = specificTerms.some((term) =>
+          contentLower.includes(term),
+        )
+
+        // Check for title relevance
+        const hasTitleMatch = specificTerms.some((term) =>
+          titleLower.includes(term),
+        )
+
+        // URL matching should be secondary and less weighted
+        const hasUrlMatch = specificTerms.some((term) =>
+          urlLower.includes(term),
+        )
+
+        // For multi-term specific queries, be very strict - require multiple terms in content/title
+        if (specificTerms.length >= 2) {
+          const contentTermMatches = specificTerms.filter((term) =>
+            contentLower.includes(term),
+          ).length
+          const titleTermMatches = specificTerms.filter((term) =>
+            titleLower.includes(term),
+          ).length
+          const totalTermMatches = Math.max(
+            contentTermMatches,
+            titleTermMatches,
+          )
+
+          // For specific queries like "2025 NASA News Releases", require at least 2 terms
+          // URL matching alone is not sufficient for multi-term queries
+          return totalTermMatches >= 2
+        }
+
+        // For simpler queries, allow URL matching as fallback
+        return hasContentMatch || hasTitleMatch || hasUrlMatch
+      })
+
+      console.log(`📊 Query: "${query}"`)
+      console.log(
+        `📊 Filtering results: ${basicResults.length} total → ${goodResults.length} good results`,
       )
 
-      // More aggressive crawling trigger - crawl if query not satisfied
+      if (query) {
+        const queryTerms = query
+          .toLowerCase()
+          .split(" ")
+          .filter((term) => {
+            const cleanTerm = term.replace(/[^\w]/g, "")
+            return (
+              cleanTerm.length > 2 &&
+              ![
+                "what",
+                "are",
+                "the",
+                "how",
+                "when",
+                "where",
+                "why",
+                "and",
+                "for",
+                "with",
+              ].includes(cleanTerm)
+            )
+          })
+          .map((term) => term.replace(/[^\w]/g, ""))
+        console.log(`🔍 Query terms: [${queryTerms.join(", ")}]`)
+
+        goodResults.forEach((result, i) => {
+          const contentLower = result.content.toLowerCase()
+          const titleLower = result.title.toLowerCase()
+          const contentMatches = queryTerms.filter((term) =>
+            contentLower.includes(term),
+          )
+          const titleMatches = queryTerms.filter((term) =>
+            titleLower.includes(term),
+          )
+          const totalMatches = Math.max(
+            contentMatches.length,
+            titleMatches.length,
+          )
+          console.log(`  [${i}] ${result.url}:`)
+          console.log(
+            `      Content matches: ${contentMatches.length}/${queryTerms.length} [${contentMatches.join(", ")}]`,
+          )
+          console.log(
+            `      Title matches: ${titleMatches.length}/${queryTerms.length} [${titleMatches.join(", ")}]`,
+          )
+          console.log(
+            `      Max matches: ${totalMatches}/${queryTerms.length} (need ≥2 for multi-term query)`,
+          )
+        })
+      }
+
+      // More intelligent crawling trigger - be very aggressive for multi-term queries
       const shouldCrawl =
-        query && // Only if there's a specific query
+        query &&
         (goodResults.length === 0 || // No good results at all
-          goodResults.length < urls.length || // Missing some results
+          goodResults.length < Math.max(1, Math.ceil(urls.length / 4)) || // Less than 1/4 of URLs had good results
           !goodResults.some((r) => {
-            // Or no result contains key terms from query
+            // Check if any result has substantial query-specific content
             const queryTerms = query
               .toLowerCase()
               .split(" ")
-              .filter((term) => term.length > 3)
-            return queryTerms.some((term) =>
-              r.content.toLowerCase().includes(term),
-            )
+              .filter((term) => {
+                const cleanTerm = term.replace(/[^\w]/g, "")
+                return (
+                  cleanTerm.length > 2 &&
+                  ![
+                    "what",
+                    "are",
+                    "the",
+                    "how",
+                    "when",
+                    "where",
+                    "why",
+                    "and",
+                    "for",
+                    "with",
+                  ].includes(cleanTerm)
+                )
+              })
+              .map((term) => term.replace(/[^\w]/g, ""))
+
+            const contentLower = r.content.toLowerCase()
+
+            // For multi-term queries, require multiple query terms to be present in content
+            if (queryTerms.length >= 2) {
+              const termMatches = queryTerms.filter((term) =>
+                contentLower.includes(term),
+              ).length
+              // Require at least half the query terms to be present in content
+              return termMatches >= Math.ceil(queryTerms.length / 2)
+            }
+
+            // For single term queries, require at least one match
+            return queryTerms.some((term) => contentLower.includes(term))
           }))
+
+      console.log(`🚀 Crawling decision factors:`)
+      console.log(`   - Query provided: ${query ? "YES" : "NO"}`)
+      console.log(`   - Good results: ${goodResults.length}/${urls.length}`)
+      console.log(
+        `   - Min threshold: ${Math.max(1, Math.ceil(urls.length / 4))}`,
+      )
+      console.log(
+        `   - Good results below threshold: ${goodResults.length < Math.max(1, Math.ceil(urls.length / 4)) ? "YES" : "NO"}`,
+      )
+
+      let substantialContentFound = false
+      if (query && goodResults.length > 0) {
+        substantialContentFound = goodResults.some((r) => {
+          const queryTerms = query
+            .toLowerCase()
+            .split(" ")
+            .filter((term) => {
+              const cleanTerm = term.replace(/[^\w]/g, "")
+              return (
+                cleanTerm.length > 2 &&
+                ![
+                  "what",
+                  "are",
+                  "the",
+                  "how",
+                  "when",
+                  "where",
+                  "why",
+                  "and",
+                  "for",
+                  "with",
+                ].includes(cleanTerm)
+              )
+            })
+            .map((term) => term.replace(/[^\w]/g, ""))
+          const contentLower = r.content.toLowerCase()
+          if (queryTerms.length >= 2) {
+            const termMatches = queryTerms.filter((term) =>
+              contentLower.includes(term),
+            ).length
+            return termMatches >= Math.ceil(queryTerms.length / 2)
+          }
+          return queryTerms.some((term) => contentLower.includes(term))
+        })
+      }
+      console.log(
+        `   - Substantial content found: ${substantialContentFound ? "YES" : "NO"}`,
+      )
+      console.log(
+        `🚀 Final decision: ${shouldCrawl ? "YES - escalating to crawl" : "NO - basic scraping sufficient"}`,
+      )
 
       if (!shouldCrawl) {
         console.log(
@@ -816,16 +979,13 @@ export class UnifiedWebScraper {
         crawlResults = []
       }
 
-      // Combine results, prioritizing crawl results
       const allResults = [...basicResults, ...crawlResults]
 
-      // Remove duplicates based on URL
       const uniqueResults = allResults.filter(
         (result, index, arr) =>
           arr.findIndex((r) => r.url === result.url) === index,
       )
 
-      // If crawling found additional relevant content, prefer those results
       const crawledRelevantResults = crawlResults.filter(
         (result) =>
           !query || result.content.toLowerCase().includes(query.toLowerCase()),

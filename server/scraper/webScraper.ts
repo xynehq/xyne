@@ -1,4 +1,4 @@
-import { UnifiedWebScraper } from "../scraper/unified-scraper.js"
+import { UnifiedWebScraper } from "./unified-scraper.js"
 
 export interface ScrapedResult {
   url: string

@@ -735,7 +735,6 @@ export const webScraperTool: AgentTool = {
         }
       }
 
-      // Check for inaccessible URLs upfront
       const inaccessibleUrls = urls.filter((url) => {
         const urlLower = url.toLowerCase()
         return (
@@ -761,7 +760,7 @@ export const webScraperTool: AgentTool = {
       execSpan?.setAttribute("max_pages", maxPages)
       execSpan?.setAttribute("stealth_mode", stealth)
 
-      const { scrapeUrlContent } = await import("../webScraper")
+      const { scrapeUrlContent } = await import("../../scraper")
 
       const scrapedContent = await scrapeUrlContent(urls, email, {
         stealth: params.stealth_mode || stealth,
@@ -772,13 +771,10 @@ export const webScraperTool: AgentTool = {
       })
 
       if (scrapedContent && scrapedContent.length > 0) {
-        // Check if ALL scraped content indicates login/authentication pages
-        // Don't reject if we have any meaningful content
         const allContentIsAuth = scrapedContent.every((item) => {
           const content = (item.content || "").toLowerCase()
           const title = (item.title || "").toLowerCase()
 
-          // Only consider it auth-required if it's both short AND has auth indicators
           const hasAuthIndicators =
             (content.includes("sign in") &&
               content.includes("email or phone")) ||
@@ -788,11 +784,9 @@ export const webScraperTool: AgentTool = {
             title.includes("gmail") ||
             title.includes("sign in")
 
-          // Consider it a login page only if it's very short AND has auth indicators
           return content.length < 200 && hasAuthIndicators
         })
 
-        // Also check if we have ANY substantial content
         const hasSubstantialContent = scrapedContent.some(
           (item) => item.content && item.content.length >= 500,
         )
@@ -842,7 +836,6 @@ export const webScraperTool: AgentTool = {
           contexts: contexts,
         }
       } else {
-        // Try to provide more helpful error message
         const errorMessage = urls.some((url) => url.includes("medium.com"))
           ? "Unable to scrape the provided URLs. Medium and similar sites have strong anti-bot protection. The content may require manual access or alternative methods to retrieve."
           : "No content was successfully scraped from the provided URLs. The sites may have bot protection or the content may not be accessible."
