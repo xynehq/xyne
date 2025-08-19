@@ -1008,6 +1008,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             [Apps.Github]: ['github'],
             [Apps.Xyne]: ['xyne'],
             [Apps.DataSource]: ['datasource', 'data-source'],
+            [Apps.KnowledgeBase]: ['knowledge', 'kb', 'knowledge-base'],
           }
           
           const lowerToolName = toolName.toLowerCase()
