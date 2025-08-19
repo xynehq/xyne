@@ -22,9 +22,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
-import { ToolsListItem } from "@/types"
+import { ToolsListItem, indexSearchParamsSchema } from "@/types"
 import { AgentCard } from "@/components/AgentCard"
-import { z } from "zod"
 
 enum Tabs {
   Search = "search",
@@ -443,14 +442,10 @@ const Index = () => {
   )
 }
 
-const searchParams = z.object({
-  agentId: z.string().optional(),
-})
-
 export const Route = createFileRoute("/_authenticated/")({
   component: () => {
     return <Index />
   },
-  validateSearch: (search) => searchParams.parse(search),
+  validateSearch: (search) => indexSearchParamsSchema.parse(search),
   errorComponent: errorComponent,
 })
