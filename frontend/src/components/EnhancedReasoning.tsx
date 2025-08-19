@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { ChevronRight, Loader2, FileText, Users, Brain } from "lucide-react"
 import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
-import { AgentReasoningStepType, Citation } from "shared/types"
+import { AgentReasoningStepType, Citation, XyneTools, Apps } from "shared/types"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { useTheme } from "@/components/ThemeContext"
 import DriveIcon from "@/assets/drive.svg?react"
@@ -734,25 +734,25 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
 
   // Memoize icon mapping functions
   const getIconFromApp = useCallback((app?: string) => {
-    switch (app?.toLowerCase()) {
-      case 'gmail':
+    switch (app) {
+      // Apps enum values
+      case Apps.Gmail:
         return <GmailIcon className="w-4 h-4" />
-      case 'google-drive':
+      case Apps.GoogleDrive:
         return <DriveIcon className="w-4 h-4" />
-      case 'google-calendar':
-      case 'calendar':
+      case Apps.GoogleCalendar:
         return <GoogleCalendarIcon className="w-4 h-4" />
-      case 'slack':
+      case Apps.Slack:
         return <SlackIcon className="w-4 h-4" />
-      case 'workspace':
+      case Apps.GoogleWorkspace:
         return <Users className="w-4 h-4" />
-      case 'mcp':
+      case Apps.MCP:
         return <SvgIcon className="w-4 h-4" />
-      case 'github':
+      case Apps.Github:
         return <GithubIcon className="w-4 h-4" />
-      case 'data-source':
+      case Apps.DataSource:
         return <FileText className="w-4 h-4" />
-      case 'xyne':
+      case Apps.Xyne:
         return <XyneIcon className="w-4 h-4" />
       default:
         return null
@@ -760,19 +760,24 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   }, [])
 
   const getIconFromToolName = useCallback((toolName: string) => {
-    const lowerToolName = toolName.toLowerCase()
-    if (lowerToolName.includes('slack')) {
-      return <SlackIcon className="w-4 h-4" />
+    switch (toolName) {
+      case XyneTools.GetUserInfo:
+        return <XyneIcon className="w-4 h-4" />
+
+      case XyneTools.Search:
+      case XyneTools.FilteredSearch:
+      case XyneTools.TimeSearch:
+        return <SearchIcon className="w-4 h-4" />
+      
+      case XyneTools.getSlackRelatedMessages:
+      case XyneTools.getSlackThreads:
+      case XyneTools.getUserSlackProfile:
+        return <SlackIcon className="w-4 h-4" />
+        
+      default:
+        // Default for unknown tools
+        return <XyneIcon className="w-4 h-4" />
     }
-    if(lowerToolName.includes('search')){
-      return <SearchIcon className="w-4 h-4" />
-    }
-    if(lowerToolName.includes('get_user_info')){
-      return <XyneIcon className="w-4 h-4" />
-    }
-    
-    // Default for unknown tools
-    return <XyneIcon className="w-4 h-4" />
   }, [])
 
   const getAppIcon = useCallback((app?: string, stepType?: string, stepIndex?: number, toolName?: string, iterationToolName?: string) => {

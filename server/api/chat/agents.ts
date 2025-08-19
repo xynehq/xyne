@@ -210,8 +210,9 @@ const generateStepSummary = async (
     )
 
     // Use a fast model for summary generation
-    const summaryIterator = generateAnswerBasedOnToolOutput(
+    const summary =  await generateSynthesisBasedOnToolOutput(
       prompt,
+      "",
       "",
       {
         modelId: defaultFastModel,
@@ -220,24 +221,15 @@ const generateStepSummary = async (
         reasoning: false,
         messages: [],
       },
-      "",
-      "",
-      undefined,
-      undefined,
     )
 
-    let summaryResponse = ""
-    for await (const chunk of summaryIterator) {
-      if (chunk.text) {
-        summaryResponse += chunk.text
-      }
-    }
+    const summaryResponse = summary.text || ""
 
     // Parse the JSON response
     const parsed = jsonParseLLMOutput(summaryResponse)
     Logger.debug("Parsed reasoning step:", {parsed})
-    Logger.debug("Generated summary:", {summary: parsed?.summary})
-    return parsed?.summary || generateFallbackSummary(step)
+    Logger.debug("Generated summary:", {summary: parsed.summary})
+    return parsed.summary || generateFallbackSummary(step)
   } catch (error) {
     Logger.error(`Error generating step summary: ${error}`)
     return generateFallbackSummary(step)
@@ -932,8 +924,9 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
 
             // Use a fast model for summary generation
-            const summaryIterator = generateAnswerBasedOnToolOutput(
+            const summaryResult =  await generateSynthesisBasedOnToolOutput(
               prompt,
+              "",
               "",
               {
                 modelId: defaultFastModel,
@@ -942,22 +935,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                 reasoning: false,
                 messages: [],
               },
-              "",
-              "",
-              undefined,
-              undefined,
             )
 
-            let summaryResponse = ""
-            for await (const chunk of summaryIterator) {
-              if (chunk.text) {
-                summaryResponse += chunk.text
-              }
-            }
+            const summaryResponse = summaryResult.text || ""
 
             // Parse the JSON response
             const parsed = jsonParseLLMOutput(summaryResponse)
-            const summary = parsed?.summary || `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
+            const summary = parsed.summary || `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
             
             // Create the iteration summary step
             const iterationSummaryStep = createIterationSummaryStep(summary, iterationNumber)
@@ -1001,19 +985,23 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
 
         // Helper function to infer app type from tool name
-        const inferAppFromToolName = (toolName: string): string | undefined => {
-          const appPatterns: Record<string, string[]> = {
-            'gmail': ['gmail', 'mail'],
-            'drive': ['drive', 'file'],
-            'calendar': ['calendar', 'event'],
-            'slack': ['slack'],
-            'workspace': ['workspace', 'people'],
+        const inferAppFromToolName = (toolName: string): Apps | undefined => {
+          const appPatterns: Record<Apps, string[]> = {
+            [Apps.Gmail]: ['gmail', 'mail'],
+            [Apps.GoogleDrive]: ['drive', 'file'],
+            [Apps.GoogleCalendar]: ['calendar', 'event'],
+            [Apps.Slack]: ['slack'],
+            [Apps.GoogleWorkspace]: ['workspace', 'people'],
+            [Apps.MCP]: ['mcp'],
+            [Apps.Github]: ['github'],
+            [Apps.Xyne]: ['xyne'],
+            [Apps.DataSource]: ['datasource', 'data-source'],
           }
           
           const lowerToolName = toolName.toLowerCase()
           for (const [app, patterns] of Object.entries(appPatterns)) {
             if (patterns.some(pattern => lowerToolName.includes(pattern))) {
-              return app
+              return app as Apps
             }
           }
           return undefined
@@ -1495,7 +1483,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const toolParams = toolSelection.arguments
               
               // Extract app info for this iteration
-              let iterationApp: string | undefined
+              let iterationApp: Apps | string | undefined
               let iterationEntity: string | undefined
               
               iterationApp = toolParams.app || inferAppFromToolName(toolName)
