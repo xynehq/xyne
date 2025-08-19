@@ -457,10 +457,28 @@ export class UnifiedWebScraper {
 
           const isRelevant =
             !query ||
-            queryTerms.some(
-              (term) =>
-                titleLower.includes(term) || contentLower.includes(term),
-            )
+            (() => {
+              // For multi-term queries, require more comprehensive matching
+              if (queryTerms.length >= 2) {
+                const titleMatches = queryTerms.filter((term) =>
+                  titleLower.includes(term),
+                ).length
+                const contentMatches = queryTerms.filter((term) =>
+                  contentLower.includes(term),
+                ).length
+                // Require at least 2 terms for multi-term queries, or substantial content with 1 term
+                return (
+                  Math.max(titleMatches, contentMatches) >= 2 ||
+                  (Math.max(titleMatches, contentMatches) >= 1 &&
+                    data.content.length > 800)
+                )
+              }
+              // For single term queries, require the term to be present
+              return queryTerms.some(
+                (term) =>
+                  titleLower.includes(term) || contentLower.includes(term),
+              )
+            })()
 
           // Accept almost any content - be very lenient
           const hasUsefulContent =
@@ -472,7 +490,7 @@ export class UnifiedWebScraper {
             data.metadata.isRelevant = isRelevant
             results.push(data)
             console.log(
-              `✓ Crawled content: ${data.content.length} chars, relevant: ${isRelevant}, bot: ${data.metadata.botDetected}`,
+              `Crawled content: ${data.content.length} chars, relevant: ${isRelevant}, bot: ${data.metadata.botDetected}`,
             )
           }
 
@@ -784,9 +802,9 @@ export class UnifiedWebScraper {
         return hasContentMatch || hasTitleMatch || hasUrlMatch
       })
 
-      console.log(`📊 Query: "${query}"`)
+      console.log(`Query: "${query}"`)
       console.log(
-        `📊 Filtering results: ${basicResults.length} total → ${goodResults.length} good results`,
+        `Filtering results: ${basicResults.length} total → ${goodResults.length} good results`,
       )
 
       if (query) {
@@ -812,7 +830,7 @@ export class UnifiedWebScraper {
             )
           })
           .map((term) => term.replace(/[^\w]/g, ""))
-        console.log(`🔍 Query terms: [${queryTerms.join(", ")}]`)
+        console.log(`Query terms: [${queryTerms.join(", ")}]`)
 
         goodResults.forEach((result, i) => {
           const contentLower = result.content.toLowerCase()
@@ -840,13 +858,13 @@ export class UnifiedWebScraper {
         })
       }
 
-      // More intelligent crawling trigger - be very aggressive for multi-term queries
+      // More intelligent crawling trigger - be aggressive when basic results are insufficient
       const shouldCrawl =
         query &&
         (goodResults.length === 0 || // No good results at all
-          goodResults.length < Math.max(1, Math.ceil(urls.length / 4)) || // Less than 1/4 of URLs had good results
+          goodResults.length < Math.max(1, Math.ceil(urls.length / 3)) || // Less than 1/3 of URLs had good results
           !goodResults.some((r) => {
-            // Check if any result has substantial query-specific content
+            // Check if any result has comprehensive query-specific content
             const queryTerms = query
               .toLowerCase()
               .split(" ")
@@ -865,6 +883,11 @@ export class UnifiedWebScraper {
                     "and",
                     "for",
                     "with",
+                    "does",
+                    "list",
+                    "show",
+                    "tell",
+                    "about",
                   ].includes(cleanTerm)
                 )
               })
@@ -872,32 +895,40 @@ export class UnifiedWebScraper {
 
             const contentLower = r.content.toLowerCase()
 
-            // For multi-term queries, require multiple query terms to be present in content
+            // For multi-term queries, require ALL query terms to be present in content for comprehensive coverage
             if (queryTerms.length >= 2) {
               const termMatches = queryTerms.filter((term) =>
                 contentLower.includes(term),
               ).length
-              // Require at least half the query terms to be present in content
-              return termMatches >= Math.ceil(queryTerms.length / 2)
+              // Require ALL query terms to be present, not just half
+              return termMatches >= queryTerms.length
             }
 
-            // For single term queries, require at least one match
-            return queryTerms.some((term) => contentLower.includes(term))
+            // For single term queries, require at least one match with substantial context
+            if (queryTerms.length === 1) {
+              const hasMatch = queryTerms.some((term) =>
+                contentLower.includes(term),
+              )
+              // Also check for substantial content length when we have matches
+              return hasMatch && r.content.length > 500
+            }
+
+            return false
           }))
 
-      console.log(`🚀 Crawling decision factors:`)
+      console.log(`Crawling decision factors:`)
       console.log(`   - Query provided: ${query ? "YES" : "NO"}`)
       console.log(`   - Good results: ${goodResults.length}/${urls.length}`)
       console.log(
-        `   - Min threshold: ${Math.max(1, Math.ceil(urls.length / 4))}`,
+        `   - Min threshold: ${Math.max(1, Math.ceil(urls.length / 3))}`,
       )
       console.log(
-        `   - Good results below threshold: ${goodResults.length < Math.max(1, Math.ceil(urls.length / 4)) ? "YES" : "NO"}`,
+        `   - Good results below threshold: ${goodResults.length < Math.max(1, Math.ceil(urls.length / 3)) ? "YES" : "NO"}`,
       )
 
-      let substantialContentFound = false
+      let comprehensiveContentFound = false
       if (query && goodResults.length > 0) {
-        substantialContentFound = goodResults.some((r) => {
+        comprehensiveContentFound = goodResults.some((r) => {
           const queryTerms = query
             .toLowerCase()
             .split(" ")
@@ -916,6 +947,11 @@ export class UnifiedWebScraper {
                   "and",
                   "for",
                   "with",
+                  "does",
+                  "list",
+                  "show",
+                  "tell",
+                  "about",
                 ].includes(cleanTerm)
               )
             })
@@ -925,16 +961,19 @@ export class UnifiedWebScraper {
             const termMatches = queryTerms.filter((term) =>
               contentLower.includes(term),
             ).length
-            return termMatches >= Math.ceil(queryTerms.length / 2)
+            return termMatches >= queryTerms.length && r.content.length > 300
           }
-          return queryTerms.some((term) => contentLower.includes(term))
+          const hasMatch = queryTerms.some((term) =>
+            contentLower.includes(term),
+          )
+          return hasMatch && r.content.length > 500
         })
       }
       console.log(
-        `   - Substantial content found: ${substantialContentFound ? "YES" : "NO"}`,
+        `   - Comprehensive content found: ${comprehensiveContentFound ? "YES" : "NO"}`,
       )
       console.log(
-        `🚀 Final decision: ${shouldCrawl ? "YES - escalating to crawl" : "NO - basic scraping sufficient"}`,
+        `Final decision: ${shouldCrawl ? "YES - escalating to crawl" : "NO - basic scraping sufficient"}`,
       )
 
       if (!shouldCrawl) {
@@ -986,10 +1025,56 @@ export class UnifiedWebScraper {
           arr.findIndex((r) => r.url === result.url) === index,
       )
 
-      const crawledRelevantResults = crawlResults.filter(
-        (result) =>
-          !query || result.content.toLowerCase().includes(query.toLowerCase()),
-      )
+      const crawledRelevantResults = crawlResults.filter((result) => {
+        if (!query) return true
+        const contentLower = result.content.toLowerCase()
+        const titleLower = result.title.toLowerCase()
+        const queryTerms = query
+          .toLowerCase()
+          .split(" ")
+          .filter((term) => {
+            const cleanTerm = term.replace(/[^\w]/g, "")
+            return (
+              cleanTerm.length > 2 &&
+              ![
+                "what",
+                "are",
+                "the",
+                "how",
+                "when",
+                "where",
+                "why",
+                "and",
+                "for",
+                "with",
+                "does",
+                "list",
+                "show",
+                "tell",
+                "about",
+              ].includes(cleanTerm)
+            )
+          })
+          .map((term) => term.replace(/[^\w]/g, ""))
+
+        // More stringent relevance check for crawled results
+        if (queryTerms.length >= 2) {
+          const contentMatches = queryTerms.filter((term) =>
+            contentLower.includes(term),
+          ).length
+          const titleMatches = queryTerms.filter((term) =>
+            titleLower.includes(term),
+          ).length
+          // Require at least 2 terms for multi-term queries
+          return Math.max(contentMatches, titleMatches) >= 2
+        }
+        // For single term, require presence with substantial content
+        return (
+          queryTerms.some(
+            (term) => contentLower.includes(term) || titleLower.includes(term),
+          ) && result.content.length > 300
+        )
+      })
 
       if (crawledRelevantResults.length > 0) {
         console.log(

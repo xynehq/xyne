@@ -350,6 +350,27 @@ async function* getToolContinuationIterator(
   // instead of recreating context from fragments, which loses the formatting
   const context =
     toolOutput || answerContextMapFromFragments(results, maxDefaultSummary)
+
+  // Log web scraper content for debugging
+  const isWebScraperContent =
+    toolOutput &&
+    (toolOutput.includes("Successfully scraped") ||
+      toolOutput.includes("WEB SCRAPER RESULTS") ||
+      toolOutput.includes("FRESH CONTENT AVAILABLE"))
+
+  if (isWebScraperContent && email) {
+    console.log(
+      `[DEBUG][${email}] Processing web scraper content - length: ${toolOutput?.length || 0} chars`,
+    )
+    console.log(
+      `[DEBUG][${email}] Web scraper content preview: ${toolOutput?.substring(0, 500)}...`,
+    )
+
+    // Add this critical debug info
+    console.log(
+      `[DEBUG][${email}] CRITICAL: AI must use this web scraper content to answer. This is FRESH, REAL-TIME data that directly relates to the user's query.`,
+    )
+  }
   const { imageFileNames } = extractImageFileNames(
     context,
     results.map(
@@ -447,6 +468,18 @@ async function* getToolContinuationIterator(
         try {
           const cleanedBuffer = cleanBuffer(buffer)
           parsed = jsonParseLLMOutput(cleanedBuffer, ANSWER_TOKEN) || {}
+
+          // Debug logging for web scraper content responses
+          if (isWebScraperContent && email && parsed) {
+            console.log(`[DEBUG][${email}] AI Response Status:`, {
+              hasAnswer: !!parsed.answer,
+              answerLength: parsed.answer?.length || 0,
+              answerPreview: parsed.answer?.substring(0, 200) || "null/empty",
+              isNull: parsed.answer === null,
+              isEmpty: parsed.answer === "",
+            })
+          }
+
           if (parsed.answer && currentAnswer !== parsed.answer) {
             if (currentAnswer === "") {
               // First valid answer - send the whole thing
@@ -700,7 +733,7 @@ async function performSynthesis(
 
         parseSynthesisOutput = {
           synthesisState: ContextSysthesisState.Complete,
-          answer: "", // Clear the incorrect answer so final answer generation can use the scraped content
+          answer: parseSynthesisOutput.answer || "", // Preserve existing answer if it exists, let AI generate if needed
         }
       }
     }
@@ -1850,6 +1883,30 @@ export const MessageWithToolsApi = async (c: Context) => {
                 // Store the raw tool output for potential use in final answer generation
                 if (toolExecutionResponse.result) {
                   lastToolOutput = toolExecutionResponse.result
+
+                  // Enhanced debugging for web scraper content
+                  const isWebScraperResult =
+                    toolExecutionResponse.result.includes(
+                      "WEB SCRAPER RESULTS",
+                    ) ||
+                    toolExecutionResponse.result.includes(
+                      "Successfully scraped",
+                    )
+
+                  if (isWebScraperResult && sub) {
+                    console.log(
+                      `[DEBUG][${sub}] 🎯 Web scraper tool execution completed successfully`,
+                    )
+                    console.log(
+                      `[DEBUG][${sub}] Tool output length: ${toolExecutionResponse.result.length} chars`,
+                    )
+                    console.log(
+                      `[DEBUG][${sub}] Tool output preview: ${toolExecutionResponse.result.substring(0, 300)}...`,
+                    )
+                    console.log(
+                      `[DEBUG][${sub}] 🚀 This output will be passed to LLM for final answer generation`,
+                    )
+                  }
                 }
 
                 await logAndStreamReasoning({
@@ -2210,11 +2267,33 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
 
+          const toolOutputForContinuation =
+            lastToolOutput || planningContext || ""
+
+          // Debug logging for what gets passed to continuation iterator
+          if (toolOutputForContinuation && sub) {
+            const isWebScraperOutput =
+              toolOutputForContinuation.includes("WEB SCRAPER RESULTS") ||
+              toolOutputForContinuation.includes("Successfully scraped")
+
+            if (isWebScraperOutput) {
+              console.log(
+                `[DEBUG][${sub}] 📨 Passing web scraper output to continuation iterator`,
+              )
+              console.log(
+                `[DEBUG][${sub}] Output length: ${toolOutputForContinuation.length} chars`,
+              )
+              console.log(
+                `[DEBUG][${sub}] Contains critical instructions: ${toolOutputForContinuation.includes("IMPORTANT FOR AI") ? "✅" : "❌"}`,
+              )
+            }
+          }
+
           const continuationIterator = getToolContinuationIterator(
             message,
             ctx,
             toolsPrompt,
-            lastToolOutput || planningContext || "",
+            toolOutputForContinuation,
             gatheredFragments,
             agentPromptForLLM,
             messagesWithNoErrResponse,
@@ -2248,6 +2327,25 @@ export const MessageWithToolsApi = async (c: Context) => {
                 //   })
                 // }
                 answer += chunk.text
+
+                // Debug logging for web scraper final answer generation
+                if (
+                  toolOutputForContinuation &&
+                  toolOutputForContinuation.includes("WEB SCRAPER RESULTS") &&
+                  sub
+                ) {
+                  if (answer.length > 0) {
+                    console.log(
+                      `[DEBUG][${sub}] 🎯 LLM generating answer using web scraper content`,
+                    )
+                    console.log(
+                      `[DEBUG][${sub}] Current answer length: ${answer.length} chars`,
+                    )
+                    if (answer.length < 100) {
+                      console.log(`[DEBUG][${sub}] Answer preview: ${answer}`)
+                    }
+                  }
+                }
 
                 // Additional safeguard: If we have web scraper content but answer contains PDF access errors, log it
                 if (
@@ -2312,6 +2410,25 @@ export const MessageWithToolsApi = async (c: Context) => {
             `[MessageApi] Continuation iterator completed. Answer length: ${answer.length}, wasStreamClosedPrematurely: ${wasStreamClosedPrematurely}, gatheredFragments: ${gatheredFragments.length}`,
           )
 
+          // 🔍 DEBUG: Final answer processing for web scraper
+          if (
+            lastToolOutput?.includes("WebScraper") ||
+            lastToolOutput?.includes("web scraping")
+          ) {
+            loggerWithChild({ email: sub }).info(
+              `[DEBUG-WEBSCRAPER] 🎯 Final answer processing for web scraper query:`,
+              {
+                answerLength: answer?.length || 0,
+                answerPreview: answer?.substring(0, 200) || "NO ANSWER",
+                wasStreamClosedPrematurely,
+                gatheredFragmentsCount: gatheredFragments.length,
+                lastToolOutputLength: lastToolOutput?.length || 0,
+                lastToolOutputPreview:
+                  lastToolOutput?.substring(0, 300) || "NO TOOL OUTPUT",
+              },
+            )
+          }
+
           if (answer || wasStreamClosedPrematurely) {
             // Determine if a message (even partial) should be saved
             // TODO: incase user loses permission
@@ -2361,7 +2478,28 @@ export const MessageWithToolsApi = async (c: Context) => {
               }),
             })
           } else {
+            // 🔍 DEBUG: No answer generated - critical for web scraper debugging
             const errorSpan = streamSpan.startSpan("handle_no_answer")
+
+            if (
+              lastToolOutput?.includes("WebScraper") ||
+              lastToolOutput?.includes("web scraping")
+            ) {
+              loggerWithChild({ email: sub }).error(
+                `[DEBUG-WEBSCRAPER] 🚨 NO ANSWER GENERATED despite web scraper execution!`,
+                {
+                  lastToolOutputLength: lastToolOutput?.length || 0,
+                  lastToolOutputPreview:
+                    lastToolOutput?.substring(0, 500) || "NO TOOL OUTPUT",
+                  toolOutputForContinuationLength:
+                    toolOutputForContinuation?.length || 0,
+                  gatheredFragmentsCount: gatheredFragments.length,
+                  answer: answer || "NULL/UNDEFINED",
+                  wasStreamClosedPrematurely,
+                },
+              )
+            }
+
             const allMessages = await getChatMessagesWithAuth(
               db,
               chat?.externalId,

@@ -814,7 +814,14 @@ export const webScraperTool: AgentTool = {
           }),
         )
 
-        const resultText = scrapedContent
+        // Sort content by relevance to query (longer content generally more relevant)
+        const sortedContent = scrapedContent.sort((a: any, b: any) => {
+          const aLength = a.content?.length || 0
+          const bLength = b.content?.length || 0
+          return bLength - aLength // Sort by content length descending
+        })
+
+        const resultText = sortedContent
           .map(
             (item: any, index: number) =>
               `[${index}] ${item.title} (${item.content.length} chars): ${item.content || "No content available"}`,
@@ -831,8 +838,32 @@ export const webScraperTool: AgentTool = {
         })
 
         execSpan?.setAttribute("scraped_content_count", scrapedContent.length)
+
+        // Enhanced result message with clear AI instructions
+        const totalChars = scrapedContent.reduce(
+          (total, item) => total + (item.content?.length || 0),
+          0,
+        )
+        const resultMessage = `🌐 **WEB SCRAPER RESULTS - FRESH CONTENT AVAILABLE**
+
+Successfully scraped ${scrapedContent.length} URL(s) and found ${totalChars} total characters of content.
+
+📋 **IMPORTANT FOR AI**: This is real-time web content that should be used to answer the user's query. The content below contains the most up-to-date information available from the web sources.
+
+📊 **Content Summary**:
+${sortedContent
+  .map(
+    (item: any, index: number) =>
+      `- [${index}] ${item.title}: ${item.content.length} characters from ${item.url}`,
+  )
+  .join("\n")}
+
+📄 **COMPLETE SCRAPED CONTENT**:
+
+${resultText}`
+
         return {
-          result: `Successfully scraped ${scrapedContent.length} URL(s). Found ${scrapedContent.reduce((total, item) => total + (item.content?.length || 0), 0)} total characters. Here is the complete content:\n\n${resultText}`,
+          result: resultMessage,
           contexts: contexts,
         }
       } else {
