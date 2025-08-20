@@ -1970,7 +1970,25 @@ export const MessageWithToolsApi = async (c: Context) => {
                   toolExecutionResponse.contexts.length > 0
                 ) {
                   const newFragments = toolExecutionResponse.contexts
-                  gatheredFragments.push(...newFragments)
+
+                  // Check if this is web scraper content
+                  const isWebScraperFragments = newFragments.some(
+                    (fragment) =>
+                      fragment.id?.includes("web_scraper") ||
+                      fragment.source?.app === Apps.Xyne,
+                  )
+
+                  if (isWebScraperFragments) {
+                    // For web scraper content, prioritize it by placing it at the beginning
+                    // This ensures citations [1], [2], etc. reference the fresh web content
+                    gatheredFragments = [...newFragments, ...gatheredFragments]
+                    console.log(
+                      `[DEBUG] Prioritized ${newFragments.length} web scraper fragments at the beginning of gatheredFragments`,
+                    )
+                  } else {
+                    // For other tools, append as usual
+                    gatheredFragments.push(...newFragments)
+                  }
 
                   const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
                   excludedIds = [...new Set([...excludedIds, ...newIds])]
