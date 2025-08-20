@@ -47,6 +47,7 @@ import type {
   SlackUserProfileParams,
 } from "@/api/chat/types"
 import config from "@/config"
+import { webScraperToolPrompt } from "@/ai/prompts"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -488,7 +489,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves items based on metadata filters (time range, app, entity, email addresses). Use this tool when searching within a specific app/entity with optional keyword filtering. For Gmail queries, supports filtering by sender/recipient email addresses.",
+      "Retrieves items based on metadata filters (time range, app, entity). Use this tool when searching within a specific app/entity with optional keyword filtering.",
     params: [
       {
         name: "from",
@@ -531,19 +532,6 @@ export const internalTools: Record<string, ToolDefinition> = {
         type: "string",
         required: false,
         description: "Keywords to refine the search based on the user's query.",
-      },
-      {
-        name: "intent",
-        type: "object",
-        required: false,
-        description: `
-          Email filtering intent with support for multiple addresses, names, and organizations. 
-            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
-            - Each field is an array of strings containing email addresses, person names, or organization names. 
-            - Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'.
-            - The system will automatically resolve names and organizations to email addresses. 
-            Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}
-          `,
       },
       {
         name: "limit",
@@ -617,8 +605,7 @@ export const internalTools: Record<string, ToolDefinition> = {
   },
   [XyneTools.WebScraper]: {
     name: XyneTools.WebScraper,
-    description:
-      "Scrape and extract content from external websites and URLs with intelligent escalation from basic scraping to deep crawling when needed. Use this tool when users provide URLs, ask to scrape web content, want information from external websites, or mention specific websites/articles. Automatically handles bot detection and escalates to crawling if initial scraping doesn't find sufficient content.",
+    description: webScraperToolPrompt(),
     params: [
       {
         name: "urls",
@@ -633,26 +620,6 @@ export const internalTools: Record<string, ToolDefinition> = {
         required: false,
         description:
           "The user's original query for context - helps determine relevance during crawling.",
-      },
-      {
-        name: "max_pages",
-        type: "number",
-        required: false,
-        description: "Maximum number of pages to scrape/crawl (default: 10).",
-      },
-      {
-        name: "stealth_mode",
-        type: "boolean",
-        required: false,
-        description:
-          "Enable stealth mode for sites with bot protection (default: false).",
-      },
-      {
-        name: "enable_crawling",
-        type: "boolean",
-        required: false,
-        description:
-          "Force enable crawling mode to follow links deeply (default: false, auto-enabled if needed).",
       },
     ],
   },
@@ -764,8 +731,7 @@ export const slackTools: Record<string, ToolDefinition> = {
 export const externalTools: Record<string, ToolDefinition> = {
   [XyneTools.WebScraper]: {
     name: XyneTools.WebScraper,
-    description:
-      "Scrape and extract content from external websites and URLs with intelligent escalation and bot handling. Features: 1) Starts with basic scraping, automatically escalates to deep crawling if insufficient content found, 2) Handles bot detection and anti-bot protection, 3) Can crawl through multiple pages following links to find comprehensive information, 4) Filters content based on user query for relevance. Use when users provide URLs, ask to scrape web content, want information from external websites, or when URLs are found in search results and user wants the actual content. CRITICAL: If emails/documents contain references like 'link to tutorial', 'watch how to', 'read more at', 'see guide' - ALWAYS scrape the actual URL to get complete content instead of just referencing the link.",
+    description: webScraperToolPrompt(),
     params: [
       {
         name: "urls",
@@ -780,25 +746,6 @@ export const externalTools: Record<string, ToolDefinition> = {
         required: false,
         description:
           "The user's original query for context - helps filter relevant content during crawling",
-      },
-      {
-        name: "max_pages",
-        type: "number",
-        required: false,
-        description: "Maximum number of pages to scrape/crawl (default: 10)",
-      },
-      {
-        name: "stealth_mode",
-        type: "boolean",
-        required: false,
-        description: "Use stealth mode to avoid detection (default: false)",
-      },
-      {
-        name: "enable_crawling",
-        type: "boolean",
-        required: false,
-        description:
-          "Force enable crawling mode to follow links deeply (default: false, auto-enabled if needed)",
       },
     ],
   },

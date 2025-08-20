@@ -529,7 +529,6 @@ export enum XyneTools {
   // Conversational tool
   Conversational = "conversational",
 
-  // Web scraper tool
   WebScraper = "web_scraper",
 
   // slack tools

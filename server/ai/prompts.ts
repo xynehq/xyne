@@ -1879,7 +1879,6 @@ export const withToolQueryPrompt = (
   agentContext?: AgentPromptData,
   fallbackReasoning?: string,
 ): string => {
-  // Check if this is web scraper content
   const isWebScraperContent =
     toolOutput.includes("Successfully scraped") ||
     toolOutput.includes("URL(s)") ||
@@ -1963,7 +1962,6 @@ export const withToolQueryPrompt = (
     Be concise, accurate, and context-aware in all replies.
   `
 
-  // Debug logging for web scraper prompts
   if (isWebScraperContent) {
     console.log(
       `[DEBUG] WEB SCRAPER PROMPT GENERATED - Enhanced with critical instructions`,
@@ -1972,7 +1970,7 @@ export const withToolQueryPrompt = (
       `[DEBUG] Prompt contains: ${prompt.includes("NEVER RETURN NULL") ? "✅" : "❌"} null-prevention instructions`,
     )
     console.log(
-      `[DEBUG] Prompt contains: ${prompt.includes("WEB SCRAPER CONTENT") ? "✅" : "❌"} mandatory response instructions`,
+      `[DEBUG] Prompt contains: ${prompt.includes("WEB SCRAPER CONTENT") ? "YES" : "NO"} mandatory response instructions`,
     )
   }
 
@@ -2318,3 +2316,7 @@ ${retrievedContext}
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
+
+export const webScraperToolPrompt = (): string => {
+  return "Scrape and extract content from external websites and URLs with intelligent escalation from basic scraping to deep crawling when needed. Use this tool when users provide URLs, ask to scrape web content, want information from external websites, or mention specific websites/articles. Automatically handles bot detection and escalates to crawling if initial scraping doesn't find sufficient content."
+}

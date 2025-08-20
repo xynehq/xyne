@@ -346,12 +346,9 @@ async function* getToolContinuationIterator(
     imageCitation?: ImageCitation
   }
 > {
-  // Use the provided toolOutput (which contains properly formatted web scraper content)
-  // instead of recreating context from fragments, which loses the formatting
   const context =
     toolOutput || answerContextMapFromFragments(results, maxDefaultSummary)
 
-  // Log web scraper content for debugging
   const isWebScraperContent =
     toolOutput &&
     (toolOutput.includes("Successfully scraped") ||
@@ -469,7 +466,6 @@ async function* getToolContinuationIterator(
           const cleanedBuffer = cleanBuffer(buffer)
           parsed = jsonParseLLMOutput(cleanedBuffer, ANSWER_TOKEN) || {}
 
-          // Debug logging for web scraper content responses
           if (isWebScraperContent && email && parsed) {
             console.log(`[DEBUG][${email}] AI Response Status:`, {
               hasAnswer: !!parsed.answer,
@@ -630,7 +626,6 @@ async function performSynthesis(
     }
   }
 
-  // Post-synthesis validation: Override obvious synthesis mistakes for web scraper content
   if (parseSynthesisOutput && gatheredFragments.length > 0) {
     const webScraperFragments = gatheredFragments.filter(
       (fragment) => fragment.id && fragment.id.includes("web_scraper"),
@@ -716,9 +711,7 @@ async function performSynthesis(
           answer:
             "The URL appears to be inaccessible or requires authentication. Unable to retrieve the requested information from this source.",
         }
-      }
-      // Override synthesis decision if we have substantial accessible web scraper content
-      else if (
+      } else if (
         (parseSynthesisOutput.synthesisState ===
           ContextSysthesisState.Partial ||
           parseSynthesisOutput.synthesisState ===
@@ -1884,7 +1877,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 if (toolExecutionResponse.result) {
                   lastToolOutput = toolExecutionResponse.result
 
-                  // Enhanced debugging for web scraper content
                   const isWebScraperResult =
                     toolExecutionResponse.result.includes(
                       "WEB SCRAPER RESULTS",
@@ -1895,7 +1887,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                   if (isWebScraperResult && sub) {
                     console.log(
-                      `[DEBUG][${sub}] 🎯 Web scraper tool execution completed successfully`,
+                      `[DEBUG][${sub}] Web scraper tool execution completed successfully`,
                     )
                     console.log(
                       `[DEBUG][${sub}] Tool output length: ${toolExecutionResponse.result.length} chars`,
@@ -1933,7 +1925,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 }
 
                 if (toolExecutionResponse.error) {
-                  // Check for repeated web scraper authentication failures
                   if (
                     toolName === "web_scraper" &&
                     (toolExecutionResponse.error.includes("authentication") ||
@@ -2278,7 +2269,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             if (isWebScraperOutput) {
               console.log(
-                `[DEBUG][${sub}] 📨 Passing web scraper output to continuation iterator`,
+                `[DEBUG][${sub}] Passing web scraper output to continuation iterator`,
               )
               console.log(
                 `[DEBUG][${sub}] Output length: ${toolOutputForContinuation.length} chars`,
@@ -2328,7 +2319,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 // }
                 answer += chunk.text
 
-                // Debug logging for web scraper final answer generation
                 if (
                   toolOutputForContinuation &&
                   toolOutputForContinuation.includes("WEB SCRAPER RESULTS") &&
@@ -2336,7 +2326,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ) {
                   if (answer.length > 0) {
                     console.log(
-                      `[DEBUG][${sub}] 🎯 LLM generating answer using web scraper content`,
+                      `[DEBUG][${sub}] LLM generating answer using web scraper content`,
                     )
                     console.log(
                       `[DEBUG][${sub}] Current answer length: ${answer.length} chars`,
@@ -2347,7 +2337,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                 }
 
-                // Additional safeguard: If we have web scraper content but answer contains PDF access errors, log it
                 if (
                   gatheredFragments.some(
                     (f) => f.id && f.id.includes("web_scraper"),
@@ -2410,13 +2399,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             `[MessageApi] Continuation iterator completed. Answer length: ${answer.length}, wasStreamClosedPrematurely: ${wasStreamClosedPrematurely}, gatheredFragments: ${gatheredFragments.length}`,
           )
 
-          // 🔍 DEBUG: Final answer processing for web scraper
           if (
             lastToolOutput?.includes("WebScraper") ||
             lastToolOutput?.includes("web scraping")
           ) {
             loggerWithChild({ email: sub }).info(
-              `[DEBUG-WEBSCRAPER] 🎯 Final answer processing for web scraper query:`,
+              `[DEBUG-WEBSCRAPER] Final answer processing for web scraper query:`,
               {
                 answerLength: answer?.length || 0,
                 answerPreview: answer?.substring(0, 200) || "NO ANSWER",
@@ -2478,7 +2466,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               }),
             })
           } else {
-            // 🔍 DEBUG: No answer generated - critical for web scraper debugging
             const errorSpan = streamSpan.startSpan("handle_no_answer")
 
             if (
@@ -2486,7 +2473,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               lastToolOutput?.includes("web scraping")
             ) {
               loggerWithChild({ email: sub }).error(
-                `[DEBUG-WEBSCRAPER] 🚨 NO ANSWER GENERATED despite web scraper execution!`,
+                `[DEBUG-WEBSCRAPER] NO ANSWER GENERATED despite web scraper execution!`,
                 {
                   lastToolOutputLength: lastToolOutput?.length || 0,
                   lastToolOutputPreview:
