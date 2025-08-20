@@ -2,18 +2,19 @@
 
 import fs from "fs"
 import path from "path"
-import { Anthropic } from "@anthropic-ai/sdk"
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk"
 import { getLogger } from "@/logger"
+import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   AIProviders,
   type ConverseResponse,
   type ModelParams,
 } from "@/ai/types"
-import { modelDetailsMap } from "@/ai/mappers"
 import BaseProvider, { findImageByName } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
-import { calculateCost } from "@/utils/index"
+import config from "@/config"
+
+const { MAX_IMAGE_SIZE_BYTES } = config
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -41,7 +42,7 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
     try {
       await fs.promises.access(absolutePath, fs.constants.F_OK)
       const imgBuffer = await fs.promises.readFile(absolutePath)
-      if (imgBuffer.length > 4 * 1024 * 1024) return null
+      if (imgBuffer.length > MAX_IMAGE_SIZE_BYTES) return null
       const base64 = imgBuffer.toString("base64")
       return {
         type: "image",
@@ -66,7 +67,7 @@ export class VertexAiProvider extends BaseProvider {
   }
 
   async converse(
-    messages: any[],
+    messages: Message[],
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const { modelId, systemPrompt, maxTokens, temperature } =
@@ -95,7 +96,7 @@ export class VertexAiProvider extends BaseProvider {
   }
 
   async *converseStream(
-    messages: any[],
+    messages: Message[],
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const { modelId, systemPrompt, maxTokens, temperature } =
@@ -141,7 +142,7 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = 0
+        const cost = 0 //TODO :  explitly set cost to 0 for now
         yield {
           text: "",
           cost,
@@ -166,12 +167,14 @@ export class VertexAiProvider extends BaseProvider {
 
     return messages.map((msg, i) => {
       if (i === actualIndex && imageParts.length) {
+        const userText = msg.content?.[0]?.text
         return {
           role: msg.role,
           content: [
             {
               type: "text",
-              text: `You may receive image(s)...\n\n${msg.content[0].text}`,
+              text: `You may receive image(s)as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n"
+              ${userText}`,
             },
             ...imageParts,
           ],
@@ -179,7 +182,7 @@ export class VertexAiProvider extends BaseProvider {
       }
       return {
         role: msg.role,
-        content: [{ type: "text", text: msg.content[0].text }],
+        content: [{ type: "text", text: msg.content[0]?.text }],
       }
     })
   }
