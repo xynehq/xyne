@@ -799,7 +799,34 @@ export const webScraperTool: AgentTool = {
           }
         }
 
-        const contexts: MinimalAgentFragment[] = scrapedContent.map(
+        // Sort content by relevance to query - prioritize content that likely contains the answer
+        const sortedContent = scrapedContent.sort((a: any, b: any) => {
+          // Check if content is relevant to the query
+          const queryLower = (params.query || "").toLowerCase()
+          const aContent = (a.content || "").toLowerCase()
+          const bContent = (b.content || "").toLowerCase()
+          const aTitle = (a.title || "").toLowerCase()
+          const bTitle = (b.title || "").toLowerCase()
+
+          // Score based on query keyword matches in content and title
+          const aMatches =
+            (aContent.includes(queryLower.split(" ")[0]) ? 2 : 0) +
+            (aTitle.includes(queryLower.split(" ")[0]) ? 1 : 0)
+          const bMatches =
+            (bContent.includes(queryLower.split(" ")[0]) ? 2 : 0) +
+            (bTitle.includes(queryLower.split(" ")[0]) ? 1 : 0)
+
+          // If relevance is equal, sort by content length
+          if (aMatches === bMatches) {
+            const aLength = a.content?.length || 0
+            const bLength = b.content?.length || 0
+            return bLength - aLength
+          }
+
+          return bMatches - aMatches // Higher relevance first
+        })
+
+        const contexts: MinimalAgentFragment[] = sortedContent.map(
           (item: any, index: number) => {
             // Create a simple, clean citation title
             const domain = new URL(item.url).hostname.replace("www.", "")
@@ -823,13 +850,6 @@ export const webScraperTool: AgentTool = {
           },
         )
 
-        // Sort content by relevance to query (longer content generally more relevant)
-        const sortedContent = scrapedContent.sort((a: any, b: any) => {
-          const aLength = a.content?.length || 0
-          const bLength = b.content?.length || 0
-          return bLength - aLength // Sort by content length descending
-        })
-
         const resultText = sortedContent
           .map(
             (item: any, index: number) =>
@@ -838,24 +858,24 @@ export const webScraperTool: AgentTool = {
           .join("\n\n")
 
         console.log(
-          `[webScraperTool] Successfully processed ${scrapedContent.length} items:`,
+          `[webScraperTool] Successfully processed ${sortedContent.length} items (sorted by relevance):`,
         )
-        scrapedContent.forEach((item, index) => {
+        sortedContent.forEach((item, index) => {
           console.log(
-            `  [${index}] ${item.url}: ${item.content.length} characters`,
+            `  [${index}] ${item.url}: ${item.content.length} characters - "${item.title}"`,
           )
         })
 
-        execSpan?.setAttribute("scraped_content_count", scrapedContent.length)
+        execSpan?.setAttribute("scraped_content_count", sortedContent.length)
 
         // Enhanced result message with clear AI instructions
-        const totalChars = scrapedContent.reduce(
+        const totalChars = sortedContent.reduce(
           (total, item) => total + (item.content?.length || 0),
           0,
         )
         const resultMessage = `**WEB SCRAPER RESULTS - FRESH CONTENT AVAILABLE**
 
-Successfully scraped ${scrapedContent.length} URL(s) and found ${totalChars} total characters of content.
+Successfully scraped ${sortedContent.length} URL(s) and found ${totalChars} total characters of content.
 
 **IMPORTANT FOR AI**: This is real-time web content that should be used to answer the user's query. The content below contains the most up-to-date information available from the web sources.
 
