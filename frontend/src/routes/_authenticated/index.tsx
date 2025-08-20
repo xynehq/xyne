@@ -246,11 +246,9 @@ const Index = () => {
         searchParams.sources = selectedSources.join(",")
       }
       // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
-      if (agentId) {
-        searchParams.agentId = agentId
-      } else if (persistedAgentId) {
-        searchParams.agentId = persistedAgentId
-      }
+      if (agentId || persistedAgentId) {
+        searchParams.agentId = agentId || persistedAgentId as string
+      } 
       if (isAgenticMode) {
         searchParams.agentic = true
       }
