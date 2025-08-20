@@ -65,7 +65,19 @@ export const fetchedDataSourceSchema = z.object({
 export type FetchedDataSource = z.infer<typeof fetchedDataSourceSchema>
 
 export const insertAgentSchema = createInsertSchema(agents, {
-  appIntegrations: z.array(z.string()).optional().default([]),
+  appIntegrations: z
+    .union([
+      z.array(z.string()), // Legacy format
+      z.record(
+        z.object({
+          // New AppSelectionMap format
+          itemIds: z.array(z.string()),
+          selectedAll: z.boolean(),
+        }),
+      ),
+    ])
+    .optional()
+    .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 }).omit({
   id: true,
@@ -73,10 +85,23 @@ export const insertAgentSchema = createInsertSchema(agents, {
   updatedAt: true,
   deletedAt: true,
 })
+
 export type InsertAgent = z.infer<typeof insertAgentSchema>
 
 export const selectAgentSchema = createSelectSchema(agents, {
-  appIntegrations: z.array(z.string()).optional().default([]),
+  appIntegrations: z
+    .union([
+      z.array(z.string()), // Legacy format
+      z.record(
+        z.object({
+          // New AppSelectionMap format
+          itemIds: z.array(z.string()),
+          selectedAll: z.boolean(),
+        }),
+      ),
+    ])
+    .optional()
+    .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>

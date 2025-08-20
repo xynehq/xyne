@@ -18,7 +18,6 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
-    "migrate:trace": "bun run migrations/migrate_tracejson_to_bytea.ts",
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
     "lint": "eslint .",
@@ -27,7 +26,7 @@
     "prepare": "cd .. && husky .husky"
   },
   "dependencies": {
-    "@anthropic-ai/vertex-sdk": "^0.13.0",
+    "@anthropic-ai/vertex-sdk": "^0.13.1",
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
     "@google/genai": "^1.9.0",

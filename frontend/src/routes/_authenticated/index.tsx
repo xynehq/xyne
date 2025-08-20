@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { Search as SearchIcon } from "lucide-react"
+import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router"
+import { Bot, Search as SearchIcon } from "lucide-react"
 import { SearchBar } from "@/components/SearchBar"
 import {
   AutocompleteResults,
@@ -22,7 +22,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
-import { ToolsListItem } from "@/types"
+import { ToolsListItem, indexSearchParamsSchema } from "@/types"
+import { AgentCard } from "@/components/AgentCard"
 
 enum Tabs {
   Search = "search",
@@ -44,17 +45,61 @@ const Index = () => {
   })
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [agent, setAgent] = useState<SelectPublicAgent | null>(null)
+  const [allAgents, setAllAgents] = useState<SelectPublicAgent[]>([])
+  const FAVORITE_AGENTS_STORAGE_KEY = "favoriteAgentsList"
+
+  const [favoriteAgents, setFavoriteAgents] = useState<string[]>(() => {
+    try {
+      const storedFavorites = localStorage.getItem(FAVORITE_AGENTS_STORAGE_KEY)
+      return storedFavorites ? JSON.parse(storedFavorites) : []
+    } catch (error) {
+      console.error("Error parsing favorite agents from localStorage", error)
+      return []
+    }
+  })
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const agentIdFromUrl = searchParams.get("agentId")
-
-    if (agentIdFromUrl) {
-      setPersistedAgentId(agentIdFromUrl)
-    } else {
-      setPersistedAgentId(null)
+    try {
+      localStorage.setItem(
+        FAVORITE_AGENTS_STORAGE_KEY,
+        JSON.stringify(favoriteAgents),
+      )
+    } catch (error) {
+      console.error("Error saving favorite agents to localStorage", error)
     }
+  }, [favoriteAgents])
+
+  const toggleFavorite = useCallback((agentExternalId: string) => {
+    setFavoriteAgents((prevFavorites) =>
+      prevFavorites.includes(agentExternalId)
+        ? prevFavorites.filter((id) => id !== agentExternalId)
+        : [...prevFavorites, agentExternalId],
+    )
   }, [])
+
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const response = await api.agents.$get({ query: { filter: "all" } })
+        if (response.ok) {
+          const data = (await response.json()) as SelectPublicAgent[]
+          setAllAgents(data)
+        } else {
+          console.error("Failed to fetch agents.")
+          setAllAgents([])
+        }
+      } catch (error) {
+        console.error("An error occurred while fetching agents:", error)
+        setAllAgents([])
+      }
+    }
+    fetchAgents()
+  }, [])
+
+  const favoriteAgentObjects = useMemo(() => {
+    const favoriteIdSet = new Set(favoriteAgents)
+    return allAgents.filter((agent) => favoriteIdSet.has(agent.externalId))
+  }, [allAgents, favoriteAgents])
 
   useEffect(() => {
     const fetchAgentDetails = async () => {
@@ -104,6 +149,11 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
+  const searchParams = useSearch({ from: "/_authenticated/" })
+
+  useEffect(() => {
+    setPersistedAgentId(searchParams.agentId || null)
+  }, [searchParams.agentId])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -195,10 +245,9 @@ const Index = () => {
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
-      // If agentId is provided, add it to the searchParams
-      if (agentId) {
-        // Use agentId directly
-        searchParams.agentId = agentId
+      // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
+      if (agentId || persistedAgentId) {
+        searchParams.agentId = agentId || (persistedAgentId as string)
       }
       if (isAgenticMode) {
         searchParams.agentic = true
@@ -351,11 +400,40 @@ const Index = () => {
                     setIsReasoningActive={setIsReasoningActive}
                     isAgenticMode={isAgenticMode}
                     setIsAgenticMode={setIsAgenticMode}
+                    agentIdFromChatData={persistedAgentId}
                   />
                 </div>
               )}
             </div>
           </div>
+          {/* Favorite Agents Section */}
+          {favoriteAgentObjects.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-white dark:bg-[#1E1E1E]">
+              <div className="max-w-full mx-auto">
+                <h2 className="text-sm text-center font-mono font-bold text-gray-700 dark:text-gray-400 mb-4 flex items-center justify-center">
+                  <Bot className="w-5 h-5 mr-2 mb-1" />
+                  YOUR AGENTS
+                </h2>
+                <div className="flex overflow-x-auto space-x-4 pb-2 favorite-agents-container">
+                  {favoriteAgentObjects.map((agent) => (
+                    <div key={agent.externalId} className="flex-shrink-0 w-64">
+                      <AgentCard
+                        agent={agent}
+                        isFavorite={true}
+                        onToggleFavorite={toggleFavorite}
+                        onClick={() =>
+                          navigate({
+                            to: "/",
+                            search: { agentId: agent.externalId },
+                          })
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </TooltipProvider>
@@ -366,5 +444,6 @@ export const Route = createFileRoute("/_authenticated/")({
   component: () => {
     return <Index />
   },
+  validateSearch: (search) => indexSearchParamsSchema.parse(search),
   errorComponent: errorComponent,
 })

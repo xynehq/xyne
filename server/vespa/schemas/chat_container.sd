@@ -219,6 +219,25 @@ schema chat_container {
           scale(combined_bm25)
         }
     }
+    rank-profile title_boosted_hybrid inherits initial {
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (nativeRank(name)))
+  }
+  
+  global-phase {
+    expression {
+      1.2 * (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (nativeRank(name)))
+      )
+    }
+    rerank-count: 1000
+  }
+
+  match-features {
+    nativeRank(name)
+  }
+}
 
     # change here for ai queries accordingly
     rank-profile default_ai inherits initial {

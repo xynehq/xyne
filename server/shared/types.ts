@@ -18,6 +18,8 @@ import {
   dataSourceFileSchema,
   chatContainerSchema,
   VespaChatContainerSchema,
+  KbItemsSchema,
+  VespaKbFileSchemaBase,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -258,6 +260,28 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
+export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
+  docId: true,
+  fileName: true,
+  app: true,
+  entity: true,
+  createdBy: true,
+  updatedAt: true,
+  itemId: true,
+  clId: true,
+  mimeType: true,
+})
+  .extend({
+    app: z.literal(Apps.KnowledgeBase),
+    type: z.literal(KbItemsSchema),
+    chunk: z.string().optional(),
+    chunkIndex: z.number().optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
 export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
@@ -350,6 +374,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
   ChatContainerResponseSchema,
+  KbFileResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
@@ -448,32 +473,47 @@ export enum ContextSysthesisState {
   NotFound = "information_not_found",
 }
 
-export interface AgentReasoningIteration {
-  type: AgentReasoningStepType.Iteration
-  iteration: number
+// Enhanced reasoning step interfaces with summary support
+export interface AgentReasoningStepEnhanced {
+  stepId?: string
+  stepSummary?: string
+  aiGeneratedSummary?: string
+  status?: "in_progress" | "completed" | "failed"
+  timestamp?: number
+  iteration?: number
+  isIterationSummary?: boolean
 }
 
-export interface AgentReasoningPlanning {
+export interface AgentReasoningIteration extends AgentReasoningStepEnhanced {
+  type: AgentReasoningStepType.Iteration
+  iteration: number
+  app?: string
+  entity?: string
+}
+
+export interface AgentReasoningPlanning extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.Planning
   details: string // e.g., "Planning next step..."
 }
 
-export interface AgentReasoningToolSelected {
+export interface AgentReasoningToolSelected extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolSelected
   toolName: AgentToolName | string // string for flexibility if new tools are added without enum update
 }
 
-export interface AgentReasoningToolParameters {
+export interface AgentReasoningToolParameters
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolParameters
   parameters: Record<string, any> // Parameters as an object
 }
 
-export interface AgentReasoningToolExecuting {
+export interface AgentReasoningToolExecuting
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolExecuting
   toolName: AgentToolName | string
 }
 
-export interface AgentReasoningToolResult {
+export interface AgentReasoningToolResult extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolResult
   toolName: AgentToolName | string
   resultSummary: string
@@ -481,27 +521,30 @@ export interface AgentReasoningToolResult {
   error?: string // If the tool execution resulted in an error
 }
 
-export interface AgentReasoningSynthesis {
+export interface AgentReasoningSynthesis extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.Synthesis
   details: string // e.g., "Synthesizing answer from X fragments..."
 }
 
-export interface AgentReasoningValidationError {
+export interface AgentReasoningValidationError
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ValidationError
   details: string // e.g., "Single result validation failed (POOR_MATCH #X). Will continue searching."
 }
 
-export interface AgentReasoningBroadeningSearch {
+export interface AgentReasoningBroadeningSearch
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.BroadeningSearch
   details: string // e.g., "Specific search failed validation X times. Attempting to broaden search."
 }
 
-export interface AgentReasoningAnalyzingQuery {
+export interface AgentReasoningAnalyzingQuery
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.AnalyzingQuery
   details: string // e.g., "Analyzing your question..."
 }
 
-export interface AgentReasoningLogMessage {
+export interface AgentReasoningLogMessage extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.LogMessage
   message: string // Generic message from the agent's log
 }

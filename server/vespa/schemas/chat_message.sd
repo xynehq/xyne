@@ -323,6 +323,25 @@ schema chat_message {
       normalized_hybrid_relevance_gs 
     }
   }
+  rank-profile title_boosted_hybrid inherits initial {
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (nativeRank(text)))
+  }
+  
+  global-phase {
+    expression {
+      1.2 * (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (nativeRank(text)))
+      )
+    }
+    rerank-count: 1000
+  }
+
+  match-features {
+    nativeRank(text)
+  }
+}
 
   document-summary default {
     summary text {

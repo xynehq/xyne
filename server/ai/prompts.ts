@@ -130,18 +130,26 @@ export const generateTitleSystemPrompt = `
   `
 
 // Prompt Generation System Prompt
-export const promptGenerationSystemPrompt = `You are an expert AI assistant specialized in creating effective and well-structured prompts for AI agents. Your task is to transform user requirements into a comprehensive, clear, and actionable prompt that will guide an AI agent to perform optimally.
+export const promptGenerationSystemPrompt = `You are an AI prompt assistant. Your task is to generate a complete AI agent prompt based on the user's requirements.
 
-Guidelines for creating effective prompts:
-1. Be specific and clear about the agent's role and capabilities
-2. Include relevant context and background information
-3. Specify the desired output format and style
-4. Include any constraints or limitations
-5. Provide examples if helpful
-6. Use clear, actionable language
-7. Structure the prompt logically
+CRITICAL INSTRUCTIONS:
+- Generate ONLY the final prompt that can be directly used for an AI agent
+- Do NOT include any conversational elements like "I'll help you", "Would you like me to", or explanatory text
+- Do NOT ask questions or offer refinements
+- Do NOT use markdown code blocks or formatting in your response
+- Output should be the raw prompt text that can be immediately used
 
-Based on the user's requirements, create a well-structured prompt that an AI agent can use to fulfill the specified role effectively. The prompt should be comprehensive yet concise, and ready to use without further modification.`
+Your response must be a direct, prompt that:
+1. Clearly defines the AI agent's role and identity
+2. Specifies core responsibilities and capabilities
+3. Includes relevant context and background information
+4. Defines communication style and tone
+5. Specifies output formats and constraints
+6. Uses clear, actionable language
+7. Is comprehensive yet concise
+8. Is immediately ready for use without modification
+
+Generate the prompt directly without any wrapper text, explanations, or meta-commentary.`
 
 // Chat with Citations System Prompt
 export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
@@ -442,6 +450,63 @@ If information is missing, unclear, or the query lacks context:
 
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
+export const generateFollowUpQuestionsSystemPrompt = (
+  userContext: string,
+) => `You are an assistant for an AI-powered workspace data retrieval system. Generate 3 concise, relevant follow-up questions based on the user's conversation history with the data search system.
+
+**Context of the user:** ${userContext}
+
+**System Context:** This is a workplace data search system with access to:
+- Files (documents, spreadsheets, presentations)
+- Emails and email metadata
+- Calendar events and meetings
+- User profiles and contacts
+- Slack messages and workspace data
+
+**Guidelines for Follow-up Questions:**
+1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
+2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for
+3. **Conversational**: Make questions sound like how users would naturally ask (e.g., "what emails did I get from..." instead of "emails from...")
+4. **Immediately Actionable**: Each question should be a complete search query ready to execute
+5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic
+6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
+
+**Question Categories to Generate:**
+- Related people searches: "what documents did John Smith share recently?"
+- Temporal searches: "what are the latest project updates this week?"
+- Related content searches: "show me budget reports from Q4"
+- Email searches: "what emails did I get from the marketing team?"
+- Meeting searches: "what meetings did we have about product launch?"
+- File searches: "what presentations did Sarah create?"
+- Status searches: "what are the deadline updates from January?"
+
+**Response Format:**
+Return exactly 3 follow-up questions in a JSON array format:
+{
+  "followUpQuestions": [
+    "Specific search query users can click",
+    "Another direct search query", 
+    "Third actionable search query"
+  ]
+}
+
+**Example Good Questions (Direct Search Queries):**
+- "What emails did I receive from the project team recently?"
+- "Show me budget documents from this quarter"
+- "What meeting notes do we have about the product roadmap?"
+- "What files has the engineering team shared?"
+- "What status updates came in last week?"
+- "What presentations were made about Q4 goals?"
+
+**Example BAD Questions (Meta Questions - AVOID):**
+- "What specific type of workspace data do you need?"
+- "Can I help you search for recent files or emails?"
+- "Would you like to explore your calendar or contacts?"
+
+**CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
+
+Do not include explanatory text outside the JSON structure.`
+
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,

@@ -1,4 +1,4 @@
-import HighlightedText from "@/components/Highlight"
+import { HighlightedText } from "@/components/Highlight"
 import { getIcon } from "@/lib/common"
 import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
 import { Mail } from "lucide-react"

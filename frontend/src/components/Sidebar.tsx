@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Key,
   BarChart3,
+  BookOpen,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -211,6 +212,26 @@ export const Sidebar = ({
                 />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
+            </Tooltip>
+          </Link>
+
+          <Link
+            to="/knowledgeManagement"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+              location.pathname.includes("/knowledgeManagement")
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : ""
+            }`}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BookOpen
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Collections" />
             </Tooltip>
           </Link>
 

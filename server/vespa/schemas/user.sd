@@ -239,6 +239,25 @@ schema user {
             vector_score
         }
     }
+rank-profile title_boosted_hybrid inherits initial {
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (3 * nativeRank(name)))
+  }
+  
+  global-phase {
+    expression {
+      1.2 * (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (3 * nativeRank(name)))
+      )
+    }
+    rerank-count: 1000
+  }
+
+  match-features {
+    nativeRank(name)
+  }
+}
 
     # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
     rank-profile global_sorted inherits initial {
