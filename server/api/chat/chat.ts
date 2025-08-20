@@ -26,6 +26,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import {
   Models,
   QueryType,
+  type ChainBreakClassifications,
   type ConverseResponse,
   type Intent,
   type QueryRouterLLMResponse,
@@ -185,6 +186,10 @@ import {
   getCitationToImage,
   mimeTypeMap,
   extractNamesFromIntent,
+} from "./utils"
+import {
+  getRecentChainBreakClassifications,
+  formatChainBreaksForPrompt,
 } from "./utils"
 import { likeDislikeCount } from "@/metrics/app/app-metrics"
 import {
@@ -1277,11 +1282,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   }
 
   // Expand email threads in the results
-  searchResults.root.children = await expandEmailThreadsInResults(
-    searchResults.root.children || [],
-    email,
-    initialSearchSpan,
-  )
+  // Skip thread expansion if original intent was GetItems (exact count requested)
+  if (classification.type !== QueryType.GetItems) {
+    searchResults.root.children = await expandEmailThreadsInResults(
+      searchResults.root.children || [],
+      email,
+      initialSearchSpan,
+    )
+  }
 
   const latestResults = searchResults.root.children
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
@@ -1333,11 +1341,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
 
       // Expand email threads in the results
-      results.root.children = await expandEmailThreadsInResults(
-        results.root.children || [],
-        email,
-        vespaSearchSpan,
-      )
+      // Skip thread expansion if original intent was GetItems (exact count requested)
+      if (classification.type !== QueryType.GetItems) {
+        results.root.children = await expandEmailThreadsInResults(
+          results.root.children || [],
+          email,
+          vespaSearchSpan,
+        )
+      }
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1391,12 +1402,18 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             }))
 
         // Expand email threads in the results
-        const expandedChildren = await expandEmailThreadsInResults(
-          latestSearchResponse.root.children || [],
-          email,
-          latestSearchSpan,
-        )
-        const latestResults: VespaSearchResult[] = expandedChildren
+        // Skip thread expansion if original intent was GetItems (exact count requested)
+        let latestResults: VespaSearchResult[]
+        if (classification.type !== QueryType.GetItems) {
+          const expandedChildren = await expandEmailThreadsInResults(
+            latestSearchResponse.root.children || [],
+            email,
+            latestSearchSpan,
+          )
+          latestResults = expandedChildren
+        } else {
+          latestResults = latestSearchResponse.root.children || []
+        }
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -1446,11 +1463,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         }
 
         // Expand email threads in the results
-        results.root.children = await expandEmailThreadsInResults(
-          results.root.children || [],
-          email,
-          vespaSearchSpan,
-        )
+        // Skip thread expansion if original intent was GetItems (exact count requested)
+        if (classification.type !== QueryType.GetItems) {
+          results.root.children = await expandEmailThreadsInResults(
+            results.root.children || [],
+            email,
+            vespaSearchSpan,
+          )
+        }
 
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
@@ -1557,11 +1577,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
 
       // Expand email threads in the results
-      results.root.children = await expandEmailThreadsInResults(
-        results.root.children || [],
-        email,
-        searchSpan,
-      )
+      // Skip thread expansion if original intent was GetItems (exact count requested)
+      if (classification.type !== QueryType.GetItems) {
+        results.root.children = await expandEmailThreadsInResults(
+          results.root.children || [],
+          email,
+          searchSpan,
+        )
+      }
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1608,11 +1631,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
 
       // Expand email threads in the results
-      results.root.children = await expandEmailThreadsInResults(
-        results.root.children || [],
-        email,
-        searchSpan,
-      )
+      // Skip thread expansion if original intent was GetItems (exact count requested)
+      if (classification.type !== QueryType.GetItems) {
+        results.root.children = await expandEmailThreadsInResults(
+          results.root.children || [],
+          email,
+          searchSpan,
+        )
+      }
 
       searchSpan?.setAttribute(
         "result_count",
@@ -2904,7 +2930,10 @@ async function* generateMetadataQueryAnswer(
     )
   } else if (isGenericItemFetch && isValidAppOrEntity) {
     const userSpecifiedCountLimit = count
-      ? Math.min(count, config.maxUserRequestCount)
+      ? Math.min(
+          count + (classification.filters.offset || 0),
+          config.maxUserRequestCount,
+        )
       : 5
     span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
@@ -2952,6 +2981,7 @@ async function* generateMetadataQueryAnswer(
           entity: entity ?? null,
           timestampRange,
           limit: userSpecifiedCountLimit,
+          offset: classification.filters.offset || 0,
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
         })
@@ -2972,6 +3002,7 @@ async function* generateMetadataQueryAnswer(
         entity: entity ?? null,
         timestampRange,
         limit: userSpecifiedCountLimit,
+        offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
         intent: resolvedIntent || {},
       }
@@ -2985,6 +3016,17 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[GetItems] Query completed - Retrieved ${items.length} items`,
       )
+    }
+
+    // Skip thread expansion for GetItems - we want exactly what was requested
+    // Thread expansion is only for search-based queries, not concrete item retrieval
+    if (!isGenericItemFetch && searchResults) {
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        span,
+      )
+      items = searchResults.root.children || []
     }
 
     span?.setAttribute(`retrieved documents length`, items.length)
@@ -3024,6 +3066,7 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
     )
     return
+    
   } else if (
     isFilteredItemSearch &&
     isValidAppOrEntity &&
@@ -4037,21 +4080,61 @@ export const MessageApi = async (c: Context) => {
               topicConversationThread,
             )
 
+            // Extract previous classification for pagination and follow-up queries
+            let previousClassification: QueryRouterLLMResponse | null = null
+            if (filteredMessages.length >= 1) {
+              const previousUserMessage =
+                filteredMessages[filteredMessages.length - 2]
+                console.log('Logged message', filteredMessages)
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification: ${error}`)
+                }
+              }
+            }
+
+            // Get chain break classifications for context
+            const chainBreakClassifications = getRecentChainBreakClassifications(messages)
+            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+            
+            loggerWithChild({ email: email }).info(
+              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? 'YES' : 'NO'}`
+            );
+            
+            loggerWithChild({ email: email }).info(
+              `Found ${chainBreakClassifications.length} chain break classifications for context`,
+            )
+
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                agentPrompt: agentPromptValue,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: llmFormattedMessages,
-                // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
-                // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
-                // For this non-agent RAG path, we don't pass an agent prompt.
-              })
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  agentPrompt: agentPromptValue,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: llmFormattedMessages,
+                  // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
+                  // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
+                  // For this non-agent RAG path, we don't pass an agent prompt.
+                },
+                undefined,
+                previousClassification,
+                formattedChainBreaks,
+              )
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -4070,6 +4153,7 @@ export const MessageApi = async (c: Context) => {
               count: 0,
               sortDirection: "",
               intent: {},
+              offset: 0,
             }
             let parsed = {
               isFollowUp: false,
@@ -4183,6 +4267,7 @@ export const MessageApi = async (c: Context) => {
               sortDirection,
               startTime,
               intent,
+              offset,
             } = parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
@@ -4196,6 +4281,7 @@ export const MessageApi = async (c: Context) => {
                 sortDirection,
                 startTime,
                 count,
+                offset,
                 intent: intent || {},
               },
             } as QueryRouterLLMResponse
@@ -4239,14 +4325,19 @@ export const MessageApi = async (c: Context) => {
               if (messages.length < 2) {
                 classification.isFollowUp = false // First message or not enough history to be a follow-up
               } else if (classification.isFollowUp) {
-                // If it's marked as a follow-up, try to reuse the last user message's classification
+                // Use the NEW classification that already contains:
+                // - Updated filters (with proper offset calculation)
+                // - Preserved app/entity from previous query
+                // - Updated count/pagination info
+                // - All the smart follow-up logic from the LLM
+                
+                // Only check for fileIds if we need file context
                 const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
-                const parsedMessage =
-                  selectMessageSchema.safeParse(lastUserMessage)
+                const parsedMessage = selectMessageSchema.safeParse(lastUserMessage)
 
                 if (parsedMessage.error) {
                   loggerWithChild({ email: email }).error(
-                    `Error while parsing last user message`,
+                    `Error while parsing last user message for file context check`,
                   )
                 } else if (
                   parsedMessage.success &&
@@ -4254,7 +4345,7 @@ export const MessageApi = async (c: Context) => {
                   parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
                 ) {
                   loggerWithChild({ email: email }).info(
-                    `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
+                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
                   )
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
@@ -4265,34 +4356,17 @@ export const MessageApi = async (c: Context) => {
                     userRequestsReasoning,
                     understandSpan,
                   )
-                } else if (
-                  parsedMessage.data.queryRouterClassification &&
-                  Object.keys(parsedMessage.data.queryRouterClassification)
-                    .length > 2
-                ) {
-                  loggerWithChild({ email: email }).info(
-                    `Reusing previous message classification for follow-up query ${JSON.stringify(
-                      lastUserMessage.queryRouterClassification,
-                    )}`,
-                  )
-
-                  classification = parsedMessage.data
-                    .queryRouterClassification as QueryRouterLLMResponse
                 } else {
                   loggerWithChild({ email: email }).info(
-                    "Follow-up query detected, but no classification found in previous message.",
+                    `Follow-up query detected. Using NEW LLM-generated classification directly: ${JSON.stringify(classification)}`,
                   )
+                  // Use the new classification directly - it already has all the smart follow-up logic
+                  // No need to reuse old classification, the LLM has generated an updated one
                 }
               }
 
-              answer = ""
-              thinking = ""
-              reasoning = isReasoning && userRequestsReasoning
-              citations = []
-              let imageCitations: any[] = []
-              citationMap = {}
-              let citationValues: Record<number, string> = {}
-              if (iterator === undefined) {
+              // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
+              if (!iterator) {
                 iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
@@ -4305,6 +4379,15 @@ export const MessageApi = async (c: Context) => {
                   agentPromptValue,
                 )
               }
+
+              answer = ""
+              thinking = ""
+              reasoning = isReasoning && userRequestsReasoning
+              citations = []
+              let imageCitations: any[] = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+
               stream.writeSSE({
                 event: ChatSSEvents.Start,
                 data: "",
@@ -4372,7 +4455,7 @@ export const MessageApi = async (c: Context) => {
                 if (chunk.imageCitation) {
                   // Collect image citation for database persistence
                   imageCitations.push(chunk.imageCitation)
-                  console.log("Found image citation, sending it")
+                  Logger.info("Found image citation, sending it")
                   loggerWithChild({ email: email }).info(
                     `Found image citation, sending it`,
                     { citationKey: chunk.imageCitation.citationKey },
@@ -4417,18 +4500,14 @@ export const MessageApi = async (c: Context) => {
 
               let queryRouterClassification: Record<string, any> | undefined
 
-              if (isFollowUp && previousClassification) {
-                queryRouterClassification = {
-                  ...previousClassification,
-                  isFollowUp,
-                }
-              } else if (Object.keys(classification).length > 2) {
+              // Always use the LLM-generated classification (no more overrides)
+              if (Object.keys(classification).length > 2) {
                 queryRouterClassification = classification
               }
 
               if (queryRouterClassification) {
                 loggerWithChild({ email: email }).info(
-                  `Updating queryRouter classification for last user message: ${JSON.stringify(
+                  `Storing new LLM-generated classification for user message: ${JSON.stringify(
                     queryRouterClassification,
                   )}`,
                 )
@@ -4804,7 +4883,7 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If retrying an assistant message, get attachments from the previous user message
     if (!isUserMessage && conversation && conversation.length > 0) {
-      const prevUserMessage = conversation[conversation.length - 1]
+      const prevUserMessage = conversation[conversation.length - 1] 
       if (prevUserMessage.messageRole === "user") {
         attachmentMetadata = await getAttachmentsByMessageId(
           db,
@@ -5181,18 +5260,53 @@ export const MessageRetryApi = async (c: Context) => {
             loggerWithChild({ email: email }).info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
+
+            // Extract previous classification for pagination and follow-up queries
+            let previousClassification: QueryRouterLLMResponse | null = null
+            if (conversation.length > 0) {
+              const previousUserMessage = conversation[conversation.length - 1] // In retry context, previous user message is at -1
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification in retry: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification in retry: ${error}`)
+                }
+              }
+            }
+
+            // Add chain break analysis for retry context
+            const messagesForChainBreak = isUserMessage 
+            ? [...conversation, originalMessage]  // Include the user message being retried
+            : conversation  // For assistant retry, conversation already has the right scope
+          
+            const chainBreakClassifications = getRecentChainBreakClassifications(messagesForChainBreak)
+            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+
             const searchSpan = streamSpan.startSpan("conversation_search")
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: formatMessagesForLLM(topicConversationThread),
-              })
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: formatMessagesForLLM(topicConversationThread),
+                },
+                undefined,
+                previousClassification,
+                formattedChainBreaks,
+              )
             let currentAnswer = ""
             let answer = ""
             let citations: Citation[] = [] // Changed to Citation[] for consistency
@@ -5204,6 +5318,8 @@ export const MessageRetryApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
+              intent: {},
+              offset: 0,
             }
             let parsed = {
               isFollowUp: false,
@@ -5339,28 +5455,6 @@ export const MessageRetryApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
-
-              if (conversation.length < 2) {
-                classification.isFollowUp = false // First message or not enough history to be a follow-up
-              } else if (classification.isFollowUp) {
-                // If it's marked as a follow-up, try to reuse the last user message's classification
-                const lastUserMessage = conversation[conversation.length - 3] // Assistant is at -2, last user is at -3
-
-                if (lastUserMessage?.queryRouterClassification) {
-                  loggerWithChild({ email: email }).info(
-                    `Reusing previous message classification for follow-up query ${JSON.stringify(
-                      lastUserMessage.queryRouterClassification,
-                    )}`,
-                  )
-
-                  classification =
-                    lastUserMessage.queryRouterClassification as any
-                } else {
-                  loggerWithChild({ email: email }).info(
-                    "Follow-up query detected, but no classification found in previous message.",
-                  )
-                }
-              }
 
               const understandSpan = ragSpan.startSpan("understand_message")
               const iterator = UnderstandMessageAndAnswer(
