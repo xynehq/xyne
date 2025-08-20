@@ -252,16 +252,85 @@ function AgentComponent() {
   const [selectedItemDetailsInCollection, setSelectedItemDetailsInCollection] = useState<
     Record<string, Record<string, any>>
   >({})
+  // Google Drive item selection state
+  const [selectedItemsInGoogleDrive, setSelectedItemsInGoogleDrive] = useState<Set<string>>(new Set())
+  const [selectedItemDetailsInGoogleDrive, setSelectedItemDetailsInGoogleDrive] = useState<Record<string, any>>({})
   // Store mapping of integration IDs to their names and types
   const [integrationIdToNameMap, setIntegrationIdToNameMap] = useState<
     Record<string, { name: string; type: string }>
   >({})
-  const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'cl-root' | 'cl' | 'folder'}>>([])
+  const [navigationPath, setNavigationPath] = useState<Array<{id: string, name: string, type: 'cl-root' | 'cl' | 'folder' | 'drive-root' | 'drive-folder'}>>([])
   const [currentItems, setCurrentItems] = useState<any[]>([])
   const [isLoadingItems, setIsLoadingItems] = useState(false)
   const [dropdownSearchQuery, setDropdownSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
+
+  // Function to get icon for Google Drive entity
+  const getDriveEntityIcon = (entity: string) => {
+    return getIcon(Apps.GoogleDrive, entity as any, { w: 16, h: 16, mr: 8 })
+  }
+
+  // Google Drive navigation functions
+  const navigateToGoogleDrive = async () => {
+    setNavigationPath([{ id: 'drive-root', name: 'Google Drive', type: 'drive-root' }])
+    setDropdownSearchQuery("")
+    setIsLoadingItems(true)
+    try {
+      const response = await api.search.driveitem.$post({
+        json: { parentId: '' }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        console.log(data)
+        // Extract the actual items from the Vespa response structure
+        const items = data?.root?.children || []
+        setCurrentItems(items)
+      }
+    } catch (error) {
+      console.error('Failed to fetch Google Drive items:', error)
+    } finally {
+      setIsLoadingItems(false)
+    }
+  }
+
+  const navigateToDriveFolder = async (folderId: string, folderName: string) => {
+    setNavigationPath(prev => [...prev, { id: folderId, name: folderName, type: 'drive-folder' }])
+    setIsLoadingItems(true)
+    try {
+      const response = await api.search.driveitem.$post({
+        json: { parentId: folderId }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        console.log(data)
+        // Extract the actual items from the Vespa response structure
+        const items = data?.root?.children || []
+        setCurrentItems(items)
+      }
+    } catch (error) {
+      console.error('Failed to fetch Google Drive folder items:', error)
+    } finally {
+      setIsLoadingItems(false)
+    }
+  }
+
+  const fetchGoogleDriveItemsByDocIds = async (docIds: string[]): Promise<any[]> => {
+    try {
+      const response = await api.search.driveitemsbydocids.$post({
+        json: { docIds }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        // Extract the actual items from the Vespa response structure
+        return data?.root?.children || []
+      }
+      return []
+    } catch (error) {
+      console.error('Failed to fetch Google Drive items by docIds:', error)
+      return []
+    }
+  }
 
   // Global search effect for collection dropdown
   useEffect(() => {
@@ -852,6 +921,8 @@ function AgentComponent() {
     setSelectedIntegrations({})
     setSelectedItemsInCollection({})
     setSelectedItemDetailsInCollection({})
+    setSelectedItemsInGoogleDrive(new Set())
+    setSelectedItemDetailsInGoogleDrive({})
     setEditingAgent(null)
     setSelectedUsers([])
     setSearchQuery("")
@@ -1028,6 +1099,10 @@ function AgentComponent() {
       const clSelections: Record<string, Set<string>> = {}
       const clDetails: Record<string, Record<string, any>> = {}
       
+      // Clear Google Drive state first
+      setSelectedItemsInGoogleDrive(new Set())
+      setSelectedItemDetailsInGoogleDrive({})
+      
       allAvailableIntegrations.forEach((int) => {
         // Handle legacy array format
         if (Array.isArray(editingAgent.appIntegrations)) {
@@ -1123,6 +1198,37 @@ function AgentComponent() {
             // Check if this data source is in the itemIds array
             if (itemIds.includes(int.id)) {
               currentIntegrations[int.id] = true
+            }
+          }
+          // Handle Google Drive integration
+          else if (int.id === 'googledrive' && appIntegrations['googledrive']) {
+            const driveConfig = appIntegrations['googledrive']
+            currentIntegrations[int.id] = true
+            
+            // If specific items are selected (not selectedAll), fetch them by docIds
+            if (!driveConfig.selectedAll && driveConfig.itemIds && driveConfig.itemIds.length > 0) {
+              // Fetch Google Drive items by their docIds
+              fetchGoogleDriveItemsByDocIds(driveConfig.itemIds)
+                .then((items) => {
+                  if (items && items.length > 0) {
+                    const driveSelections = new Set<string>()
+                    const driveDetails: Record<string, any> = {}
+                    
+                    items.forEach(item => {
+                      const itemId = item.id || item.fields?.docId
+                      if (itemId) {
+                        driveSelections.add(itemId)
+                        driveDetails[itemId] = item
+                      }
+                    })
+                    
+                    setSelectedItemsInGoogleDrive(driveSelections)
+                    setSelectedItemDetailsInGoogleDrive(driveDetails)
+                  }
+                })
+                .catch((error) => {
+                  console.error('Failed to fetch Google Drive items:', error)
+                })
             }
           }
           else {
@@ -1276,6 +1382,25 @@ function AgentComponent() {
           dataSourceIds.push(integrationId)
           hasDataSourceSelections = true
         } 
+        // For Google Drive, collect selected item docIds
+        else if (integrationId === 'googledrive') {
+          const selectedDocIds: string[] = []
+          
+          // Get the docIds from selectedItemDetailsInGoogleDrive
+          selectedItemsInGoogleDrive.forEach(itemId => {
+            const itemDetail = selectedItemDetailsInGoogleDrive[itemId]
+            if (itemDetail && itemDetail.fields?.docId) {
+              selectedDocIds.push(itemDetail.fields.docId)
+            }
+          })
+          
+          appIntegrationsObject[integrationId] = {
+            itemIds: selectedDocIds,
+            // selectedAll is true when no specific items are selected (whole Google Drive)
+            // selectedAll is false when specific items are selected
+            selectedAll: selectedItemsInGoogleDrive.size === 0
+          }
+        }
         // For other integrations, use the integration ID as key
         else {
           appIntegrationsObject[integrationId] = {
@@ -1445,6 +1570,32 @@ function AgentComponent() {
         }
         return newState
       })
+    } else if (integrationId.startsWith('googledrive_')) {
+      // Handle Google Drive item removal
+      const driveItemId = integrationId.replace('googledrive_', '')
+      
+      // Remove the specific Google Drive item
+      setSelectedItemsInGoogleDrive(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(driveItemId)
+        
+        // If no items are selected, also deselect the Google Drive integration
+        if (newSet.size === 0) {
+          setSelectedIntegrations(prevInt => ({
+            ...prevInt,
+            'googledrive': false
+          }))
+        }
+        
+        return newSet
+      })
+      
+      // Remove item details
+      setSelectedItemDetailsInGoogleDrive(prev => {
+        const newState = { ...prev }
+        delete newState[driveItemId]
+        return newState
+      })
     } else {
       // Handle regular integrations
       setSelectedIntegrations((prev) => ({
@@ -1466,6 +1617,12 @@ function AgentComponent() {
           return newState
         })
       }
+      
+      // If it's Google Drive integration, also clear its selections
+      if (integrationId === 'googledrive') {
+        setSelectedItemsInGoogleDrive(new Set())
+        setSelectedItemDetailsInGoogleDrive({})
+      }
     }
   }
 
@@ -1479,6 +1636,10 @@ function AgentComponent() {
     // Also clear selected items and their details for all Collections
     setSelectedItemsInCollection({})
     setSelectedItemDetailsInCollection({})
+    
+    // Also clear Google Drive selections
+    setSelectedItemsInGoogleDrive(new Set())
+    setSelectedItemDetailsInGoogleDrive({})
   }
 
   const currentSelectedIntegrationObjects = useMemo(() => {
@@ -1491,15 +1652,44 @@ function AgentComponent() {
       clName?: string
     }> = []
     
-    // Add regular integrations
+    // Add regular integrations (excluding Google Drive which is handled separately)
     allAvailableIntegrations.forEach((integration) => {
-      if (selectedIntegrations[integration.id] && !integration.id.startsWith('cl_')) {
+      if (selectedIntegrations[integration.id] && !integration.id.startsWith('cl_') && integration.id !== 'googledrive') {
         result.push({
           ...integration,
           type: 'integration'
         })
       }
     })
+    
+    // Handle Google Drive items
+    if (selectedIntegrations['googledrive'] && selectedItemsInGoogleDrive.size > 0) {
+      // If specific Google Drive items are selected, show individual file/folder pills
+      selectedItemsInGoogleDrive.forEach(itemId => {
+        const item = selectedItemDetailsInGoogleDrive[itemId]
+        if (item) {
+          const itemTitle = item.fields?.title || item.fields?.name || 'Untitled'
+          const itemEntity = item.fields?.entity
+          const isFolder = itemEntity === DriveEntity.Folder
+          
+          result.push({
+            id: `googledrive_${itemId}`,
+            name: itemTitle,
+            icon: getDriveEntityIcon(itemEntity),
+            type: isFolder ? 'folder' : 'file'
+          })
+        }
+      })
+    } else if (selectedIntegrations['googledrive']) {
+      // If no specific items are selected but Google Drive is checked, show the main Google Drive pill
+      const googleDriveIntegration = allAvailableIntegrations.find(int => int.id === 'googledrive')
+      if (googleDriveIntegration) {
+        result.push({
+          ...googleDriveIntegration,
+          type: 'integration'
+        })
+      }
+    }
     
     // Handle collections
     allAvailableIntegrations.forEach((integration) => {
@@ -1556,7 +1746,7 @@ function AgentComponent() {
     })
     
     return result
-  }, [selectedIntegrations, allAvailableIntegrations, selectedItemsInCollection, selectedItemDetailsInCollection, integrationIdToNameMap])
+  }, [selectedIntegrations, allAvailableIntegrations, selectedItemsInCollection, selectedItemDetailsInCollection, integrationIdToNameMap, selectedItemsInGoogleDrive, selectedItemDetailsInGoogleDrive])
 
   useEffect(() => {
     if (!isRagOn) {
@@ -2477,7 +2667,7 @@ function AgentComponent() {
                                   size="sm"
                                   onClick={() => {
                                     if (navigationPath.length === 1) {
-                                      // Go back to main menu from CL listing
+                                      // Go back to main menu from CL listing or Google Drive root
                                       setNavigationPath([])
                                       setCurrentItems([])
                                       setDropdownSearchQuery("")
@@ -2489,12 +2679,29 @@ function AgentComponent() {
                                       if (newPath.length === 1 && newPath[0].type === 'cl-root') {
                                         // Back to CL listing
                                         setCurrentItems([])
+                                      } else if (newPath.length === 1 && newPath[0].type === 'drive-root') {
+                                        // Back to Google Drive root
+                                        setIsLoadingItems(true)
+                                        api.search.driveitem.$post({
+                                          json: { parentId: '' }
+                                        }).then((response: Response) => {
+                                          if (response.ok) {
+                                            response.json().then((data: any) => {
+                                              // Extract the actual items from the Vespa response structure
+                                              const items = data?.root?.children || []
+                                              setCurrentItems(items)
+                                              setIsLoadingItems(false)
+                                            })
+                                          }
+                                        }).catch(() => setIsLoadingItems(false))
                                       } else if (newPath.length > 1) {
                                         // Navigate to parent folder
                                         const clId = newPath.find(item => item.type === 'cl')?.id
-                                        const parentId = newPath[newPath.length - 1]?.id === clId ? null : newPath[newPath.length - 1]?.id
                                         
                                         if (clId) {
+                                          // Collections navigation
+                                          const parentId = newPath[newPath.length - 1]?.id === clId ? null : newPath[newPath.length - 1]?.id
+                                          
                                           setIsLoadingItems(true)
                                           api.cl[":clId"].items.$get({
                                             param: { clId: clId },
@@ -2503,6 +2710,23 @@ function AgentComponent() {
                                             if (response.ok) {
                                               response.json().then((data: any[]) => {
                                                 setCurrentItems(data)
+                                                setIsLoadingItems(false)
+                                              })
+                                            }
+                                          }).catch(() => setIsLoadingItems(false))
+                                        } else if (newPath.some(item => item.type === 'drive-root' || item.type === 'drive-folder')) {
+                                          // Google Drive navigation
+                                          const parentFolderId = newPath[newPath.length - 1]?.id === 'drive-root' ? '' : newPath[newPath.length - 1]?.id
+                                          
+                                          setIsLoadingItems(true)
+                                          api.search.driveitem.$post({
+                                            json: { parentId: parentFolderId }
+                                          }).then((response: Response) => {
+                                            if (response.ok) {
+                                              response.json().then((data: any) => {
+                                                // Extract the actual items from the Vespa response structure
+                                                const items = data?.root?.children || []
+                                                setCurrentItems(items)
                                                 setIsLoadingItems(false)
                                               })
                                             }
@@ -2642,7 +2866,18 @@ function AgentComponent() {
                                           <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
                                         </div>
                                         {showChevron && (
-                                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              e.preventDefault()
+                                              navigateToGoogleDrive()
+                                            }}
+                                            className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                          >
+                                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                                          </Button>
                                         )}
                                       </DropdownMenuItem>
                                     )
@@ -2733,17 +2968,18 @@ function AgentComponent() {
                               // Determine if we're showing Collection list or Collection contents
                               const isShowingKbList = navigationPath.length === 1 && navigationPath[0].type === 'cl-root'
                               const isShowingKbContents = navigationPath.length > 1 || (navigationPath.length === 1 && navigationPath[0].type === 'cl')
+                              const isShowingDriveContents = navigationPath.length > 0 && (navigationPath[0].type === 'drive-root' || navigationPath.some(item => item.type === 'drive-folder'))
 
                               return (
                                 <>
                                   {/* Single unified search input */}
-                                  {(isShowingKbList || isShowingKbContents) && (
+                                  {(isShowingKbList || isShowingKbContents || isShowingDriveContents) && (
                                     <div className="border-b border-gray-200 dark:border-gray-700">
                                       <div className="relative">
                                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                                         <input
                                           type="text"
-                                          placeholder="Search collections..."
+                                          placeholder={isShowingDriveContents ? "Search Google Drive..." : "Search collections..."}
                                           value={dropdownSearchQuery}
                                           onChange={(e) => setDropdownSearchQuery(e.target.value)}
                                           className="w-full pl-10 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border-0 focus:outline-none text-gray-700 dark:text-gray-200 placeholder-gray-400"
@@ -2837,7 +3073,18 @@ function AgentComponent() {
                                                   <span className="text-gray-700 dark:text-gray-200">{integration.name}</span>
                                                 </div>
                                                 {showChevron && (
-                                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      e.preventDefault()
+                                                      navigateToGoogleDrive()
+                                                    }}
+                                                    className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                                  >
+                                                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                  </Button>
                                                 )}
                                               </DropdownMenuItem>
                                             )
@@ -2913,7 +3160,7 @@ function AgentComponent() {
                                           </DropdownMenuItem>
                                         )
                                       })
-                                    } else {
+                                    } else if (navigationPath.some(item => item.type === 'cl' || item.type === 'folder')) {
                                       // Show Collection contents (files/folders)
                                       return (
                                         <div className="max-h-60 overflow-y-auto">
@@ -3014,6 +3261,97 @@ function AgentComponent() {
                                                 )}
                                               </div>
                                             ))
+                                          ) : (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              No items found
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    } else if (navigationPath.some(item => item.type === 'drive-root' || item.type === 'drive-folder')) {
+                                      // Show Google Drive contents (files/folders)
+                                      return (
+                                        <div className="max-h-60 overflow-y-auto">
+                                          {isLoadingItems ? (
+                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                              Loading...
+                                            </div>
+                                          ) : currentItems.length > 0 ? (
+                                            currentItems.map((item: any) => {
+                                              const itemId = item.id || item.fields?.docId
+                                              const itemDocId = item.fields?.docId
+                                              const itemEntity = item.fields?.entity
+                                              const itemTitle = item.fields?.title || item.fields?.name || 'Untitled'
+                                              const isFolder = itemEntity === DriveEntity.Folder
+                                              
+                                              return (
+                                                <div
+                                                  key={itemId}
+                                                  className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                  onClick={() => {
+                                                    if (isFolder && itemDocId) {
+                                                      navigateToDriveFolder(itemDocId, itemTitle)
+                                                    }
+                                                  }}
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedItemsInGoogleDrive.has(itemId)}
+                                                    onChange={(e) => {
+                                                      e.stopPropagation()
+                                                      
+                                                      const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
+                                                      
+                                                      setSelectedItemsInGoogleDrive(prev => {
+                                                        const newSet = new Set(prev)
+                                                        if (isCurrentlySelected) {
+                                                          newSet.delete(itemId)
+                                                        } else {
+                                                          newSet.add(itemId)
+                                                        }
+                                                        return newSet
+                                                      })
+                                                      
+                                                      setSelectedItemDetailsInGoogleDrive(prev => {
+                                                        const newState = { ...prev }
+                                                        if (isCurrentlySelected) {
+                                                          delete newState[itemId]
+                                                        } else {
+                                                          newState[itemId] = item
+                                                        }
+                                                        return newState
+                                                      })
+                                                      
+                                                      // Auto-select/deselect the Google Drive integration
+                                                      setSelectedIntegrations(prev => {
+                                                        const newSelectedSet = new Set(selectedItemsInGoogleDrive)
+                                                        if (isCurrentlySelected) {
+                                                          newSelectedSet.delete(itemId)
+                                                        } else {
+                                                          newSelectedSet.add(itemId)
+                                                        }
+                                                        
+                                                        return {
+                                                          ...prev,
+                                                          'googledrive': newSelectedSet.size > 0
+                                                        }
+                                                      })
+                                                    }}
+                                                    className="w-4 h-4 mr-3"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                  />
+                                                  <span className="mr-2 flex items-center">
+                                                    {getDriveEntityIcon(itemEntity)}
+                                                  </span>
+                                                  <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                                    {itemTitle}
+                                                  </span>
+                                                  {isFolder && (
+                                                    <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
+                                                  )}
+                                                </div>
+                                              )
+                                            })
                                           ) : (
                                             <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                                               No items found

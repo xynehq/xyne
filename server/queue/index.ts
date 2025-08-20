@@ -112,7 +112,7 @@ const initWorkers = async () => {
   // do not retry
   await boss.schedule(
     SyncOAuthSaaSQueue,
-    Every10Minutes,
+    EveryMin,
     {},
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )

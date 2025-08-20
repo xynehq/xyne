@@ -53,6 +53,8 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
+import VespaClient from "@/search/vespaClient"
+import { getTracer } from "@/tracer"
 import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -637,6 +639,38 @@ export const GetDriveItem = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Error processing agent search results",
+    })
+  }
+}
+
+export const GetDriveItemsByDocIds = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const body = await c.req.json()
+  const { docIds } = body
+  
+  if (!docIds || !Array.isArray(docIds) || docIds.length === 0) {
+    return c.json({ root: { children: [] } })
+  }
+  
+  try {
+    const tracer = getTracer("search")
+    const span = tracer.startSpan("GetDriveItemsByDocIds")
+    const vespaClient = new VespaClient()
+    
+    const resp = await vespaClient.getDocumentsByOnlyDocIds({
+      docIds,
+      generateAnswerSpan: span,
+    })
+    
+    span.end()
+    return c.json(resp)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      `Error fetching Drive items for docIds:${docIds.join(',')}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error fetching Google Drive items by docIds",
     })
   }
 }
