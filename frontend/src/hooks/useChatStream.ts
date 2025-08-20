@@ -171,6 +171,25 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
+
+// Helper function to append reasoning data to stream state
+const appendReasoningData = (streamState: StreamState, data: string) => {
+  try {
+    const stepData = JSON.parse(data)
+    
+    // If this is a valid reasoning step, add it as a new line
+    if (stepData.step || stepData.text) {
+      streamState.thinking += data + '\n'
+    } else {
+      // Fallback to simple text accumulation
+      streamState.thinking += data
+    }
+  } catch (e) {
+    // Not JSON, just add as text
+    streamState.thinking += data
+  }
+}
+
 export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
@@ -202,6 +221,7 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
     make()
   })
+
 }
 
 // Start a new stream or continue existing one
@@ -312,7 +332,7 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
-    streamState.thinking += event.data
+    appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
   })
 
@@ -846,7 +866,8 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        streamState.thinking += event.data
+        
+        appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })
 
