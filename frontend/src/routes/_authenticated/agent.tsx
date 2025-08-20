@@ -341,13 +341,29 @@ function AgentComponent() {
       }
       setIsSearching(true)
       try {
-        const response = await api.search.$get({
-          query: {
-            query: dropdownSearchQuery,
-            app: "knowledge-base",
-            isAgentIntegSearch:true
-          }
-        })
+        // Check if we're currently in Google Drive navigation context
+        const isInGoogleDriveContext = navigationPath.some(item => item.type === 'drive-root' || item.type === 'drive-folder')
+        
+        let response
+        if (isInGoogleDriveContext) {
+          // Search Google Drive items
+          response = await api.search.$get({
+            query: {
+              query: dropdownSearchQuery,
+              app: Apps.GoogleDrive,
+              isAgentIntegSearch: true
+            }
+          })
+        } else {
+          // Default to knowledge-base search
+          response = await api.search.$get({
+            query: {
+              query: dropdownSearchQuery,
+              app: "knowledge-base",
+              isAgentIntegSearch: true
+            }
+          })
+        }
         
         if (response.ok) {
           const data = await response.json()
@@ -365,7 +381,7 @@ function AgentComponent() {
     
     const debounceSearch = setTimeout(performGlobalSearch, 300)
     return () => clearTimeout(debounceSearch)
-  }, [dropdownSearchQuery])
+  }, [dropdownSearchQuery, navigationPath])
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
@@ -1668,8 +1684,9 @@ function AgentComponent() {
       selectedItemsInGoogleDrive.forEach(itemId => {
         const item = selectedItemDetailsInGoogleDrive[itemId]
         if (item) {
-          const itemTitle = item.fields?.title || item.fields?.name || 'Untitled'
-          const itemEntity = item.fields?.entity
+          // Handle both search results and direct navigation results
+          const itemTitle = item.fields?.title || item.fields?.name || item.title || item.name || 'Untitled'
+          const itemEntity = item.fields?.entity || item.entity
           const isFolder = itemEntity === DriveEntity.Folder
           
           result.push({
@@ -3011,19 +3028,108 @@ function AgentComponent() {
                                               Searching...
                                             </div>
                                           ) : searchResults.length > 0 ? (
-                                            searchResults.map((result: any) => (
-                                              <div
-                                                key={result.docId || result.id}
-                                                className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-                                              >
-                                                <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
-                                                  {result.title || result.name || result.fileName || 'Untitled'}
-                                                </span>
-                                                <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                                  {result.type || result.entity}
-                                                </span>
-                                              </div>
-                                            ))
+                                            searchResults.map((result: any) => {
+                                              // Check if we're in Google Drive context for proper handling
+                                              const isInGoogleDriveContext = navigationPath.some(item => item.type === 'drive-root' || item.type === 'drive-folder')
+                                              
+                                              if (isInGoogleDriveContext) {
+                                                // Handle Google Drive search results
+                                                const itemId = result.id || result.fields?.docId || result.docId
+                                                const itemEntity = result.fields?.entity || result.entity
+                                                const itemTitle = result.fields?.title || result.fields?.name || result.title || result.name || 'Untitled'
+                                                const isFolder = itemEntity === DriveEntity.Folder
+                                                
+                                                return (
+                                                  <div
+                                                    key={itemId}
+                                                    className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                    onClick={() => {
+                                                      if (isFolder && result.fields?.docId) {
+                                                        navigateToDriveFolder(result.fields.docId, itemTitle)
+                                                      }
+                                                    }}
+                                                  >
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={selectedItemsInGoogleDrive.has(itemId)}
+                                                      onChange={(e) => {
+                                                        e.stopPropagation()
+                                                        
+                                                        const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
+                                                        
+                                                        setSelectedItemsInGoogleDrive(prev => {
+                                                          const newSet = new Set(prev)
+                                                          if (isCurrentlySelected) {
+                                                            newSet.delete(itemId)
+                                                          } else {
+                                                            newSet.add(itemId)
+                                                          }
+                                                          return newSet
+                                                        })
+                                                        
+                                                        setSelectedItemDetailsInGoogleDrive(prev => {
+                                                          const newState = { ...prev }
+                                                          if (isCurrentlySelected) {
+                                                            delete newState[itemId]
+                                                          } else {
+                                                            // Normalize the data structure for search results
+                                                            const normalizedItem = {
+                                                              ...result,
+                                                              fields: {
+                                                                docId: result.fields?.docId || result.docId || itemId,
+                                                                title: result.fields?.title || result.fields?.name || result.title || result.name || itemTitle,
+                                                                name: result.fields?.name || result.fields?.title || result.name || result.title || itemTitle,
+                                                                entity: result.fields?.entity || result.entity || itemEntity
+                                                              }
+                                                            }
+                                                            newState[itemId] = normalizedItem
+                                                          }
+                                                          return newState
+                                                        })
+                                                        
+                                                        // Auto-select/deselect the Google Drive integration
+                                                        setSelectedIntegrations(prev => {
+                                                          const newSelectedSet = new Set(selectedItemsInGoogleDrive)
+                                                          if (isCurrentlySelected) {
+                                                            newSelectedSet.delete(itemId)
+                                                          } else {
+                                                            newSelectedSet.add(itemId)
+                                                          }
+                                                          
+                                                          return {
+                                                            ...prev,
+                                                            'googledrive': newSelectedSet.size > 0
+                                                          }
+                                                        })
+                                                      }}
+                                                      className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                                    />
+                                                    {getDriveEntityIcon(itemEntity)}
+                                                    <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                                      {itemTitle}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                                      {isFolder ? 'folder' : itemEntity || 'file'}
+                                                    </span>
+                                                  </div>
+                                                )
+                                              } else {
+                                                // Handle regular search results (knowledge-base, etc.)
+                                                return (
+                                                  <div
+                                                    key={result.docId || result.id}
+                                                    className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                                                  >
+                                                    <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                                                      {result.title || result.name || result.fileName || 'Untitled'}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                                      {result.type || result.entity}
+                                                    </span>
+                                                  </div>
+                                                )
+                                              }
+                                            })
                                           ) : (
                                             <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                                               No results found for "{dropdownSearchQuery}"
