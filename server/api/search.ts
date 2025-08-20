@@ -86,6 +86,11 @@ export const chatSchema = z.object({
   chatId: z.string().min(1),
 })
 
+export const followUpQuestionsSchema = z.object({
+  chatId: z.string().min(1),
+  messageId: z.string().min(1),
+})
+
 export const chatBookmarkSchema = z.object({
   chatId: z.string(),
   bookmark: z.boolean(),
@@ -242,7 +247,7 @@ export const AutocompleteApi = async (c: Context) => {
   }
 }
 
-export const SearchApi = async (c:Context) => {
+export const SearchApi = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   let userAlpha = await getUserPersonalizationAlpha(db, email)
@@ -392,7 +397,6 @@ export const SearchApi = async (c:Context) => {
         timestampRange,
       }),
     ]
-
     // ensure only update when query is typed
     if (isQueryTyped) {
       tasks.push(updateUserQueryHistory(decodedQuery, email))
@@ -405,6 +409,7 @@ export const SearchApi = async (c:Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      rankProfile: SearchModes.BoostTitle,
     })
   }
 

@@ -17,3 +17,10 @@ export const SELECTORS = {
 // Type-safe access to class names and selectors
 export type ClassNames = keyof typeof CLASS_NAMES
 export type Selectors = keyof typeof SELECTORS
+
+// Currency constants
+export const CURRENCY = {
+  USD_TO_INR_RATE: 83.0, // Approximate exchange rate (1 USD = 83 INR) - Update this regularly
+  INR_SYMBOL: "₹",
+  USD_SYMBOL: "$",
+} as const

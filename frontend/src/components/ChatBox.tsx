@@ -86,6 +86,7 @@ interface SelectedFile {
 
 // Add attachment limit constant
 const MAX_ATTACHMENTS = 5
+import { HighlightedTextForAtMention } from "./Highlight"
 
 interface SourceItem {
   id: string
@@ -114,6 +115,15 @@ interface SearchResult {
   email?: string
   photoLink?: string
   userMap?: Record<string, string>
+  text?: string
+  domain?: string
+  createdAt?: string
+  channelId?: string
+}
+
+function slackTs(ts: any) {
+  if (typeof ts === "number") ts = ts.toString()
+  return ts.replace(".", "").padEnd(16, "0")
 }
 
 interface ChatBoxProps {
@@ -248,24 +258,29 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-export const ChatBox = ({
-  role,
-  query,
-  setQuery,
-  handleSend,
-  isStreaming = false,
-  retryIsStreaming = false,
-  allCitations,
-  handleStop,
-  chatId,
-  agentIdFromChatData, // Destructure new prop
-  isReasoningActive,
-  setIsReasoningActive,
-  user, // Destructure user prop
-  setIsAgenticMode,
-  isAgenticMode = false,
-  overrideIsRagOn,
-}: ChatBoxProps) => {
+export interface ChatBoxRef {
+  sendMessage: (message: string) => void
+}
+
+export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) => {
+  const {
+    role,
+    query,
+    setQuery,
+    handleSend,
+    isStreaming = false,
+    retryIsStreaming = false,
+    allCitations,
+    handleStop,
+    chatId,
+    agentIdFromChatData, // Destructure new prop
+    isReasoningActive,
+    setIsReasoningActive,
+    user, // Destructure user prop
+    setIsAgenticMode,
+    isAgenticMode = false,
+    overrideIsRagOn,
+  } = props
   // Interface for fetched tools
   interface FetchedTool {
     id: number
@@ -780,9 +795,16 @@ export const ChatBox = ({
     const loadInitialData = async () => {
       let processedConnectors: FetchedConnector[] = []
       try {
-        const response = await api.admin.connectors.all.$get(undefined, {
-          credentials: "include",
-        })
+        // Role-based API routing
+        const isAdmin = role === UserRole.Admin || role === UserRole.SuperAdmin
+
+        const response = isAdmin
+          ? await api.admin.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
+          : await api.connectors.all.$get(undefined, {
+              credentials: "include",
+            })
         const data = await response.json()
         if (Array.isArray(data)) {
           processedConnectors = data.map((conn: any) => ({
@@ -814,7 +836,7 @@ export const ChatBox = ({
     }
 
     loadInitialData()
-  }, []) // Empty dependency array ensures this runs once on mount
+  }, [role]) // Added role dependency
 
   // useEffect to save selected MCP connector ID
   useEffect(() => {
@@ -1332,8 +1354,18 @@ export const ChatBox = ({
         resultUrl = `https://mail.google.com/mail/u/0/#inbox/${identifier}`
       }
     }
+    if (result.app === Apps.Slack) {
+      if (result.threadId) {
+        // Thread message format
+        resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}?thread_ts=${result.threadId}&cid=${result.channelId}`
+      } else {
+        // Normal message format
+        resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}`
+      }
+    }
 
     const displayTitle =
+      result.text ||
       result.name ||
       result.subject ||
       result.title ||
@@ -1558,7 +1590,7 @@ export const ChatBox = ({
     return () => document.removeEventListener("mousedown", handleOutsideClick)
   }, [showReferenceBox])
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
@@ -1683,7 +1715,20 @@ export const ChatBox = ({
       .filter(Boolean) as string[]
     cleanupPreviewUrls(previewUrls)
     setSelectedFiles([])
-  }
+  }, [
+    selectedSources,
+    selectedConnectorIds,
+    selectedConnectorTools,
+    allConnectors,
+    selectedFiles,
+    persistedAgentId,
+    handleSend,
+    uploadFiles,
+    user,
+    setQuery,
+    setSelectedFiles,
+    cleanupPreviewUrls,
+  ])
 
   const handleSourceSelectionChange = (sourceId: string, checked: boolean) => {
     setSelectedSources((prev) => ({
@@ -1738,6 +1783,34 @@ export const ChatBox = ({
       cleanupPreviewUrls(previewUrls)
     }
   }, [])
+
+  // Add imperative handle to expose sendMessage method
+  React.useImperativeHandle(ref, () => ({
+    sendMessage: (message: string) => {
+      // Set the query first
+      setQuery(message)
+      // Update the input content
+      if (inputRef.current) {
+        inputRef.current.textContent = message
+        setIsPlaceholderVisible(false)
+      }
+      // Then trigger the send message with all the internal state
+      // Use setTimeout to ensure state updates are applied
+      setTimeout(() => {
+        // Call handleSendMessage which will use the current state values
+        // for agents, tools, connectors, etc.
+        handleSendMessage()
+      }, 0)
+    }
+  }), [
+    // Include dependencies that affect what gets sent
+    selectedConnectorIds,
+    selectedConnectorTools, 
+    persistedAgentId,
+    selectedSources,
+    selectedFiles,
+    handleSendMessage
+  ])
 
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
@@ -1877,6 +1950,7 @@ export const ChatBox = ({
                 {globalResults.length > 0 &&
                   enhancedGlobalResults.map((result, index) => {
                     const displayTitle =
+                      result.text ||
                       result.name ||
                       result.subject ||
                       result.title ||
@@ -1910,12 +1984,18 @@ export const ChatBox = ({
                             })
                           )}
                           <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                            {displayTitle}
+                            <HighlightedTextForAtMention
+                              chunk_summary={displayTitle}
+                            />
                           </p>
                         </div>
                         {result.type !== "user" && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
-                            {result.from ? `From: ${result.from} | ` : ""}
+                            {result.from
+                              ? `From: ${result.from} | `
+                              : result.name
+                                ? `From: ${result.name} |`
+                                : ""}
                             {formatTimestamp(
                               result.timestamp || result.updatedAt,
                             )}
@@ -3146,4 +3226,4 @@ export const ChatBox = ({
       />
     </div>
   )
-}
+})
