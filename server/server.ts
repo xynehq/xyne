@@ -181,6 +181,10 @@ import {
   GetFilePreviewApi,
   GetFileContentApi,
 } from "@/api/knowledgeBase"
+import {
+  searchKnowledgeBaseSchema,
+  SearchKnowledgeBaseApi,
+} from "./api/knowledgeBase/search"
 
 import {
   isSlackEnabled,
@@ -801,6 +805,11 @@ export const AppRoutes = app
   // Collection Routes
   .post("/cl", CreateCollectionApi)
   .get("/cl", ListCollectionsApi)
+  .get(
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema),
+    SearchKnowledgeBaseApi
+  )
   .get("/cl/:clId", GetCollectionApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
@@ -1280,11 +1289,6 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get(
-  "/knowledge-base",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
 app.get(
   "/knowledgeManagement",
   AuthRedirect,

@@ -1287,7 +1287,6 @@ class VespaClient {
       const payload = {
         yql: yqlQuery,
       }
-      console.log(yqlQuery)
 
       const response = await this.fetchWithRetry(url, {
         method: "POST",
