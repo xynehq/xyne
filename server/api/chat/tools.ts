@@ -800,18 +800,27 @@ export const webScraperTool: AgentTool = {
         }
 
         const contexts: MinimalAgentFragment[] = scrapedContent.map(
-          (item: any, index: number) => ({
-            id: `web_scraper_${index}_${Date.now()}`,
-            content: item.content || "",
-            source: {
-              docId: `web_scraper_${index}`,
-              title: item.title || item.url,
-              url: item.url,
-              app: Apps.Xyne,
-              entity: SystemEntity.SystemInfo,
-            },
-            confidence: 0.9,
-          }),
+          (item: any, index: number) => {
+            // Create a simple, clean citation title
+            const domain = new URL(item.url).hostname.replace("www.", "")
+            const citationTitle =
+              item.title && item.title !== item.url
+                ? `${item.title} - ${domain}`
+                : domain
+
+            return {
+              id: `web_scraper_${index}_${Date.now()}`,
+              content: item.content || "",
+              source: {
+                docId: `web_scraper_${index}`,
+                title: citationTitle,
+                url: item.url,
+                app: Apps.Xyne,
+                entity: SystemEntity.SystemInfo,
+              },
+              confidence: 0.9,
+            }
+          },
         )
 
         // Sort content by relevance to query (longer content generally more relevant)
@@ -824,7 +833,7 @@ export const webScraperTool: AgentTool = {
         const resultText = sortedContent
           .map(
             (item: any, index: number) =>
-              `[${index}] ${item.title} (${item.content.length} chars): ${item.content || "No content available"}`,
+              `[${index}] ${item.title} (${item.content.length} chars) from ${item.url}: ${item.content || "No content available"}`,
           )
           .join("\n\n")
 
@@ -844,21 +853,21 @@ export const webScraperTool: AgentTool = {
           (total, item) => total + (item.content?.length || 0),
           0,
         )
-        const resultMessage = `🌐 **WEB SCRAPER RESULTS - FRESH CONTENT AVAILABLE**
+        const resultMessage = `**WEB SCRAPER RESULTS - FRESH CONTENT AVAILABLE**
 
 Successfully scraped ${scrapedContent.length} URL(s) and found ${totalChars} total characters of content.
 
-📋 **IMPORTANT FOR AI**: This is real-time web content that should be used to answer the user's query. The content below contains the most up-to-date information available from the web sources.
+**IMPORTANT FOR AI**: This is real-time web content that should be used to answer the user's query. The content below contains the most up-to-date information available from the web sources.
 
-📊 **Content Summary**:
+**Content Summary**:
 ${sortedContent
   .map(
     (item: any, index: number) =>
-      `- [${index}] ${item.title}: ${item.content.length} characters from ${item.url}`,
+      `- [${index}] "${item.title}": ${item.content.length} characters from ${item.url}`,
   )
   .join("\n")}
 
-📄 **COMPLETE SCRAPED CONTENT**:
+**COMPLETE SCRAPED CONTENT**:
 
 ${resultText}`
 
@@ -1535,7 +1544,7 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Add pagination info
       if (searchOptions.offset > 0) {
-        responseText += ` (items ${searchOptions.offset + 1}-${searchOptions.offset + fragments.length})`
+        responseText += ` (💡 Showing items ${searchOptions.offset + 1}-${searchOptions.offset + fragments.length})`
       }
 
       // Show top results preview
@@ -1553,7 +1562,7 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Add pagination guidance if there might be more results
       if (fragments.length === searchOptions.limit) {
-        responseText += `\n\n💡 Showing ${searchOptions.limit} results. Use offset parameter to see more.`
+        responseText += `\n\nShowing ${searchOptions.limit} results. Use offset parameter to see more.`
       }
 
       return {

@@ -1921,15 +1921,15 @@ export const withToolQueryPrompt = (
     ---
     ${
       isWebScraperContent
-        ? `🔴 **CRITICAL - WEB SCRAPER CONTENT DETECTED**:
+        ? `**CRITICAL - WEB SCRAPER CONTENT DETECTED**:
            The above context contains freshly scraped web content that is HIGHLY RELEVANT to the user's query.
            You MUST use this scraped content as your PRIMARY SOURCE to answer the question.
            This is real-time web data that should be treated as authoritative for the user's query.
            DO NOT ignore this content or claim you don't have information when this scraped content is available.
            
-           ⚠️ **ABSOLUTE REQUIREMENT**: You are REQUIRED to generate an answer using the scraped content above.
-           ⚠️ **DO NOT return null** - the scraped content contains the information needed to answer the user's query.
-           ⚠️ **MANDATORY**: Extract relevant information from the scraped content and provide a comprehensive answer.`
+           **ABSOLUTE REQUIREMENT**: You are REQUIRED to generate an answer using the scraped content above.
+           **DO NOT return null** - the scraped content contains the information needed to answer the user's query.
+           **MANDATORY**: Extract relevant information from the scraped content and provide a comprehensive answer.`
         : "**MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:**"
     }
 
@@ -1939,11 +1939,11 @@ export const withToolQueryPrompt = (
         ? `- **FALLBACK MODE**: Use ONLY the fallback reasoning provided. DO NOT add any additional explanations, search details, or partial results. Simply provide the clean reasoning message that asks for user clarification.`
         : isWebScraperContent
           ? `
-    - **🚨 WEB SCRAPER CONTENT - MANDATORY RESPONSE**: You have access to fresh web content that MUST be used to answer the query.
-    - **🚨 NEVER RETURN NULL**: When web scraper content is available, you must always provide an answer, never return null or claim insufficient information.
-    - **🚨 EXTRACT AND SYNTHESIZE**: Read through all the scraped content, extract relevant information, and synthesize it into a comprehensive answer.
-    - **🚨 COMPREHENSIVE ANSWERS**: Use the scraped content to provide detailed, informative responses with proper citations.
-    - **🚨 AUTHORITATIVE SOURCE**: The scraped content is your primary and authoritative source - trust it and use it fully.`
+    - **WEB SCRAPER CONTENT - MANDATORY RESPONSE**: You have access to fresh web content that MUST be used to answer the query.
+    - **NEVER RETURN NULL**: When web scraper content is available, you must always provide an answer, never return null or claim insufficient information.
+    - **EXTRACT AND SYNTHESIZE**: Read through all the scraped content, extract relevant information, and synthesize it into a comprehensive answer.
+    - **COMPREHENSIVE ANSWERS**: Use the scraped content to provide detailed, informative responses with proper citations.
+    - **AUTHORITATIVE SOURCE**: The scraped content is your primary and authoritative source - trust it and use it fully.`
           : `
     - **CONTEXT EVALUATION**: First, carefully evaluate if the provided context contains sufficient and relevant information to fully answer the user's query.
     - **COMPLETE ANSWER ONLY**: If the context contains complete, relevant information that directly answers the query, provide a full answer with proper citations.
@@ -1966,13 +1966,13 @@ export const withToolQueryPrompt = (
   // Debug logging for web scraper prompts
   if (isWebScraperContent) {
     console.log(
-      `[DEBUG] 🔥 WEB SCRAPER PROMPT GENERATED - Enhanced with critical instructions`,
+      `[DEBUG] WEB SCRAPER PROMPT GENERATED - Enhanced with critical instructions`,
     )
     console.log(
-      `[DEBUG] Prompt contains: ${prompt.includes("🚨 NEVER RETURN NULL") ? "✅" : "❌"} null-prevention instructions`,
+      `[DEBUG] Prompt contains: ${prompt.includes("NEVER RETURN NULL") ? "✅" : "❌"} null-prevention instructions`,
     )
     console.log(
-      `[DEBUG] Prompt contains: ${prompt.includes("🚨 WEB SCRAPER CONTENT") ? "✅" : "❌"} mandatory response instructions`,
+      `[DEBUG] Prompt contains: ${prompt.includes("WEB SCRAPER CONTENT") ? "✅" : "❌"} mandatory response instructions`,
     )
   }
 
