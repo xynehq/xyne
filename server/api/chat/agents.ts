@@ -1896,7 +1896,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       `[DEBUG][${sub}] Tool output preview: ${toolExecutionResponse.result.substring(0, 300)}...`,
                     )
                     console.log(
-                      `[DEBUG][${sub}] 🚀 This output will be passed to LLM for final answer generation`,
+                      `[DEBUG][${sub}] This output will be passed to LLM for final answer generation`,
                     )
                   }
                 }
@@ -2275,7 +2275,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 `[DEBUG][${sub}] Output length: ${toolOutputForContinuation.length} chars`,
               )
               console.log(
-                `[DEBUG][${sub}] Contains critical instructions: ${toolOutputForContinuation.includes("IMPORTANT FOR AI") ? "✅" : "❌"}`,
+                `[DEBUG][${sub}] Contains critical instructions: ${toolOutputForContinuation.includes("IMPORTANT FOR AI") ? "YES" : "NO"}`,
               )
             }
           }

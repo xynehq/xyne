@@ -1544,7 +1544,7 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Add pagination info
       if (searchOptions.offset > 0) {
-        responseText += ` (💡 Showing items ${searchOptions.offset + 1}-${searchOptions.offset + fragments.length})`
+        responseText += ` (Showing items ${searchOptions.offset + 1}-${searchOptions.offset + fragments.length})`
       }
 
       // Show top results preview

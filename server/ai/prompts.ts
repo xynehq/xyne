@@ -1967,7 +1967,7 @@ export const withToolQueryPrompt = (
       `[DEBUG] WEB SCRAPER PROMPT GENERATED - Enhanced with critical instructions`,
     )
     console.log(
-      `[DEBUG] Prompt contains: ${prompt.includes("NEVER RETURN NULL") ? "✅" : "❌"} null-prevention instructions`,
+      `[DEBUG] Prompt contains: ${prompt.includes("NEVER RETURN NULL") ? "YES" : "NO"} null-prevention instructions`,
     )
     console.log(
       `[DEBUG] Prompt contains: ${prompt.includes("WEB SCRAPER CONTENT") ? "YES" : "NO"} mandatory response instructions`,
