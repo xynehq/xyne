@@ -56,6 +56,7 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
+  getAgentApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -1630,6 +1631,36 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching all user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetAgentApiKeys = async (c: Context) => {
+  try {
+    const agentId = c.req.param('agentId')
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+    const apiKeys = await getAgentApiKeys({ db, agentId })
+
+    return c.json({
+      success: true,
+      data: apiKeys,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent API keys")
     return c.json(
       {
         success: false,
