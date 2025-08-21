@@ -55,7 +55,10 @@ import { Subsystem } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
-import { getAllCollectionAndFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import {
+  getAllCollectionAndFolderItems,
+  getCollectionFilesVespaIds,
+} from "@/db/knowledgeBase"
 import { db } from "@/db/client"
 
 function slackTs(ts: string | number) {
@@ -628,10 +631,15 @@ export const extractFileIdsFromMessage = async (
     }
   }
 
-  const collectionFileIds = await getAllCollectionAndFolderItems(collectionFolderIds, db)
+  const collectionFileIds = await getAllCollectionAndFolderItems(
+    collectionFolderIds,
+    db,
+  )
   if (collectionFolderIds.length > 0) {
     const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
-    const vespaIds = ids.filter((item) => item.vespaDocId !== null).map((item) => item.vespaDocId!)
+    const vespaIds = ids
+      .filter((item) => item.vespaDocId !== null)
+      .map((item) => item.vespaDocId!)
     fileIds.push(...vespaIds)
   }
 
@@ -843,7 +851,6 @@ export function extractNamesFromIntent(intent: any): Intent {
 }
 
 export function isAppSelectionMap(value: any): value is AppSelectionMap {
-
   if (!value || typeof value !== "object") {
     return false
   }

@@ -1021,7 +1021,6 @@ Return ONLY a JSON object with the summary:
 
 Generate a summary that would make sense to a non-technical user watching the agent work.`
 
-
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const agentSearchQueryPrompt = (

@@ -41,13 +41,19 @@ export const createAgentSchema = z.object({
   prompt: z.string().optional(),
   model: z.string().min(1, "Model is required"),
   isPublic: z.boolean().optional().default(false),
-  appIntegrations: z.union([
-    z.array(z.string()), // Legacy format
-    z.record(z.object({   // New AppSelectionMap format
-      itemIds: z.array(z.string()),
-      selectedAll: z.boolean()
-    }))
-  ]).optional().default([]),
+  appIntegrations: z
+    .union([
+      z.array(z.string()), // Legacy format
+      z.record(
+        z.object({
+          // New AppSelectionMap format
+          itemIds: z.array(z.string()),
+          selectedAll: z.boolean(),
+        }),
+      ),
+    ])
+    .optional()
+    .default([]),
   allowWebSearch: z.boolean().optional().default(false),
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
@@ -551,7 +557,11 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
     const integrationItems: Record<string, any> = {}
 
     // Handle knowledge base integrations
-    if (appIntegrations && typeof appIntegrations === 'object' && appIntegrations.knowledge_base) {
+    if (
+      appIntegrations &&
+      typeof appIntegrations === "object" &&
+      appIntegrations.knowledge_base
+    ) {
       const clConfig = appIntegrations.knowledge_base
       const itemIds = clConfig.itemIds || []
 
@@ -559,14 +569,14 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
         // Extract actual item IDs from prefixed format
         const actualItemIds: string[] = []
         const collectionIds: string[] = []
-        
+
         for (const itemId of itemIds) {
-          if (itemId.startsWith('cl-')) {
+          if (itemId.startsWith("cl-")) {
             // This is a collection ID
-            collectionIds.push(itemId.replace('cl-', ''))
-          } else if (itemId.startsWith('clfd-') || itemId.startsWith('clf-')) {
+            collectionIds.push(itemId.replace("cl-", ""))
+          } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
             // This is a folder or file ID - extract the actual ID
-            actualItemIds.push(itemId.replace(/^(clfd-|clf-)/, ''))
+            actualItemIds.push(itemId.replace(/^(clfd-|clf-)/, ""))
           } else {
             // Assume it's already a clean ID
             actualItemIds.push(itemId)
@@ -581,39 +591,39 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
               return item
             } catch (error) {
               loggerWithChild({ email }).warn(
-                `Failed to fetch KB item ${itemId}: ${getErrorMessage(error)}`
+                `Failed to fetch KB item ${itemId}: ${getErrorMessage(error)}`,
               )
               return null
             }
-          })
+          }),
         )
 
         // Filter out null items
         const validDbItems = dbItems.filter(Boolean)
-        
+
         // Group items by their collection ID
         const clGroups: Record<string, any[]> = {}
-        
+
         for (const item of validDbItems) {
           if (!item) continue // Skip null items
-          
+
           // Find the root Collection ID by traversing up the hierarchy
           let clId = item.collectionId
-          
+
           if (!clGroups[clId]) {
             clGroups[clId] = []
           }
-          
+
           // Add the item with basic database info
           // Note: The actual content names will be fetched by the frontend via Vespa
           clGroups[clId].push({
             id: item.id,
-            name: item.name || item.originalName || 'Unnamed',
+            name: item.name || item.originalName || "Unnamed",
             type: item.type,
             parentId: item.parentId,
             path: item.path,
             vespaDocId: item.vespaDocId,
-            metadata: item.metadata
+            metadata: item.metadata,
           })
         }
 
@@ -625,16 +635,16 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
           // Mark this as a collection-level selection
           clGroups[collectionId].push({
             id: collectionId,
-            name: 'Entire Collection',
-            type: 'collection',
-            isCollectionLevel: true
+            name: "Entire Collection",
+            type: "collection",
+            isCollectionLevel: true,
           })
         }
 
         integrationItems.collection = {
-          type: 'collection',
+          type: "collection",
           groups: clGroups,
-          totalItems: validDbItems.length + collectionIds.length
+          totalItems: validDbItems.length + collectionIds.length,
         }
       }
     }
@@ -643,16 +653,16 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
     if (Array.isArray(appIntegrations)) {
       // Legacy format - just return the integration IDs
       integrationItems.legacy = {
-        type: 'legacy',
-        integrationIds: appIntegrations
+        type: "legacy",
+        integrationIds: appIntegrations,
       }
-    } else if (appIntegrations && typeof appIntegrations === 'object') {
+    } else if (appIntegrations && typeof appIntegrations === "object") {
       // Handle other integration types (non-KB)
       for (const [key, value] of Object.entries(appIntegrations)) {
-        if (key !== 'knowledge_base' && value && typeof value === 'object') {
+        if (key !== "knowledge_base" && value && typeof value === "object") {
           integrationItems[key] = {
-            type: 'regular',
-            config: value
+            type: "regular",
+            config: value,
           }
         }
       }
@@ -660,7 +670,7 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
 
     return c.json({
       agentId: agent.externalId,
-      integrationItems
+      integrationItems,
     })
   } catch (error) {
     const errMsg = getErrorMessage(error)
