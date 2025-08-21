@@ -675,6 +675,7 @@ export const AppRoutes = app
         agentId: z.string().optional(),
         apiKey: z.string().optional(),
         isRag: z.string().optional(),
+        chunks: z.any()
       }),
     ),
     AgentMessageCustomApi,

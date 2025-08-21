@@ -3294,75 +3294,13 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
           [Apps.DataSource],
           agentForDb?.appIntegrations as string[],
         )
-        console.log("allDataSources")
-        console.log(allDataSources)
-        console.log("allDataSources")
         dataSourceSpan.end()
-        // loggerWithChild({ email: sub }).info(
-        //   `Found ${allDataSources?.root?.children?.length} data sources for agent`,
-        // )
-
-        let docIds: string[] = []
-        if (
-          allDataSources &&
-          allDataSources.root &&
-          allDataSources.root.children
-        ) {
-          docIds = [
-            ...new Set(
-              allDataSources.root.children
-                .map(
-                  (child: VespaSearchResult) =>
-                    (child.fields as any)?.docId as string,
-                )
-                .filter(Boolean),
-            ),
-          ]
-        }
 
         let context = ""
         let finalImageFileNames: string[] = []
         let fragments: MinimalAgentFragment[] = []
-        if (docIds.length > 0) {
-          let previousResultsLength = 0
-          const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
-          const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
-          chunksSpan.end()
-          if (allChunks?.root?.children) {
-            const startIndex = 0
-            fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx),
-            )
-            context = answerContextMapFromFragments(
-              fragments,
-              maxDefaultSummary,
-            )
-
-            const { imageFileNames } = extractImageFileNames(
-              context,
-              fragments.map(
-                (v) =>
-                  ({
-                    fields: {
-                      docId: v.source.docId,
-                      title: v.source.title,
-                      url: v.source.url,
-                    },
-                  }) as any,
-              ),
-            )
-            Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
-            finalImageFileNames = imageFileNames || []
-            // context = initialContext;
-          }
-        }
-        if (attachmentFileIds?.length) {
-          finalImageFileNames.push(
-            ...attachmentFileIds.map(
-              (fileid, index) => `${index}_${fileid}_${0}`,
-            ),
-          )
-        }
+        
+        context = JSON.parse(chunks).join(" ")
 
         const ragOffIterator = nonRagIterator(
           message,
