@@ -18,11 +18,11 @@ const Logger = getLogger(Subsystem.Eval)
 const { defaultBestModel } = config
 const modelId = defaultBestModel || Models.Claude_3_5_Sonnet
 
-const myEmail = "oindrila.banerjee@juspay.in"
-const workspaceId = "zrbzr5kxjg6d6q89pnq0vib0"
+const myEmail = ""
+const workspaceExternalId = ""
 
 if (!myEmail) throw new Error("Please set the email")
-if (!workspaceId) throw new Error("Please add the workspaceId")
+if (!workspaceExternalId) throw new Error("Please add the workspaceExternalId")
 
 type Data = {
   input: string
@@ -63,6 +63,22 @@ type QueryRouterLLMResponse = {
     sortDirection: string
     intent: Record<string, string[]>
   }
+}
+
+// Add proper types at the top
+type EvalResult = Data & {
+  output: QueryRouterLLMResponse
+  score: number
+  breakdown: Record<string, number>
+  rawOutput?: string
+  reasoningOutput?: string
+  isSuccessful: boolean
+}
+
+type SavedEvalResults = {
+  averageScore: number
+  results: EvalResult[]
+  avgBreakdown: Record<string, number>
 }
 
 const loadTestData = (): Data[] => {
@@ -302,7 +318,7 @@ function evaluateResponse({
 }
 
 function saveEvalResults(
-  result: any,
+  result: EvalResult, // Changed from 'any' to 'EvalResult'
   filePath: string,
   append: boolean = false
 ) {
@@ -315,20 +331,25 @@ function saveEvalResults(
   try {
     if (append) {
       // Read existing results if file exists
-      let existingResults = { averageScore: 0, results: [], avgBreakdown: {} }
+      let existingResults: SavedEvalResults = { 
+        averageScore: 0, 
+        results: [], 
+        avgBreakdown: {} 
+      }
+      
       if (fs.existsSync(filePath)) {
         const existingData = fs.readFileSync(filePath, 'utf-8')
-        existingResults = JSON.parse(existingData)
+        existingResults = JSON.parse(existingData) as SavedEvalResults
       }
       
       // Append new result
       existingResults.results.push(result)
       
       // Recalculate average score
-      existingResults.averageScore = existingResults.results.reduce((a: number, c: any) => a + c.score, 0) / existingResults.results.length
+      existingResults.averageScore = existingResults.results.reduce((a: number, c: EvalResult) => a + c.score, 0) / existingResults.results.length
       
       // Recalculate average breakdown
-      existingResults.avgBreakdown = existingResults.results.reduce((acc: Record<string, number>, result: any) => {
+      existingResults.avgBreakdown = existingResults.results.reduce((acc: Record<string, number>, result: EvalResult) => {
         Object.keys(result.breakdown).forEach(key => {
           acc[key] = (acc[key] || 0) + result.breakdown[key]
         })
@@ -341,7 +362,12 @@ function saveEvalResults(
 
       fs.writeFileSync(filePath, JSON.stringify(existingResults, null, 2))
     } else {
-      fs.writeFileSync(filePath, JSON.stringify({ averageScore: 0, results: [result], avgBreakdown: {} }, null, 2))
+      const initialResults: SavedEvalResults = {
+        averageScore: 0, 
+        results: [result], 
+        avgBreakdown: {} 
+      }
+      fs.writeFileSync(filePath, JSON.stringify(initialResults, null, 2))
     }
     Logger.info(`Evaluation results saved to: ${filePath}`)
   } catch (error) {
@@ -360,14 +386,7 @@ async function runEvaluation(userCtx: string) {
     fileName,
   )
 
-  const results: (Data & {
-    output: QueryRouterLLMResponse
-    score: number
-    breakdown: Record<string, number>
-    rawOutput?: string
-    reasoningOutput?: string
-    isSuccessful: boolean
-  })[] = []
+  const results: EvalResult[] = [] // Changed from complex inline type to EvalResult[]
 
   for await (const item of loadTestData()) {
     Logger.info(`Processing query: "${item.input}"`)
@@ -505,7 +524,7 @@ const callRunEvaluation = async () => {
   try {
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
-      workspaceId,
+      workspaceExternalId,
       myEmail,
     )
     const ctx = userContext(userAndWorkspace)

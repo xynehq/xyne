@@ -1195,6 +1195,7 @@ export const searchQueryPrompt = (
       - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
       - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
       - This can be only classified when <app> and <entity> present
+      - For ${QueryType.GetItems}, If the count is not specified, it should be set to 10 by default.
       - Example Queries:
         - "Show me all emails from last week."
         - "List all Google Docs modified in October."
@@ -1349,6 +1350,7 @@ export const searchQueryPrompt = (
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - "intent" is an object that contains specific intent fields based on the app/entity detected. 
+       - "count" is the number of items to retrieve, or null if not specified.
        - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.

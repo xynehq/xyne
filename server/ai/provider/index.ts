@@ -490,8 +490,6 @@ export const analyzeQueryMetadata = async (
 const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
-  console.log('--------------------------------------------------------------------------------------')
-  console.log(text)
   try {
     text = text.trim()
     if (!jsonKey && text.includes("```json")) {

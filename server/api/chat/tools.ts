@@ -1976,8 +1976,8 @@ export const agentTools: Record<string, AgentTool> = {
   metadata_retrieval: metadataRetrievalTool,
   search: searchTool,
   // Slack-specific tools
-  get_slack_threads: getSlackThreads,
   get_slack_related_messages: getSlackRelatedMessages,
+  get_slack_threads: getSlackThreads,
   get_user_slack_profile: getUserSlackProfile,
   fall_back: fallbackTool,
   

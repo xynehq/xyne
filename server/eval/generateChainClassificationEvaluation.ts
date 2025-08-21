@@ -1,6 +1,6 @@
 import { generateSearchQueryOrAnswerFromConversation, jsonParseLLMOutput } from "@/ai/provider"
 import { Models, QueryType } from "@/ai/types"
-import { Apps, MailEntity, DriveEntity, CalendarEntity, SlackEntity } from "@/search/types"
+import { Apps } from "@/search/types"
 import * as fs from "fs"
 import * as path from "path"
 import { userContext } from "@/ai/context"
@@ -14,20 +14,18 @@ const Logger = getLogger(Subsystem.Eval)
 const { defaultBestModel } = config
 const modelId = defaultBestModel || Models.Claude_3_5_Sonnet
 
-const myEmail = "vipul@rbi.in"  // Update this with a valid email
-const workspaceId = "fw92sus8er24m2biq2xegwg2"     // Update this with a valid workspace ID
+const myEmail = ""
+const workspaceExternalId = ""
 
 if (!myEmail) throw new Error("Please set the email")
-if (!workspaceId) throw new Error("Please add the workspaceId")
+if (!workspaceExternalId) throw new Error("Please add the workspaceExternalId")
 
-// Types for evaluation
+// Core interfaces
 interface SyntheticScenario {
   id: string;
   description: string;
   category: string;
   conversation: ConversationTurn[];
-  chainBreakScenario?: boolean;
-  multiChainScenario?: boolean;
 }
 
 interface ConversationTurn {
@@ -42,25 +40,17 @@ interface ConversationTurn {
 
 interface ExpectedClassification {
   answer: string | null;
-  queryRewrite: string | null;
-  temporalDirection: string | null;
+  temporalDirection?: string | null;
   isFollowUp: boolean;
   type: QueryType;
-  filterQuery: string | null;
   filters: {
     app?: Apps | null;
     entity?: string | null;
     count?: number | null;
     offset?: number | null;
-    startTime?: string | null;
-    endTime?: string | null;
     sortDirection?: string | null;
     intent?: any;
   };
-  shouldCreateChain?: boolean;
-  shouldBreakChain?: boolean;
-  shouldReconnectChain?: boolean;
-  expectedChainId?: string;
 }
 
 interface EvaluationScores {
@@ -68,8 +58,7 @@ interface EvaluationScores {
   typeAccuracy: number;
   filtersAccuracy: number;
   offsetAccuracy: number;
-  chainManagementAccuracy: number;
-  queryRewriteAccuracy: number;
+  temporalDirectionAccuracy: number;
   contextRecoveryAccuracy: number;
   overallScore: number;
 }
@@ -87,8 +76,7 @@ interface ChainClassificationEvalResult {
     typeMatch: boolean;
     filtersMatch: boolean;
     offsetMatch: boolean;
-    chainFlagsMatch: boolean;
-    queryRewriteMatch: boolean;
+    temporalDirectionMatch: boolean;
     errors: string[];
   };
   rawOutput?: string;
@@ -102,26 +90,19 @@ interface CategoryResults {
   scenarios: ChainClassificationEvalResult[];
 }
 
-type Data = SyntheticScenario;
-
-const loadTestData = (): Data[] => {
+// Data loading
+const loadTestData = (): SyntheticScenario[] => {
   try {
-    // Updated path to point to the correct file
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "..",
-      "eval-data",
-      "test-queries.json",
-    )
+    const filePath = path.join(__dirname, "..", "..", "eval-data", "test-queries.json")
     const data = fs.readFileSync(filePath, "utf-8")
     let parsedData = JSON.parse(data)
     
-    if (!Array.isArray(parsedData))
+    if (!Array.isArray(parsedData)) {
       throw new Error("Test data must be an array")
+    }
     
     // Convert string query types to enum values
-    parsedData = parsedData.map((scenario: any) => ({
+    return parsedData.map((scenario: any) => ({
       ...scenario,
       conversation: scenario.conversation.map((turn: any) => ({
         ...turn,
@@ -134,29 +115,14 @@ const loadTestData = (): Data[] => {
         }
       }))
     }))
-    
-    return parsedData
   } catch (error) {
     console.error("Error loading test data:", error)
     throw error
   }
 }
 
-// Load data once
 const data = loadTestData()
 if (!data.length) throw new Error("Data is not set for the evals")
-
-function compareArguments(
-  expectedArgs: Record<string, any>,
-  actualArgs: Record<string, any>,
-): number {
-  let matched = 0
-  const expectedKeys = Object.keys(expectedArgs)
-  for (const key of expectedKeys) {
-    if (key in actualArgs) matched++
-  }
-  return expectedKeys.length === 0 ? 1 : matched / expectedKeys.length
-}
 
 // Evaluation functions
 function evaluateFollowUpDetection(expected: boolean, actual: boolean): number {
@@ -174,7 +140,8 @@ function evaluateFiltersAccuracy(expected: any, actual: any): number {
   let matches = 0;
   let total = 0;
   
-  const fieldsToCheck = ['app', 'entity', 'count', 'offset', 'startTime', 'endTime', 'sortDirection'];
+  // Focus only on fields that matter for chain classification
+  const fieldsToCheck = ['app', 'entity', 'count', 'offset', 'sortDirection'];
   
   for (const field of fieldsToCheck) {
     if (expected[field] !== undefined) {
@@ -185,7 +152,7 @@ function evaluateFiltersAccuracy(expected: any, actual: any): number {
     }
   }
   
-  // Check intent object separately if it exists
+  // Check intent object separately (important for chain context)
   if (expected.intent !== undefined) {
     total++;
     if (JSON.stringify(expected.intent || {}) === JSON.stringify(actual.intent || {})) {
@@ -197,79 +164,38 @@ function evaluateFiltersAccuracy(expected: any, actual: any): number {
 }
 
 function evaluateOffsetCalculation(expected: number | null, actual: number | null, category: string): number {
-  // Offset is critical for pagination scenarios
-  if (category.includes('pagination') || category.includes('followup')) {
+  // Critical for follow-up and pagination scenarios
+  if (category.includes('followup') || category.includes('pagination')) {
     return expected === actual ? 1 : 0;
   }
-  // For non-pagination scenarios, offset accuracy is less critical
-  return expected === actual ? 1 : 0.8;
+  return expected === actual ? 1 : 0; 
 }
 
-function evaluateChainManagement(expected: ExpectedClassification, actual: any): number {
-  let score = 0;
-  let total = 0;
-  
-  if (expected.shouldCreateChain !== undefined) {
-    total++;
-    if (expected.shouldCreateChain === actual.shouldCreateChain) score++;
-  }
-  
-  if (expected.shouldBreakChain !== undefined) {
-    total++;
-    if (expected.shouldBreakChain === actual.shouldBreakChain) score++;
-  }
-  
-  if (expected.shouldReconnectChain !== undefined) {
-    total++;
-    if (expected.shouldReconnectChain === actual.shouldReconnectChain) score++;
-  }
-  
-  return total > 0 ? score / total : 1;
-}
-
-function evaluateQueryRewrite(expected: string | null, actual: string | null): number {
-  if (expected === null && actual === null) return 1;
-  if (expected === null || actual === null) return 0;
-  
-  // For query rewrite, we can be more lenient - check if key concepts match
-  const expectedLower = expected.toLowerCase();
-  const actualLower = actual.toLowerCase();
-  
-  if (expectedLower === actualLower) return 1;
-  
-  // Check if actual contains the key concepts from expected
-  const expectedWords = expectedLower.split(' ').filter(w => w.length > 2);
-  const actualWords = actualLower.split(' ');
-  
-  const matchingWords = expectedWords.filter(word => 
-    actualWords.some(actualWord => actualWord.includes(word) || word.includes(actualWord))
-  );
-  
-  return expectedWords.length > 0 ? matchingWords.length / expectedWords.length : 1;
+function evaluateTemporalDirection(expected: string | null, actual: string | null): number {
+  return expected === actual ? 1 : 0;
 }
 
 function evaluateContextRecovery(expected: ExpectedClassification, actual: any, category: string): number {
-  // Context recovery is critical for chain-break scenarios
-  if (category.includes('chain-break') || category.includes('reconnection')) {
-    let score = 0;
-    let total = 0;
-    
-    // Check if the system correctly identified this as a follow-up requiring context recovery
-    total++;
-    if (expected.isFollowUp === actual.isFollowUp) score++;
-    
-    // Check if query rewrite happened correctly for ambiguous queries
-    if (expected.queryRewrite !== null) {
-      total++;
-      if (actual.queryRewrite !== null) score++;
-    }
-    
-    return total > 0 ? score / total : 1;
+  // Only applicable for chain-break scenarios
+  if (!category.includes('chain-break') && !category.includes('reconnection')) {
+    return 1; // Not applicable
   }
   
-  return 1; // Not applicable for non-context-recovery scenarios
+  // For chain-break scenarios, successful context recovery means:
+  // 1. Correctly identifying as follow-up when it should reconnect
+  // 2. Getting the right app/entity from the broken chain
+  let score = 0;
+  let total = 2;
+  
+  if (expected.isFollowUp === actual.isFollowUp) score++;
+  
+  // Check if app context was recovered correctly
+  if (expected.filters?.app === actual.filters?.app) score++;
+  
+  return score / total;
 }
 
+// Main evaluation logic - simplified to focus on chain classification
 function evaluateResponse({
   output,
   expected,
@@ -281,12 +207,11 @@ function evaluateResponse({
   input: string;
   category: string;
 }) {
-  console.log("####### EVALUATING CHAIN CLASSIFICATION ########")
-  console.log("Input:", input)
-  console.log("Generated classification:", JSON.stringify(output, null, 2))
-  console.log("Expected classification:", JSON.stringify(expected, null, 2))
+  console.log(`\n####### EVALUATING: "${input}" #######`)
+  console.log("Expected:", JSON.stringify(expected, null, 2))
+  console.log("Actual:", JSON.stringify(output, null, 2))
 
-  // Calculate individual scores
+  // Core chain classification metrics
   const isFollowUpAccuracy = evaluateFollowUpDetection(expected.isFollowUp, output.isFollowUp || false);
   const typeAccuracy = evaluateQueryTypeClassification(expected.type, output.type);
   const filtersAccuracy = evaluateFiltersAccuracy(expected.filters, output.filters || {});
@@ -295,31 +220,30 @@ function evaluateResponse({
     output.filters?.offset || null, 
     category
   );
-  const chainManagementAccuracy = evaluateChainManagement(expected, output);
-  const queryRewriteAccuracy = evaluateQueryRewrite(expected.queryRewrite, output.queryRewrite || null);
+  const temporalDirectionAccuracy = evaluateTemporalDirection(
+    expected.temporalDirection || null,
+    output.temporalDirection || null
+  );
   const contextRecoveryAccuracy = evaluateContextRecovery(expected, output, category);
   
-  // Calculate overall score with weights based on scenario category
+  // Weights focused on chain logic - FIXED to add up to 1.0
   let weights = {
-    isFollowUp: 0.2,
-    type: 0.2,
-    filters: 0.2,
-    offset: 0.1,
-    chainManagement: 0.1,
-    queryRewrite: 0.1,
-    contextRecovery: 0.1
+    isFollowUp: 0.4,           // Most critical - determines if chain logic is used
+    type: 0.25,                // Important for query execution
+    filters: 0.15,             // Context preservation
+    offset: 0.05,              // Pagination logic
+    temporalDirection: 0.1,    // Temporal context preservation
+    contextRecovery: 0.05      // Chain reconnection
   };
+  // Total: 0.4 + 0.25 + 0.15 + 0.05 + 0.1 + 0.05 = 1.0 ✅
   
-  // Adjust weights based on scenario category
-  if (category.includes('pagination')) {
-    weights.offset = 0.3;
-    weights.filters = 0.3;
+  // Adjust for specific scenarios
+  if (category.includes('followup')) {
+    weights = { isFollowUp: 0.3, type: 0.25, filters: 0.2, offset: 0.15, temporalDirection: 0.1, contextRecovery: 0 };
+    // Total: 0.3 + 0.25 + 0.2 + 0.15 + 0.1 + 0 = 1.0 ✅
   } else if (category.includes('chain-break')) {
-    weights.contextRecovery = 0.3;
-    weights.queryRewrite = 0.2;
-  } else if (category.includes('pronoun')) {
-    weights.queryRewrite = 0.3;
-    weights.contextRecovery = 0.2;
+    weights = { isFollowUp: 0.25, type: 0.2, filters: 0.2, offset: 0.05, temporalDirection: 0.1, contextRecovery: 0.2 };
+    // Total: 0.25 + 0.2 + 0.2 + 0.05 + 0.1 + 0.2 = 1.0 ✅
   }
   
   const overallScore = (
@@ -327,77 +251,100 @@ function evaluateResponse({
     typeAccuracy * weights.type +
     filtersAccuracy * weights.filters +
     offsetAccuracy * weights.offset +
-    chainManagementAccuracy * weights.chainManagement +
-    queryRewriteAccuracy * weights.queryRewrite +
+    temporalDirectionAccuracy * weights.temporalDirection +
     contextRecoveryAccuracy * weights.contextRecovery
   );
 
+  const status = overallScore === 1 ? "✅ Perfect" :
+                overallScore > 0.8 ? "🟢 Good" :
+                overallScore > 0.5 ? "🟡 Fair" : "🔴 Poor";
+
+  // Enhanced logging with weights
   console.log(
-    `Follow-up: ${(isFollowUpAccuracy * 100).toFixed(1)}%, Type: ${(typeAccuracy * 100).toFixed(1)}%, Filters: ${(filtersAccuracy * 100).toFixed(1)}%, Offset: ${(offsetAccuracy * 100).toFixed(1)}%, Chain: ${(chainManagementAccuracy * 100).toFixed(1)}%, Query Rewrite: ${(queryRewriteAccuracy * 100).toFixed(1)}%, Context: ${(contextRecoveryAccuracy * 100).toFixed(1)}%`,
+    `Chain Scores: Follow-up: ${(isFollowUpAccuracy * 100).toFixed(0)}% (${(weights.isFollowUp * 100).toFixed(0)}%), Type: ${(typeAccuracy * 100).toFixed(0)}% (${(weights.type * 100).toFixed(0)}%), Filters: ${(filtersAccuracy * 100).toFixed(0)}% (${(weights.filters * 100).toFixed(0)}%), Offset: ${(offsetAccuracy * 100).toFixed(0)}% (${(weights.offset * 100).toFixed(0)}%), Temporal: ${(temporalDirectionAccuracy * 100).toFixed(0)}% (${(weights.temporalDirection * 100).toFixed(0)}%) → ${(overallScore * 100).toFixed(1)}% ${status}`,
   )
 
-  if (overallScore === 1) {
-    console.log("✅ Full match")
-  } else if (overallScore > 0.7) {
-    console.log("⚠️ Good match")
-  } else if (overallScore > 0.3) {
-    console.log("⚠️ Partial match")
-  } else {
-    console.log("❌ Poor match")
-  }
+  // Add detailed calculation breakdown
+  console.log(
+    `Calculation: ${(isFollowUpAccuracy * 100).toFixed(0)}%×${(weights.isFollowUp * 100).toFixed(0)}% + ${(typeAccuracy * 100).toFixed(0)}%×${(weights.type * 100).toFixed(0)}% + ${(filtersAccuracy * 100).toFixed(0)}%×${(weights.filters * 100).toFixed(0)}% + ${(offsetAccuracy * 100).toFixed(0)}%×${(weights.offset * 100).toFixed(0)}% + ${(temporalDirectionAccuracy * 100).toFixed(0)}%×${(weights.temporalDirection * 100).toFixed(0)}% = ${(overallScore * 100).toFixed(1)}%`
+  )
 
-  return { 
-    score: overallScore,
+  return {
     scores: {
       isFollowUpAccuracy,
       typeAccuracy,
       filtersAccuracy,
       offsetAccuracy,
-      chainManagementAccuracy,
-      queryRewriteAccuracy,
+      temporalDirectionAccuracy,
       contextRecoveryAccuracy,
       overallScore
     }
   };
 }
 
-function saveEvalResults(
-  evaluation: { averageScore: number; results: any[]; categoryResults: CategoryResults[] },
-  name: string,
-) {
+// File operations
+function saveResults(results: ChainClassificationEvalResult[], categoryResults: CategoryResults[], avgScore: number) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const fileName = `${name}-${timestamp}.json`
   const outputDir = path.join(process.cwd(), "eval-results", "chain-classification")
-  const filePath = path.join(outputDir, fileName)
-
-  // Ensure directory exists
+  
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true })
   }
 
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(evaluation, null, 2))
-    Logger.info(`Chain classification evaluation results saved to: ${filePath}`)
-    return fileName
-  } catch (error) {
-    Logger.error(`Failed to save evaluation results to ${filePath}: ${error}`)
-    throw error
-  }
+  // Save JSON results
+  const jsonFile = `chain-classification-eval-${timestamp}.json`
+  const jsonPath = path.join(outputDir, jsonFile)
+  fs.writeFileSync(jsonPath, JSON.stringify({ averageScore: avgScore, results, categoryResults }, null, 2))
+  
+  // Save summary log
+  const txtFile = `chain-classification-eval-summary-${timestamp}.txt`
+  const txtPath = path.join(outputDir, txtFile)
+  const logContent = generateSummaryLog(results, categoryResults, avgScore)
+  fs.writeFileSync(txtPath, logContent)
+  
+  Logger.info(`Results saved to: ${jsonFile}`)
+  Logger.info(`Summary saved to: ${txtFile}`)
+  
+  return { jsonFile, txtFile }
 }
 
+function generateSummaryLog(results: ChainClassificationEvalResult[], categoryResults: CategoryResults[], overallScore: number): string {
+  let log = `=== CHAIN CLASSIFICATION EVALUATION RESULTS ===\n\n`;
+  log += `Date: ${new Date().toISOString()}\n`;
+  log += `Model: ${modelId}\n`;
+  log += `Total Evaluations: ${results.length}\n`;
+  log += `Overall Score: ${(overallScore * 100).toFixed(1)}%\n\n`;
+  
+  // Category breakdown
+  log += `CATEGORY BREAKDOWN:\n${'='.repeat(50)}\n`;
+  for (const cat of categoryResults) {
+    log += `${cat.category}: ${(cat.averageScore * 100).toFixed(1)}% (${cat.totalScenarios} scenarios)\n`;
+    log += `  Follow-up Detection: ${(cat.scores.isFollowUpAccuracy * 100).toFixed(1)}%\n`;
+    log += `  Type Classification: ${(cat.scores.typeAccuracy * 100).toFixed(1)}%\n`;
+    log += `  Filters Accuracy: ${(cat.scores.filtersAccuracy * 100).toFixed(1)}%\n`;
+    log += `  Offset Calculation: ${(cat.scores.offsetAccuracy * 100).toFixed(1)}%\n`;
+    log += `  Temporal Direction: ${(cat.scores.temporalDirectionAccuracy * 100).toFixed(1)}%\n`;
+    log += `  Context Recovery: ${(cat.scores.contextRecoveryAccuracy * 100).toFixed(1)}%\n`;
+    log += '\n';
+  }
+  
+  // Worst performers
+  return log;
+}
+
+// Main scenario evaluation - REMOVE the JSON logging here
 async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): Promise<ChainClassificationEvalResult[]> {
   const results: ChainClassificationEvalResult[] = [];
   
   for (const turn of scenario.conversation) {
-    Logger.info(`Processing ${scenario.id} - Turn ${turn.turn}: "${turn.input}"`);
+    Logger.info(`Processing Scenario ${scenario.id} - Turn ${turn.turn}: "${turn.input}"`);
 
     try {
-      // Call generateSearchQueryOrAnswerFromConversation following the same pattern as tool evaluation
       const searchQueryOutput = await generateSearchQueryOrAnswerFromConversation(
         turn.input,
         userCtx,
         { modelId, stream: true, json: true },
-        undefined, // toolContext
+        undefined,
         turn.context?.previousClassification || null,
         turn.context?.chainBreakClassifications || null
       )
@@ -406,16 +353,12 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
         answer: null,
         isFollowUp: false,
         type: null,
-        queryRewrite: null,
         filters: {},
       }
       let buffer = ""
 
-      if (
-        searchQueryOutput &&
-        typeof searchQueryOutput === "object" &&
-        typeof searchQueryOutput[Symbol.asyncIterator] === "function"
-      ) {
+      // Handle streaming response
+      if (searchQueryOutput && typeof searchQueryOutput === "object" && typeof searchQueryOutput[Symbol.asyncIterator] === "function") {
         for await (const chunk of searchQueryOutput) {
           if (chunk.text) {
             buffer += chunk.text
@@ -425,25 +368,13 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
         buffer = JSON.stringify(searchQueryOutput)
       }
 
-      Logger.info(`Raw LLM output for query "${turn.input}": ${buffer}`)
-
       try {
-        output = jsonParseLLMOutput(buffer) || {
-          answer: null,
-          isFollowUp: false,
-          type: null,
-          queryRewrite: null,
-          filters: {},
-        }
-        Logger.info(`Parsed output: ${JSON.stringify(output, null, 2)}`)
+        output = jsonParseLLMOutput(buffer) || output
       } catch (err) {
-        Logger.error(
-          `Failed to parse LLM output for query "${turn.input}": ${buffer}`,
-        )
-        Logger.error(`Error: ${err}`)
+        Logger.error(`Failed to parse LLM output for query "${turn.input}": ${err}`)
       }
 
-      const { score, scores } = evaluateResponse({
+      const { scores } = evaluateResponse({
         output,
         expected: turn.expected,
         input: turn.input,
@@ -463,8 +394,7 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
           typeMatch: scores.typeAccuracy === 1,
           filtersMatch: scores.filtersAccuracy === 1,
           offsetMatch: scores.offsetAccuracy === 1,
-          chainFlagsMatch: scores.chainManagementAccuracy === 1,
-          queryRewriteMatch: scores.queryRewriteAccuracy === 1,
+          temporalDirectionMatch: scores.temporalDirectionAccuracy === 1,
           errors: []
         },
         rawOutput: buffer,
@@ -473,7 +403,7 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
       results.push(result)
 
     } catch (error) {
-      Logger.error(`Error evaluating ${scenario.id} - Turn ${turn.turn}:`, error)
+      Logger.error(`Error evaluating Scenario ${scenario.id} - Turn ${turn.turn}:`, error)
 
       const errorResult: ChainClassificationEvalResult = {
         scenarioId: scenario.id,
@@ -487,8 +417,7 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
           typeAccuracy: 0,
           filtersAccuracy: 0,
           offsetAccuracy: 0,
-          chainManagementAccuracy: 0,
-          queryRewriteAccuracy: 0,
+          temporalDirectionAccuracy: 0,
           contextRecoveryAccuracy: 0,
           overallScore: 0
         },
@@ -497,8 +426,7 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
           typeMatch: false,
           filtersMatch: false,
           offsetMatch: false,
-          chainFlagsMatch: false,
-          queryRewriteMatch: false,
+          temporalDirectionMatch: false,
           errors: [error instanceof Error ? error.message : String(error)]
         }
       }
@@ -513,7 +441,6 @@ async function evaluateScenario(scenario: SyntheticScenario, userCtx: string): P
 function calculateCategoryResults(results: ChainClassificationEvalResult[]): CategoryResults[] {
   const categoryMap = new Map<string, ChainClassificationEvalResult[]>();
   
-  // Group results by category
   for (const result of results) {
     if (!categoryMap.has(result.category)) {
       categoryMap.set(result.category, []);
@@ -521,153 +448,105 @@ function calculateCategoryResults(results: ChainClassificationEvalResult[]): Cat
     categoryMap.get(result.category)!.push(result);
   }
   
-  const categoryResults: CategoryResults[] = [];
-  
-  for (const [category, categoryResults_] of categoryMap) {
-    const totalScenarios = categoryResults_.length;
+  return Array.from(categoryMap.entries()).map(([category, categoryResults]) => {
+    const totalScenarios = categoryResults.length;
     
-    // Calculate average scores
+    // Calculate averages for all metrics with proper typing
     const avgScores: EvaluationScores = {
       isFollowUpAccuracy: 0,
       typeAccuracy: 0,
       filtersAccuracy: 0,
       offsetAccuracy: 0,
-      chainManagementAccuracy: 0,
-      queryRewriteAccuracy: 0,
+      temporalDirectionAccuracy: 0,
       contextRecoveryAccuracy: 0,
       overallScore: 0
     };
     
-    for (const result of categoryResults_) {
+    // Sum all scores
+    for (const result of categoryResults) {
       avgScores.isFollowUpAccuracy += result.scores.isFollowUpAccuracy;
       avgScores.typeAccuracy += result.scores.typeAccuracy;
       avgScores.filtersAccuracy += result.scores.filtersAccuracy;
       avgScores.offsetAccuracy += result.scores.offsetAccuracy;
-      avgScores.chainManagementAccuracy += result.scores.chainManagementAccuracy;
-      avgScores.queryRewriteAccuracy += result.scores.queryRewriteAccuracy;
+      avgScores.temporalDirectionAccuracy += result.scores.temporalDirectionAccuracy;
       avgScores.contextRecoveryAccuracy += result.scores.contextRecoveryAccuracy;
       avgScores.overallScore += result.scores.overallScore;
     }
     
-    // Average the scores
-    Object.keys(avgScores).forEach(key => {
-      avgScores[key as keyof EvaluationScores] /= totalScenarios;
-    });
+    // Calculate averages
+    avgScores.isFollowUpAccuracy /= totalScenarios;
+    avgScores.typeAccuracy /= totalScenarios;
+    avgScores.filtersAccuracy /= totalScenarios;
+    avgScores.offsetAccuracy /= totalScenarios;
+    avgScores.temporalDirectionAccuracy /= totalScenarios;
+    avgScores.contextRecoveryAccuracy /= totalScenarios;
+    avgScores.overallScore /= totalScenarios;
     
-    categoryResults.push({
+    return {
       category,
       totalScenarios,
       averageScore: avgScores.overallScore,
       scores: avgScores,
-      scenarios: categoryResults_
-    });
-  }
-  
-  return categoryResults.sort((a, b) => b.averageScore - a.averageScore);
+      scenarios: categoryResults
+    };
+  }).sort((a, b) => b.averageScore - a.averageScore);
 }
 
+// Main execution
 async function runEvaluation(userCtx: string) {
   const results: ChainClassificationEvalResult[] = [];
-
-  Logger.info("User context:\n" + userCtx)
+  Logger.info("Starting chain classification evaluation...");
 
   for (const scenario of data) {
-    Logger.info(`Processing scenario: ${scenario.id} (${scenario.category})`)
-    
-    const scenarioResults = await evaluateScenario(scenario, userCtx)
-    results.push(...scenarioResults)
+    Logger.info(`Processing scenario: ${scenario.id} (${scenario.category})`);
+    const scenarioResults = await evaluateScenario(scenario, userCtx);
+    results.push(...scenarioResults);
   }
 
-  const categoryResults = calculateCategoryResults(results)
+  const categoryResults = calculateCategoryResults(results);
+  const avgScore = results.reduce((sum, r) => sum + r.scores.overallScore, 0) / results.length;
 
-  // Generate summary report
-  console.log('\n=== CHAIN CLASSIFICATION EVALUATION RESULTS ===\n');
-  
-  console.log('CATEGORY SUMMARY:');
-  console.log('================');
-  for (const category of categoryResults) {
-    console.log(`${category.category}: ${(category.averageScore * 100).toFixed(1)}% (${category.totalScenarios} scenarios)`);
-    console.log(`  Follow-up Detection: ${(category.scores.isFollowUpAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Type Classification: ${(category.scores.typeAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Filters Accuracy: ${(category.scores.filtersAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Offset Calculation: ${(category.scores.offsetAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Chain Management: ${(category.scores.chainManagementAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Query Rewrite: ${(category.scores.queryRewriteAccuracy * 100).toFixed(1)}%`);
-    console.log(`  Context Recovery: ${(category.scores.contextRecoveryAccuracy * 100).toFixed(1)}%`);
-    console.log('');
-  }
-  
-  // Overall statistics
-  const overallScore = results.reduce((sum, r) => sum + r.scores.overallScore, 0) / results.length;
-  console.log(`OVERALL ACCURACY: ${(overallScore * 100).toFixed(1)}%`);
-  console.log(`TOTAL EVALUATIONS: ${results.length}`);
-
-  const avgScore = results.reduce((a, c) => a + c.scores.overallScore, 0) / results.length
-  console.log(`Chain Classification eval score: ${avgScore}`)
-
-  const savedFileName = saveEvalResults(
-    { averageScore: avgScore, results, categoryResults },
-    "chain-classification-eval",
-  )
-
-  console.log(`Results saved to: ${savedFileName}`)
-
-  // Identify worst performing scenarios
-  const worstScenarios = results
-    .filter(r => r.scores.overallScore < 0.7)
-    .sort((a, b) => a.scores.overallScore - b.scores.overallScore)
-    .slice(0, 10);
-  
-  if (worstScenarios.length > 0) {
-    console.log('\nWORST PERFORMING SCENARIOS:');
-    console.log('===========================');
-    for (const scenario of worstScenarios) {
-      console.log(`${scenario.scenarioId} (Turn ${scenario.turn}): ${(scenario.scores.overallScore * 100).toFixed(1)}%`);
-      console.log(`  Input: "${scenario.input}"`);
-      console.log(`  Category: ${scenario.category}`);
-      if (scenario.details.errors.length > 0) {
-        console.log(`  Errors: ${scenario.details.errors.join(', ')}`);
-      }
-      console.log('');
-    }
+  // Console output
+  console.log('\n=== CHAIN CLASSIFICATION EVALUATION RESULTS ===');
+  console.log(`Overall Score: ${(avgScore * 100).toFixed(1)}%`);
+  console.log(`Total Evaluations: ${results.length}`);
+  console.log('\nCategory Breakdown:');
+  for (const cat of categoryResults) {
+    console.log(`  ${cat.category}: ${(cat.averageScore * 100).toFixed(1)}% (${cat.totalScenarios} scenarios)`);
   }
 
-  return { avgScore, results, categoryResults }
+  saveResults(results, categoryResults, avgScore);
+  return { avgScore, results, categoryResults };
 }
 
 const callRunEvaluation = async () => {
   try {
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      myEmail,
-    )
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, myEmail);
     if (!userAndWorkspace) {
-      throw new Error(`User not found for email: ${myEmail}`)
+      throw new Error(`User not found for email: ${myEmail}`);
     }
-    const ctx = userContext(userAndWorkspace)
-    return await runEvaluation(ctx)
+    const ctx = userContext(userAndWorkspace);
+    return await runEvaluation(ctx);
   } catch (error) {
-    Logger.error("Failed to fetch user and workspace:", error)
-    throw error
+    Logger.error("Failed to fetch user and workspace:", error);
+    throw error;
   }
-}
+};
 
 async function main() {
   try {
     console.log('Starting chain classification evaluation...');
     console.log(`Loaded ${data.length} scenarios`);
     
-    const results = await callRunEvaluation()
-    console.log(`\n✅ Chain classification evaluation completed with score: ${(results.avgScore * 100).toFixed(1)}%`)
-    process.exit(0)
+    const results = await callRunEvaluation();
+    console.log(`\nEvaluation completed with score: ${(results.avgScore * 100).toFixed(1)}%`);
+    process.exit(0);
   } catch (error) {
-    console.error('❌ Chain classification evaluation failed:', error);
+    console.error('Evaluation failed:', error);
     process.exit(1);
   }
 }
 
-// Run the evaluation
 if (require.main === module) {
   main();
 }

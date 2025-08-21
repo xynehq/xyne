@@ -579,7 +579,7 @@ export const internalTools: Record<string, ToolDefinition> = {
       {
         name: "filter_query",
         type: "string",
-        required: true,
+        required: false,
         description: "Keywords to refine the search based on the user's query.",
       },
       {
@@ -621,7 +621,7 @@ export const slackTools: Record<string, ToolDefinition> = {
   [XyneTools.getSlackThreads]: {
     name: XyneTools.getSlackThreads,
     description:
-      "Search and retrieve Slack thread messages for conversational context.",
+      "Search and retrieve Slack thread messages to understand conversational context, track discussion progression, and summarize threaded conversations. Use this tool when users ask about specific discussions, want to follow conversation threads, need context from reply chains, or require summaries of ongoing debates and collaborative exchanges in Slack channels.",
     params: [
       {
         name: "filter_query",
@@ -652,7 +652,7 @@ export const slackTools: Record<string, ToolDefinition> = {
   },
   [XyneTools.getSlackRelatedMessages]: {
     name: XyneTools.getSlackRelatedMessages,
-    description: "Search and retrieve Slack messages with flexible filtering.",
+    description: "Search and retrieve Slack messages.",
     params: [
       {
         name: "channel_name",
@@ -670,7 +670,7 @@ export const slackTools: Record<string, ToolDefinition> = {
         name: "user_email",
         type: "string",
         required: false,
-        description: "Email address of the user whose messages to retrieve.",
+        description: "Email address of the user whose messages to retrieve. User email should only be returned if the user added the email address. Don't fill this param if there is no user email.",
       },
       {
         name: "limit",
