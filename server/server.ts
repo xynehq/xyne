@@ -746,10 +746,25 @@ const getNewAccessRefreshToken = async (c: Context) => {
 export const AppRoutes = app
   .basePath("/api/v1")
   .get(
+    "/agent/completion",
+    zValidator(
+      "query",
+      z.object({
+        message: z.string(),
+        chatId: z.string().optional(),
+        modelId: z.string().optional(),
+        isReasoningEnabled: z.string().optional(),
+        agentId: z.string().optional(),
+        apiKey: z.string().optional(),
+        isRag: z.string().optional(),
+      }),
+    ),
+    AgentMessageCustomApi,
+  )
+  .get(
     "/agents/:agentId/api-key",
     GetAgentApiKeys,
   )
-  .get("/agent/completion", zValidator("query", messageSchema), AgentMessageCustomApi)
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
