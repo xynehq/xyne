@@ -209,6 +209,7 @@ import {
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 import type { PublicUserWorkspace } from "./db/schema"
+import { AgentMessageCustomApi } from "./api/chat/agents"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -662,6 +663,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .get("/agent/completion", zValidator("query", messageSchema), AgentMessageCustomApi)
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
