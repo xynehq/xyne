@@ -5,7 +5,10 @@ import {
   constructToolContext,
   userContext,
 } from "@/ai/context"
-import { generateAgentStepSummaryPromptJson, generateConsolidatedStepSummaryPromptJson } from "@/ai/agentPrompts"
+import {
+  generateAgentStepSummaryPromptJson,
+  generateConsolidatedStepSummaryPromptJson,
+} from "@/ai/agentPrompts"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
@@ -214,25 +217,20 @@ const generateStepSummary = async (
     )
 
     // Use a fast model for summary generation
-    const summary =  await generateSynthesisBasedOnToolOutput(
-      prompt,
-      "",
-      "",
-      {
-        modelId: defaultFastModel,
-        stream: false,
-        json: true,
-        reasoning: false,
-        messages: [],
-      },
-    )
+    const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
+      modelId: defaultFastModel,
+      stream: false,
+      json: true,
+      reasoning: false,
+      messages: [],
+    })
 
     const summaryResponse = summary.text || ""
 
     // Parse the JSON response
     const parsed = jsonParseLLMOutput(summaryResponse)
-    Logger.debug("Parsed reasoning step:", {parsed})
-    Logger.debug("Generated summary:", {summary: parsed.summary})
+    Logger.debug("Parsed reasoning step:", { parsed })
+    Logger.debug("Generated summary:", { summary: parsed.summary })
     return parsed.summary || generateFallbackSummary(step)
   } catch (error) {
     Logger.error(`Error generating step summary: ${error}`)
@@ -831,12 +829,12 @@ export const MessageWithToolsApi = async (c: Context) => {
         // Store MCP clients for cleanup to prevent memory leaks
         const mcpClients: Client[] = []
         let finalReasoningLogString = ""
-          let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
-          // Track steps per iteration for limiting display
-          let currentIterationSteps = 0
-          let currentIterationNumber = 0
-          const MAX_STEPS_PER_ITERATION = 3
-          let currentIterationAllSteps: AgentReasoningStep[] = [] // Track all steps in current iteration for summary
+        let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
+        // Track steps per iteration for limiting display
+        let currentIterationSteps = 0
+        let currentIterationNumber = 0
+        const MAX_STEPS_PER_ITERATION = 3
+        let currentIterationAllSteps: AgentReasoningStep[] = [] // Track all steps in current iteration for summary
 
         const logAndStreamReasoning = async (
           reasoningStep: AgentReasoningStep,
@@ -844,21 +842,29 @@ export const MessageWithToolsApi = async (c: Context) => {
         ): Promise<void> => {
           const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
           const timestamp = Date.now()
-          
+
           // Check if this is a new iteration
           if (reasoningStep.type === AgentReasoningStepType.Iteration) {
             // Generate summary for previous iteration if it exists
-            if (currentIterationNumber > 0 && currentIterationAllSteps.length > 0) {
-              await generateAndStreamIterationSummary(currentIterationNumber, currentIterationAllSteps, userQuery)
+            if (
+              currentIterationNumber > 0 &&
+              currentIterationAllSteps.length > 0
+            ) {
+              await generateAndStreamIterationSummary(
+                currentIterationNumber,
+                currentIterationAllSteps,
+                userQuery,
+              )
             }
-            
-            currentIterationNumber = reasoningStep.iteration ?? currentIterationNumber + 1
+
+            currentIterationNumber =
+              reasoningStep.iteration ?? currentIterationNumber + 1
             currentIterationSteps = 0 // Reset step counter for new iteration
             currentIterationAllSteps = [] // Reset all steps for new iteration
           } else {
             // Track all steps in current iteration for summary
             currentIterationAllSteps.push(reasoningStep)
-            
+
             // Skip steps beyond the limit for current iteration
             if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
               // For skipped steps, only generate fallback summary (no AI call)
@@ -866,35 +872,35 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ...reasoningStep,
                 stepId,
                 timestamp,
-                status: 'in_progress',
+                status: "in_progress",
                 stepSummary: generateFallbackSummary(reasoningStep), // Only fallback summary
               }
-              
+
               const humanReadableLog = convertReasoningStepToText(enhancedStep)
               structuredReasoningSteps.push(enhancedStep)
               return // Don't stream to frontend
             }
             currentIterationSteps++
           }
-          
+
           // Generate AI summary ONLY for displayed steps (first 3 per iteration)
           const aiGeneratedSummary = await generateStepSummary(
-            reasoningStep, 
+            reasoningStep,
             userQuery,
           )
-          
+
           const enhancedStep: AgentReasoningStep = {
             ...reasoningStep,
             stepId,
             timestamp,
-            status: 'in_progress',
+            status: "in_progress",
             stepSummary: generateFallbackSummary(reasoningStep), // Quick fallback
             aiGeneratedSummary, // AI-generated summary only for displayed steps
           }
-          
+
           const humanReadableLog = convertReasoningStepToText(enhancedStep)
           structuredReasoningSteps.push(enhancedStep)
-          
+
           // Stream both summaries
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
@@ -908,11 +914,14 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
 
         // Helper function to create iteration summary steps
-        const createIterationSummaryStep = (summary: string, iterationNumber: number): AgentReasoningStep => ({
+        const createIterationSummaryStep = (
+          summary: string,
+          iterationNumber: number,
+        ): AgentReasoningStep => ({
           type: AgentReasoningStepType.LogMessage,
           stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
           timestamp: Date.now(),
-          status: 'completed',
+          status: "completed",
           iteration: iterationNumber,
           message: summary,
           stepSummary: summary,
@@ -935,7 +944,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
 
             // Use a fast model for summary generation
-            const summaryResult =  await generateSynthesisBasedOnToolOutput(
+            const summaryResult = await generateSynthesisBasedOnToolOutput(
               prompt,
               "",
               "",
@@ -952,14 +961,19 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             // Parse the JSON response
             const parsed = jsonParseLLMOutput(summaryResponse)
-            const summary = parsed.summary || `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
-            
+            const summary =
+              parsed.summary ||
+              `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
+
             // Create the iteration summary step
-            const iterationSummaryStep = createIterationSummaryStep(summary, iterationNumber)
-            
+            const iterationSummaryStep = createIterationSummaryStep(
+              summary,
+              iterationNumber,
+            )
+
             // Add to structured reasoning steps so it gets saved to DB
             structuredReasoningSteps.push(iterationSummaryStep)
-            
+
             // Stream the iteration summary
             await stream.writeSSE({
               event: ChatSSEvents.Reasoning,
@@ -975,13 +989,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             Logger.error(`Error generating iteration summary: ${error}`)
             // Fallback summary
             const fallbackSummary = `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
-            
+
             // Create the fallback iteration summary step
-            const fallbackSummaryStep = createIterationSummaryStep(fallbackSummary, iterationNumber)
-            
+            const fallbackSummaryStep = createIterationSummaryStep(
+              fallbackSummary,
+              iterationNumber,
+            )
+
             // Add to structured reasoning steps so it gets saved to DB
             structuredReasoningSteps.push(fallbackSummaryStep)
-            
+
             await stream.writeSSE({
               event: ChatSSEvents.Reasoning,
               data: JSON.stringify({
@@ -1535,15 +1552,18 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             if (toolSelection && toolSelection.tool) {
               const toolName = toolSelection.tool
-              const toolParams = (toolSelection.arguments ?? {}) as Record<string, any>
-              
+              const toolParams = (toolSelection.arguments ?? {}) as Record<
+                string,
+                any
+              >
+
               // Extract app info for this iteration
               let iterationApp: Apps | string | undefined
               let iterationEntity: string | undefined
-              
+
               iterationApp = toolParams.app
               iterationEntity = toolParams.entity
-              
+
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Iteration,
                 iteration: iterationCount,
@@ -2254,23 +2274,28 @@ export const MessageWithToolsApi = async (c: Context) => {
             // to one of the citations what do we do?
             // somehow hide that citation and change
             // the answer to reflect that
-            
+
             // Save structured reasoning steps as NDJSON (newline-delimited JSON) format for frontend parsing
             const reasoningLog = structuredReasoningSteps
-              .map(step => {
+              .map((step) => {
                 try {
                   return JSON.stringify({
                     text: convertReasoningStepToText(step),
                     step: step,
                     quickSummary: step.stepSummary,
                     aiSummary: step.aiGeneratedSummary,
-                    ...(step.isIterationSummary ? { isIterationSummary: true } : {}),
+                    ...(step.isIterationSummary
+                      ? { isIterationSummary: true }
+                      : {}),
                   })
                 } catch (error) {
-                  Logger.error("Failed to stringify reasoning step", { error, stepType: step.type })
-                  return JSON.stringify({ 
-                    text: "Error serializing step", 
-                    step: { type: step.type, error: "Serialization failed" } 
+                  Logger.error("Failed to stringify reasoning step", {
+                    error,
+                    stepType: step.type,
+                  })
+                  return JSON.stringify({
+                    text: "Error serializing step",
+                    step: { type: step.type, error: "Serialization failed" },
                   })
                 }
               })
@@ -3729,8 +3754,8 @@ export const AgentMessageApi = async (c: Context) => {
             let imageCitations: any = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
-              app: "",
-              entity: "",
+              apps: [],
+              entities: [],
               startTime: "",
               endTime: "",
               count: 0,
@@ -3865,8 +3890,8 @@ export const AgentMessageApi = async (c: Context) => {
                 filterQuery: parsed.filter_query,
                 filters: {
                   ...(parsed?.filters ?? {}),
-                  app: parsed.filters?.app as Apps,
-                  entity: parsed.filters?.entity as any,
+                  apps: parsed.filters?.apps || [],
+                  entities: parsed.filters?.entities as any,
                   intent: parsed.intent || {},
                 },
               }

@@ -1021,7 +1021,6 @@ Return ONLY a JSON object with the summary:
 
 Generate a summary that would make sense to a non-technical user watching the agent work.`
 
-
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const agentSearchQueryPrompt = (
@@ -1188,31 +1187,33 @@ export const agentSearchQueryPrompt = (
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
-    Valid app keywords that map to apps:
+    Valid app keywords that map to apps (can be multiple):
     - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
-    Valid entity keywords that map to entities:
+    Valid entity keywords that map to entities (can be multiple):
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
+    **IMPORTANT**: Extract ALL relevant apps and entities mentioned in the query. If multiple apps or entities are detected, include them all in arrays.
+    
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:
     1. **${QueryType.SearchWithoutFilters}**:
-      - The user is referring multiple <app> or <entity>
+      - The user is referring to no specific apps/entities or references to apps/entities are not clear.
       - The user wants to search or look up contextual information.
       - These are open-ended queries where only time filters might apply.
       - user is asking for a sort of summary or discussion, it could be to summarize emails or files
       - Example Queries:
         - "What is the company's leave policy?"
         - "Explain the project plan from last quarter."
-        - "What was my disucssion with Jesse"
+        - "What was my discussion with Jesse"
         - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithoutFilters}",
@@ -1225,18 +1226,19 @@ export const agentSearchQueryPrompt = (
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user is referring to one or more <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
       - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
-      - This can be only classified when <app> and <entity> present
+      - This can be only classified when <app> and <entity> are present
       - Example Queries:
         - "Show me all emails from last week."
         - "List all Google Docs modified in October."
+        - "Get my emails and calendar events from today."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
@@ -1244,20 +1246,21 @@ export const agentSearchQueryPrompt = (
         }
 
     3. **${QueryType.SearchWithFilters}**:
-      - The is referring single <app> or <entity> and also have specify some keywords
-      - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
+      - The user is referring to one or more <app> or <entity> and also have specify some keywords
+      - App/entity is detected, AND filterQuery is NOT null
       - Examples Queries: 
         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
         - "emails from john@company.com" (has 'emails' = gmail, extract email for metadata)
         - "messages to support@company.com" (has 'emails' = gmail, extract email for metadata)
+        - "emails and calendar events about project X" (multiple apps with filterQuery)
 
        - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithFilters}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "count": "<number of items to list>",
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
@@ -1275,13 +1278,13 @@ export const agentSearchQueryPrompt = (
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
 
-    app (Valid Apps):  
+    app (Valid Apps - can be arrays):  
     - ${Apps.GoogleDrive} 
     - ${Apps.Gmail}  
     - ${Apps.GoogleCalendar} 
     - ${Apps.GoogleWorkspace}
 
-    entity (Valid Entities):  
+    entity (Valid Entities - can be arrays):  
     For ${Apps.Gmail}:  
     - ${MailEntity.Email}  
     - ${MailAttachmentEntity.PDF} (for attachments)  
@@ -1317,8 +1320,8 @@ export const agentSearchQueryPrompt = (
          "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,
+           "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"] or null,
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
@@ -1333,7 +1336,7 @@ export const agentSearchQueryPrompt = (
        - "type" and "filters" are used for routing and fetching data.
        - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
-       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
+       - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1550,8 +1553,8 @@ export const agentSearchAgentPrompt = (
          "temporalDirection": "next" | "prev" | null,
          "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": "<app or null>",
+           "entities": "<entity or null>",
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
