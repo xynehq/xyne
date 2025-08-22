@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
-import { getUserByEmail } from "@/db/user"
+import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -75,6 +75,7 @@ import {
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 import { clearUserSyncJob } from "@/db/syncJob"
+import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1642,17 +1643,45 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
 }
 
 export const GetAgentApiKeys = async (c: Context) => {
+   let email = ""
   try {
-    const agentId = c.req.param('agentId')
-    if (!agentId) {
-      return c.json(
-        {
-          success: false,
-          message: "Agent ID is required",
-        },
-        400,
-      )
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+    const agentId = c.req.param("agentId")
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
     }
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      agentId,
+      userAndWorkspace.workspace.id,
+      userAndWorkspace.user.id,
+    )
+
+    if (!agent) {
+      return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    // const agentId = c.req.param("agentId")
+    // if (!agentId) {
+    //   return c.json(
+    //     {
+    //       success: false,
+    //       message: "Agent ID is required",
+    //     },
+    //     400,
+    //   )
+    // }
     const apiKeys = await getAgentApiKeys({ db, agentId })
 
     return c.json({

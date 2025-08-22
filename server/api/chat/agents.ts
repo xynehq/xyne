@@ -4583,6 +4583,12 @@ export const AgentMessageCustomApi = async (c: Context) => {
     } = body
 
     // todo Validate the API key here
+    const verifiedAgentId = c.get("apiKeyAuth") as string
+    if(!verifiedAgentId || (agentId !== verifiedAgentId)){
+      throw new HTTPException(403, {
+        message: "Invalid Request",
+      })
+    }
 
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
