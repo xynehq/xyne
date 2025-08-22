@@ -3313,15 +3313,15 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
     )
     let {
       message,
-      chatId,
-      modelId,
+      // chatId,
+      // modelId,
       isReasoningEnabled,
       agentId,
-      apiKey,
+      // apiKey,
       history,
       chunks,
-      isRag,
     } = body
+
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
     if (agentId && isCuid(agentId)) {
@@ -3371,7 +3371,7 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
           context,
           fragments,
           agentPromptForLLM,
-          history,
+          JSON.parse(history),
           finalImageFileNames,
           attachmentFileIds,
           "",
@@ -4554,15 +4554,15 @@ export const AgentMessageCustomApi = async (c: Context) => {
     const body = c.req.valid("query")
     let {
       message,
-      chatId,
-      modelId,
+      // chatId,
+      // modelId,
       isReasoningEnabled,
       agentId,
-      apiKey,
+      // apiKey,
       history,
       chunks,
-      isRag,
     } = body
+
 
     // todo Validate the API key here
     const verifiedAgentId = c.get("agentId") as string
@@ -4631,7 +4631,7 @@ export const AgentMessageCustomApi = async (c: Context) => {
               reasoning:
                 userRequestsReasoning &&
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: history,
+              messages: JSON.parse(history),
               agentPrompt: agentPromptForLLM,
             })
 
@@ -4794,7 +4794,7 @@ export const AgentMessageCustomApi = async (c: Context) => {
               "",
               message,
               classification,
-              history || [],
+              JSON.parse(history) || [],
               0.5,
               userRequestsReasoning,
               understandSpan,
