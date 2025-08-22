@@ -749,7 +749,7 @@ export const AppRoutes = app
         message: z.string(),
         // chatId: z.string().optional(),
         // modelId: z.string().optional(),
-        isReasoningEnabled: z.string().optional(),
+        // isReasoningEnabled: z.string().optional(),
         agentId: z.string().optional(),
         // apiKey: z.string().optional(),
         // isRag: z.string().optional(),
