@@ -284,7 +284,8 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         message: "Missing API key. Please provide apiKey in request body.",
       })
     }
-    const [foundApiKey]= await db
+    // Decrypt and validate the API key
+    const [foundApiKey] = await db
       .select({
         agentId: apiKeys.agentId,
       })
@@ -298,7 +299,12 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         "Invalid API KEY",
       })
     }
-    c.set("apiKeyAuth", { agentId: foundApiKey.agentId })
+
+    // Set agentId in context for downstream handlers
+    c.set("agentId", foundApiKey.agentId)
+
+    Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
+    
     await next()
   } catch (error) {
     if (error instanceof HTTPException) {
@@ -712,12 +718,14 @@ export const AppRoutes = app
       "query",
       z.object({
         message: z.string(),
-        chatId: z.string().optional(),
-        modelId: z.string().optional(),
+        // chatId: z.string().optional(),
+        // modelId: z.string().optional(),
         isReasoningEnabled: z.string().optional(),
         agentId: z.string().optional(),
-        apiKey: z.string().optional(),
-        isRag: z.string().optional(),
+        // apiKey: z.string().optional(),
+        // isRag: z.string().optional(),
+        chunks: z.any(),
+        history: z.any(),
       }),
     ),
     AgentMessageCustomApi,
@@ -1006,11 +1014,15 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
-  .get("/agents/:agentId/api-key", GetAgentApiKeys)
+  
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
+  )
+  .get(
+    "/agents/:agentId/api-key",
+    GetAgentApiKeys
   )
   .get(
     "/admin/users/:userId/feedback",
