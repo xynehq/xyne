@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
+
 const {
   AwsAccessKey,
   AwsSecretKey,
@@ -22,6 +23,9 @@ const {
   GeminiAIModel,
   GeminiApiKey,
   aiProviderBaseUrl,
+  VertexProjectId,
+  VertexRegion,
+  VertexAIModel,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -91,6 +95,7 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
+import { VertexAiProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -200,6 +205,7 @@ let ollamaProvider: LLMProvider | null = null
 let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
+let vertexProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -268,6 +274,13 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if (VertexProjectId && VertexRegion) {
+    vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+    })
+  }
+
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
     Logger.warn(
       `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
@@ -283,6 +296,7 @@ const getProviders = (): {
   [AIProviders.Together]: LLMProvider | null
   [AIProviders.Fireworks]: LLMProvider | null
   [AIProviders.GoogleAI]: LLMProvider | null
+  [AIProviders.VertexAI]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -291,7 +305,8 @@ const getProviders = (): {
     !ollamaProvider &&
     !togetherProvider &&
     !fireworksProvider &&
-    !geminiProvider
+    !geminiProvider &&
+    !vertexProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -303,6 +318,7 @@ const getProviders = (): {
     [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
+    [AIProviders.VertexAI]: vertexProvider,
   }
 }
 
@@ -336,7 +352,9 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : null
+            : VertexAIModel
+              ? AIProviders.VertexAI
+              : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
@@ -1698,5 +1716,65 @@ export const extractEmailsFromContext = async (
       from: emails.from || [],
       to: emails.to || [],
     },
+  }
+}
+
+export const generateFollowUpQuestions = async (
+  userQuery: string,
+  systemPrompt: string,
+  params: ModelParams,
+): Promise<{ followUpQuestions: string[] }> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = systemPrompt
+    params.json = true
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: userQuery,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (text) {
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(
+          err,
+          `Failed to parse LLM output for follow-up questions: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+
+      if (jsonVal && Array.isArray(jsonVal.followUpQuestions)) {
+        return {
+          followUpQuestions: jsonVal.followUpQuestions.filter(
+            (q: any) => typeof q === "string" && q.trim().length > 0,
+          ),
+        }
+      } else {
+        Logger.error(
+          `LLM output did not contain valid follow-up questions. Raw output: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+    } else {
+      throw new Error("Could not get response from LLM")
+    }
+  } catch (error) {
+    Logger.error(error, "Error generating follow-up questions")
+    return { followUpQuestions: [] }
   }
 }

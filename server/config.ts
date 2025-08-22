@@ -3,6 +3,7 @@ import { Models } from "@/ai/types"
 let vespaBaseHost = "0.0.0.0"
 let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
+let metricsPort = process.env.METRICS_PORT || 3001
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
@@ -30,12 +31,16 @@ let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
 let GeminiApiKey = ""
+let VertexProjectId = ""
+let VertexRegion = ""
+let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
+const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -91,6 +96,14 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
+} else if (process.env["VERTEX_PROJECT_ID"] && process.env["VERTEX_REGION"]) {
+  VertexAIModel = process.env["VERTEX_AI_MODEL"] as Models
+  VertexProjectId = process.env["VERTEX_PROJECT_ID"]
+  VertexRegion = process.env["VERTEX_REGION"]
+  defaultFastModel = process.env["VERTEX_FAST_MODEL"]
+    ? (process.env["VERTEX_FAST_MODEL"] as Models)
+    : (VertexAIModel as Models)
+  defaultBestModel = VertexAIModel as Models
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -126,6 +139,7 @@ export default {
   vespaBaseHost,
   postgresBaseHost,
   port,
+  metricsPort,
   host,
   // slack oauth does not work on http
   slackHost,
@@ -139,6 +153,9 @@ export default {
   FireworksApiKey,
   GeminiAIModel,
   GeminiApiKey,
+  VertexAIModel,
+  VertexProjectId,
+  VertexRegion,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
@@ -167,4 +184,7 @@ export default {
     .filter((email) => email.length > 0),
   llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
   ragOffFeature,
+  AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
+  RefreshTokenTTL: 60 * 60 * 24 * 30, 
+  MAX_IMAGE_SIZE_BYTES,// Refresh token expires in 30 days
 }

@@ -171,6 +171,59 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
+
+// Helper function to append reasoning data to stream state
+const appendReasoningData = (streamState: StreamState, data: string) => {
+  try {
+    const stepData = JSON.parse(data)
+    
+    // If this is a valid reasoning step, add it as a new line
+    if (stepData.step || stepData.text) {
+      streamState.thinking += data + '\n'
+    } else {
+      // Fallback to simple text accumulation
+      streamState.thinking += data
+    }
+  } catch (e) {
+    // Not JSON, just add as text
+    streamState.thinking += data
+  }
+}
+
+export async function createAuthEventSource(url: string): Promise<EventSource> {
+  return new Promise((resolve, reject) => {
+    let triedRefresh = false
+
+    const make = () => {
+      const es = new EventSource(url, { withCredentials: true })
+
+      es.onopen = () => resolve(es)
+
+      es.onerror = async () => {
+        // es.close()
+
+        if (!triedRefresh) {
+          triedRefresh = true
+          // Attempt token refresh
+          const refresh = await fetch("/api/v1/refresh-token", {
+            method: "POST",
+            credentials: "include",
+          })
+          if (!refresh.ok) return reject(new Error("Token refresh failed"))
+
+          // Retry opening the stream
+          make()
+        } else {
+          reject(new Error("SSE connection failed after refresh"))
+        }
+      }
+    }
+
+    make()
+  })
+
+}
+
 // Start a new stream or continue existing one
 export const startStream = async (
   streamKey: string,
@@ -243,9 +296,19 @@ export const startStream = async (
     url.searchParams.append("agentId", agentIdToUse)
   }
 
-  const eventSource = new EventSource(url.toString(), {
-    withCredentials: true,
-  })
+  // Create EventSource with auth handling
+  let eventSource: EventSource
+  try {
+    eventSource = await createAuthEventSource(url.toString())
+  } catch (err) {
+    console.error("Failed to create EventSource:", err)
+    toast({
+      title: "Failed to create EventSource",
+      description: "Failed to create EventSource",
+      variant: "destructive",
+    })
+    return
+  }
 
   const streamState: StreamState = {
     es: eventSource,
@@ -269,7 +332,7 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
-    streamState.thinking += event.data
+    appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
   })
 
@@ -708,9 +771,18 @@ export const useChatStream = (
         )
       }
 
-      const eventSource = new EventSource(url.toString(), {
-        withCredentials: true,
-      })
+      let eventSource: EventSource
+      try {
+        eventSource = await createAuthEventSource(url.toString())
+      } catch (err) {
+        console.error("Failed to create EventSource:", err)
+        toast({
+          title: "Failed to create EventSource",
+          description: "Failed to create EventSource",
+          variant: "destructive",
+        })
+        return
+      }
 
       if (setRetryIsStreaming) {
         setRetryIsStreaming(true)
@@ -794,7 +866,8 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        streamState.thinking += event.data
+        
+        appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })
 

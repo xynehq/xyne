@@ -69,6 +69,8 @@ export const MinimalCitationSchema = z.object({
   app: z.nativeEnum(Apps),
   entity: entitySchema,
   threadId: z.string().optional(),
+  itemId: z.string().optional(),
+  clId: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
@@ -92,6 +94,15 @@ export interface MinimalAgentFragment {
 export const messageFeedbackSchema = z.object({
   messageId: z.string(),
   feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
+})
+
+// Enhanced feedback schema for new feedback system
+export const enhancedMessageFeedbackSchema = z.object({
+  messageId: z.string(),
+  type: z.enum(["like", "dislike"]),
+  customFeedback: z.string().optional(),
+  selectedOptions: z.array(z.string()).optional(),
+  shareChat: z.boolean().optional(), // New field for share chat option
 })
 
 export interface AgentTool {

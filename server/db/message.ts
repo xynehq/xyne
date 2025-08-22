@@ -1,12 +1,23 @@
 import { createId } from "@paralleldrive/cuid2"
 import {
   messages,
+  chats,
   selectMessageSchema,
   type InsertMessage,
   type SelectMessage,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
-import { and, asc, eq, lt, count, inArray, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  eq,
+  lt,
+  count,
+  inArray,
+  sql,
+  desc,
+  isNull,
+} from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -103,40 +114,49 @@ export async function getAllMessages({
 export async function getMessageCountsByChats({
   db,
   chatExternalIds,
-  email,
-  workspaceExternalId,
 }: {
   db: TxnOrClient
   chatExternalIds: string[]
-  email: string
-  workspaceExternalId: string
-}): Promise<Record<string, number>> {
+}): Promise<
+  Record<
+    string,
+    { messageCount: number; totalCost: number; totalTokens: number }
+  >
+> {
   if (chatExternalIds.length === 0) {
     return {}
   }
 
+  // Build a query to get message counts, cost, and tokens for each chat
   const result = await db
     .select({
-      chatExternalId: messages.chatExternalId,
+      chatExternalId: chats.externalId,
       messageCount: count(messages.externalId),
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
-    .from(messages)
-    .where(
-      and(
-        inArray(messages.chatExternalId, chatExternalIds),
-        eq(messages.email, email),
-        eq(messages.workspaceExternalId, workspaceExternalId),
-      ),
+    .from(chats)
+    .leftJoin(
+      messages,
+      and(eq(chats.id, messages.chatId), isNull(messages.deletedAt)),
     )
-    .groupBy(messages.chatExternalId)
+    .where(inArray(chats.externalId, chatExternalIds))
+    .groupBy(chats.externalId)
 
-  return result.reduce(
-    (acc, row) => {
-      acc[row.chatExternalId] = row.messageCount
-      return acc
-    },
-    {} as Record<string, number>,
-  )
+  // Convert to a map for easier lookup
+  const countMap: Record<
+    string,
+    { messageCount: number; totalCost: number; totalTokens: number }
+  > = {}
+  for (const row of result) {
+    countMap[row.chatExternalId] = {
+      messageCount: row.messageCount,
+      totalCost: Number(row.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(row.totalTokens) || 0, // bigint → string at runtime
+    }
+  }
+
+  return countMap
 }
 
 export async function getMessageFeedbackStats({
@@ -152,21 +172,39 @@ export async function getMessageFeedbackStats({
 }): Promise<{
   totalLikes: number
   totalDislikes: number
-  feedbackByChat: Record<string, { likes: number; dislikes: number }>
+  totalCost: number
+  totalTokens: number
+  feedbackByChat: Record<
+    string,
+    { likes: number; dislikes: number; cost: number; tokens: number }
+  >
+  feedbackMessages: Array<{
+    messageId: string
+    chatExternalId: string
+    type: "like" | "dislike"
+    feedbackText: string[]
+    timestamp: string
+  }>
 }> {
   if (chatExternalIds.length === 0) {
     return {
       totalLikes: 0,
       totalDislikes: 0,
+      totalCost: 0,
+      totalTokens: 0,
       feedbackByChat: {},
+      feedbackMessages: [],
     }
   }
 
+  // Get aggregated feedback counts, cost, and tokens
   const result = await db
     .select({
       chatExternalId: messages.chatExternalId,
-      likes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'like' THEN 1 ELSE 0 END)::int`,
-      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback} = 'dislike' THEN 1 ELSE 0 END)::int`,
+      likes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 ELSE 0 END)::int`,
+      dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
+      totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+      totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
     })
     .from(messages)
     .where(
@@ -174,31 +212,76 @@ export async function getMessageFeedbackStats({
         inArray(messages.chatExternalId, chatExternalIds),
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
-        inArray(messages.feedback, ["like", "dislike"]),
+        isNull(messages.deletedAt),
       ),
     )
     .groupBy(messages.chatExternalId)
 
+  // Get detailed feedback messages
+  const feedbackMessages = await db
+    .select({
+      messageId: messages.externalId,
+      chatExternalId: messages.chatExternalId,
+      feedback: messages.feedback,
+      updatedAt: messages.updatedAt,
+    })
+    .from(messages)
+    .where(
+      and(
+        inArray(messages.chatExternalId, chatExternalIds),
+        eq(messages.email, email),
+        eq(messages.workspaceExternalId, workspaceExternalId),
+        sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
+      ),
+    )
+    .orderBy(desc(messages.updatedAt))
+
   let totalLikes = 0
   let totalDislikes = 0
-  const feedbackByChat: Record<string, { likes: number; dislikes: number }> = {}
+  let totalCost = 0
+  let totalTokens = 0
+  const feedbackByChat: Record<
+    string,
+    { likes: number; dislikes: number; cost: number; tokens: number }
+  > = {}
 
-  // Initialize all chats with zero feedback
+  // Initialize all chats with zero feedback, cost, and tokens
   chatExternalIds.forEach((chatId) => {
-    feedbackByChat[chatId] = { likes: 0, dislikes: 0 }
+    feedbackByChat[chatId] = { likes: 0, dislikes: 0, cost: 0, tokens: 0 }
   })
 
-  // Populate with actual feedback counts
+  // Populate with actual feedback counts, cost, and tokens
   result.forEach((row) => {
     feedbackByChat[row.chatExternalId].likes = row.likes
     feedbackByChat[row.chatExternalId].dislikes = row.dislikes
+    feedbackByChat[row.chatExternalId].cost = Number(row.totalCost) || 0 // numeric → string at runtime
+    feedbackByChat[row.chatExternalId].tokens = Number(row.totalTokens) || 0 // bigint → string at runtime
     totalLikes += row.likes
     totalDislikes += row.dislikes
+    totalCost += Number(row.totalCost) || 0 // numeric → string at runtime
+    totalTokens += Number(row.totalTokens) || 0 // bigint → string at runtime
+  })
+
+  // Process detailed feedback messages
+  const processedFeedbackMessages = feedbackMessages.map((msg) => {
+    const feedbackData = msg.feedback as any
+    return {
+      messageId: msg.messageId,
+      chatExternalId: msg.chatExternalId,
+      type: (feedbackData?.type || "like") as "like" | "dislike",
+      feedbackText: Array.isArray(feedbackData?.feedback)
+        ? feedbackData.feedback.filter((text: string) => text && text.trim())
+        : [""],
+      timestamp: msg.updatedAt?.toISOString() || new Date().toISOString(),
+    }
   })
 
   return {
     totalLikes,
     totalDislikes,
+    totalCost,
+    totalTokens,
     feedbackByChat,
+    feedbackMessages: processedFeedbackMessages,
   }
 }

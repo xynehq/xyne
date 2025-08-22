@@ -47,7 +47,12 @@ import {
   type VespaUser,
 } from "@/search/types"
 
-import { searchToCitation } from "./utils"
+import {
+  getChannelIdsFromAgentPrompt,
+  isAppSelectionMap,
+  parseAppSelections,
+  searchToCitation,
+} from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
@@ -70,26 +75,57 @@ const Logger = getLogger(Subsystem.Chat)
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
   agentSpecificDataSourceIds: string[]
+  agentSpecificCollectionIds: string[]
+  agentSpecificCollectionFolderIds: string[]
+  agentSpecificCollectionFileIds: string[]
+  selectedItems: {}
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
+  let agentSpecificCollectionIds: string[] = []
+  let agentSpecificCollectionFolderIds: string[] = []
+  let agentSpecificCollectionFileIds: string[] = []
+  let selectedItem = {}
 
   if (!agentPrompt) {
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return {
+      agentAppEnums,
+      agentSpecificDataSourceIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
+      selectedItems: selectedItem,
+    }
   }
 
   let agentPromptData: { appIntegrations?: string[] } = {}
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(
+        agentPromptData.appIntegrations,
+      )
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      selectedItem = selectedItems
+      agentAppEnums = [...new Set(selectedApps)]
+      // Handle selectedItems logic...
+    }
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
     Logger.warn("Failed to parse agentPrompt JSON", {
       error,
       agentPrompt,
     })
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return {
+      agentAppEnums,
+      agentSpecificDataSourceIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
+      selectedItems: selectedItem,
+    }
   }
 
   if (
@@ -100,7 +136,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       "agentPromptData.appIntegrations is not an array or is missing",
       { agentPromptData },
     )
-    return { agentAppEnums, agentSpecificDataSourceIds }
+    return {
+      agentAppEnums,
+      agentSpecificDataSourceIds,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
+      selectedItems: selectedItem,
+    }
   }
 
   for (const integration of agentPromptData.appIntegrations) {
@@ -122,6 +165,30 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       continue
     }
 
+    // Handle collection IDs
+    if (integrationApp.startsWith("cl-")) {
+      // Entire collection - remove cl- prefix
+      const collectionId = integration.replace(/^cl[-_]/, "")
+      agentSpecificCollectionIds.push(collectionId)
+      continue
+    }
+
+    // Handle collection folder IDs
+    if (integrationApp.startsWith("clfd-")) {
+      // Collection folder - remove clfd- prefix
+      const collectionFolderId = integration.replace(/^clfd[-_]/, "")
+      agentSpecificCollectionFolderIds.push(collectionFolderId)
+      continue
+    }
+
+    // Handle collection file IDs
+    if (integrationApp.startsWith("clf-")) {
+      // Collection file - remove clf- prefix
+      const collectionFileId = integration.replace(/^clf[-_]/, "")
+      agentSpecificCollectionFileIds.push(collectionFileId)
+      continue
+    }
+
     const app = integrationApp as Apps
     if (app) {
       if (!agentAppEnums.includes(app)) {
@@ -135,7 +202,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   // Remove duplicates
   agentAppEnums = [...new Set(agentAppEnums)]
 
-  return { agentAppEnums, agentSpecificDataSourceIds }
+  return {
+    agentAppEnums,
+    agentSpecificDataSourceIds,
+    agentSpecificCollectionIds,
+    agentSpecificCollectionFolderIds,
+    agentSpecificCollectionFileIds,
+    selectedItems: selectedItem,
+  }
 }
 
 interface UnifiedSearchOptions {
@@ -156,6 +230,11 @@ interface UnifiedSearchOptions {
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
   intent?: Intent | null
+  channelIds?: string[]
+  selectedItems?: {}
+  collectionIds?: string[]
+  collectionFolderIds?: string[]
+  collectionFileIds?: string[]
 }
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
@@ -177,6 +256,11 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     span,
     schema,
     intent,
+    channelIds,
+    collectionIds,
+    collectionFolderIds,
+    collectionFileIds,
+    selectedItems,
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
@@ -190,6 +274,15 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   execSpan?.setAttribute("hasTimestampRange", !!timestampRange)
   execSpan?.setAttribute("hasExcludedIds", (excludedIds?.length || 0) > 0)
   execSpan?.setAttribute("hasAgentAppEnums", (agentAppEnums?.length || 0) > 0)
+  execSpan?.setAttribute("hasCollectionIds", (collectionIds?.length || 0) > 0)
+  execSpan?.setAttribute(
+    "hasCollectionFolderIds",
+    (collectionFolderIds?.length || 0) > 0,
+  )
+  execSpan?.setAttribute(
+    "hasCollectionFileIds",
+    (collectionFileIds?.length || 0) > 0,
+  )
 
   if (!email) {
     const errorMsg = "Email is required for search execution."
@@ -238,6 +331,26 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
               ? { from: fromTimestamp, to: toTimestamp }
               : undefined,
           dataSourceIds: options.dataSourceIds ?? undefined,
+          channelIds,
+          collectionSelections:
+            collectionIds?.length ||
+            collectionFolderIds?.length ||
+            collectionFileIds?.length
+              ? [
+                  {
+                    collectionIds: collectionIds?.length
+                      ? collectionIds
+                      : undefined,
+                    collectionFolderIds: collectionFolderIds?.length
+                      ? collectionFolderIds
+                      : undefined,
+                    collectionFileIds: collectionFileIds?.length
+                      ? collectionFileIds
+                      : undefined,
+                  },
+                ]
+              : undefined,
+          selectedItem: selectedItems,
         },
       )
     } else {
@@ -382,9 +495,17 @@ export const searchTool: AgentTool = {
         }
       }
 
-      const { agentAppEnums, agentSpecificDataSourceIds } =
-        parseAgentAppIntegrations(agentPrompt)
-
+      const {
+        agentAppEnums,
+        agentSpecificDataSourceIds,
+        agentSpecificCollectionIds,
+        agentSpecificCollectionFolderIds,
+        agentSpecificCollectionFileIds,
+        selectedItems,
+      } = parseAgentAppIntegrations(agentPrompt)
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
       return await executeVespaSearch({
         email,
         query: queryToUse,
@@ -393,6 +514,11 @@ export const searchTool: AgentTool = {
         agentAppEnums,
         span: execSpan,
         dataSourceIds: agentSpecificDataSourceIds,
+        channelIds,
+        collectionIds: agentSpecificCollectionIds,
+        collectionFolderIds: agentSpecificCollectionFolderIds,
+        collectionFileIds: agentSpecificCollectionFileIds,
+        selectedItems: selectedItems,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -526,7 +652,9 @@ export const metadataRetrievalTool: AgentTool = {
     execSpan?.setAttribute("offset", params.offset || 0)
     if (params.order_direction)
       execSpan?.setAttribute("order_direction_param", params.order_direction)
-
+    if (params.app == "googledrive") {
+      params.app = Apps.GoogleDrive
+    }
     try {
       let schema: VespaSchema
       let entity: Entity | null = null
@@ -587,9 +715,18 @@ export const metadataRetrievalTool: AgentTool = {
       Logger.debug(
         `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
       )
+      const channelIds = agentPrompt
+        ? await getChannelIdsFromAgentPrompt(agentPrompt)
+        : []
 
-      const { agentAppEnums, agentSpecificDataSourceIds } =
-        parseAgentAppIntegrations(agentPrompt)
+      const {
+        agentAppEnums,
+        agentSpecificDataSourceIds,
+        agentSpecificCollectionIds,
+        agentSpecificCollectionFolderIds,
+        agentSpecificCollectionFileIds,
+        selectedItems,
+      } = parseAgentAppIntegrations(agentPrompt)
 
       let resolvedIntent = params.intent || {}
       if (
@@ -622,8 +759,13 @@ export const metadataRetrievalTool: AgentTool = {
         span: execSpan,
         schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
         dataSourceIds: agentSpecificDataSourceIds,
+        collectionIds: agentSpecificCollectionIds,
+        collectionFolderIds: agentSpecificCollectionFolderIds,
+        collectionFileIds: agentSpecificCollectionFileIds,
         timestampRange: { from: params.from, to: params.to },
         intent: resolvedIntent,
+        channelIds: channelIds,
+        selectedItems: selectedItems,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -726,12 +868,21 @@ export const getSlackThreads: AgentTool = {
     }
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds = (selectedItems as Record<string, unknown>)[
+        Apps.Slack
+      ] as any
+      // if(selectedItems[Apps.Slack])
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack threads.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack threads.",
           contexts: [],
         }
       }
@@ -991,12 +1142,19 @@ export const getSlackMessagesFromUser: AgentTool = {
     }
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from user.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from user.",
           contexts: [],
         }
       }
@@ -1201,12 +1359,19 @@ export const getSlackRelatedMessages: AgentTool = {
     }
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve related Slack messages.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve related Slack messages.",
           contexts: [],
         }
       }
@@ -1387,12 +1552,19 @@ export const getUserSlackProfile: AgentTool = {
     execSpan?.setAttribute("target_user_email", params.user_email)
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve Slack user profile.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack user profile.",
           contexts: [],
         }
       }
@@ -1547,12 +1719,19 @@ export const getSlackMessagesFromChannel: AgentTool = {
     }
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from channel.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from channel.",
           contexts: [],
         }
       }
@@ -1745,12 +1924,19 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     }
 
     if (agentPrompt) {
-      const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
       execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      if (!agentAppEnums.includes(Apps.Slack)) {
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+      if (
+        !agentAppEnums.includes(Apps.Slack) &&
+        channelIds &&
+        channelIds.length === 0
+      ) {
         return {
           result:
-            "Slack is not an allowed app for this agent. Cannot retrieve messages from time range.",
+            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve messages from time range.",
           contexts: [],
         }
       }

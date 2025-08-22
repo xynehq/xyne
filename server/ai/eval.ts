@@ -526,8 +526,8 @@ const endToEndFlow = async (
   let citations = []
   let citationMap: Record<number, number> = {}
   let queryFilters = {
-    app: "",
-    entity: "",
+    apps: [],
+    entities: [],
     startTime: "",
     endTime: "",
     count: 0,
@@ -577,9 +577,8 @@ const endToEndFlow = async (
       filterQuery: parsed.filterQuery,
       filters: {
         ...parsed.filters,
-        app: parsed.filters.app as any,
-        entity: parsed.filters.entity as any,
-        offset: parsed.filters.offset || 0,
+        apps: parsed.filters.apps as Apps[],
+        entities: parsed.filters.entities as any,
       },
     }
 
