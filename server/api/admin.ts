@@ -4,8 +4,9 @@ import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import {
   syncConnectorTools,
   deleteToolsByConnectorId,
@@ -846,10 +847,8 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   }
   const [user] = userRes
   // @ts-ignore
-  const form: ApiKeyMCPConnector = c.req.valid("form")
-  const apiKey = form.apiKey
-  const url = form.url
-  const app = form.name
+  const form: ApiKeyMCPConnector = c.req.valid("json")
+  const { url, name: app, mode, headers } = form
   let status = ConnectorStatus.NotConnected
   try {
     // Insert the connection within the transaction
@@ -860,24 +859,70 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       user.workspaceExternalId,
       app,
       ConnectorType.MCP,
-      AuthType.ApiKey,
+      AuthType.Custom, // Using Custom AuthType for headers
       Apps.MCP,
-      { url: url, version: "0.1.0" },
+      { url: url, version: "0.1.0", mode: mode },
+      JSON.stringify(headers), // Storing headers in the encrypted credentials field
       null,
       null,
-      null,
-      apiKey,
-    )
+      null, // apiKey is no longer used
+    );
     try {
+      // Backwards compatibility logic demonstration for connection test
+      const loadedConfig = connector.config as {
+        url: string;
+        mode?: string;
+        version: string;
+      };
+      const loadedUrl = loadedConfig.url;
+      // Default to 'sse' for old connectors that won't have the mode field
+      const loadedMode = loadedConfig.mode || "sse";
+
+      let loadedHeaders: Record<string, string> = {};
+
+      if (connector.credentials) {
+        // New format: credentials contain the headers object. The custom type decrypts it.
+        loadedHeaders = JSON.parse(connector.credentials);
+      } else if (connector.apiKey) {
+        // Old format: for backwards compatibility.
+        loadedHeaders["Authorization"] = `Bearer ${connector.apiKey}`;
+      }
+
       const client = new Client({
         name: `connector-${connector.externalId}`,
         version: "0.1.0",
       })
       loggerWithChild({ email: sub }).info(
-        `invoking client initialize for url: ${new URL(url)}`,
-      )
-      await client.connect(new SSEClientTransport(new URL(url)))
-      status = ConnectorStatus.Connected
+        `invoking client initialize for url: ${new URL(
+          loadedUrl,
+        )} with mode: ${loadedMode}`,
+      );
+
+      if (loadedMode === "streamable-http") {
+        const transportOptions: StreamableHTTPClientTransportOptions = {
+          requestInit: {
+            headers: loadedHeaders,
+          },
+        };
+        await client.connect(
+          new StreamableHTTPClientTransport(
+            new URL(loadedUrl),
+            transportOptions,
+          ),
+        );
+      } else {
+        // Default to sse
+        const transportOptions: SSEClientTransportOptions = {
+          requestInit: {
+            headers: loadedHeaders,
+          },
+        };
+        await client.connect(
+          new SSEClientTransport(new URL(loadedUrl), transportOptions),
+        );
+      }
+
+      status = ConnectorStatus.Connected;
 
       // Fetch all available tools from the client
       // TODO: look in the DB. cache logic has to be discussed.
@@ -1065,7 +1110,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
         toolId: toolUpdate.toolId,
         success: false,
         error: getErrorMessage(error),
-      }
+    }
     }
   })
 

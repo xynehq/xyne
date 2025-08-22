@@ -117,10 +117,11 @@ export const addApiKeyConnectorSchema = z.object({
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
 export const addApiKeyMCPConnectorSchema = z.object({
-  apiKey: z.string(),
   url: z.string(),
   name: z.string(),
-})
+  mode: z.enum(["sse", "streamable-http"]),
+  headers: z.record(z.string()),
+});
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
