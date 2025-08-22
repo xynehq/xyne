@@ -23,6 +23,7 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
+  baselineCustomRAGOffJsonStream,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -2703,7 +2704,6 @@ async function* nonRagIterator(
 
 async function* customNonRagIterator(
   message: string,
-  userCtx: string,
   context: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string,
@@ -2718,9 +2718,8 @@ async function* customNonRagIterator(
     imageCitation?: ImageCitation
   }
 > {
-  const ragOffIterator = baselineRAGOffJsonStream(
+  const ragOffIterator = baselineCustomRAGOffJsonStream(
     message,
-    userCtx,
     context,
     {
       modelId: defaultBestModel,
@@ -3369,7 +3368,6 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
 
         const ragOffIterator = customNonRagIterator(
           message,
-          "",
           context,
           fragments,
           agentPromptForLLM,
