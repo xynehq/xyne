@@ -211,7 +211,7 @@ import {
 import { updateMetricsFromThread } from "@/metrics/utils"
 import { agents, apiKeys, type PublicUserWorkspace } from "./db/schema"
 import { AgentMessageCustomApi } from "./api/chat/agents"
-import {  eq } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -276,10 +276,12 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
   let apiKey: string
   try {
     // Extract API key from request body
-    apiKey = c.req.header('x-api-key') || c.req.query('api_key') as string
+    apiKey = c.req.header("x-api-key") || (c.req.query("api_key") as string)
 
     if (!apiKey) {
-      Logger.error("API key verification failed: Missing apiKey in request body")
+      Logger.error(
+        "API key verification failed: Missing apiKey in request body",
+      )
       throw new HTTPException(401, {
         message: "Missing API key. Please provide apiKey in request body.",
       })
@@ -290,13 +292,12 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         agentId: apiKeys.agentId,
       })
       .from(apiKeys)
-      .where(eq(apiKeys.key,apiKey ))
+      .where(eq(apiKeys.key, apiKey))
       .limit(1)
-      
+
     if (!foundApiKey) {
       throw new HTTPException(400, {
-      message:
-        "Invalid API KEY",
+        message: "Invalid API KEY",
       })
     }
 
@@ -304,7 +305,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     c.set("agentId", foundApiKey.agentId)
 
     Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
-    
+
     await next()
   } catch (error) {
     if (error instanceof HTTPException) {
@@ -312,8 +313,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     }
     Logger.warn("API key verification failed: Invalid JSON body")
     throw new HTTPException(400, {
-      message:
-        "Invalid API KEY",
+      message: "Invalid API KEY",
     })
   }
 }
@@ -711,7 +711,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
-  .get(
+  .post(
     "/agent/completion",
     ApiKeyMiddleware,
     zValidator(
@@ -1014,16 +1014,13 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
-  
+
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
-  .get(
-    "/agents/:agentId/api-key",
-    GetAgentApiKeys
-  )
+  .get("/agents/:agentId/api-key", GetAgentApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),

@@ -4563,7 +4563,6 @@ export const AgentMessageCustomApi = async (c: Context) => {
       chunks,
     } = body
 
-    // todo Validate the API key here
     const verifiedAgentId = c.get("apiKeyAuth") as string
     if(!verifiedAgentId || (agentId !== verifiedAgentId)){
       throw new HTTPException(403, {
