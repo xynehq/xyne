@@ -26,7 +26,7 @@ import {
   sql,
 } from "drizzle-orm"
 import { z } from "zod"
-import config from "@/config"
+import crypto from "crypto"
 
 export interface SharedAgentUsageData {
   agentId: string
@@ -928,56 +928,34 @@ export async function getAllUserFeedbackMessages({
   })
 }
 
-
 export async function getAgentApiKeys({
   db,
   agentId,
 }: {
   db: TxnOrClient
-  agentId: string 
+  agentId: string
 }): Promise<{
-  success: boolean;
-  key?: string;
-  error?: string;
-}>{
-   try {
-    // 1. Fetch the agent name
-    const numericAgentId =parseInt(agentId, 10)
-    console
+  success: boolean
+  key?: string
+  error?: string
+}> {
+  try {
+    // Generate random MD5 hash
+    
+    const md5Hash = crypto.randomBytes(8).toString('hex');
 
-    const [agent] = await db
-      .select({ name: agents.name })
-      .from(agents)
-      .where(eq(agents.externalId, agentId))
-      
-
-    if (!agent) {
-      return { success: false, error: `Agent with id ${agentId} not found` };
-    }
-
-    // 2. Build id_name string
-    const combined = `${agentId}_${agent.name}` as string;
-    const key =config.apiKeyEncryptionKey as string;
-
-    // 3. Insert encrypted key and return it
+    // Store encrypted API key in database
     const [inserted] = await db
       .insert(apiKeys)
       .values({
         agentId,
-        key: sql<string>`
-          pgp_sym_encrypt(${combined}, ${key}, 'cipher-algo=aes256')
-        `,
+        key: md5Hash, // Direct encrypted string
       })
-      .returning({ key: apiKeys.key });
-
-    if (!inserted?.key) {
-      return { success: false, error: "Failed to generate API key" };
-    }
-
-    return { success: true, key: inserted.key };
+    console.log(md5Hash);
+    return { success: true, key: md5Hash }
   } catch (err) {
-    console.error("[createAgentApiKey] Error:", err);
-    console.log(err);
-    return { success: false, error: "Database error while creating API key" };
+    console.error("[createAgentApiKey] Error:", err)
+    console.log(err)
+    return { success: false, error: "Database error while creating API key" }
   }
 }

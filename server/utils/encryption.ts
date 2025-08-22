@@ -17,6 +17,7 @@ export class Encryption {
     ) {
       throw new Error("Encryption key must be base64-encoded and 256-bit long.")
     }
+    
   }
 
   getKey() {
@@ -57,5 +58,22 @@ export class Encryption {
     let str = decipher.update(ciphertext, this.encoding, "utf8")
     str += decipher.final("utf8")
     return str
+  }
+  public hashOneWayScrypt(str: string): string {
+    // Use a fixed salt derived from the encryption key
+    const salt = crypto
+      .createHash("sha256")
+      .update(this.key + "api_key_salt_scrypt")
+      .digest()
+      .subarray(0, 32)
+
+    // Use scrypt with secure parameters
+    const hash = crypto.scryptSync(str, salt, 32, {
+      N: 16384,  // CPU/memory cost parameter
+      r: 8,      // Block size parameter
+      p: 1       // Parallelization parameter
+    })
+    
+    return hash.toString(this.encoding)
   }
 }
