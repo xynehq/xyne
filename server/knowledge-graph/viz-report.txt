@@ -1,0 +1,23 @@
+Knowledge Graph Summary Report
+========================================
+
+Total Entities: 8
+Total Relationships: 112
+
+Entity Types:
+  PERSON: 8
+
+Relationship Types:
+  WORKS_AT: 28
+  DEVELOPED: 28
+  CEO_OF: 14
+  ACQUIRED: 14
+  ADVISED: 14
+  SPECIALIZES_IN: 14
+
+Most Connected Entities:
+  1. John Smith (14 connections)
+  2. John Smith (14 connections)
+  3. John Smith (14 connections)
+  4. John Smith (14 connections)
+  5. John Smith (14 connections)

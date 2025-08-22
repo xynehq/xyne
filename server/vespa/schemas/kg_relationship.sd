@@ -1,0 +1,182 @@
+schema kg_relationship {
+  document kg_relationship {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    
+    field relationshipId type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+    
+    field sourceEntityId type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+    
+    field targetEntityId type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+    
+    field sourceEntityName type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+    
+    field targetEntityName type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+    
+    field relationshipType type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+    
+    field description type string {
+      indexing: index | summary
+      index {
+        enable-bm25
+      }
+    }
+    
+    field keywords type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    
+    field weight type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field strength type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field sourceDocuments type array<string> {
+      indexing: attribute | summary
+    }
+    
+    
+    field bidirectional type bool {
+      indexing: attribute | summary
+    }
+    
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field extractedBy type string {
+      indexing: attribute | summary
+    }
+    
+    field confidence type double {
+      indexing: attribute | summary
+    }
+    
+    field metadata type string {
+      indexing: summary
+    }
+  }
+
+  field relationship_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+    indexing: input description | embed | attribute | index
+    attribute: paged
+    attribute {
+      distance-metric: angular
+    }
+  }
+
+  fieldset default {
+    fields: sourceEntityName, targetEntityName, relationshipType, description, keywords
+  }
+
+  fieldset entity_relationships {
+    fields: sourceEntityName, targetEntityName
+  }
+
+  rank-profile relationship_search {
+    inputs {
+      query(e) tensor<bfloat16>(v[DIMS])
+      query(alpha) double: 0.5
+    }
+    
+    function vector_score() {
+      expression: closeness(field, relationship_embeddings)
+    }
+    
+    function text_score() {
+      expression: bm25(description) + bm25(keywords) + bm25(sourceEntityName) + bm25(targetEntityName)
+    }
+    
+    function weight_boost() {
+      expression: log(1 + attribute(weight))
+    }
+    
+    function strength_boost() {
+      expression: attribute(strength)
+    }
+    
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * text_score) + 0.1 * weight_boost + 0.1 * strength_boost
+    }
+    
+    match-features {
+      vector_score
+      text_score
+      weight_boost
+      strength_boost
+      bm25(description)
+      bm25(keywords)
+      bm25(sourceEntityName)
+      bm25(targetEntityName)
+    }
+  }
+  
+  rank-profile relationship_by_strength {
+    first-phase {
+      expression: attribute(strength) * attribute(weight)
+    }
+  }
+
+  document-summary default {
+    summary sourceEntityName {
+      source: sourceEntityName
+    }
+    summary targetEntityName {
+      source: targetEntityName
+    }
+    summary relationshipType {
+      source: relationshipType
+    }
+    summary description {
+      source: description
+    }
+    summary keywords {
+      source: keywords
+    }
+    summary weight {
+      source: weight
+    }
+    summary strength {
+      source: strength
+    }
+  }
+}

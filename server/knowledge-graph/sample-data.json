@@ -1,0 +1,270 @@
+{
+  "knowledge_graph_example": {
+    "description": "Sample knowledge graph data extracted from documents",
+    "sample_documents": [
+      {
+        "id": "doc_001",
+        "title": "Company Annual Report 2024",
+        "content": "John Smith, CEO of TechCorp, announced the acquisition of DataSystems Inc. The deal was finalized in San Francisco with the help of legal advisor Maria Rodriguez from LawFirm Partners. TechCorp specializes in artificial intelligence solutions while DataSystems focuses on cloud infrastructure."
+      },
+      {
+        "id": "doc_002",
+        "title": "Product Launch Press Release",
+        "content": "TechCorp's new AI platform, called IntelliCloud, was developed by the engineering team led by Dr. Sarah Chen. The platform integrates machine learning capabilities with cloud computing services. The launch event took place in New York, attended by industry analysts and technology journalists."
+      }
+    ],
+    "extracted_entities": [
+      {
+        "name": "John Smith",
+        "type": "PERSON",
+        "description": "CEO of TechCorp",
+        "properties": {
+          "role": "CEO",
+          "company": "TechCorp",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "name": "TechCorp",
+        "type": "ORGANIZATION",
+        "description": "Technology company specializing in artificial intelligence solutions",
+        "properties": {
+          "industry": "Technology",
+          "focus": "Artificial Intelligence",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "name": "DataSystems Inc",
+        "type": "ORGANIZATION",
+        "description": "Company focused on cloud infrastructure",
+        "properties": {
+          "industry": "Technology",
+          "focus": "Cloud Infrastructure",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "name": "San Francisco",
+        "type": "LOCATION",
+        "description": "City where the acquisition deal was finalized",
+        "properties": {
+          "type": "City",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "name": "Maria Rodriguez",
+        "type": "PERSON",
+        "description": "Legal advisor from LawFirm Partners",
+        "properties": {
+          "role": "Legal Advisor",
+          "company": "LawFirm Partners",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "name": "IntelliCloud",
+        "type": "PRODUCT",
+        "description": "AI platform that integrates machine learning with cloud computing",
+        "properties": {
+          "type": "AI Platform",
+          "developer": "TechCorp",
+          "source_document": "doc_002"
+        }
+      },
+      {
+        "name": "Dr. Sarah Chen",
+        "type": "PERSON",
+        "description": "Engineering team leader at TechCorp",
+        "properties": {
+          "role": "Engineering Team Leader",
+          "company": "TechCorp",
+          "title": "Dr.",
+          "source_document": "doc_002"
+        }
+      }
+    ],
+    "extracted_relationships": [
+      {
+        "source": "John Smith",
+        "target": "TechCorp",
+        "type": "CEO_OF",
+        "description": "John Smith is the CEO of TechCorp",
+        "confidence": 0.95,
+        "properties": {
+          "role": "leadership",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "source": "TechCorp",
+        "target": "DataSystems Inc",
+        "type": "ACQUIRED",
+        "description": "TechCorp acquired DataSystems Inc",
+        "confidence": 0.9,
+        "properties": {
+          "transaction_type": "acquisition",
+          "location": "San Francisco",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "source": "Maria Rodriguez",
+        "target": "LawFirm Partners",
+        "type": "WORKS_AT",
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "confidence": 0.9,
+        "properties": {
+          "role": "Legal Advisor",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "source": "Maria Rodriguez",
+        "target": "TechCorp",
+        "type": "ADVISED",
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "confidence": 0.85,
+        "properties": {
+          "service_type": "legal_advisory",
+          "context": "acquisition",
+          "source_document": "doc_001"
+        }
+      },
+      {
+        "source": "Dr. Sarah Chen",
+        "target": "TechCorp",
+        "type": "WORKS_AT",
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "confidence": 0.9,
+        "properties": {
+          "role": "Engineering Team Leader",
+          "source_document": "doc_002"
+        }
+      },
+      {
+        "source": "Dr. Sarah Chen",
+        "target": "IntelliCloud",
+        "type": "DEVELOPED",
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "confidence": 0.9,
+        "properties": {
+          "role": "Team Leader",
+          "contribution": "development_leadership",
+          "source_document": "doc_002"
+        }
+      },
+      {
+        "source": "TechCorp",
+        "target": "IntelliCloud",
+        "type": "DEVELOPED",
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "confidence": 0.95,
+        "properties": {
+          "product_type": "AI Platform",
+          "source_document": "doc_002"
+        }
+      },
+      {
+        "source": "TechCorp",
+        "target": "Artificial Intelligence",
+        "type": "SPECIALIZES_IN",
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "confidence": 0.9,
+        "properties": {
+          "business_focus": "primary",
+          "source_document": "doc_001"
+        }
+      }
+    ],
+    "sample_queries": {
+      "find_person_connections": {
+        "description": "Find all entities connected to John Smith",
+        "vespa_yql": "select * from kg_relationship where sourceEntityName contains 'John Smith' or targetEntityName contains 'John Smith'",
+        "expected_results": [
+          "TechCorp (CEO_OF relationship)",
+          "Connections through TechCorp to other entities"
+        ]
+      },
+      "company_relationships": {
+        "description": "Find all relationships involving TechCorp",
+        "vespa_yql": "select * from kg_relationship where sourceEntityName contains 'TechCorp' or targetEntityName contains 'TechCorp'",
+        "expected_results": [
+          "John Smith (CEO_OF)",
+          "DataSystems Inc (ACQUIRED)",
+          "IntelliCloud (DEVELOPED)",
+          "Dr. Sarah Chen (WORKS_AT)",
+          "Artificial Intelligence (SPECIALIZES_IN)"
+        ]
+      },
+      "product_development_chain": {
+        "description": "Trace the development of IntelliCloud",
+        "vespa_yql": "select * from kg_relationship where targetEntityName contains 'IntelliCloud'",
+        "expected_results": [
+          "TechCorp developed IntelliCloud",
+          "Dr. Sarah Chen led development"
+        ]
+      },
+      "organizational_structure": {
+        "description": "Find all people and their organizations",
+        "vespa_yql": "select * from kg_relationship where relationshipType contains 'WORKS_AT' or relationshipType contains 'CEO_OF'",
+        "expected_results": [
+          "John Smith -> TechCorp",
+          "Maria Rodriguez -> LawFirm Partners",
+          "Dr. Sarah Chen -> TechCorp"
+        ]
+      }
+    },
+    "graph_traversal_examples": {
+      "from_john_smith": {
+        "start_entity": "John Smith",
+        "max_depth": 3,
+        "expected_path": [
+          "John Smith -> CEO_OF -> TechCorp",
+          "TechCorp -> ACQUIRED -> DataSystems Inc",
+          "TechCorp -> DEVELOPED -> IntelliCloud",
+          "TechCorp -> SPECIALIZES_IN -> Artificial Intelligence"
+        ]
+      },
+      "product_ecosystem": {
+        "start_entity": "IntelliCloud",
+        "max_depth": 2,
+        "expected_path": [
+          "IntelliCloud -> DEVELOPED_BY -> TechCorp",
+          "IntelliCloud -> DEVELOPED_BY -> Dr. Sarah Chen",
+          "TechCorp -> CEO_OF -> John Smith"
+        ]
+      }
+    },
+    "analytics_insights": {
+      "entity_types_distribution": {
+        "PERSON": 3,
+        "ORGANIZATION": 3,
+        "LOCATION": 1,
+        "PRODUCT": 1,
+        "CONCEPT": 1
+      },
+      "relationship_types_distribution": {
+        "WORKS_AT": 2,
+        "CEO_OF": 1,
+        "ACQUIRED": 1,
+        "ADVISED": 1,
+        "DEVELOPED": 2,
+        "SPECIALIZES_IN": 1
+      },
+      "most_connected_entities": [
+        {
+          "entity": "TechCorp",
+          "connection_count": 6,
+          "centrality_score": 0.8
+        },
+        {
+          "entity": "John Smith",
+          "connection_count": 1,
+          "centrality_score": 0.4
+        }
+      ]
+    }
+  }
+}

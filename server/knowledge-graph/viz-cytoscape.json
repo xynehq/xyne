@@ -1,0 +1,2563 @@
+{
+  "elements": [
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "entity_john_smith_person",
+        "label": "John Smith",
+        "type": "PERSON",
+        "role": "CEO",
+        "company": "TechCorp",
+        "source_document": "doc_002",
+        "connectionCount": 14,
+        "created_at": 1755698443912,
+        "updated_at": 1755698443912
+      },
+      "style": {
+        "background-color": "#FF6B6B",
+        "width": 50,
+        "height": 50,
+        "label": "John Smith"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_001",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_001",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_001",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_john_smith_ceo_of_techcorp",
+        "source": "entity_john_smith_",
+        "target": "entity_techcorp_",
+        "label": "CEO OF",
+        "type": "CEO_OF",
+        "weight": 0.95,
+        "role": "leadership",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "John Smith is the CEO of TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#FF6B6B",
+        "target-arrow-color": "#FF6B6B",
+        "width": 4.75,
+        "label": "CEO OF"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_acquired_datasystems_inc",
+        "source": "entity_techcorp_",
+        "target": "entity_datasystems_inc_",
+        "label": "ACQUIRED",
+        "type": "ACQUIRED",
+        "weight": 0.9,
+        "transaction_type": "acquisition",
+        "location": "San Francisco",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp acquired DataSystems Inc",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "ACQUIRED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_works_at_lawfirm_partners",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_lawfirm_partners_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Legal Advisor",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Maria Rodriguez works at LawFirm Partners as legal advisor",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_maria_rodriguez_advised_techcorp",
+        "source": "entity_maria_rodriguez_",
+        "target": "entity_techcorp_",
+        "label": "ADVISED",
+        "type": "ADVISED",
+        "weight": 0.85,
+        "service_type": "legal_advisory",
+        "context": "acquisition",
+        "source_document": "doc_002",
+        "confidence": 0.85,
+        "description": "Maria Rodriguez provided legal advice for TechCorp's acquisition",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.25,
+        "label": "ADVISED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_works_at_techcorp",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_techcorp_",
+        "label": "WORKS AT",
+        "type": "WORKS_AT",
+        "weight": 0.9,
+        "role": "Engineering Team Leader",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen leads the engineering team at TechCorp",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "WORKS AT"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_dr._sarah_chen_developed_intellicloud",
+        "source": "entity_dr._sarah_chen_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.9,
+        "role": "Team Leader",
+        "contribution": "development_leadership",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "Dr. Sarah Chen led the team that developed IntelliCloud",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_developed_intellicloud",
+        "source": "entity_techcorp_",
+        "target": "entity_intellicloud_",
+        "label": "DEVELOPED",
+        "type": "DEVELOPED",
+        "weight": 0.95,
+        "product_type": "AI Platform",
+        "source_document": "doc_002",
+        "confidence": 0.95,
+        "description": "TechCorp developed the IntelliCloud AI platform",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.75,
+        "label": "DEVELOPED"
+      }
+    },
+    {
+      "data": {
+        "id": "rel_techcorp_specializes_in_artificial_intelligence",
+        "source": "entity_techcorp_",
+        "target": "entity_artificial_intelligence_",
+        "label": "SPECIALIZES IN",
+        "type": "SPECIALIZES_IN",
+        "weight": 0.9,
+        "business_focus": "primary",
+        "source_document": "doc_002",
+        "confidence": 0.9,
+        "description": "TechCorp specializes in artificial intelligence solutions",
+        "created_at": 1755698443912
+      },
+      "style": {
+        "line-color": "#BDC3C7",
+        "target-arrow-color": "#BDC3C7",
+        "width": 4.5,
+        "label": "SPECIALIZES IN"
+      }
+    }
+  ],
+  "totalNodes": 8,
+  "totalEdges": 112,
+  "entityTypes": {
+    "PERSON": 8
+  },
+  "relationshipTypes": {
+    "CEO_OF": 14,
+    "ACQUIRED": 14,
+    "WORKS_AT": 28,
+    "ADVISED": 14,
+    "DEVELOPED": 28,
+    "SPECIALIZES_IN": 14
+  }
+}

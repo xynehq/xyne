@@ -1,0 +1,191 @@
+schema kg_entity {
+  document kg_entity {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    
+    field entityId type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+    
+    field entityName type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+    
+    field entityType type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    
+    field description type string {
+      indexing: index | summary
+      index {
+        enable-bm25
+      }
+    }
+    
+    field keywords type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    
+    field sourceDocuments type array<string> {
+      indexing: attribute | summary
+    }
+    
+    field summaryChunks type array<string> {
+      indexing: attribute | summary
+    }
+    
+    field importance type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field degree type int {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field extractedBy type string {
+      indexing: attribute | summary
+    }
+    
+    field confidence type double {
+      indexing: attribute | summary
+    }
+    
+    field metadata type string {
+      indexing: summary
+    }
+  }
+
+  field entity_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+    indexing: input description | embed | attribute | index
+    attribute: paged
+    attribute {
+      distance-metric: angular
+    }
+  }
+  
+  field entityName_fuzzy type string {
+    indexing: input entityName | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
+  fieldset default {
+    fields: entityName, entityType, description, keywords
+  }
+
+  fieldset autocomplete {
+    fields: entityName, entityType
+  }
+
+  rank-profile entity_search {
+    inputs {
+      query(e) tensor<bfloat16>(v[DIMS])
+      query(alpha) double: 0.5
+    }
+    
+    function vector_score() {
+      expression: closeness(field, entity_embeddings)
+    }
+    
+    function text_score() {
+      expression: bm25(entityName) + bm25(description) + bm25(keywords)
+    }
+    
+    function importance_boost() {
+      expression: log(1 + attribute(importance))
+    }
+    
+    function degree_boost() {
+      expression: log(1 + attribute(degree))
+    }
+    
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * text_score) + 0.1 * importance_boost + 0.05 * degree_boost
+    }
+    
+    match-features {
+      vector_score
+      text_score
+      importance_boost
+      degree_boost
+      bm25(entityName)
+      bm25(description)
+      bm25(keywords)
+    }
+  }
+  
+  rank-profile entity_by_importance {
+    first-phase {
+      expression: attribute(importance) * attribute(degree)
+    }
+  }
+  
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(entityName_fuzzy) + bm25(entityName)
+    }
+    match-features {
+      bm25(entityName_fuzzy)
+      bm25(entityName)
+    }
+  }
+
+  document-summary default {
+    summary entityName {
+      source: entityName
+    }
+    summary entityType {
+      source: entityType
+    }
+    summary description {
+      source: description
+    }
+    summary keywords {
+      source: keywords
+    }
+    summary importance {
+      source: importance
+    }
+    summary degree {
+      source: degree
+    }
+  }
+
+  document-summary autocomplete {
+    summary entityName {
+      source: entityName
+    }
+    summary entityType {
+      source: entityType
+    }
+    summary docId {
+      source: docId
+    }
+  }
+}
