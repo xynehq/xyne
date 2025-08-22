@@ -101,6 +101,15 @@ export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
 >
 
+export const updateServiceConnectionSchema = z.object({
+  "service-key": z.any(),
+  connectorId: z.string(),
+})
+
+export type UpdateServiceAccountConnection = z.infer<
+  typeof updateServiceConnectionSchema
+>
+
 export const addApiKeyConnectorSchema = z.object({
   app: z.nativeEnum(Apps),
   apiKey: z.string(),
