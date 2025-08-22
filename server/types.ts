@@ -116,11 +116,17 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export enum MCPConnectorMode {
+  SSE = "sse",
+  StreamableHTTP = "streamable-http",
+}
+
 export const addApiKeyMCPConnectorSchema = z.object({
-  apiKey: z.string(),
-  url: z.string(),
+  url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
   name: z.string(),
-})
+  mode: z.nativeEnum(MCPConnectorMode),
+  headers: z.record(z.string()),
+});
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
@@ -424,6 +430,8 @@ export enum Platform {
   Slack = "slack",
 }
 
+
+
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
@@ -432,7 +440,10 @@ export const AnswerWithCitationsSchema = z.object({
 export const MCPClientConfig = z.object({
   url: z.string(),
   version: z.string(),
+  mode: z.nativeEnum(MCPConnectorMode).optional(),
 })
+
+export type MCPClientConfig = z.infer<typeof MCPClientConfig>
 
 export const MCPClientStdioConfig = z.object({
   command: z.string(),
