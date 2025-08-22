@@ -4669,8 +4669,8 @@ export const MessageApi = async (c: Context) => {
                 sortDirection,
                 startTime,
                 count,
-                offset,
-                intent: intent || {},
+                offset: offset || 0,
+                intent: intent || {}
               },
             } as QueryRouterLLMResponse
 
@@ -5893,6 +5893,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
+                  offset: parsed.filters.offset || 0, 
+                  intent: parsed.filters.intent || {}
                 },
               } as QueryRouterLLMResponse
 
