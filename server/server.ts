@@ -292,7 +292,8 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     }
     Logger.warn("API key verification failed: Invalid JSON body")
     throw new HTTPException(400, {
-      message: "Invalid request body. Please provide valid JSON with apiKey field.",
+      message:
+        "Invalid request body. Please provide valid JSON with apiKey field.",
     })
   }
 
@@ -308,12 +309,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
       })
       .from(apiKeys)
       .innerJoin(agents, eq(apiKeys.agentId, agents.id))
-      .where(
-        and(
-          eq(apiKeys.key, apiKey),
-          isNull(agents.deletedAt)
-        )
-      )
+      .where(and(eq(apiKeys.key, apiKey), isNull(agents.deletedAt)))
       .limit(1)
 
     if (result.length === 0) {
@@ -338,13 +334,13 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     c.set("agentId", agentId)
 
     Logger.info(`API key verified for agent ID: ${agentId}`)
-    
+
     await next()
   } catch (error) {
     if (error instanceof HTTPException) {
       throw error
     }
-    
+
     Logger.error("API key verification error:", error)
     throw new HTTPException(500, {
       message: "Internal server error during API key verification.",
@@ -751,21 +747,19 @@ export const AppRoutes = app
       "query",
       z.object({
         message: z.string(),
-        chatId: z.string().optional(),
-        modelId: z.string().optional(),
+        // chatId: z.string().optional(),
+        // modelId: z.string().optional(),
         isReasoningEnabled: z.string().optional(),
         agentId: z.string().optional(),
-        apiKey: z.string().optional(),
-        isRag: z.string().optional(),
-        chunks: z.any()
+        // apiKey: z.string().optional(),
+        // isRag: z.string().optional(),
+        chunks: z.any(),
+        history: z.any(),
       }),
     ),
     AgentMessageCustomApi,
   )
-  .get(
-    "/agents/:agentId/api-key",
-    GetAgentApiKeys,
-  )
+  .get("/agents/:agentId/api-key", GetAgentApiKeys)
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -1050,7 +1044,6 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
-  
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),

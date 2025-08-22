@@ -2701,6 +2701,115 @@ async function* nonRagIterator(
   }
 }
 
+async function* customNonRagIterator(
+  message: string,
+  userCtx: string,
+  context: string,
+  results: MinimalAgentFragment[],
+  agentPrompt?: string,
+  messages: Message[] = [],
+  imageFileNames: string[] = [],
+  attachmentFileIds?: string[],
+  email?: string,
+  isReasoning = true,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
+> {
+  const ragOffIterator = baselineRAGOffJsonStream(
+    message,
+    userCtx,
+    context,
+    {
+      modelId: defaultBestModel,
+      stream: true,
+      json: false,
+      reasoning: isReasoning,
+      imageFileNames,
+    },
+    agentPrompt ?? "",
+    messages,
+  )
+
+  // const previousResultsLength = 0
+  let buffer = ""
+  let thinking = ""
+  let reasoning = false
+  let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Map<number, Set<number>>()
+
+  for await (const chunk of ragOffIterator) {
+    try {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitationsForAgent(
+              thinking,
+              yieldedCitations,
+              results,
+              undefined,
+              email!,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+              yield* checkAndYieldCitationsForAgent(
+                thinking,
+                yieldedCitations,
+                results,
+                undefined,
+                email!,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+        if (!reasoning) {
+          buffer += chunk.text
+          yield { text: chunk.text }
+          yield* checkAndYieldCitationsForAgent(
+            buffer,
+            yieldedCitations,
+            results,
+            yieldedImageCitations,
+            email ?? "",
+          )
+        }
+      }
+
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+      if (chunk.metadata) {
+        yield { metadata: chunk.metadata }
+      }
+    } catch (e) {
+      Logger.error(`Error processing chunk: ${e}`)
+      continue
+    }
+  }
+}
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -3258,7 +3367,7 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
 
         context = JSON.parse(chunks).join(" ")
 
-        const ragOffIterator = nonRagIterator(
+        const ragOffIterator = customNonRagIterator(
           message,
           "",
           context,
@@ -3270,6 +3379,7 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
           "",
           isReasoningEnabled,
         )
+
         let answer = ""
         let citations: any[] = []
         let imageCitations: any[] = []
