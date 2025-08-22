@@ -3196,19 +3196,7 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
-  // let stream: any
-  // let chat: SelectChat
-  // let assistantMessageId: string | null = null
-  // let streamKey: string | null = null
-  // let email = ""
-
   try {
-    // const { sub, workspaceId } = c.get(JwtPayloadKey)
-    // email = sub
-    // loggerWithChild({ email: email }).info("AgentMessageApiRagOff..")
-    // rootSpan.setAttribute("email", email)
-    // rootSpan.setAttribute("workspaceId", workspaceId)
-
     // @ts-ignore
     const body = c.req.valid("query")
     const attachmentMetadata = parseAttachmentMetadata(c)
@@ -3248,46 +3236,14 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
-    let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
-    let chat: SelectChat
 
-    const chatCreationSpan = rootSpan.startSpan("chat_creation")
-
-    let title = ""
     return streamSSE(c, async (stream) => {
-      // streamKey = `${chat.externalId}` // Create the stream key
-      // activeStreams.set(streamKey, stream) // Add stream to the map
-      // Logger.info(`Added stream ${streamKey} to active streams map.`)
       let wasStreamClosedPrematurely = false
       const streamSpan = rootSpan.startSpan("stream_response")
-      // streamSpan.setAttribute("chatId", chat.externalId)
-      // const messagesWithNoErrResponse = messages
-      //   .slice(0, messages.length - 1)
-      //   .filter((msg) => !msg?.errorMessage)
-      //   .map((m) => ({
-      //     role: m.messageRole as ConversationRole,
-      //     content: [{ text: m.message }],
-      //   }))
       try {
-        // if (!chatId) {
-        //   const titleUpdateSpan = streamSpan.startSpan("send_title_update")
-        //   await stream.writeSSE({
-        //     data: title,
-        //     event: ChatSSEvents.ChatTitleUpdate,
-        //   })
-        //   titleUpdateSpan.end()
-        // }
-
         Logger.info("Chat stream started")
-        // we do not set the message Id as we don't have it
-        // await stream.writeSSE({
-        //   event: ChatSSEvents.ResponseMetadata,
-        //   data: JSON.stringify({
-        //     chatId: chat.externalId,
-        //   }),
-        // })
 
         const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
         const allDataSources = await getAllDocumentsForAgent(
@@ -3349,9 +3305,6 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
             const { index, item } = chunk.citation
             citations.push(item)
             citationMap[index] = citations.length - 1
-            // loggerWithChild({ email: sub }).info(
-            //   `Found citations and sending it, current count: ${citations.length}`,
-            // )
             stream.writeSSE({
               event: ChatSSEvents.CitationsUpdate,
               data: JSON.stringify({
@@ -3363,10 +3316,6 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
           }
 
           if (chunk.imageCitation) {
-            // loggerWithChild({ email: email }).info(
-            //   `Found image citation, sending it`,
-            //   { citationKey: chunk.imageCitation.citationKey },
-            // )
             imageCitations.push(chunk.imageCitation)
             stream.writeSSE({
               event: ChatSSEvents.ImageCitationUpdate,
@@ -3385,12 +3334,7 @@ export const AgentMessageCustomApiRagOff = async (c: Context) => {
           }
         }
       } catch (error) {
-        // ... (error handling as in AgentMessageApi)
       } finally {
-        // if (streamKey && activeStreams.has(streamKey)) {
-        //   activeStreams.delete(streamKey)
-        //   Logger.info(`Removed stream ${streamKey} from active streams map.`)
-        // }
       }
     })
   } catch (error) {
