@@ -114,7 +114,7 @@ schema kg_relationship {
 
   rank-profile relationship_search {
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])
+      query(e) tensor<bfloat16>(v[384])
       query(alpha) double: 0.5
     }
     
@@ -157,26 +157,14 @@ schema kg_relationship {
   }
 
   document-summary default {
-    summary sourceEntityName {
-      source: sourceEntityName
-    }
-    summary targetEntityName {
-      source: targetEntityName
-    }
-    summary relationshipType {
-      source: relationshipType
-    }
     summary description {
       source: description
     }
     summary keywords {
       source: keywords
     }
-    summary weight {
-      source: weight
-    }
-    summary strength {
-      source: strength
+    summary metadata {
+      source: metadata
     }
   }
 }

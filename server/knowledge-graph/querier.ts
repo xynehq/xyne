@@ -33,8 +33,8 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
     name: string,
     type?: string,
   ): Promise<VespaEntityDocument | null> {
-    const typeFilter = type ? ` and type contains "${type}"` : ""
-    const yql = `select * from kg_entity where name contains "${name}"${typeFilter}`
+    const typeFilter = type ? ` and entityType contains "${type}"` : ""
+    const yql = `select * from kg_entity where entityName contains "${name}"${typeFilter}`
 
     const response = await this.vespaClient.search({
       yql,
@@ -45,7 +45,7 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
   }
 
   async findEntitiesByType(type: string): Promise<VespaEntityDocument[]> {
-    const yql = `select * from kg_entity where type contains "${type}"`
+    const yql = `select * from kg_entity where entityType contains "${type}"`
 
     const response = await this.vespaClient.search({
       yql,
@@ -58,7 +58,7 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
   async findRelationships(
     entityName: string,
   ): Promise<VespaRelationshipDocument[]> {
-    const yql = `select * from kg_relationship where source_entity contains "${entityName}" or target_entity contains "${entityName}"`
+    const yql = `select * from kg_relationship where sourceEntityName contains "${entityName}" or targetEntityName contains "${entityName}"`
 
     const response = await this.vespaClient.search({
       yql,
@@ -104,7 +104,7 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
 
         // Find the connected entity
         const connectedEntity =
-          rel.source_entity === entity ? rel.target_entity : rel.source_entity
+          rel.sourceEntityName === entity ? rel.targetEntityName : rel.sourceEntityName
 
         if (!visitedEntities.has(connectedEntity)) {
           visitedEntities.add(connectedEntity)
@@ -145,12 +145,22 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
   }
 
   async searchEntities(query: string): Promise<VespaEntityDocument[]> {
-    const yql = `select * from kg_entity where name contains "${query}" or description contains "${query}"`
+    const yql = `select * from kg_entity where entityName contains "${query}" or description contains "${query}"`
 
     const response = await this.vespaClient.search({
       yql,
       hits: 50,
-      ranking: "semantic_similarity",
+    })
+
+    return response.root?.children?.map((hit: any) => hit.fields) || []
+  }
+
+  async getAllRelationships(limit: number = 200): Promise<VespaRelationshipDocument[]> {
+    const yql = `select * from kg_relationship where true`
+
+    const response = await this.vespaClient.search({
+      yql,
+      hits: limit,
     })
 
     return response.root?.children?.map((hit: any) => hit.fields) || []
@@ -161,10 +171,10 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
     relationshipType: string,
     targetEntity?: string,
   ): Promise<VespaEntityDocument[]> {
-    let yql = `select * from kg_relationship where relationship_type contains "${relationshipType}"`
+    let yql = `select * from kg_relationship where relationshipType contains "${relationshipType}"`
 
     if (targetEntity) {
-      yql += ` and target_entity contains "${targetEntity}"`
+      yql += ` and targetEntityName contains "${targetEntity}"`
     }
 
     const relationshipResponse = await this.vespaClient.search({
@@ -179,7 +189,7 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
     const sourceEntities = [
       ...new Set(
         relationships.map(
-          (rel: VespaRelationshipDocument) => rel.source_entity,
+          (rel: VespaRelationshipDocument) => rel.sourceEntityName,
         ),
       ),
     ]
@@ -207,39 +217,39 @@ export class VespaKnowledgeGraphQuerier implements KnowledgeGraphQuery {
   }> {
     // Count entities
     const entityCountResponse = await this.vespaClient.search({
-      yql: "select * from kg_entity",
+      yql: "select * from kg_entity where true limit 0",
       hits: 0,
     })
 
     // Count relationships
     const relationshipCountResponse = await this.vespaClient.search({
-      yql: "select * from kg_relationship",
+      yql: "select * from kg_relationship where true limit 0",
       hits: 0,
     })
 
-    // Get all relationships for type analysis
+    // Get all relationships for type analysis (respecting Vespa limit)
     const allRelationships = await this.vespaClient.search({
-      yql: "select relationship_type from kg_relationship",
-      hits: 1000,
+      yql: "select relationshipType from kg_relationship where true",
+      hits: 400,
     })
 
-    // Get all entities for type analysis
+    // Get all entities for type analysis (respecting Vespa limit)
     const allEntities = await this.vespaClient.search({
-      yql: "select type from kg_entity",
-      hits: 1000,
+      yql: "select entityType from kg_entity where true",
+      hits: 400,
     })
 
     // Aggregate relationship types
     const relationshipTypes: Record<string, number> = {}
     for (const hit of allRelationships.root?.children || []) {
-      const type = hit.fields.relationship_type
+      const type = hit.fields.relationshipType
       relationshipTypes[type] = (relationshipTypes[type] || 0) + 1
     }
 
     // Aggregate entity types
     const entityTypes: Record<string, number> = {}
     for (const hit of allEntities.root?.children || []) {
-      const type = hit.fields.type
+      const type = hit.fields.entityType
       entityTypes[type] = (entityTypes[type] || 0) + 1
     }
 

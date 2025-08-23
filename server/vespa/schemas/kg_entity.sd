@@ -157,35 +157,20 @@ schema kg_entity {
   }
 
   document-summary default {
-    summary entityName {
-      source: entityName
-    }
-    summary entityType {
-      source: entityType
-    }
     summary description {
       source: description
     }
     summary keywords {
       source: keywords
     }
-    summary importance {
-      source: importance
-    }
-    summary degree {
-      source: degree
+    summary metadata {
+      source: metadata
     }
   }
 
   document-summary autocomplete {
-    summary entityName {
-      source: entityName
-    }
-    summary entityType {
-      source: entityType
-    }
-    summary docId {
-      source: docId
+    summary description {
+      source: description
     }
   }
 }

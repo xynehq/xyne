@@ -182,6 +182,10 @@ import {
   GetFileContentApi,
 } from "@/api/knowledgeBase"
 
+// Import knowledge graph API
+import kgApi from "@/knowledge-graph/kg-api"
+import path from "path"
+
 import {
   isSlackEnabled,
   startSocketMode,
@@ -956,6 +960,39 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetAllUserFeedbackMessages,
   )
+
+// Knowledge Graph Routes
+app.route('/api/v1/kg', kgApi)
+
+
+// Health check endpoint for knowledge graph
+app.get('/api/v1/kg-health', (c) => {
+  return c.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    service: 'Knowledge Graph API'
+  })
+})
+
+// API info endpoint for knowledge graph
+app.get('/api/v1/kg-info', (c) => {
+  return c.json({
+    name: 'Knowledge Graph API',
+    version: '1.0.0',
+    endpoints: {
+      entity: '/api/v1/kg/entity/:name',
+      entities_by_type: '/api/v1/kg/entities/type/:type',
+      relationships: '/api/v1/kg/relationships/:entityName',
+      traverse: '/api/v1/kg/traverse/:startEntity',
+      search: '/api/v1/kg/search?q=query',
+      stats: '/api/v1/kg/stats',
+      visualize: '/api/v1/kg/visualize/:entityName',
+      types: '/api/v1/kg/types'
+    },
+    visualizer: '/kg-visualizer',
+    docs: 'https://your-docs-url.com'
+  })
+})
 
 // Vespa Proxy Routes (for production server proxying)
 app

@@ -2,8 +2,8 @@ import type { Entity, Relationship } from "./extractor"
 
 export interface VespaEntityDocument {
   id: string
-  name: string
-  type: string
+  entityName: string
+  entityType: string
   description?: string
   properties: Record<string, any>
   embeddings?: number[]
@@ -13,9 +13,9 @@ export interface VespaEntityDocument {
 
 export interface VespaRelationshipDocument {
   id: string
-  source_entity: string
-  target_entity: string
-  relationship_type: string
+  sourceEntityName: string
+  targetEntityName: string
+  relationshipType: string
   description?: string
   confidence: number
   properties: Record<string, any>
@@ -40,8 +40,8 @@ export class VespaKnowledgeGraphBuilder {
 
     return {
       id: this.generateEntityId(entity),
-      name: entity.name,
-      type: entity.type,
+      entityName: entity.name,
+      entityType: entity.type,
       description: entity.description,
       properties: entity.properties || {},
       created_at: now,
@@ -56,9 +56,9 @@ export class VespaKnowledgeGraphBuilder {
 
     return {
       id: this.generateRelationshipId(relationship),
-      source_entity: relationship.source,
-      target_entity: relationship.target,
-      relationship_type: relationship.type,
+      sourceEntityName: relationship.source,
+      targetEntityName: relationship.target,
+      relationshipType: relationship.type,
       description: relationship.description,
       confidence: relationship.confidence || 0.8,
       properties: relationship.properties || {},

@@ -32,6 +32,8 @@
             <document type="datasource" mode="index" global="true" />
             <document type="datasource_file" mode="index" />
             <document type="kb_items" mode="index"/>
+            <document type="kg_entity" mode="index"/>
+            <document type="kg_relationship" mode="index"/>
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />
