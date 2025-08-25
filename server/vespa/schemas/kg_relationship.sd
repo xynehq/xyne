@@ -59,15 +59,9 @@ schema kg_relationship {
       attribute: fast-search
     }
     
-    field strength type double {
-      indexing: attribute | summary
-      attribute: fast-search
-    }
-    
-    field sourceDocuments type array<string> {
-      indexing: attribute | summary
-    }
-    
+    # field sourceDocuments type array<string> {
+    #   indexing: attribute | summary
+    # }
     
     field bidirectional type bool {
       indexing: attribute | summary

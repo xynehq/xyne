@@ -35,20 +35,15 @@ schema kg_entity {
       index: enable-bm25
     }
     
-    field sourceDocuments type array<string> {
-      indexing: attribute | summary
-    }
+    # field sourceDocuments type array<string> {
+    #   indexing: attribute | summary
+    # }
     
     field summaryChunks type array<string> {
       indexing: attribute | summary
     }
     
     field importance type double {
-      indexing: attribute | summary
-      attribute: fast-search
-    }
-    
-    field degree type int {
       indexing: attribute | summary
       attribute: fast-search
     }
@@ -61,14 +56,6 @@ schema kg_entity {
     field updatedAt type long {
       indexing: attribute | summary
       attribute: fast-search
-    }
-    
-    field extractedBy type string {
-      indexing: attribute | summary
-    }
-    
-    field confidence type double {
-      indexing: attribute | summary
     }
     
     field metadata type string {
