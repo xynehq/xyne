@@ -922,6 +922,7 @@ export const AppRoutes = app
   .get("/connectors/all", GetConnectors)
   .get("/oauth/global-slack-provider", GetProviders)
 
+
   // Admin Routes
   .basePath("/admin")
   .use("*", AdminRoleMiddleware)

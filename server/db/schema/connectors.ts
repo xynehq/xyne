@@ -8,12 +8,13 @@ import {
   jsonb,
   pgEnum,
   unique,
+  check,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { encryptedText } from "../customType"
 import { Encryption } from "@/utils/encryption"
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType, McpScope } from "@/shared/types"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
 
@@ -52,6 +53,11 @@ export const statusEnum = pgEnum(
   Object.values(ConnectorStatus) as [string, ...string[]],
 )
 
+export const connectorScopeEnum = pgEnum(
+  "connector_scope",
+  Object.values(McpScope) as [string, ...string[]],
+)
+
 // Connectors Table
 // data source + credentails(if needed) + status of ingestion job
 // for OAuth the setup data is in the OAuth Provider
@@ -82,6 +88,7 @@ export const connectors = pgTable(
     // by default when created will be in the connecting status
     // for oauth we must send not connected when first created
     status: statusEnum("status").notNull().default(ConnectorStatus.Connecting),
+    scope: connectorScopeEnum("scope").notNull().default(McpScope.Private),
     // TODO: add these fields
     // accessTokenExpiresAt:
     // refreshTokenExpiresAt:
@@ -105,6 +112,7 @@ export const connectors = pgTable(
       t.authType,
       t.name,
     ),
+
   }),
 )
 

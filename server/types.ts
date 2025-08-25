@@ -6,6 +6,7 @@ import {
   AuthType,
   ConnectorStatus,
   DriveEntity,
+  McpScope,
   SlackEntity,
 } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
@@ -171,7 +172,8 @@ export const addApiKeyMCPConnectorSchema = z.object({
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
   headers: z.record(z.string()),
-});
+  scope: z.nativeEnum(McpScope).optional(),
+})
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 

@@ -13,8 +13,8 @@ import {
 } from "./schema"
 import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
-import { and, eq } from "drizzle-orm"
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
+import { and, eq, or } from "drizzle-orm"
+import { Apps, AuthType, ConnectorStatus, ConnectorType, UserRole, McpScope } from "@/shared/types" // ConnectorType added
 import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
@@ -47,6 +47,7 @@ export const insertConnector = async (
   oauthCredentials?: string | null,
   apiKey?: string | null,
   status?: ConnectorStatus | null,
+  scope?: McpScope | null,
 ) => {
   const externalId = createId() // Generate unique external ID
   try {
@@ -67,6 +68,8 @@ export const insertConnector = async (
         oauthCredentials,
         apiKey,
         ...(status ? { status } : {}),
+        ...(scope ? { scope } : {}),
+
       })
       .returning()
     Logger.info("Connection inserted successfully")
@@ -84,7 +87,14 @@ export const insertConnector = async (
 }
 
 // for the admin we can get all the connectors
-export const getConnectors = async (workspaceId: string, userId: number) => {
+export const getConnectors = async (
+  workspaceId: string,
+  userId: number,
+) => {
+  let scopeConditions = or(
+      and(eq(connectors.scope, McpScope.Private), eq(connectors.userId, userId)),
+      eq(connectors.scope, McpScope.Global),
+    )
   const res = await db
     .select({
       id: connectors.externalId,
@@ -94,17 +104,13 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       authType: connectors.authType,
       type: connectors.type,
       status: connectors.status,
+      scope: connectors.scope,
       createdAt: connectors.createdAt,
       config: connectors.config,
       connectorId: connectors.id,
     })
     .from(connectors)
-    .where(
-      and(
-        eq(connectors.workspaceExternalId, workspaceId),
-        eq(connectors.userId, userId),
-      ),
-    )
+    .where(and(eq(connectors.workspaceExternalId, workspaceId), scopeConditions))
   return res
 }
 
