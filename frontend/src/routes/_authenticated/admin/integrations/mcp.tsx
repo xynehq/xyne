@@ -153,13 +153,13 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
     name: string;
     url: string;
     mode: "sse" | "streamable-http";
-    headers: { key: string; value: string }[];
+    headers: { u_id: number; key: string; value: string }[];
   }>({
     defaultValues: {
       name: "",
       url: "",
       mode: "sse",
-      headers: [{ key: "", value: "" }],
+      headers: [{ u_id: Date.now(), key: "", value: "" }],
     },
     onSubmit: async ({ value }) => {
       try {
@@ -291,8 +291,9 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
             return (
               <div className="space-y-2 mt-1">
                 {field.state.value.map((header, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <div key={header.u_id} className="flex items-center gap-2">
                     <form.Field
+                      key={`headers[${index}].key`}
                       name={`headers[${index}].key`}
                       children={(subField) => (
                         <Input
@@ -306,6 +307,7 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
                       )}
                     />
                     <form.Field
+                      key={`headers[${index}].value`}
                       name={`headers[${index}].value`}
                       children={(subField) => (
                         <Input
@@ -332,7 +334,8 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
                   type="button"
                   variant="outline"
                   className="w-full mt-2"
-                  onClick={() => field.pushValue({ key: "", value: "" })}
+                  onClick={() => field.pushValue({ u_id: Date.now() /* using Date.now() here so that we can keep this as key for our list */
+                                                  , key: "", value: "" })}
                 >
                   <PlusCircle className="h-4 w-4 mr-2" />
                   Add Header

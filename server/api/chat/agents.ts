@@ -1128,7 +1128,15 @@ export const MessageWithToolsApi = async (c: Context) => {
                   let loadedHeaders: Record<string, string> = {}
                   if (connector.credentials) {
                     // New format: credentials contain the headers object
-                    loadedHeaders = JSON.parse(connector.credentials)
+                    try {
+                      loadedHeaders = JSON.parse(connector.credentials)
+                    } catch (error) {
+                      loggerWithChild({ email: sub }).error(
+                        error,
+                        `Failed to parse connector credentials for connectorId: ${connectorId}. Using empty headers.`,
+                      )
+                      loadedHeaders = {}
+                    }
                   } else if (connector.apiKey) {
                     // Old format: for backwards compatibility
                     loadedHeaders["Authorization"] =
