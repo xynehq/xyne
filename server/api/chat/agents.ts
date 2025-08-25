@@ -193,6 +193,11 @@ import {
   type Agent as JAFAgent,
   type Tool as JAFTool,
   type Message as JAFMessage,
+  type RunConfig as JAFRunConfig,
+  type RunState as JAFRunState,
+  type RunResult as JAFRunResult,
+  type TraceEvent as JAFTraceEvent,
+  type JAFError,
 } from "@xynehq/jaf"
 import { makeLiteLLMProvider } from "@xynehq/jaf"
 import {
@@ -634,7 +639,6 @@ const addErrMessageToMessage = async (
   }
 }
 export const MessageWithToolsApi = async (c: Context) => {
-  console.log("MessageWithToolsApi called")
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
 
@@ -842,7 +846,6 @@ export const MessageWithToolsApi = async (c: Context) => {
       chat = existingChat
       chatCreationSpan.end()
     }
-    console.log("toolsList", toolsList, isAgentic, agentPromptValue)
     return streamSSE(
       c,
       async (stream) => {
@@ -1306,11 +1309,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             process.env.LITELLM_API_KEY
           )
 
-          const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, any>>([
+          const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
             [jafAgent.name, jafAgent],
           ])
 
-          const runState = {
+          const runState: JAFRunState<JAFAdapterCtx> = {
             runId,
             traceId,
             messages: initialMessages,
@@ -1319,7 +1322,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             turnCount: 0,
           }
 
-          const runCfg = {
+          const runCfg: JAFRunConfig<JAFAdapterCtx> = {
             agentRegistry,
             modelProvider,
             maxTurns: 10
@@ -1330,15 +1333,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Stream JAF events → existing SSE protocol
           const yieldedCitations = new Set<number>()
           const yieldedImageCitations = new Map<number, Set<number>>()
-          for await (const evt of runStream<JAFAdapterCtx, string>(
-            runState,
-            runCfg as any,
-          )) {
+          for await (const evt of runStream<JAFAdapterCtx, string>(runState, runCfg)) {
             if (stream.closed) {
               wasStreamClosedPrematurely = true
               break
             }
-            console.log("JAF event:", evt)
             switch (evt.type) {
               case "turn_start": {
                 await stream.writeSSE({
@@ -1400,7 +1399,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                 break
               }
               case "tool_call_end": {
-                const contexts = (evt.data as any)?.toolResult?.metadata?.contexts
+                type ToolCallEndEventData = Extract<
+                  JAFTraceEvent,
+                  { type: "tool_call_end" }
+                >["data"]
+                const contexts = (evt.data as ToolCallEndEventData)?.toolResult?.metadata?.contexts
                 if (Array.isArray(contexts) && contexts.length) {
                   gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
                 }
@@ -1537,7 +1540,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 break
               }
               case "run_end": {
-                const outcome = evt.data.outcome as any
+                const outcome = evt.data.outcome as JAFRunResult<string>["outcome"]
                 if (outcome?.status === "completed") {
                   const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
                   const totalTokens = tokenArr.reduce(
@@ -1583,12 +1586,36 @@ export const MessageWithToolsApi = async (c: Context) => {
                       messageId: lastMessage.externalId,
                     }),
                   })
+                  const err = outcome?.error as JAFError | undefined
+                  const errTag = err?._tag || "run_error"
+                  let errMsg = "Model did not return a response."
+                  if (err) {
+                    switch (err._tag) {
+                      case "ModelBehaviorError":
+                      case "ToolCallError":
+                      case "HandoffError":
+                        errMsg = err.detail
+                        break
+                      case "InputGuardrailTripwire":
+                      case "OutputGuardrailTripwire":
+                        errMsg = err.reason
+                        break
+                      case "DecodeError":
+                        errMsg = "Failed to decode model output"
+                        break
+                      case "AgentNotFound":
+                        errMsg = `Agent not found: ${err.agentName}`
+                        break
+                      case "MaxTurnsExceeded":
+                        errMsg = `Max turns exceeded: ${err.turns}`
+                        break
+                      default:
+                        errMsg = errTag
+                    }
+                  }
                   const errPayload = {
-                    error: (outcome?.error?._tag as string) || "run_error",
-                    message:
-                      (outcome?.error?.detail as string) ||
-                      (outcome?.error?.reason as string) ||
-                      "Model did not return a response.",
+                    error: errTag,
+                    message: errMsg,
                   }
                   await stream.writeSSE({
                     event: ChatSSEvents.Error,
@@ -1607,14 +1634,41 @@ export const MessageWithToolsApi = async (c: Context) => {
           rootSpan.end()
           return
         } finally {
-          // Clean up resources
+          // Cleanup MCP clients to prevent memory leaks
+          for (const client of mcpClients) {
+            try {
+              await client.close()
+            } catch (error) {
+              loggerWithChild({ email: sub }).error(
+                error,
+                "Failed to close MCP client",
+              )
+            }
+          }
+
+          // Remove stream from active streams map
+          if (streamKey && activeStreams.has(streamKey)) {
+            activeStreams.delete(streamKey)
+            loggerWithChild({ email: sub }).info(
+              `Removed stream ${streamKey} from active streams map.`,
+            )
+          }
+
+          // Close SSE stream (defensive)
           if (stream) {
             await stream.close()
           }
         }
     })
-  } catch (e) {
-    Logger.error(`Error in AgentMessageApiRagOff: ${e}`)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      error,
+      "MessageWithToolsApi failed before stream start",
+    )
+    // If streaming hasn't started yet, surface a proper HTTP error to the client
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
   }
 }
 

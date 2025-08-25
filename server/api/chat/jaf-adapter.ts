@@ -109,13 +109,21 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<any, JAFAdapt
           try {
             const mcpResp = await info.client.callTool({ name: toolName, arguments: args })
             let formattedContent = "Tool executed successfully."
-            const newFragments: MinimalAgentFragment[] = []
+            let newFragments: MinimalAgentFragment[] = []
 
             // Best-effort parse of MCP response content
             try {
               const content = mcpResp?.content?.[0]?.text
               if (typeof content === "string" && content.trim().length > 0) {
                 formattedContent = content
+              }
+              // Opportunistically forward contexts if MCP server provides them
+              const maybeContexts =
+                mcpResp?.metadata?.contexts ??
+                mcpResp?.contexts ??
+                mcpResp?.data?.contexts
+              if (Array.isArray(maybeContexts)) {
+                newFragments = maybeContexts as MinimalAgentFragment[]
               }
             } catch {
               // ignore
@@ -148,4 +156,3 @@ export function buildContextSection(fragments: MinimalAgentFragment[], maxItems 
   const ctx = answerContextMapFromFragments(fragments.slice(0, maxItems), maxItems)
   return `\n\nContext Fragments (use [n] to cite):\n${ctx}`
 }
-
