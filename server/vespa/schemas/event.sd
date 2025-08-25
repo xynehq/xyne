@@ -132,6 +132,9 @@ schema event {
         field defaultStartTime type bool {
             indexing: attribute | summary
         }
+        field entityTags type array<string> {
+           indexing: attribute | summary
+        }
     }
 
      field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {

@@ -137,6 +137,9 @@ schema user {
             indexing: index | attribute | summary
             match: exact
         }
+        field entityTags type array<string> {
+            indexing: attribute | summary
+        }
     }
 
     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {

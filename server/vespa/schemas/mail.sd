@@ -105,6 +105,10 @@ schema mail {
       indexing: attribute | summary | index
       attribute: fast-search
     }
+
+    field entityTags type array<string> {
+      indexing: attribute | summary
+    }
   }
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index

@@ -74,6 +74,10 @@ schema file {
     field metadata type string {
       indexing: attribute | summary
     }
+
+    field entityTags type array<string> {
+      indexing: attribute | summary
+    }
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
