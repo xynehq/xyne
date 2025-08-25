@@ -3734,7 +3734,7 @@ export const AgentMessageApi = async (c: Context) => {
             
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
-            if (messages.length >= 0) {
+            if (messages.length >= 2) {
               const previousUserMessage = messages[messages.length - 2]
               if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
                 try {

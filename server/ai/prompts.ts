@@ -1054,7 +1054,8 @@ export const SearchQueryToolContextPrompt = (
 export const searchQueryPrompt = (
   userContext: string, 
   previousClassification?: QueryRouterLLMResponse | null,
-  chainBreakClassifications?: ChainBreakClassifications | null
+  chainBreakClassifications?: ChainBreakClassifications | null,
+  lastAssistantResponse?: string | null | undefined 
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -1065,13 +1066,15 @@ export const searchQueryPrompt = (
 
     **User Context:** ${userContext}
 
-    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+    **Previous Assistant Response (if any):** ${lastAssistantResponse || "N/A"}
 
-    NOTE : PREVIOUS QUERY CLASSIFICATION IS FOR REFERENCE ONLY, IF YOU FEEL SOME PARAMETERS NEED TO BE CHANGED, CHANGE THEM ACCORDINGLY.` : ''}
+    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
 
     ${chainBreakClassifications ? `**Chain Break Classifications (Previous Conversation Chains):**
     ${JSON.stringify(chainBreakClassifications, null, 2)}
-    
+
+    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES` : ''}
+
     **IMPORTANT - Chain Context Integration:**
     The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
     - If the current query relates to any of these previous chains, use their classifications as reference context
@@ -1092,6 +1095,9 @@ export const searchQueryPrompt = (
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
+
+      - You can use the previous classification, chain break classifications, and last assistant response to determine if the current query is a follow-up.
+
       For follow-up detection, if the users latest query against the ENTIRE conversation history.
       **Required Evidence for Follow-Up Classification:**
 
@@ -1120,7 +1126,8 @@ export const searchQueryPrompt = (
 
       **Mandatory Conditions for "isFollowUp": true:**
       1. The current query must contain explicit referential language (as defined above)
-      2. The referential language must point to specific, identifiable content in a previous assistant response
+      2. The referential language must point to specific, identifiable content in a previous assistant response or it is related to previous classification or chain break classifications.
+      3. If the query is ambiguous and it's related to the previous classification, chain break classifications, or last assistant response, it can be considered a follow-up if it clearly builds on that context
 
       **Always set "isFollowUp": false when:**
       1. The query is fully self-contained and interpretable without conversation history
@@ -1596,21 +1603,16 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 
-If relevant emails are found in Retrieved Context:
 {
   "answer": "Formatted response string with citations following the specified format"
-}
-
-If NO relevant emails are found in Retrieved Context or context doesn't match query:
-{
-  "answer": null
 }
 
 REMEMBER: 
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
-- Return null if the Retrieved Context doesn't contain information that directly answers the query.
-- DO NOT provide alternative suggestions or general responses.`
+- Format ALL emails found in the Retrieved Context - do not apply additional filtering.
+- Only return null if the Retrieved Context contains zero emails. 
+- If there is even one email, format and return them as specified.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.

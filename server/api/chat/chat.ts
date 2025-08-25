@@ -1592,7 +1592,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           results.root.children = await expandEmailThreadsInResults(
             results.root.children || [],
             email,
-            vespaSearchSpan,
+            latestSearchSpan,
           )
         }
 
@@ -2903,10 +2903,10 @@ async function* processResultsForMetadata(
   }
 
   return yield* processIterator(
-    iterator,
-    items,
-    0,
-    config.isReasoning && userRequestsReasoning,
+      iterator,
+      items,
+      0,
+      config.isReasoning && userRequestsReasoning,
   )
 }
 
@@ -4466,7 +4466,6 @@ export const MessageApi = async (c: Context) => {
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
                 filteredMessages[filteredMessages.length - 2]
-                console.log('Logged message', filteredMessages)
               if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
                 try {
                   const parsedClassification =
@@ -4478,6 +4477,14 @@ export const MessageApi = async (c: Context) => {
                 } catch (error) {
                   Logger.error(`Error parsing previous classification: ${error}`)
                 }
+              }
+            }
+
+            let lastAssistantResponse : string | null = null
+            if (filteredMessages.length >= 1) {
+              const lastMessage = filteredMessages[filteredMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                lastAssistantResponse = lastMessage.message
               }
             }
 
@@ -4515,6 +4522,7 @@ export const MessageApi = async (c: Context) => {
                 undefined,
                 previousClassification,
                 formattedChainBreaks,
+                lastAssistantResponse
               )
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -4746,7 +4754,7 @@ export const MessageApi = async (c: Context) => {
                   )
                 } else {
                   loggerWithChild({ email: email }).info(
-                    `Follow-up query detected. Using NEW LLM-generated classification directly: ${JSON.stringify(classification)}`,
+                    `Follow-up query detected.`,
                   )
                   // Use the new classification directly - it already has all the smart follow-up logic
                   // No need to reuse old classification, the LLM has generated an updated one
@@ -4902,7 +4910,7 @@ export const MessageApi = async (c: Context) => {
 
               if (queryRouterClassification) {
                 loggerWithChild({ email: email }).info(
-                  `Storing new LLM-generated classification for user message: ${JSON.stringify(
+                  `Query Router Classification : ${JSON.stringify(
                     queryRouterClassification,
                   )}`,
                 )
@@ -5710,6 +5718,14 @@ export const MessageRetryApi = async (c: Context) => {
               }
             }
 
+            let lastAssistantResponse : string | null = null
+            if (conversation.length >= 2) {
+              const lastMessage = conversation[conversation.length - 2] // In retry context, last assistant message is at -2
+              if (lastMessage.messageRole === "assistant") {
+                lastAssistantResponse = lastMessage.message
+              }
+            }
+
             // Add chain break analysis for retry context
             const messagesForChainBreak = isUserMessage 
             ? [...conversation, originalMessage]  // Include the user message being retried
@@ -5737,6 +5753,7 @@ export const MessageRetryApi = async (c: Context) => {
                 undefined,
                 previousClassification,
                 formattedChainBreaks,
+                lastAssistantResponse
               )
             let currentAnswer = ""
             let answer = ""

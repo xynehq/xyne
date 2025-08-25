@@ -891,17 +891,26 @@ export interface ChainBreakClassification {
   query: string;
 }
 
-function parseQueryRouterClassification(queryRouterClassification: any, messageIndex: number): QueryRouterLLMResponse | null {
-  if (!queryRouterClassification) return null;
-  
+function parseQueryRouterClassification(
+  queryRouterClassification: any,
+  messageIndex: number,
+): QueryRouterLLMResponse | null {
+  if (queryRouterClassification == null) return null
   try {
-    const parsedClassification = typeof queryRouterClassification === "string"
-      ? JSON.parse(queryRouterClassification)
-      : queryRouterClassification;
-    return parsedClassification as QueryRouterLLMResponse;
+    const parsed =
+      typeof queryRouterClassification === "string"
+        ? JSON.parse(queryRouterClassification)
+        : queryRouterClassification
+    if (Array.isArray(parsed) || typeof parsed !== "object" || parsed === null) {
+      return null
+    }
+    return parsed as QueryRouterLLMResponse
   } catch (error) {
-    getLoggerWithChild(Subsystem.Chat)().warn(`Failed to parse classification for message ${messageIndex}:`, error);
-    return null;
+    getLoggerWithChild(Subsystem.Chat)().warn(
+      `Failed to parse classification for message ${messageIndex}:`,
+      error,
+    )
+    return null
   }
 }
 

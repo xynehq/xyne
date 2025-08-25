@@ -2689,7 +2689,57 @@ export const getItems = async (
       }
       throw err
     })
-    .catch((error) => {
+    .catch(async (error) => {
+      if (error.message?.includes('400 Bad Request') && offset > 0) {
+        Logger.warn(`Original query failed with offset ${offset}, trying with reduced offsets`)
+        
+        const fallbackOffsets = [
+          Math.floor(offset / 2),   
+        ].filter((o, i, arr) => arr.indexOf(o) === i && o !== offset && o >= 0)
+        
+        
+        const attemptFallback = async (fallbackOffset: number) => {
+          Logger.info(`[getItems] Trying fallback with offset ${fallbackOffset}`)
+          
+          let fallbackYql = `select * from sources ${schema} ${whereClause}`
+          if (orderByClause) {
+            fallbackYql += ` ${orderByClause}`
+          }
+          fallbackYql += ` limit ${limit}`
+          if (fallbackOffset > 0) {
+            fallbackYql += ` offset ${fallbackOffset}`
+          }
+          
+          const fallbackPayload = {
+            yql: fallbackYql,
+            "ranking.profile": "unranked",
+            timeout: "30s",
+          }
+          
+          return vespa.getItems(fallbackPayload).catch((err) => {
+            if (vespa instanceof ProductionVespaClient) {
+              return fallbackVespa.getItems(fallbackPayload)
+            }
+            throw err
+          })
+        }
+        
+        // Actually execute the fallback attempts
+        for (const fallbackOffset of fallbackOffsets) {
+          try {
+            const result = await attemptFallback(fallbackOffset)
+            Logger.info(`Successfully retrieved results with fallback offset ${fallbackOffset}`)
+            return result
+          } catch (fallbackError) {
+            Logger.warn(`Fallback offset ${fallbackOffset} also failed: ${(fallbackError as Error).message}`)
+            continue // Try next fallback
+          }
+        }
+        
+        Logger.error(`All fallback offsets failed for original offset ${offset}`)
+      }
+      
+      // Throw error only if all fallbacks failed
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
         sources: JSON.stringify(schema),
