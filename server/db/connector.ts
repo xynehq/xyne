@@ -13,7 +13,7 @@ import {
 } from "./schema"
 import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
-import { and, eq } from "drizzle-orm"
+import { and, eq, or } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
 import { Google } from "arctic"
 import config from "@/config"
@@ -47,6 +47,8 @@ export const insertConnector = async (
   oauthCredentials?: string | null,
   apiKey?: string | null,
   status?: ConnectorStatus | null,
+  scope?: "private" | "role" | "global" | null,
+  role?: string | null,
 ) => {
   const externalId = createId() // Generate unique external ID
   try {
@@ -67,6 +69,8 @@ export const insertConnector = async (
         oauthCredentials,
         apiKey,
         ...(status ? { status } : {}),
+        ...(scope ? { scope } : {}),
+        ...(role ? { role } : {}),
       })
       .returning()
     Logger.info("Connection inserted successfully")
@@ -84,16 +88,22 @@ export const insertConnector = async (
 }
 
 // for the admin we can get all the connectors
-export const getConnectors = async (workspaceId: string, userId: number) => {
+export const getConnectors = async (
+  workspaceId: string,
+  userId: number,
+  userRole: string,
+) => {
   const res = await db
     .select({
       id: connectors.externalId,
-      cId: connectors.id,
+      cId: connectors .id,
       name: connectors.name,
       app: connectors.app,
       authType: connectors.authType,
       type: connectors.type,
       status: connectors.status,
+      scope: connectors.scope,
+      role: connectors.role,
       createdAt: connectors.createdAt,
       config: connectors.config,
       connectorId: connectors.id,
@@ -102,7 +112,14 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
     .where(
       and(
         eq(connectors.workspaceExternalId, workspaceId),
-        eq(connectors.userId, userId),
+        or(
+          and(
+            eq(connectors.scope, "private"),
+            eq(connectors.userId, userId),
+          ),
+          eq(connectors.scope, "global"),
+          and(eq(connectors.scope, "role"), eq(connectors.role, userRole)),
+        ),
       ),
     )
   return res

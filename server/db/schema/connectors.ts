@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   unique,
+  check,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -52,6 +53,12 @@ export const statusEnum = pgEnum(
   Object.values(ConnectorStatus) as [string, ...string[]],
 )
 
+export const connectorScopeEnum = pgEnum("connector_scope", [
+  "private",
+  "role",
+  "global",
+])
+
 // Connectors Table
 // data source + credentails(if needed) + status of ingestion job
 // for OAuth the setup data is in the OAuth Provider
@@ -82,6 +89,8 @@ export const connectors = pgTable(
     // by default when created will be in the connecting status
     // for oauth we must send not connected when first created
     status: statusEnum("status").notNull().default(ConnectorStatus.Connecting),
+    scope: connectorScopeEnum("scope").notNull().default("private"),
+    role: text("role"),
     // TODO: add these fields
     // accessTokenExpiresAt:
     // refreshTokenExpiresAt:
@@ -104,6 +113,10 @@ export const connectors = pgTable(
       t.app,
       t.authType,
       t.name,
+    ),
+    roleConstraint: check(
+      "role_if_scope_is_role",
+      sql`("scope" != 'role') OR ("role" IS NOT NULL)`,
     ),
   }),
 )

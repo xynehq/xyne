@@ -1805,7 +1805,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
   }), [
     // Include dependencies that affect what gets sent
     selectedConnectorIds,
-    selectedConnectorTools, 
+    selectedConnectorTools,
     persistedAgentId,
     selectedSources,
     selectedFiles,
@@ -2543,7 +2543,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
           )}
           {/* Dropdown for All Connectors */}
           {showAdvancedOptions &&
-            (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+            (
               <DropdownMenu
                 open={isConnectorsMenuOpen && isAgenticMode}
                 onOpenChange={(open) => {

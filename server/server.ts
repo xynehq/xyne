@@ -842,6 +842,11 @@ export const AppRoutes = app
   )
   .get("/connectors/all", GetConnectors)
   .get("/oauth/global-slack-provider", GetProviders)
+  .post(
+    "/connectors/mcp/create",
+    zValidator("json", addApiKeyMCPConnectorSchema),
+    AddApiKeyMCPConnector,
+  )
 
   // Admin Routes
   .basePath("/admin")
@@ -897,11 +902,6 @@ export const AppRoutes = app
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
     AddApiKeyConnector,
-  )
-  .post(
-    "/apikey/mcp/create",
-    zValidator("json", addApiKeyMCPConnectorSchema),
-    AddApiKeyMCPConnector,
   )
   .post(
     "/stdio/mcp/create",

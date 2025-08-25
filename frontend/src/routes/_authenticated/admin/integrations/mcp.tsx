@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
+import { RoleGuard } from "@/components/RoleGuard"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType, ConnectorType } from "shared/types" // Added ConnectorType
+import { Apps, AuthType, ConnectorType, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { RefreshCw, X, PlusCircle, Check, RotateCcw } from "lucide-react" // Added PlusCircle, Check, RotateCcw
@@ -63,21 +65,26 @@ interface FetchedTool {
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
   value: {
-    name: string;
-    url: string;
-    mode: "sse" | "streamable-http";
-    headers: Record<string, string>;
+    url: string,
+    name : string,
+    mode: "sse" | "streamable-http"
+    headers: Record<string, string>
+    scope: "private" | "role" | "global"
+    role?: string
   },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
-  const response = await api.admin.apikey.mcp.create.$post({
-    json: {
-      url: value.url,
-      name: value.name,
-      mode: value.mode,
-      headers: value.headers,
-    },
-  })
+  const payload = {
+    url: value.url,
+    name: value.name,
+    mode: value.mode,
+    headers: value.headers,
+    scope: value.scope,
+    role: value.role,
+  }
+
+  const response = await api.connectors.mcp.create.$post({ json: payload })
+
   if (!response.ok) {
     if (response.status === 401) {
       navigate({ to: "/auth" })
@@ -146,7 +153,7 @@ export const getConnectors = async (): Promise<any> => {
 }
 
 // MCP Client Form Component
-export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
+export const MCPClientForm = ({ onSuccess, user }: { onSuccess: () => void, user : AuthUser }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<{
@@ -154,12 +161,16 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
     url: string;
     mode: "sse" | "streamable-http";
     headers: { u_id: number; key: string; value: string }[];
+    scope: "private" | "role" | "global"
+    role?: string
   }>({
     defaultValues: {
       name: "",
       url: "",
       mode: "sse",
       headers: [{ u_id: Date.now(), key: "", value: "" }],
+      scope: "private",
+      role: "",
     },
     onSubmit: async ({ value }) => {
       try {
@@ -180,6 +191,8 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
             url: value.url,
             mode: value.mode,
             headers: headersObject,
+            scope: value.scope,
+            role: value.role,
           },
           navigate,
         );
@@ -345,6 +358,69 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
           }}
         />
       </>
+
+      <RoleGuard user={user} allowedRoles={[UserRole.SuperAdmin]}>
+        <form.Field
+          name="scope"
+          children={(field) => (
+            <div className="mt-4">
+              <Label htmlFor={field.name}>Scope</Label>
+              <Select
+                value={field.state.value}
+                onValueChange={(value) =>
+                  field.handleChange(
+                    value as "private" | "role" | "global",
+                  )
+                }
+              >
+                <SelectTrigger id={field.name}>
+                  <SelectValue placeholder="Select a scope" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="global">Global</SelectItem>
+                  <SelectItem value="role">Role</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        />
+      </RoleGuard>
+
+      <form.Subscribe
+        selector={(state) => state.values.scope}
+        children={(scope) =>
+          scope === "role" ? (
+            <RoleGuard user={user} allowedRoles={[UserRole.SuperAdmin]}>
+              <form.Field
+                name="role"
+                validators={{
+                  onChange: ({ value }) =>
+                    !value ? "Role is required" : undefined,
+                }}
+                children={(field) => (
+                  <div className="mt-2">
+                    <Label htmlFor={field.name}>Role Name</Label>
+                    <Input
+                      id={field.name}
+                      type="text"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="Enter role name"
+                    />
+                    {field.state.meta.isTouched &&
+                    field.state.meta.errors.length ? (
+                      <div className="text-red-500 text-sm">
+                        {field.state.meta.errors[0]}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              />
+            </RoleGuard>
+          ) : null
+        }
+      />
 
       <Button
         type="submit"
@@ -693,6 +769,7 @@ const MCPClientsList = ({
             <TableHead>Type</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Tools</TableHead> {/* New Column for Tools */}
+            <TableHead>Scope</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -723,19 +800,34 @@ const MCPClientsList = ({
                 >
                   {client.status}
                 </span>
-</TableCell>
+              </TableCell>
               <TableCell>
                 {(client.type === ConnectorType.MCP ||
                   client.app === Apps.MCP ||
                   client.app === Apps.Github) && (
-                <Button
+                  <Button
                     variant="ghost"
                     size="icon"
-                  onClick={() => handleManageTools(client)}
+                    onClick={() => handleManageTools(client)}
                     title="Manage Tools"
-                >
+                  >
                     <PlusCircle className="h-4 w-4" />
-                </Button>
+                  </Button>
+                )}
+              </TableCell>
+              <TableCell>
+                {client.scope === 'role' ? (
+                  <Badge variant="outline">
+                    role ({client.role})
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant={
+                      client.scope === 'global' ? 'default' : 'secondary'
+                    }
+                  >
+                    {client.scope}
+                  </Badge>
                 )}
               </TableCell>
               <TableCell className="text-right">
@@ -1010,6 +1102,7 @@ export const MCPClient = ({
                       onSuccess={() => {
                         refetch()
                       }}
+                      user
                     />
                   </TabsContent>
                   <TabsContent value="stdio">

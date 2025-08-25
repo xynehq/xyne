@@ -152,7 +152,7 @@ export const GetConnectors = async (c: Context) => {
     throw new NoUserFound({})
   }
   const user = users[0]
-  const connectors = await getConnectors(workspaceId, user.id)
+  const connectors = await getConnectors(workspaceId, user.id, user.role)
   return c.json(connectors)
 }
 export const GetProviders = async (c: Context) => {
@@ -850,7 +850,7 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: ApiKeyMCPConnector = c.req.valid("json")
-  const { url, name: connectorName, mode, headers } = form
+  const { url, name: connectorName, mode, headers, scope, role } = form
   // Normalize and sanitize headers (defensive)
   const forbiddenHeaderSet = new Set([
     "host",
@@ -870,6 +870,20 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       .filter(([k]) => !forbiddenHeaderSet.has(k)),
   )
   let status = ConnectorStatus.NotConnected
+
+  // Enforce scope rules: Only SuperAdmins can create non-private connectors.
+  const finalScope = scope || "private"
+  if (
+    finalScope !== "private" &&
+    // @ts-ignore
+    user.role !== UserRole.SuperAdmin
+  ) {
+    throw new HTTPException(403, {
+      message:
+        "Access denied. Only SuperAdmins can create global or role-based connectors.",
+    })
+  }
+
   try {
     // Insert the connection within the transaction
     const connector = await insertConnector(
@@ -886,7 +900,10 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       null,
       null,
       null, // apiKey is no longer used
-    );
+      null,
+      finalScope,
+      role,
+    )
     try {
       // Backwards compatibility logic demonstration for connection test
       const loadedConfig = connector.config as MCPClientConfig;
@@ -1206,6 +1223,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
       null,
       null,
       null,
+      null, // TODO: have to add scope support for stdio MCP connectors
     )
     try {
       const config = connector.config as z.infer<typeof MCPClientStdioConfig> // Changed: Use z.infer for type assertion

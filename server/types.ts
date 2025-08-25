@@ -126,7 +126,17 @@ export const addApiKeyMCPConnectorSchema = z.object({
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
   headers: z.record(z.string()),
-});
+  scope: z.enum(["private", "role", "global"]),
+  role: z.string().optional(),
+}).superRefine((data, ctx) => {
+    if (data.scope === "role" && !data.role) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Role is required when scope is 'role'",
+        path: ["role"],
+      })
+    }
+  })
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
