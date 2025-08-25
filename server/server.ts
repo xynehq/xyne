@@ -67,6 +67,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  GetAgentApiKeys,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -210,7 +211,9 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
-import type { PublicUserWorkspace } from "./db/schema"
+import { agents, apiKeys, type PublicUserWorkspace } from "./db/schema"
+import { AgentMessageCustomApi } from "./api/chat/agents"
+import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -269,6 +272,52 @@ const AdminRoleMiddleware = async (c: Context, next: Next) => {
   }
 
   await next()
+}
+
+const ApiKeyMiddleware = async (c: Context, next: Next) => {
+  let apiKey: string
+  try {
+    // Extract API key from request body
+    apiKey = c.req.header("x-api-key") || (c.req.query("api_key") as string)
+
+    if (!apiKey) {
+      Logger.error(
+        "API key verification failed: Missing apiKey in request body",
+      )
+      throw new HTTPException(401, {
+        message: "Missing API key. Please provide apiKey in request body.",
+      })
+    }
+    // Decrypt and validate the API key
+    const [foundApiKey] = await db
+      .select({
+        agentId: apiKeys.agentId,
+      })
+      .from(apiKeys)
+      .where(eq(apiKeys.key, apiKey))
+      .limit(1)
+
+    if (!foundApiKey) {
+      throw new HTTPException(400, {
+        message: "Invalid API KEY",
+      })
+    }
+
+    // Set agentId in context for downstream handlers
+    c.set("agentId", foundApiKey.agentId)
+
+    Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
+
+    await next()
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    Logger.warn("API key verification failed: Invalid JSON body")
+    throw new HTTPException(400, {
+      message: "Invalid API KEY",
+    })
+  }
 }
 
 // Middleware for frontend routes
@@ -664,6 +713,25 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post(
+    "/agent/completion",
+    ApiKeyMiddleware,
+    zValidator(
+      "query",
+      z.object({
+        message: z.string(),
+        // chatId: z.string().optional(),
+        // modelId: z.string().optional(),
+        // isReasoningEnabled: z.string().optional(),
+        agentId: z.string().optional(),
+        // apiKey: z.string().optional(),
+        // isRag: z.string().optional(),
+        chunks: z.any(),
+        history: z.any(),
+      }),
+    ),
+    AgentMessageCustomApi,
+  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -953,11 +1021,13 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
+
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
+  .get("/agents/:agentId/api-key", GetAgentApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),

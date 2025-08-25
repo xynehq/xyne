@@ -14,6 +14,7 @@ export * from "@/db/schema/userAgentPermissions"
 export * from "@/db/schema/McpConnectors"
 export * from "@/db/schema/sharedChats"
 export * from "@/db/schema/knowledgeBase"
+export * from "@/db/schema/apiKey"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"
