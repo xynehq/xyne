@@ -531,6 +531,7 @@ const endToEndFlow = async (
     startTime: "",
     endTime: "",
     count: 0,
+    offset: 0,
   }
   let parsed = {
     answer: "",

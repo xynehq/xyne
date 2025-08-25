@@ -36,11 +36,13 @@ import { parse } from "partial-json"
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
+  ChainBreakClassifications,
   ConverseResponse,
   Cost,
   Intent,
   LLMProvider,
   ModelParams,
+  QueryRouterLLMResponse,
   QueryRouterResponse,
   TemporalClassifier,
 } from "@/ai/types"
@@ -1443,6 +1445,9 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
   toolContext?: string,
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null,
+  lastAssistantResponse?: string | null | undefined
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1459,7 +1464,8 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications, lastAssistantResponse)
+
   }
 
   const baseMessage = {
