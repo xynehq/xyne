@@ -751,32 +751,34 @@ export const HybridDefaultProfileForAgent = async (
       let curr = driveItem.shift()
       // Ensure email is defined before passing it to getFolderItems\
       if (curr) driveIds.push(curr)
-      if (curr && email) {
-        try {
-          const folderItem = await getFolderItems(
-            [curr],
-            fileSchema,
-            DriveEntity.Folder,
-            email,
-          )
-          if (
-            folderItem.root &&
-            folderItem.root.children &&
-            folderItem.root.children.length > 0
-          ) {
-            for (const item of folderItem.root.children) {
-              if (
-                item.fields &&
-                (item.fields as any).entity === DriveEntity.Folder
-              ) {
-                driveItem.push((item.fields as any).docId)
-              } else {
-                driveIds.push((item.fields as any).docId)
+      if (curr && emails?.length > 0) {
+        for (const email of emails) {
+          try {
+            const folderItem = await getFolderItems(
+              [curr],
+              fileSchema,
+              DriveEntity.Folder,
+              email,
+            )
+            if (
+              folderItem.root &&
+              folderItem.root.children &&
+              folderItem.root.children.length > 0
+            ) {
+              for (const item of folderItem.root.children) {
+                if (
+                  item.fields &&
+                  (item.fields as any).entity === DriveEntity.Folder
+                ) {
+                  driveItem.push((item.fields as any).docId)
+                } else {
+                  driveIds.push((item.fields as any).docId)
+                }
               }
             }
+          } catch (error) {
+            Logger.error("failed to fetch drive items")
           }
-        } catch (error) {
-          Logger.error("failed to fetch drive items")
         }
       }
     }
