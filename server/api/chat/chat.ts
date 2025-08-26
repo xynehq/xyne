@@ -4480,14 +4480,6 @@ export const MessageApi = async (c: Context) => {
               }
             }
 
-            let lastAssistantResponse : string | null = null
-            if (filteredMessages.length >= 1) {
-              const lastMessage = filteredMessages[filteredMessages.length - 1]
-              if (lastMessage.messageRole === "assistant") {
-                lastAssistantResponse = lastMessage.message
-              }
-            }
-
             // Get chain break classifications for context
             const chainBreakClassifications = getRecentChainBreakClassifications(messages)
             const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
@@ -4522,7 +4514,6 @@ export const MessageApi = async (c: Context) => {
                 undefined,
                 previousClassification,
                 formattedChainBreaks,
-                lastAssistantResponse
               )
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -5718,14 +5709,6 @@ export const MessageRetryApi = async (c: Context) => {
               }
             }
 
-            let lastAssistantResponse : string | null = null
-            if (conversation.length >= 2) {
-              const lastMessage = conversation[conversation.length - 2] // In retry context, last assistant message is at -2
-              if (lastMessage.messageRole === "assistant") {
-                lastAssistantResponse = lastMessage.message
-              }
-            }
-
             // Add chain break analysis for retry context
             const messagesForChainBreak = isUserMessage 
             ? [...conversation, originalMessage]  // Include the user message being retried
@@ -5753,7 +5736,6 @@ export const MessageRetryApi = async (c: Context) => {
                 undefined,
                 previousClassification,
                 formattedChainBreaks,
-                lastAssistantResponse
               )
             let currentAnswer = ""
             let answer = ""

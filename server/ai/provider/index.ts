@@ -1447,7 +1447,6 @@ export function generateSearchQueryOrAnswerFromConversation(
   toolContext?: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
-  lastAssistantResponse?: string | null | undefined
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1464,8 +1463,7 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications, lastAssistantResponse)
-
+    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications)
   }
 
   const baseMessage = {

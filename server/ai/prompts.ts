@@ -1055,7 +1055,6 @@ export const searchQueryPrompt = (
   userContext: string, 
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
-  lastAssistantResponse?: string | null | undefined 
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -1065,8 +1064,6 @@ export const searchQueryPrompt = (
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
-
-    **Previous Assistant Response (if any):** ${lastAssistantResponse || "N/A"}
 
     ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
 
