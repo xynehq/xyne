@@ -931,9 +931,13 @@ export async function getAllUserFeedbackMessages({
 export async function getAgentApiKeys({
   db,
   agentId,
+  userId,
+  workspaceId
 }: {
   db: TxnOrClient
   agentId: string
+  userId: string
+  workspaceId: string
 }): Promise<{
   success: boolean
   key?: string
@@ -949,6 +953,8 @@ export async function getAgentApiKeys({
       .insert(apiKeys)
       .values({
         agentId,
+        userId,
+        workspaceId,
         key: md5Hash, // Direct encrypted string
       })
     console.log(md5Hash);
