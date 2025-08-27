@@ -36,24 +36,35 @@ echo -e "${YELLOW}📦 Building and exporting Xyne application...${NC}"
 # Build the main Xyne image
 docker-compose -f docker-compose.prod.yml build app
 
+# Build the GPU-enabled Vespa image
+docker-compose -f docker-compose.prod.yml build vespa
+
 # Export the main Xyne application image (contains sample data)
 docker save -o "$EXPORT_DIR/xyne-app.tar" xyne
 gzip "$EXPORT_DIR/xyne-app.tar"
+
+# Export the GPU-enabled Vespa image
+docker save -o "$EXPORT_DIR/xyne-vespa-gpu.tar" xyne-vespa-gpu
+gzip "$EXPORT_DIR/xyne-vespa-gpu.tar"
 
 echo -e "${YELLOW}📝 Supporting images will be pulled from remote registry...${NC}"
 echo "Images to be pulled on deployment:"
 echo "  • busybox (for permission management)"
 echo "  • postgres:15-alpine"
-echo "  • vespaengine/vespa:latest"
 echo "  • prom/prometheus:latest"
 echo "  • grafana/grafana:latest"
 echo "  • grafana/loki:3.4.1"
 echo "  • grafana/promtail:3.4.1"
+echo ""
+echo "Images included in export:"
+echo "  • xyne (main application)"
+echo "  • xyne-vespa-gpu (GPU-enabled Vespa with ONNX runtime)"
 
 echo -e "${YELLOW}📋 Copying configuration files...${NC}"
 
 # Copy essential files
 cp docker-compose.prod.yml "$EXPORT_DIR/docker-compose.yml"
+cp Dockerfile-vespa-gpu "$EXPORT_DIR/"
 cp prometheus-selfhosted.yml "$EXPORT_DIR/"
 cp loki-config.yaml "$EXPORT_DIR/"
 cp promtail-config.yaml "$EXPORT_DIR/"
@@ -80,10 +91,18 @@ else
     exit 1
 fi
 
+# Load GPU-enabled Vespa image
+if [ -f "xyne-vespa-gpu.tar.gz" ]; then
+    echo "Loading: xyne-vespa-gpu.tar.gz"
+    gunzip -c "xyne-vespa-gpu.tar.gz" | docker load
+else
+    echo "❌ xyne-vespa-gpu.tar.gz not found!"
+    exit 1
+fi
+
 echo "📥 Pulling supporting images from remote registry..."
 docker pull busybox
 docker pull postgres:15-alpine
-docker pull vespaengine/vespa:latest
 docker pull prom/prometheus:latest
 docker pull grafana/grafana:latest
 docker pull grafana/loki:3.4.1
@@ -171,7 +190,7 @@ fi
 sed -i 's|./data/|../xyne-data/|g' docker-compose.yml
 
 echo "🚀 Starting services..."
-# Start services
+# Start services with GPU runtime
 docker-compose -f docker-compose.yml up -d
 
 echo "🧹 Setting up Vespa cleanup cron job..."
@@ -201,13 +220,18 @@ chmod +x vespa-cleanup.sh
 
 echo "✅ Deployment started!"
 echo ""
+echo "🖥️  GPU-enabled Vespa configuration deployed"
+echo "⚠️  Note: Requires NVIDIA Docker runtime and compatible GPU"
+echo ""
 echo "Access Xyne at:"
 echo "  • Application: http://localhost:3000"
 echo "  • Grafana:     http://localhost:3002"
 echo "  • Prometheus:  http://localhost:9090"
+echo "  • Vespa:       http://localhost:8080"
 echo ""
 echo "Data is stored in: ../xyne-data/"
 echo "Check status: docker-compose -f docker-compose.yml ps"
+echo "Check GPU usage: nvidia-smi"
 EOF
 
 chmod +x "$EXPORT_DIR/deploy.sh"

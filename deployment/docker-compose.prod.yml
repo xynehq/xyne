@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   app-storage-init:
     image: busybox
@@ -18,7 +20,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    user: "${DOCKER_UID}:${DOCKER_GID}"
     ports:
       - "3000:80"
     depends_on:
@@ -108,12 +110,15 @@ services:
       - POSTGRES_PASSWORD=xyne
 
   vespa:
-    image: vespaengine/vespa:latest
+    image: xyne-vespa-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile-vespa-gpu
     container_name: vespa
     hostname: vespa
     # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     ports:
-      - "${VESPA_PORT:-8080}:8080"
+      - "8080:8080"
       - "19071:19071"
     volumes:
       - ./data/vespa-data:/opt/vespa/var
@@ -122,6 +127,13 @@ services:
     ulimits:
       nproc: 409600
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:19071/state/v1/health"]
       interval: 30s
