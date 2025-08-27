@@ -23,6 +23,7 @@ import {
   addApiKeyConnectorSchema,
   addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  updateServiceConnectionSchema,
   addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
@@ -40,6 +41,7 @@ import {
   AddApiKeyConnector,
   AddApiKeyMCPConnector,
   AddServiceConnection,
+  UpdateServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
   DeleteOauthConnector,
@@ -888,6 +890,11 @@ export const AppRoutes = app
     "/service_account",
     zValidator("form", addServiceConnectionSchema),
     AddServiceConnection,
+  )
+  .put(
+    "/service_account",
+    zValidator("form", updateServiceConnectionSchema),
+    UpdateServiceConnection,
   )
   .post(
     "/google/service_account/ingest_more",

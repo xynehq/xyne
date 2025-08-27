@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist"
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist"
 import "pdfjs-dist/web/pdf_viewer.css"
 import { authFetch } from "@/utils/authFetch"
+import { useTheme } from "@/components/ThemeContext"
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
 
@@ -35,6 +36,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   displayMode = "continuous",
   showNavigation = false,
 }) => {
+  const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
@@ -434,26 +436,26 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     <div
       className={`enhanced-pdf-viewer ${className}`}
       style={{
-        backgroundColor: "#f5f5f5",
+        backgroundColor: theme === "dark" ? "#1E1E1E" : "#f5f5f5",
         minHeight: "100%",
         position: "relative",
         ...style,
       }}
     >
       {loading && showLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-[#1E1E1E]/90 z-10">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading PDF...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-300">Loading PDF...</p>
           </div>
         </div>
       )}
 
       {error && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md">
-            <p className="text-red-800 font-semibold">Error loading PDF</p>
-            <p className="text-red-600 text-sm mt-1">{error}</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#1E1E1E] z-10">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md">
+            <p className="text-red-800 dark:text-red-200 font-semibold">Error loading PDF</p>
+            <p className="text-red-600 dark:text-red-300 text-sm mt-1">{error}</p>
             <button
               onClick={() => {
                 setError(null)
@@ -473,14 +475,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         <>
           {/* Navigation bar */}
           {showNavigation && totalPages > 1 && (
-            <div className="sticky top-0 bg-white shadow-md z-20 p-4">
+            <div className="sticky top-0 bg-white dark:bg-[#1E1E1E] shadow-md z-20 p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-center gap-4">
                 {displayMode === "paginated" && (
                   <>
                     <button
                       onClick={goToPreviousPage}
                       disabled={currentPage <= 1}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                     >
                       Previous
                     </button>
@@ -488,7 +490,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 )}
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Page</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">Page</span>
                   <input
                     type="number"
                     min="1"
@@ -499,16 +501,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                         : currentPage
                     }
                     onChange={(e) => goToPage(parseInt(e.target.value) || 1)}
-                    className="w-16 px-2 py-1 border border-gray-300 rounded text-center bg-white text-gray-800"
+                    className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-center bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                   />
-                  <span className="text-sm text-gray-600">of {totalPages}</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">of {totalPages}</span>
                 </div>
 
                 {displayMode === "paginated" && (
                   <button
                     onClick={goToNextPage}
                     disabled={currentPage >= totalPages}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    className="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                   >
                     Next
                   </button>
@@ -527,7 +529,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 minHeight: showNavigation ? "calc(100vh - 80px)" : "100vh",
               }}
             >
-              <div className="pdf-page-container bg-white shadow-lg relative">
+              <div className="pdf-page-container bg-white dark:bg-[#2d2d2d] shadow-lg relative">
                 <canvas
                   ref={canvasRef}
                   className="pdf-canvas"
@@ -547,8 +549,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   }}
                 />
                 {pageRendering && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#2d2d2d] bg-opacity-75">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 dark:border-gray-300"></div>
                   </div>
                 )}
               </div>
@@ -571,7 +573,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       key={pageNum}
                       id={`pdf-page-wrapper-${pageNum}`}
                       data-page-num={pageNum}
-                      className="pdf-page-container bg-white shadow-lg relative"
+                      className="pdf-page-container bg-white dark:bg-[#2d2d2d] shadow-lg relative"
                     >
                       <canvas
                         id={`pdf-page-${pageNum}`}
@@ -590,7 +592,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                           lineHeight: 1,
                         }}
                       />
-                      <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm">
+                      <div className="absolute top-2 right-2 bg-black dark:bg-[#404040] bg-opacity-60 dark:bg-opacity-80 text-white dark:text-gray-200 px-2 py-1 rounded text-sm">
                         Page {pageNum}
                       </div>
                     </div>

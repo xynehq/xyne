@@ -48,7 +48,7 @@ export const createCitationLink =
             <TooltipTrigger asChild>
               <span
                 {...linkProps}
-                className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-black-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
+                className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 text-black-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
@@ -64,14 +64,14 @@ export const createCitationLink =
             <TooltipContent
               side="top"
               align="center"
-              className="max-w-sm p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg overflow-hidden"
+              className="max-w-sm p-0 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg overflow-hidden"
               onPointerDownOutside={(e) => {
                 // Prevent closing when clicking inside the tooltip
                 e.preventDefault()
               }}
             >
               <div
-                className="flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                className="flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
