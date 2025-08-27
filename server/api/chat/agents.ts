@@ -199,7 +199,8 @@ import {
   type TraceEvent as JAFTraceEvent,
   type JAFError,
 } from "@xynehq/jaf"
-import { makeLiteLLMProvider } from "@xynehq/jaf"
+// Use Xyne’s native providers via a JAF adapter
+import { makeXyneJAFProvider } from "@/api/chat/jaf-xynemodel-provider"
 import {
   buildInternalJAFTools,
   buildMCPJAFTools,
@@ -1300,14 +1301,11 @@ export const MessageWithToolsApi = async (c: Context) => {
             name: "xyne-agent",
             instructions: () => agentInstructions(null),
             tools: allJAFTools,
-            // modelConfig: { name: modelId || defaultBestModel },
-            modelConfig: { name: "gemini-2.5-pro" },
+            // Honor requested model, fallback to defaultBestModel
+            modelConfig: { name: modelId || defaultBestModel },
           }
 
-          const modelProvider = makeLiteLLMProvider<JAFAdapterCtx>(
-            process.env.LITELLM_URL!,
-            process.env.LITELLM_API_KEY
-          )
+          const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
 
           const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
             [jafAgent.name, jafAgent],
@@ -1325,7 +1323,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const runCfg: JAFRunConfig<JAFAdapterCtx> = {
             agentRegistry,
             modelProvider,
-            maxTurns: 10
+            maxTurns: 10,
+            modelOverride: modelId || defaultBestModel,
           }
 
           // Note: ResponseMetadata was already sent above with chatId
