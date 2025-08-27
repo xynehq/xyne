@@ -210,7 +210,7 @@ import {
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 import { agents, apiKeys, type PublicUserWorkspace } from "./db/schema"
-import { AgentMessageCustomApi } from "./api/chat/agents"
+import { AgentChatMessageApi, AgentMessageCustomApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
@@ -711,6 +711,22 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post(
+    "/agent/chat",
+    ApiKeyMiddleware,
+    zValidator(
+      "query",
+      z.object({
+        message: z.string(),
+        chatId: z.string().optional(),
+        modelId: z.string().optional(),
+        isReasoningEnabled: z.string().optional(),
+        agentId: z.string().optional(),
+        shouldStream: z.coerce.boolean().optional(),
+      }),
+    ),
+    AgentChatMessageApi,
+  )
   .post(
     "/agent/completion",
     ApiKeyMiddleware,
