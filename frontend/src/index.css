@@ -172,6 +172,16 @@ html {
   word-break: break-all;
 }
 
+
+/* Hide scrollbars while keeping scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
 .favorite-agents-container::-webkit-scrollbar {
   display: none;
 }
@@ -179,4 +189,5 @@ html {
 .favorite-agents-container {
   -ms-overflow-style: none;
   scrollbar-width: none;
+
 }

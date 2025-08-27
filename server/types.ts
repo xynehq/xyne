@@ -56,13 +56,12 @@ const baseSearchSchema = z.object({
 })
 
 export const searchSchema = baseSearchSchema.refine(
-    
   (data) => {
     if (data.isAgentIntegSearch) {
-      return true;
+      return true
     }
     // Otherwise use the existing validation
-    return (data.app && data.entity) || (!data.app && !data.entity);
+    return (data.app && data.entity) || (!data.app && !data.entity)
   },
   {
     message: "app and entity must be provided together",
@@ -99,6 +98,15 @@ export const addServiceConnectionSchema = z.object({
 
 export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
+>
+
+export const updateServiceConnectionSchema = z.object({
+  "service-key": z.any(),
+  connectorId: z.string(),
+})
+
+export type UpdateServiceAccountConnection = z.infer<
+  typeof updateServiceConnectionSchema
 >
 
 export const addApiKeyConnectorSchema = z.object({

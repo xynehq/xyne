@@ -9,6 +9,7 @@ export enum AIProviders {
   Together = "together-ai",
   Fireworks = "fireworks",
   GoogleAI = "google-ai",
+  VertexAI = "vertex-ai",
 }
 
 export enum Models {
@@ -38,7 +39,6 @@ export enum Models {
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
   Gemini_2_5_Flash = "gemini-2.5-flash",
   Gemini_2_0_Flash_Thinking = "gemini-2.0-flash-thinking-exp",
-
 }
 
 export enum QueryCategory {
@@ -146,8 +146,8 @@ export type Intent = z.infer<typeof IntentSchema>
 
 // Zod schemas for filters
 export const FiltersSchema = z.object({
-  app: z.nativeEnum(Apps).optional(),
-  entity: entitySchema.optional(),
+  apps: z.array(z.nativeEnum(Apps)).nullable(),
+  entities: z.array(entitySchema).nullable(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
@@ -212,7 +212,7 @@ interface PillValue {
   wholeSheet?: boolean
   threadId?: string
   app?: Apps
-  entity?:string
+  entity?: string
 }
 
 interface PillQueryItem {

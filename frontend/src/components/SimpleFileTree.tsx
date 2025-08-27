@@ -36,7 +36,7 @@ const SimpleFileTree = ({
   const flatItems = flattenTree(items)
 
   return (
-    <div className="text-gray-700 text-sm">
+    <div className="text-sm text-gray-700 dark:text-gray-300">
       {flatItems.map(({ node, level }, index) => (
         <FileNodeComponent
           key={index}
@@ -66,22 +66,20 @@ const FileNodeComponent = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false)
   const isSelected = selectedFile === node
-  const isClickableFile =
-    node.type === "file" &&
-    (node.name.toLowerCase().endsWith(".docx") ||
-      node.name.toLowerCase().endsWith(".pdf") ||
-      node.name.toLowerCase().endsWith(".md"))
+  const isClickableFile = node.type === "file"
 
   return (
     <div
       className={`relative flex items-center py-2 px-4 cursor-pointer transition-colors duration-150 rounded-md ml-3 m-3 ${
         isSelected
-          ? "bg-gray-200 dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+          ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           : isHovered
-            ? "bg-gray-200 text-gray-800"
-            : "text-gray-700 hover:text-gray-800"
+          ? "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+          : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#404040]"
       }`}
-      style={{ paddingLeft: `${level * 24 + 16}px` }}
+      style={{ 
+        paddingLeft: `${level * 24 + 16}px`,
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={(e) => {
@@ -98,25 +96,29 @@ const FileNodeComponent = ({
       {/* Indentation lines for nested items */}
       {/* {level > 0 && (
         <div
-          className="absolute left-0 top-0 bottom-0 border-l border-gray-200"
-          style={{ left: `${(level - 1) * 24 + 16}px` }}
+          className="absolute left-0 top-0 bottom-0 border-l border-gray-300 dark:border-[#404040]"
+          style={{ 
+            left: `${(level - 1) * 24 + 16}px`,
+          }}
         />
       )} */}
 
       {node.type === "folder" && (
         <>
-          <span className="mr-2 flex items-center flex-shrink-0">
+          <span className="mr-2 flex items-center flex-shrink-0 text-gray-500 dark:text-gray-400">
             {node.isOpen ? (
-              <ChevronDown size={12} className="text-gray-500" />
+              <ChevronDown size={12} />
             ) : (
-              <ChevronRight size={12} className="text-gray-500" />
+              <ChevronRight size={12} />
             )}
           </span>
         </>
       )}
 
       <span
-        className={`text-sm leading-relaxed truncate min-w-0 ${isSelected ? "font-medium text-gray-900" : "text-gray-700"}`}
+        className={`text-sm leading-relaxed truncate min-w-0 ${
+          isSelected ? "font-medium" : ""
+        }`}
         title={node.name}
       >
         {node.name}
