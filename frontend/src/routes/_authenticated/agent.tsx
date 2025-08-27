@@ -1009,31 +1009,14 @@ function AgentComponent() {
             if (data.integrationItems.collection && data.integrationItems.collection.groups) {
               for (const [clGroupId, items] of Object.entries(data.integrationItems.collection.groups)) {
                 if (Array.isArray(items)) {
-                  // For knowledge-base items, we need to fetch their details via Vespa search
-                  const itemIds = items.map((item: any) => item.id).filter(Boolean);
-                  
-                  if (itemIds.length > 0) {
-                    try {
-                        items.forEach((item: any) => {
-                          const itemType = item.type || "folder";
-                          idToNameMapping[item.id] = {
-                            name: item.name || "Unnamed",
-                            type: itemType
-                          };
-                        });
-                      
-                    } catch (vespaError) {
-                      console.error("Failed to fetch knowledge-base item details from Vespa:", vespaError);
-                      // Fallback to original item data
-                      items.forEach((item: any) => {
-                        const itemType = item.type || "folder";
-                        idToNameMapping[item.id] = {
-                          name: item.name || "Unnamed",
-                          type: itemType
-                        };
-                      });
-                    }
-                  }
+                  // For knowledge-base items, use the data directly from the API response
+                  items.forEach((item: any) => {
+                    const itemType = item.type || "file";
+                    idToNameMapping[item.id] = {
+                      name: item.name || item.id || "Unnamed",
+                      type: itemType
+                    };
+                  });
                 }
                 
                 // Also add CL group ID to name mapping if available
@@ -1087,11 +1070,17 @@ function AgentComponent() {
                     items.forEach((item: any) => {
                       if (!item.isCollectionLevel) {
                         selectedItems.add(item.id)
-                        itemDetails[item.id] = item
+                        itemDetails[item.id] = {
+                          id: item.id,
+                          name: item.name || item.id || "Unnamed",
+                          type: item.type || "file",
+                          path: item.path,
+                          collectionId: clId
+                        }
                         
                         // Add to name mapping
                         idToNameMapping[item.id] = {
-                          name: item.name || "Unnamed",
+                          name: item.name || item.id || "Unnamed",
                           type: item.type || "file"
                         };
                       }
