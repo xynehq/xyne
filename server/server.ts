@@ -720,9 +720,21 @@ export const AppRoutes = app
         message: z.string(),
         chatId: z.string().optional(),
         modelId: z.string().optional(),
-        isReasoningEnabled: z.string().optional(),
-        agentId: z.string().optional(),
-        shouldStream: z.coerce.boolean().optional(),
+        isReasoningEnabled: z
+          .string()
+          .optional()
+          .transform((val) => {
+            if (!val) return false
+            return val.toLowerCase() === "true"
+          }),
+        agentId: z.string(),
+        shouldStream: z
+          .string()
+          .optional()
+          .transform((val) => {
+            if (!val) return false
+            return val.toLowerCase() === "true"
+          }),
       }),
     ),
     AgentChatMessageApi,
