@@ -41,6 +41,7 @@ services:
       # Application data volumes
       - ./data/app-uploads:/usr/src/app/server/storage
       - ./data/app-logs:/usr/src/app/server/logs
+      - ./data/app-assets:/usr/src/app/server/dist/assets/videos
     networks:
       - xyne
     restart: unless-stopped
@@ -94,7 +95,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: xyne-grafana
-    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    user: "${DOCKER_UID}:${DOCKER_GID}"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./data/grafana-storage:/var/lib/grafana 
