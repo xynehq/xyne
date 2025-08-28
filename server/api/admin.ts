@@ -1682,8 +1682,7 @@ export const GetAgentApiKeys = async (c: Context) => {
     //     400,
     //   )
     // }
-    const apiKeys = await getAgentApiKeys({ db, agentId })
-
+    const apiKeys = await getAgentApiKeys({ db, agentId,userId:userAndWorkspace.user.externalId, workspaceId: userAndWorkspace.workspace.externalId })    
     return c.json({
       success: true,
       data: apiKeys,

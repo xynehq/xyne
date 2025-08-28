@@ -209,7 +209,7 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
-import { agents, apiKeys, type PublicUserWorkspace } from "./db/schema"
+import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
 import { AgentMessageCustomApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 
@@ -290,8 +290,13 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     const [foundApiKey] = await db
       .select({
         agentId: apiKeys.agentId,
+        workspaceId: apiKeys.workspaceId,
+        userId: apiKeys.userId,
+        userEmail: users.email,
+        userName: users.name, // Optional: might be useful too
       })
       .from(apiKeys)
+      .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
       .where(eq(apiKeys.key, apiKey))
       .limit(1)
 
@@ -300,9 +305,12 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         message: "Invalid API KEY",
       })
     }
-
     // Set agentId in context for downstream handlers
     c.set("agentId", foundApiKey.agentId)
+    c.set("apiKey", apiKey)
+    c.set("workspaceId", foundApiKey.workspaceId)
+    c.set("userEmail", foundApiKey.userEmail)
+    
 
     Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
 
