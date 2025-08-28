@@ -4713,7 +4713,7 @@ export const AgentChatMessageApi = async (c: Context) => {
             title,
             attachments: [],
             agentId: agentIdToStore,
-            apiKey,
+            via_apiKey: true,
           })
 
           const insertedMsg = await insertMessage(tx, {
