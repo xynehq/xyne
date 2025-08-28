@@ -27,8 +27,8 @@
     "prepare": "cd .. && husky .husky"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock": "^3.858.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.858.0",
+    "@aws-sdk/client-bedrock": "^3.876.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.876.0",
     "@google/genai": "^1.9.0",
     "@hono/event-emitter": "^2.0.0",
     "@hono/oauth-providers": "^0.6.2",
