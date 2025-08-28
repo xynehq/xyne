@@ -211,7 +211,7 @@ import {
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
-import { AgentChatMessageApi, AgentMessageCustomApi } from "./api/chat/agents"
+import { AgentChatMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
@@ -746,25 +746,6 @@ export const AppRoutes = app
       }),
     ),
     AgentChatMessageApi,
-  )
-  .post(
-    "/agent/completion",
-    ApiKeyMiddleware,
-    zValidator(
-      "query",
-      z.object({
-        message: z.string(),
-        // chatId: z.string().optional(),
-        // modelId: z.string().optional(),
-        // isReasoningEnabled: z.string().optional(),
-        agentId: z.string().optional(),
-        // apiKey: z.string().optional(),
-        // isRag: z.string().optional(),
-        chunks: z.any(),
-        history: z.any(),
-      }),
-    ),
-    AgentMessageCustomApi,
   )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app

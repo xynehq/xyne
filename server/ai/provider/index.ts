@@ -81,7 +81,6 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
-  customRagOffPromptJson,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1152,43 +1151,6 @@ export const baselineRAGOffJsonStream = (
 
   params.systemPrompt = ragOffPromptJson(
     userCtx,
-    retrievedCtx,
-    parseAgentPrompt(agentPrompt),
-  )
-  params.json = true
-
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `${userQuery}`,
-      },
-    ],
-  }
-
-  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
-  const updatedMessages: Message[] = messages
-    ? [...messages, baseMessage]
-    : [baseMessage]
-  return getProviderByModel(params.modelId).converseStream(
-    updatedMessages,
-    params,
-  )
-}
-
-export const baselineCustomRAGOffJsonStream = (
-  userQuery: string,
-  retrievedCtx: string,
-  params: ModelParams,
-  agentPrompt: string,
-  messages: Message[],
-  attachmentFileIds?: string[],
-): AsyncIterableIterator<ConverseResponse> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-
-  params.systemPrompt = customRagOffPromptJson(
     retrievedCtx,
     parseAgentPrompt(agentPrompt),
   )
