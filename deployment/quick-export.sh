@@ -12,40 +12,118 @@ set -e
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
+
+# Parse command line arguments
+NO_EXPORT=false
+FORCE_BUILD=false
+
+for arg in "$@"; do
+    case $arg in
+        --no-export)
+            NO_EXPORT=true
+            shift
+            ;;
+        --force-build)
+            FORCE_BUILD=true
+            shift
+            ;;
+        cleanup)
+            echo -e "${YELLOW}🧹 Cleaning up old export directories...${NC}"
+            rm -rf xyne-portable-*
+            echo -e "${GREEN}✅ Cleanup completed!${NC}"
+            exit 0
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --no-export     Skip creating tar file (for same-machine deployment)"
+            echo "  --force-build   Force rebuild even if remote image is newer"
+            echo "  cleanup         Remove old export directories"
+            echo "  --help, -h      Show this help message"
+            exit 0
+            ;;
+        *)
+            # Unknown option
+            ;;
+    esac
+done
 
 echo -e "${BLUE}🚀 Xyne Quick Export${NC}"
 echo "=================================="
 
-# Check for cleanup argument
-if [ "$1" = "cleanup" ]; then
-    echo -e "${YELLOW}🧹 Cleaning up old export directories...${NC}"
-    rm -rf xyne-portable-*
-    echo -e "${GREEN}✅ Cleanup completed!${NC}"
-    exit 0
+# Check if Vespa base image should be rebuilt
+check_vespa_image_update() {
+    echo -e "${YELLOW}🔍 Checking Vespa base image for updates...${NC}"
+    
+    # Get current local vespa base image digest
+    LOCAL_DIGEST=$(docker images --digests vespaengine/vespa:latest --format "{{.Digest}}" 2>/dev/null || echo "")
+    
+    # Pull latest vespa image to check for updates
+    echo "📥 Checking remote vespaengine/vespa:latest..."
+    docker pull vespaengine/vespa:latest >/dev/null 2>&1 || {
+        echo -e "${RED}⚠️  Warning: Failed to check remote vespa image. Using local version.${NC}"
+        return 1
+    }
+    
+    # Get new digest after pull
+    NEW_DIGEST=$(docker images --digests vespaengine/vespa:latest --format "{{.Digest}}" 2>/dev/null || echo "")
+    
+    if [ "$LOCAL_DIGEST" != "$NEW_DIGEST" ] && [ -n "$NEW_DIGEST" ]; then
+        echo -e "${GREEN}🆕 New Vespa base image available, will rebuild GPU image${NC}"
+        return 0
+    else
+        echo -e "${GREEN}✅ Vespa base image is up to date${NC}"
+        return 1
+    fi
+}
+
+# Determine if we need to create export directory
+if [ "$NO_EXPORT" = "false" ]; then
+    EXPORT_DIR="xyne-portable-$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$EXPORT_DIR"
+    echo -e "${YELLOW}📦 Building and exporting Xyne application...${NC}"
+else
+    echo -e "${YELLOW}📦 Building Xyne application (no export)...${NC}"
 fi
-
-# Note: Use './quick-export.sh cleanup' to remove old export directories
-
-# Create export directory
-EXPORT_DIR="xyne-portable-$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$EXPORT_DIR"
-
-echo -e "${YELLOW}📦 Building and exporting Xyne application...${NC}"
 
 # Build the main Xyne image
 docker-compose -f docker-compose.prod.yml build app
 
-# Build the GPU-enabled Vespa image
-docker-compose -f docker-compose.prod.yml build vespa
+# Check if we should rebuild Vespa GPU image
+SHOULD_BUILD_VESPA=false
+if [ "$FORCE_BUILD" = "true" ]; then
+    echo -e "${YELLOW}🔨 Force building Vespa GPU image...${NC}"
+    SHOULD_BUILD_VESPA=true
+elif check_vespa_image_update; then
+    SHOULD_BUILD_VESPA=true
+elif ! docker images | grep -q "xyne-vespa-gpu"; then
+    echo -e "${YELLOW}🏗️  Vespa GPU image not found locally, building...${NC}"
+    SHOULD_BUILD_VESPA=true
+fi
 
-# Export the main Xyne application image (contains sample data)
-docker save -o "$EXPORT_DIR/xyne-app.tar" xyne
-gzip "$EXPORT_DIR/xyne-app.tar"
+if [ "$SHOULD_BUILD_VESPA" = "true" ]; then
+    echo -e "${YELLOW}🏗️  Building GPU-enabled Vespa image...${NC}"
+    docker-compose -f docker-compose.prod.yml build vespa
+else
+    echo -e "${GREEN}✅ Using existing Vespa GPU image${NC}"
+fi
 
-# Export the GPU-enabled Vespa image
-docker save -o "$EXPORT_DIR/xyne-vespa-gpu.tar" xyne-vespa-gpu
-gzip "$EXPORT_DIR/xyne-vespa-gpu.tar"
+# Export images only if not using --no-export
+if [ "$NO_EXPORT" = "false" ]; then
+    echo -e "${YELLOW}💾 Exporting Docker images...${NC}"
+    
+    # Export the main Xyne application image (contains sample data)
+    docker save -o "$EXPORT_DIR/xyne-app.tar" xyne
+    gzip "$EXPORT_DIR/xyne-app.tar"
+
+    # Export the GPU-enabled Vespa image
+    docker save -o "$EXPORT_DIR/xyne-vespa-gpu.tar" xyne-vespa-gpu
+    gzip "$EXPORT_DIR/xyne-vespa-gpu.tar"
+else
+    echo -e "${GREEN}⏭️  Skipping image export (--no-export flag)${NC}"
+fi
 
 echo -e "${YELLOW}📝 Supporting images will be pulled from remote registry...${NC}"
 echo "Images to be pulled on deployment:"
@@ -60,25 +138,32 @@ echo "Images included in export:"
 echo "  • xyne (main application)"
 echo "  • xyne-vespa-gpu (GPU-enabled Vespa with ONNX runtime)"
 
-echo -e "${YELLOW}📋 Copying configuration files...${NC}"
+# Copy configuration files only if not using --no-export
+if [ "$NO_EXPORT" = "false" ]; then
+    echo -e "${YELLOW}📋 Copying configuration files...${NC}"
 
-# Copy essential files
-cp docker-compose.prod.yml "$EXPORT_DIR/docker-compose.yml"
-cp Dockerfile-vespa-gpu "$EXPORT_DIR/"
-cp prometheus-selfhosted.yml "$EXPORT_DIR/"
-cp loki-config.yaml "$EXPORT_DIR/"
-cp promtail-config.yaml "$EXPORT_DIR/"
-[[ -f "sample-data.tar.gz" ]] && cp sample-data.tar.gz "$EXPORT_DIR/"
-[[ -d "grafana" ]] && cp -r grafana "$EXPORT_DIR/"
-[[ -f "../server/.env" ]] && cp "../server/.env" "$EXPORT_DIR/.env.example"
+    # Copy essential files
+    cp docker-compose.prod.yml "$EXPORT_DIR/docker-compose.yml"
+    cp Dockerfile-vespa-gpu "$EXPORT_DIR/"
+    cp prometheus-selfhosted.yml "$EXPORT_DIR/"
+    cp loki-config.yaml "$EXPORT_DIR/"
+    cp promtail-config.yaml "$EXPORT_DIR/"
+    [[ -f "sample-data.tar.gz" ]] && cp sample-data.tar.gz "$EXPORT_DIR/"
+    [[ -d "grafana" ]] && cp -r grafana "$EXPORT_DIR/"
+    [[ -f "../server/.env" ]] && cp "../server/.env" "$EXPORT_DIR/.env.example"
 
-# Update docker-compose.yml to use local .env file instead of ../server/.env
-sed -i 's|../server/\.env|.env|g' "$EXPORT_DIR/docker-compose.yml"
+    # Update docker-compose.yml to use local .env file instead of ../server/.env
+    sed -i 's|../server/\.env|.env|g' "$EXPORT_DIR/docker-compose.yml"
+else
+    echo -e "${GREEN}⏭️  Skipping file copy (same-machine deployment)${NC}"
+fi
 
-echo -e "${YELLOW}📝 Creating import script...${NC}"
+# Create import and deploy scripts only if not using --no-export
+if [ "$NO_EXPORT" = "false" ]; then
+    echo -e "${YELLOW}📝 Creating import script...${NC}"
 
-# Create simple import script
-cat > "$EXPORT_DIR/import.sh" << 'EOF'
+    # Create simple import script
+    cat > "$EXPORT_DIR/import.sh" << 'EOF'
 #!/bin/bash
 echo "🚀 Importing Xyne application image..."
 
@@ -234,10 +319,10 @@ echo "Check status: docker-compose -f docker-compose.yml ps"
 echo "Check GPU usage: nvidia-smi"
 EOF
 
-chmod +x "$EXPORT_DIR/deploy.sh"
+    chmod +x "$EXPORT_DIR/deploy.sh"
 
-# Create README
-cat > "$EXPORT_DIR/README.md" << EOF
+    # Create README
+    cat > "$EXPORT_DIR/README.md" << EOF
 # Xyne Portable Package
 
 ## Quick Start
@@ -281,32 +366,44 @@ docker-compose logs
 \`\`\`
 EOF
 
-# Calculate and display results
-TOTAL_SIZE=$(du -sh "$EXPORT_DIR" | cut -f1)
+    # Calculate and display results
+    TOTAL_SIZE=$(du -sh "$EXPORT_DIR" | cut -f1)
 
-echo ""
-echo -e "${YELLOW}📦 Creating archive for easy transfer...${NC}"
+    echo ""
+    echo -e "${YELLOW}📦 Creating archive for easy transfer...${NC}"
 
-# Create tar.gz archive
-ARCHIVE_NAME="xyne-portable-$(date +%Y%m%d_%H%M%S).tar.gz"
-tar -czf "$ARCHIVE_NAME" "$EXPORT_DIR"
-ARCHIVE_SIZE=$(du -sh "$ARCHIVE_NAME" | cut -f1)
+    # Create tar.gz archive
+    ARCHIVE_NAME="xyne-portable-$(date +%Y%m%d_%H%M%S).tar.gz"
+    tar -czf "$ARCHIVE_NAME" "$EXPORT_DIR"
+    ARCHIVE_SIZE=$(du -sh "$ARCHIVE_NAME" | cut -f1)
 
-echo ""
-echo -e "${GREEN}✅ Export completed successfully!${NC}"
-echo "=================================="
-echo "📁 Export directory: $EXPORT_DIR"
-echo "📦 Archive file: $ARCHIVE_NAME"
-echo "💾 Directory size: $TOTAL_SIZE"
-echo "💾 Archive size: $ARCHIVE_SIZE"
-echo ""
-echo -e "${BLUE}📦 To transfer to another machine:${NC}"
-echo "Option 1: Transfer archive file"
-echo "  1. Copy '$ARCHIVE_NAME' to target machine"
-echo "  2. Extract: tar -xzf '$ARCHIVE_NAME'"
-echo "  3. cd into extracted directory"
-echo "  4. Run: ./import.sh then ./deploy.sh"
-echo ""
-echo "Option 2: Transfer directory"
-echo "  1. Copy entire '$EXPORT_DIR' directory"
-echo "  2. On target machine, run: ./import.sh then ./deploy.sh"
+    echo ""
+    echo -e "${GREEN}✅ Export completed successfully!${NC}"
+    echo "=================================="
+    echo "📁 Export directory: $EXPORT_DIR"
+    echo "📦 Archive file: $ARCHIVE_NAME"
+    echo "💾 Directory size: $TOTAL_SIZE"
+    echo "💾 Archive size: $ARCHIVE_SIZE"
+    echo ""
+    echo -e "${BLUE}📦 To transfer to another machine:${NC}"
+    echo "Option 1: Transfer archive file"
+    echo "  1. Copy '$ARCHIVE_NAME' to target machine"
+    echo "  2. Extract: tar -xzf '$ARCHIVE_NAME'"
+    echo "  3. cd into extracted directory"
+    echo "  4. Run: ./import.sh then ./deploy.sh"
+    echo ""
+    echo "Option 2: Transfer directory"
+    echo "  1. Copy entire '$EXPORT_DIR' directory"
+    echo "  2. On target machine, run: ./import.sh then ./deploy.sh"
+else
+    echo ""
+    echo -e "${GREEN}✅ Build completed successfully!${NC}"
+    echo "=================================="
+    echo -e "${BLUE}🚀 For same-machine deployment:${NC}"
+    echo "  1. Ensure environment variables are set:"
+    echo "     export DOCKER_UID=1000"
+    echo "     export DOCKER_GID=1000"
+    echo "     export DOCKER_GROUP_ID=\$(getent group docker | cut -d: -f3 2>/dev/null || echo \"999\")"
+    echo "  2. Start services: docker-compose -f docker-compose.prod.yml up -d"
+    echo "  3. Access at: http://localhost:3000"
+fi

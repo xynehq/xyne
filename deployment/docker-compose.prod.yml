@@ -117,9 +117,9 @@ services:
     container_name: vespa
     hostname: vespa
     # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-    ports:
-      - "8080:8080"
-      - "19071:19071"
+    # ports:
+    #   - "8080:8080"
+    #   - "19071:19071"
     volumes:
       - ./data/vespa-data:/opt/vespa/var
     networks:
