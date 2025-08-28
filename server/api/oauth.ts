@@ -13,9 +13,10 @@ import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
 import { handleGoogleOAuthIngestion } from "@/integrations/google"
+import { handleMicrosoftOAuthIngestion } from "@/integrations/microsoft"
 
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
-import { IsGoogleApp } from "@/utils"
+import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
 import { handleSlackIngestion } from "@/integrations/slack"
 import { globalAbortControllers } from "@/integrations/abortManager"
@@ -113,6 +114,38 @@ export const OAuthCallback = async (c: Context) => {
       )
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
+    } else if (IsMicrosoftApp(app)) {
+      // Microsoft OAuth token exchange
+      const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: clientId!,
+          client_secret: clientSecret,
+          code,
+          redirect_uri: `${config.host}/oauth/callback`,
+          grant_type: "authorization_code",
+          code_verifier: codeVerifier as string,
+        }).toString(),
+      })
+
+      const tokenData = await response.json()
+      if (!response.ok) {
+        loggerWithChild({ email: email }).error(
+          `Microsoft OAuth token exchange failed: ${JSON.stringify(tokenData)}`,
+        )
+        throw new Error(`Could not get Microsoft token: ${tokenData.error_description || tokenData.error}`)
+      }
+
+      tokens = {
+        data: {
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token,
+          accessTokenExpiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
+        }
+      } as OAuthCredentials
     } else {
       throw new HTTPException(500, { message: "Invalid App" })
     }
