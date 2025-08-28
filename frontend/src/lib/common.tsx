@@ -6,7 +6,8 @@ import {
   CalendarDays,
   PlugZap,
   Github,
-} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github
+  BookOpen,
+} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, BookOpen
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -123,7 +124,18 @@ export const getIcon = (
     return <CalendarDays size={12} className={classNameVal} />
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
-  } else if (
+  } else if (app === Apps.KnowledgeBase && 
+    entity === SystemEntity.SystemInfo
+  ) {
+    return (
+      <BookOpen 
+        size={size?.w || 12} 
+        className={`${classNameVal} dark:stroke-[#F1F3F4]`}
+        stroke="#384049"
+      />
+    )
+  }
+  else if (
     (app === Apps.Github && entity === ConnectorType.MCP) ||
     entity === SystemEntity.SystemInfo
   ) {

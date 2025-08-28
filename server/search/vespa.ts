@@ -63,7 +63,10 @@ import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { ProductionVespaClient } from "./productionVespaClient"
-import { getAllFolderItems, getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import {
+  getAllFolderItems,
+  getCollectionFilesVespaIds,
+} from "@/db/knowledgeBase"
 
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
@@ -322,15 +325,14 @@ const handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
 // TODO: it seems the owner part is complicating things
 export const HybridDefaultProfile = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
   excludedApps?: Apps[],
   intent?: Intent | null,
- 
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -347,7 +349,19 @@ export const HybridDefaultProfile = (
   // ToDo we have to handle this filter as we are applying multiple times app filtering
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
 
   // Helper function to build exclusion condition
@@ -510,7 +524,8 @@ export const HybridDefaultProfile = (
           break
       }
     })
-    newSources = newSources.split(", ")
+    newSources = newSources
+      .split(", ")
       .filter((source) => !sourcesToExclude.includes(source))
       .join(", ")
   }
@@ -593,11 +608,11 @@ const buildIntentFilter = (intent: Intent | null) => {
     ? "and" + " " + intentFilters.join(" and ")
     : ""
 }
-export const HybridDefaultProfileForAgent =  async(
-  email:string,
+export const HybridDefaultProfileForAgent = async (
+  email: string,
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -611,8 +626,8 @@ export const HybridDefaultProfileForAgent =  async(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = [],
-  driveIds:string[] = [],
-  selectedItem:{} = {},
+  driveIds: string[] = [],
+  selectedItem: {} = {},
 ): Promise<YqlProfile> => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -629,14 +644,26 @@ export const HybridDefaultProfileForAgent =  async(
   // helper function to build docId inclusion condition
   const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
     if (!ids || ids.length === 0) return ""
-    
+
     const conditions = ids.map((id) => `${fieldName} contains '${id.trim()}'`)
     return conditions.join(" or ")
   }
 
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
   // Helper function to build exclusion condition
   const buildExclusionCondition = () => {
@@ -700,47 +727,47 @@ export const HybridDefaultProfileForAgent =  async(
     const appOrEntityFilter = buildAppEntityFilter()
     // let driveItem:string [] = []
     // if we have some DriveIds then we are going to fetch all the items in that folder
-         const intentFilter = buildIntentFilter(intent)
-        let driveItem: string[] = []
-         if((selectedItem as any)[Apps.GoogleDrive]){
-          driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
-         }
-        const driveIds = []
-       
-       while (driveItem.length) {
-           let curr = driveItem.shift()
-           // Ensure email is defined before passing it to getFolderItems\
-           if (curr) driveIds.push(curr)
-           if (curr && email) {
-             try {
-               const folderItem = await getFolderItems(
-                 [curr],
-                 fileSchema,
-                 DriveEntity.Folder,
-                 email,
-               )
-               if (
-                 folderItem.root &&
-                 folderItem.root.children &&
-                 folderItem.root.children.length > 0
-               ) {
-                 for (const item of folderItem.root.children) {
-                   if (
-                     item.fields &&
-                     (item.fields as any).entity === DriveEntity.Folder
-                   ) {
-                     driveItem.push((item.fields as any).docId)
-                   } else {
-                    driveIds.push((item.fields as any).docId)
-                   }
-                 }
-               }
-             } catch (error) {
-               Logger.error("failed to fetch drive items")
-             }
-           }
-         }
-         const driveIdConditions = buildDocsInclusionCondition('docId',driveIds)
+    const intentFilter = buildIntentFilter(intent)
+    let driveItem: string[] = []
+    if ((selectedItem as any)[Apps.GoogleDrive]) {
+      driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+    }
+    const driveIds = []
+
+    while (driveItem.length) {
+      let curr = driveItem.shift()
+      // Ensure email is defined before passing it to getFolderItems\
+      if (curr) driveIds.push(curr)
+      if (curr && email) {
+        try {
+          const folderItem = await getFolderItems(
+            [curr],
+            fileSchema,
+            DriveEntity.Folder,
+            email,
+          )
+          if (
+            folderItem.root &&
+            folderItem.root.children &&
+            folderItem.root.children.length > 0
+          ) {
+            for (const item of folderItem.root.children) {
+              if (
+                item.fields &&
+                (item.fields as any).entity === DriveEntity.Folder
+              ) {
+                driveItem.push((item.fields as any).docId)
+              } else {
+                driveIds.push((item.fields as any).docId)
+              }
+            }
+          }
+        } catch (error) {
+          Logger.error("failed to fetch drive items")
+        }
+      }
+    }
+    const driveIdConditions = buildDocsInclusionCondition("docId", driveIds)
     return `
       (
         (
@@ -775,10 +802,10 @@ export const HybridDefaultProfileForAgent =  async(
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-    let channelIds:string [] = []
-         const intentFilter = buildIntentFilter(intent)
-         channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
-    const channelIdConditions = buildDocsInclusionCondition("docId" ,channelIds)
+    let channelIds: string[] = []
+    const intentFilter = buildIntentFilter(intent)
+    channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
+    const channelIdConditions = buildDocsInclusionCondition("docId", channelIds)
 
     return `
       (
@@ -793,13 +820,18 @@ export const HybridDefaultProfileForAgent =  async(
       )`
   }
 
-   const buildDataSourceFileYQL = () => {
+  const buildDataSourceFileYQL = () => {
     // For DataSourceFile, app and entity might not be directly applicable in the same way,
     // but keeping appOrEntityFilter for consistency if needed for other metadata.
 
-    const dsIds = (selectedItem as Record<string, unknown>)[Apps.DataSource] as any
-    const dataSourceIdConditions = buildDocsInclusionCondition("dataSourceId", dsIds)
-   
+    const dsIds = (selectedItem as Record<string, unknown>)[
+      Apps.DataSource
+    ] as any
+    const dataSourceIdConditions = buildDocsInclusionCondition(
+      "dataSourceId",
+      dsIds,
+    )
+
     return `
       (
         (
@@ -812,7 +844,6 @@ export const HybridDefaultProfileForAgent =  async(
   }
 
   const buildCollectionFileYQL = async () => {    
-    console.log("collectionSelections:", collectionSelections);
 
     // Extract all IDs from the key-value pairs
     const collectionIds: string[] = []
@@ -831,32 +862,36 @@ export const HybridDefaultProfileForAgent =  async(
       }
     }
     let conditions: string[] = []
-    
+
     // Handle entire collections - use clId filter (efficient)
     if (collectionIds.length > 0) {
       const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
       conditions.push(collectionCondition)
     }
-    
+
     // Handle specific folders - need to get file IDs (less efficient but necessary)
     if (collectionFolderIds.length > 0) {
       const clFileIds = await getAllFolderItems(collectionFolderIds, db)
       if (clFileIds.length > 0) {
         const ids = await getCollectionFilesVespaIds(clFileIds, db)
-        const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
-        
+        const clVespaIds = ids
+          .filter((item: any) => item.vespaDocId !== null)
+          .map((item: any) => item.vespaDocId!)
+
         if (clVespaIds.length > 0) {
           const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
           conditions.push(folderCondition)
         }
       }
     }
-    
+
     // Handle specific files - use file IDs directly (most efficient for individual files)
     if (collectionFileIds.length > 0) {
       const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
-      const clVespaIds = ids.filter((item: any) => item.vespaDocId !== null).map((item: any) => item.vespaDocId!)
-      
+      const clVespaIds = ids
+        .filter((item: any) => item.vespaDocId !== null)
+        .map((item: any) => item.vespaDocId!)
+
       if (clVespaIds.length > 0) {
         const fileCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(fileCondition)
@@ -864,7 +899,6 @@ export const HybridDefaultProfileForAgent =  async(
     }
     
     const finalCondition = conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
-    console.log(finalCondition);
     // Collection files use clId for collections and docId for folders/files
     return `
       (
@@ -910,9 +944,9 @@ export const HybridDefaultProfileForAgent =  async(
             sources.push(chatContainerSchema)
           break
         case Apps.DataSource:
-            appQueries.push(buildDataSourceFileYQL())
-            if (!sources.includes(dataSourceFileSchema))
-              sources.push(dataSourceFileSchema)
+          appQueries.push(buildDataSourceFileYQL())
+          if (!sources.includes(dataSourceFileSchema))
+            sources.push(dataSourceFileSchema)
           break
         case Apps.KnowledgeBase:
           if (collectionSelections && collectionSelections.length > 0) {
@@ -952,7 +986,6 @@ export const HybridDefaultProfileForAgent =  async(
     sources,
   })
 
-
   // Combine all queries
   const combinedQuery = appQueries.join("\n    or\n    ")
   const exclusionCondition = buildExclusionCondition()
@@ -977,7 +1010,8 @@ export const HybridDefaultProfileForAgent =  async(
   Logger.debug(`Generated YQL for agent search:`, {
     yql: finalYql,
     sources: sourcesString,
-    hasCollectionQueries: collectionSelections && collectionSelections.length > 0,
+    hasCollectionQueries:
+      collectionSelections && collectionSelections.length > 0,
   })
 
   return {
@@ -1452,15 +1486,15 @@ type VespaQueryConfig = {
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> // Updated to support key-value pairs instead of prefixed strings
-  driveIds?:string[] // Added for agent-specfic googleDrive docIds filtering
-  selectedItem?:{}
+  driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
+  selectedItem?: {}
 }
 
 export const searchVespa = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = config.page,
@@ -1534,8 +1568,8 @@ export const searchVespa = async (
 async function _searchVespa(
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = config.page,
@@ -1580,15 +1614,14 @@ async function _searchVespa(
 
   let { yql, profile } = HybridDefaultProfile(
     limit,
-    app, 
+    app,
     entity,
     rankProfile,
     timestampRange,
     excludedIds,
-    notInMailLabels, 
+    notInMailLabels,
     excludedApps,
     intent,
-    
   )
 
   const hybridDefaultPayload = {
@@ -1781,8 +1814,8 @@ export const searchVespaThroughAgent = async (
 export const searchVespaAgent = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   Apps: Apps[] | null,
   {
     alpha = 0.5,
@@ -1801,7 +1834,7 @@ export const searchVespaAgent = async (
     channelIds = [],
     collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
     driveIds = [], // docIds
-    selectedItem = {}
+    selectedItem = {},
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1821,9 +1854,8 @@ export const searchVespaAgent = async (
     intent,
     channelIds,
     collectionSelections, // Pass unified collectionSelections here
-    driveIds, 
+    driveIds,
     selectedItem,
-    
   )
 
   const hybridDefaultPayload = {
@@ -2440,9 +2472,9 @@ const processGmailIntent = (intent: Intent): string[] => {
 // }
 
 interface GetItemsParams {
-  schema: VespaSchema
-  app?: Apps | null
-  entity?: Entity | null
+  schema: VespaSchema | VespaSchema[]
+  app?: Apps | Apps[] | null
+  entity?: Entity | Entity[] | null
   timestampRange: { from: number | null; to: number | null } | null
   limit?: number
   offset?: number
@@ -2470,11 +2502,17 @@ export const getItems = async (
     channelIds,
   } = params
 
+  const schemas = Array.isArray(schema) ? schema : [schema]
+  const schemasString = schemas.join(", ")
   // Construct conditions based on parameters
   let conditions: string[] = []
 
   // App condition
-  if (app) {
+  if (Array.isArray(app) && app.length > 0) {
+    conditions.push(
+      app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(app) && app) {
     conditions.push(`app contains '${escapeYqlValue(app)}'`)
   }
 
@@ -2486,35 +2524,45 @@ export const getItems = async (
   }
 
   // Entity condition
-  if (entity) {
+  if (Array.isArray(entity) && entity.length > 0) {
+    conditions.push(
+      entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(entity) && entity) {
     conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
   }
 
   // Permissions or owner condition based on schema
-  if (schema === dataSourceFileSchema) {
+  if (schemas.length === 1 && schemas[0] === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
-  } else if (schema !== userSchema) {
+  } else if (!schemas.includes(userSchema)) {
     conditions.push(`permissions contains '${email}'`)
   } else {
     // For user schema
-    if (app !== Apps.GoogleWorkspace) {
+    if (
+      app !== Apps.GoogleWorkspace ||
+      (Array.isArray(app) && !app.includes(Apps.GoogleWorkspace))
+    ) {
       conditions.push(`owner contains '${email}'`)
     }
   }
 
-  let timestampField = ""
+  let timestampField = []
 
   // Choose appropriate timestamp field based on schema
-  if (schema === mailSchema || schema === mailAttachmentSchema) {
-    timestampField = "timestamp"
-  } else if (schema === fileSchema || schema === chatMessageSchema) {
-    timestampField = "updatedAt"
-  } else if (schema === eventSchema) {
-    timestampField = "startTime"
-  } else if (schema === userSchema) {
-    timestampField = "creationTime"
+  if (schemas.includes(mailSchema) || schemas.includes(mailAttachmentSchema)) {
+    timestampField.push("timestamp")
+  } else if (
+    schemas.includes(fileSchema) ||
+    schemas.includes(chatMessageSchema)
+  ) {
+    timestampField.push("updatedAt")
+  } else if (schemas.includes(eventSchema)) {
+    timestampField.push("startTime")
+  } else if (schemas.includes(userSchema)) {
+    timestampField.push("creationTime")
   } else {
-    timestampField = "updatedAt"
+    timestampField.push("updatedAt")
   }
 
   // Timestamp conditions
@@ -2524,12 +2572,12 @@ export const getItems = async (
 
     if (timestampRange.from) {
       timeConditions.push(
-        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange.map((field) => `${field} >= ${new Date(timestampRange.from!).getTime()}`).join(" or ")}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange.map((field) => `${field} <= ${new Date(timestampRange.to!).getTime()}`).join(" or ")}`,
       )
     }
     if (timeConditions.length > 0) {
@@ -2594,19 +2642,30 @@ export const getItems = async (
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
+  // TODO: Add support for grouping and aggregating results across apps,
+  // so that one app should not overwhelm the results
+  // const group = `| all(
+  //     group(app)
+  //     max(itemPerApp)
+  //     each(
+  //       output(summary())
+  //     )
+  //   `
   // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
+  const yql = `select * from sources ${schemasString} ${whereClause} ${orderByClause}`
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
-  Logger.info(`[getItems] Query Details:`, {
-    schema,
-    app,
-    entity,
-    limit,
-    offset,
-    intentProvided: !!intent,
-    conditions: conditions.length > 0 ? conditions : "none",
-  })
+  Logger.info(
+    `[getItems] Query Details: ${JSON.stringify({
+      schema,
+      app,
+      entity,
+      limit,
+      offset,
+      intentProvided: !!intent,
+      conditions: conditions.length > 0 ? conditions : "none",
+    })}`,
+  )
 
   const searchPayload = {
     yql,
@@ -2631,7 +2690,7 @@ export const getItems = async (
     .catch((error) => {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
-        sources: schema,
+        sources: JSON.stringify(schema),
         message: `getItems failed for schema ${schema}`,
       })
       Logger.error(searchError, "Error in getItems function")

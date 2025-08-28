@@ -40,6 +40,7 @@ let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
+const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -62,6 +63,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
 } else if (process.env["OLLAMA_MODEL"]) {
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
+    }
+  }
   OllamaModel = process.env["OLLAMA_MODEL"]
   defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
@@ -185,4 +193,5 @@ export default {
   ragOffFeature,
   AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
   RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
+  MAX_IMAGE_SIZE_BYTES,
 }

@@ -110,7 +110,6 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               source={file}
               className="h-full"
               style={{ height: "100%", overflow: "auto", padding: "16px" }}
-              theme={"light"}
             />
           )
         case "docx":
@@ -120,7 +119,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               key={citation.docId}
               source={file}
               className="h-full"
-              style={{ height: "100%", overflow: "auto" }}
+              style={{ overflow: "visible" }}
               options={{
                 renderHeaders: true,
                 renderFooters: true,
@@ -232,7 +231,11 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
             </div>
           )}
 
-          {!loading && !error && documentContent && renderViewer()}
+          {!loading && !error && documentContent && (
+            <div className="h-full overflow-auto">
+              {renderViewer()}
+            </div>
+          )}
         </div>
       </div>
     )

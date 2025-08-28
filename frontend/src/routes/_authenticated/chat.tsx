@@ -28,7 +28,14 @@ import {
   Minimize2,
   Share2,
 } from "lucide-react"
-import { useEffect, useRef, useState, Fragment, useCallback } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  Fragment,
+  useCallback,
+  useMemo,
+} from "react"
 import {
   TransformWrapper,
   TransformComponent,
@@ -126,6 +133,7 @@ import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
 import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
@@ -944,34 +952,25 @@ export const ChatPage = ({
     setSelectedCitation(null)
   }, [])
 
-  const isScrolledToBottom = () => {
-    const container = messagesContainerRef.current
-    if (!container) return true
-
-    const threshold = 100
-    return (
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      threshold
-    )
-  }
-
-  const handleScroll = () => {
-    const isAtBottom = isScrolledToBottom()
-    setUserHasScrolled(!isAtBottom)
-  }
-
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
     if (!container || userHasScrolled) return
+
+    // For virtualized messages, we need to scroll to the bottom differently
+    // Use the container's scrollTop instead of virtualizer when possible
     container.scrollTop = container.scrollHeight
+
+    // Also reset userHasScrolled since we're programmatically scrolling
+    setUserHasScrolled(false)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container || userHasScrolled) return
 
+    // For virtualized content, ensure we scroll to actual bottom
     container.scrollTop = container.scrollHeight
-  }, [messages, partial])
+  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
@@ -1152,190 +1151,42 @@ export const ChatPage = ({
 
         <div className="flex flex-row h-full w-full">
           <div
-            className={`h-full flex-1 flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
-            ref={messagesContainerRef}
-            onScroll={handleScroll}
+            className={`h-full flex-1 flex items-end justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           >
             <div
               className={`w-full h-full flex flex-col ${isCitationPreviewOpen ? "px-20" : "items-center"}`}
             >
-              <div className="flex flex-col w-full max-w-3xl flex-grow mb-[60px] mt-[56px]">
-                {messages.map((message: SelectPublicMessage, index: number) => {
-                  const isSourcesVisible =
-                    showSources && currentMessageId === message.externalId
-                  const userMessageWithErr =
-                    message.messageRole === "user" && message?.errorMessage
-
-                  return (
-                    <Fragment key={message.externalId ?? index}>
-                      <ChatMessage
-                        key={
-                          message.externalId
-                            ? `${message.externalId}-msg`
-                            : `msg-${index}`
-                        }
-                        message={message.message}
-                        isUser={message.messageRole === "user"}
-                        responseDone={true}
-                        thinking={message.thinking}
-                        citations={message.sources}
-                        imageCitations={message.imageCitations || []}
-                        messageId={message.externalId}
-                        handleRetry={handleRetry}
-                        citationMap={message.citationMap}
-                        isRetrying={message.isRetrying}
-                        dots={message.isRetrying ? dots : ""}
-                        onToggleSources={() => {
-                          if (
-                            showSources &&
-                            currentMessageId === message.externalId
-                          ) {
-                            setShowSources(false)
-                            setCurrentCitations([])
-                            setCurrentMessageId(null)
-                          } else {
-                            setCurrentCitations(message?.sources || [])
-                            setShowSources(true)
-                            setCurrentMessageId(message.externalId)
-                            // Close citation preview when opening sources
-                            setIsCitationPreviewOpen(false)
-                            setSelectedCitation(null)
-                          }
-                        }}
-                        sourcesVisible={isSourcesVisible}
-                        isStreaming={isStreaming}
-                        isDebugMode={isDebugMode}
-                        onShowRagTrace={handleShowRagTrace}
-                        feedbackStatus={
-                          feedbackMap[message.externalId!] || null
-                        }
-                        onFeedback={!isSharedChat ? handleFeedback : undefined}
-                        onShare={!isSharedChat ? handleShare : undefined}
-                        disableRetry={disableRetry}
-                        attachments={message.attachments || []}
-                        onCitationClick={handleCitationClick}
-                        isCitationPreviewOpen={isCitationPreviewOpen}
-                      />
-                      {userMessageWithErr && (
-                        <ChatMessage
-                          key={
-                            message.externalId
-                              ? `${message.externalId}-err`
-                              : `err-${index}`
-                          }
-                          message={message.errorMessage}
-                          thinking={message.thinking}
-                          isUser={false}
-                          responseDone={true}
-                          citations={message.sources}
-                          imageCitations={message.imageCitation || []}
-                          messageId={message.externalId}
-                          handleRetry={handleRetry}
-                          citationMap={message.citationMap}
-                          isRetrying={message.isRetrying}
-                          dots={message.isRetrying ? dots : ""}
-                          onToggleSources={() => {
-                            if (
-                              showSources &&
-                              currentMessageId === message.externalId
-                            ) {
-                              setShowSources(false)
-                              setCurrentCitations([])
-                              setCurrentMessageId(null)
-                            } else {
-                              setCurrentCitations(message?.sources || [])
-                              setShowSources(true)
-                              setCurrentMessageId(message.externalId)
-                              // Close citation preview when opening sources
-                              setIsCitationPreviewOpen(false)
-                              setSelectedCitation(null)
-                            }
-                          }}
-                          sourcesVisible={isSourcesVisible}
-                          isStreaming={isStreaming}
-                          isDebugMode={isDebugMode}
-                          onShowRagTrace={handleShowRagTrace}
-                          feedbackStatus={
-                            feedbackMap[message.externalId!] || null
-                          }
-                          onFeedback={
-                            !isSharedChat ? handleFeedback : undefined
-                          }
-                          onShare={!isSharedChat ? handleShare : undefined}
-                          disableRetry={disableRetry}
-                          attachments={message.attachments || []}
-                          onCitationClick={handleCitationClick}
-                          isCitationPreviewOpen={isCitationPreviewOpen}
-                        />
-                    )}
-                    {/* Show follow-up questions only for the latest assistant message */}
-                    {message.messageRole === "assistant" &&
-                      !isStreaming &&
-                      !retryIsStreaming &&
-                      !isSharedChat &&
-                      message.externalId &&
-                      index === messages.length - 1 && (
-                        <FollowUpQuestions
-                          chatId={chatId}
-                          messageId={message.externalId}
-                          onQuestionClick={(question: string) => {
-                            // Use ChatBox's sendMessage method which includes all internal state
-                            // (tools, connectors, agent ID, etc.)
-                            chatBoxRef.current?.sendMessage(question)
-                          }}
-                          isStreaming={isStreaming || retryIsStreaming}
-                          onQuestionsLoaded={scrollToBottom}
-                        />
-                        )}
-                    </Fragment>
-                  )
-                })}
-                {currentResp && (
-                  <ChatMessage
-                    message={currentResp.resp}
-                    citations={currentResp.sources}
-                    imageCitations={currentResp.imageCitations}
-                    thinking={currentResp.thinking || ""}
-                    isUser={false}
-                    responseDone={false}
-                    handleRetry={handleRetry}
-                    dots={dots}
-                    messageId={currentResp.messageId}
-                    citationMap={currentResp.citationMap}
-                    onToggleSources={() => {
-                      if (
-                        showSources &&
-                        currentMessageId === currentResp.messageId
-                      ) {
-                        setShowSources(false)
-                        setCurrentCitations([])
-                        setCurrentMessageId(null)
-                      } else {
-                        setCurrentCitations(currentResp.sources || [])
-                        setShowSources(true)
-                        setCurrentMessageId(currentResp.messageId || null)
-                        // Close citation preview when opening sources
-                        setIsCitationPreviewOpen(false)
-                        setSelectedCitation(null)
-                      }
-                    }}
-                    sourcesVisible={
-                      showSources && currentMessageId === currentResp.messageId
-                    }
-                    isStreaming={isStreaming}
-                    isDebugMode={isDebugMode}
-                    onShowRagTrace={handleShowRagTrace}
-                    // Feedback not applicable for streaming response, but props are needed
-                    feedbackStatus={null}
-                    onFeedback={!isSharedChat ? handleFeedback : undefined}
-                    onShare={!isSharedChat ? handleShare : undefined}
-                    disableRetry={disableRetry}
-                    attachments={[]}
-                    onCitationClick={handleCitationClick}
-                    isCitationPreviewOpen={isCitationPreviewOpen}
-                  />
-                )}
-              </div>
+              <VirtualizedMessages
+                ref={messagesContainerRef}
+                messages={messages}
+                currentResp={currentResp}
+                showSources={showSources}
+                currentMessageId={currentMessageId}
+                feedbackMap={feedbackMap}
+                isStreaming={isStreaming}
+                retryIsStreaming={retryIsStreaming}
+                isSharedChat={isSharedChat}
+                isDebugMode={isDebugMode}
+                disableRetry={disableRetry}
+                dots={dots}
+                setShowSources={setShowSources}
+                setCurrentCitations={setCurrentCitations}
+                setCurrentMessageId={setCurrentMessageId}
+                handleRetry={handleRetry}
+                handleShowRagTrace={handleShowRagTrace}
+                handleFeedback={handleFeedback}
+                handleShare={handleShare}
+                handleSend={handleSend}
+                scrollToBottom={scrollToBottom}
+                chatId={chatId}
+                userHasScrolled={userHasScrolled}
+                setUserHasScrolled={setUserHasScrolled}
+                onCitationClick={handleCitationClick}
+                isCitationPreviewOpen={isCitationPreviewOpen}
+                setIsCitationPreviewOpen={setIsCitationPreviewOpen}
+                setSelectedCitation={setSelectedCitation}
+                chatBoxRef={chatBoxRef}
+              />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
                   <RagTraceVirtualization
@@ -2193,6 +2044,348 @@ const Code = ({
     </code>
   )
 }
+
+// Virtualized Messages Component
+interface VirtualizedMessagesProps {
+  messages: SelectPublicMessage[]
+  currentResp?: {
+    resp: string
+    sources?: Citation[]
+    imageCitations?: any[]
+    thinking?: string
+    messageId?: string | null
+    citationMap?: any
+  } | null
+  showSources: boolean
+  currentMessageId: string | null
+  feedbackMap: Record<string, MessageFeedback | null>
+  isStreaming: boolean
+  retryIsStreaming: boolean
+  isSharedChat: boolean
+  isDebugMode: boolean
+  disableRetry: boolean
+  dots: string
+  setShowSources: (show: boolean) => void
+  setCurrentCitations: (citations: Citation[]) => void
+  setCurrentMessageId: (id: string | null) => void
+  handleRetry: (messageId: string) => void
+  handleShowRagTrace: (messageId: string) => void
+  handleFeedback?: (messageId: string, feedback: MessageFeedback) => void
+  handleShare?: () => void
+  handleSend: (message: string) => void
+  scrollToBottom: () => void
+  chatId: string | null
+  userHasScrolled: boolean
+  setUserHasScrolled: (hasScrolled: boolean) => void
+  onCitationClick: (citation: Citation) => void
+  isCitationPreviewOpen: boolean
+  setIsCitationPreviewOpen: (open: boolean) => void
+  setSelectedCitation: (citation: Citation | null) => void
+  chatBoxRef: React.RefObject<ChatBoxRef>
+}
+
+const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
+const OVERSCAN = 3 // Reduced overscan for better performance
+
+const VirtualizedMessages = React.forwardRef<HTMLDivElement, VirtualizedMessagesProps>(({
+  messages,
+  currentResp,
+  showSources,
+  currentMessageId,
+  feedbackMap,
+  isStreaming,
+  retryIsStreaming,
+  isSharedChat,
+  isDebugMode,
+  disableRetry,
+  dots,
+  setShowSources,
+  setCurrentCitations,
+  setCurrentMessageId,
+  handleRetry,
+  handleShowRagTrace,
+  handleFeedback,
+  handleShare,
+  handleSend,
+  scrollToBottom,
+  chatId,
+  userHasScrolled,
+  setUserHasScrolled,
+  onCitationClick,
+  isCitationPreviewOpen,
+  setIsCitationPreviewOpen,
+  setSelectedCitation,
+  chatBoxRef,
+}, ref) => {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const lastScrollTop = useRef(0)
+
+  // Create items array including messages and current response
+  const allItems = useMemo(() => {
+    const items = [...messages]
+    if (currentResp) {
+      items.push({
+        externalId: currentResp.messageId || "current-resp",
+        message: currentResp.resp,
+        messageRole: "assistant" as const,
+        sources: currentResp.sources || [],
+        imageCitations: currentResp.imageCitations || [],
+        thinking: currentResp.thinking || "",
+        citationMap: currentResp.citationMap,
+        isStreaming: true,
+        attachments: [],
+      })
+    }
+    return items
+  }, [messages, currentResp])
+
+  const rowVirtualizer = useVirtualizer({
+    count: allItems.length,
+    getScrollElement: () => (typeof ref === 'object' && ref?.current) || parentRef.current,
+    estimateSize: () => ESTIMATED_MESSAGE_HEIGHT,
+    overscan: OVERSCAN,
+    measureElement: (element) => {
+      // Get accurate height measurements for better virtualization
+      return element?.getBoundingClientRect().height ?? ESTIMATED_MESSAGE_HEIGHT
+    },
+  })
+
+  // Auto-scroll to bottom when new messages arrive (only if user hasn't manually scrolled)
+  useEffect(() => {
+    if (!userHasScrolled && allItems.length > 0) {
+      // Let the main scroll effect handle this, just ensure we're at the end
+      const container = (typeof ref === 'object' && ref?.current) || parentRef.current
+      if (container) {
+        const timeoutId = setTimeout(() => {
+          container.scrollTop = container.scrollHeight
+        }, 50)
+        return () => clearTimeout(timeoutId)
+      }
+    }
+  }, [allItems.length, userHasScrolled, ref])
+
+  // Initialize scroll to bottom for new chats
+  useEffect(() => {
+    if (allItems.length > 0) {
+      const container = (typeof ref === 'object' && ref?.current) || parentRef.current
+      if (container) {
+        // Initial scroll to bottom
+        container.scrollTop = container.scrollHeight
+      }
+    }
+  }, []) // Only run once on mount
+
+  // Detect user scrolling - improved logic to prevent conflicts
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const element = e.currentTarget
+      const scrollTop = element.scrollTop
+      const scrollHeight = element.scrollHeight
+      const clientHeight = element.clientHeight
+
+      // Calculate if we're at the bottom with a reasonable threshold
+      const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50
+
+      // Update user scroll state based on position
+      if (isAtBottom) {
+        // User is at bottom, allow auto-scroll
+        setUserHasScrolled(false)
+      } else if (scrollTop < lastScrollTop.current) {
+        // User scrolled up, disable auto-scroll
+        setUserHasScrolled(true)
+      }
+
+      lastScrollTop.current = scrollTop
+    },
+    [setUserHasScrolled],
+  )
+
+  return (
+    <div
+      ref={(node) => {
+        // Update parentRef for internal use
+        ;(parentRef as any).current = node
+        // Forward the ref to the parent component
+        if (typeof ref === 'function') {
+          ref(node)
+        } else if (ref) {
+          ;(ref as any).current = node
+        }
+      }}
+      className="h-full w-full overflow-auto flex flex-col items-center"
+      onScroll={handleScroll}
+      style={{
+        height: "100%",
+        width: "100%",
+      }}
+    >
+      <div className="w-full max-w-3xl flex-grow relative mt-[56px] mb-[60px]">
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+            const message = allItems[virtualItem.index]
+            const index = virtualItem.index
+            const isSourcesVisible =
+              showSources && currentMessageId === message.externalId
+            const userMessageWithErr =
+              message.messageRole === "user" && message?.errorMessage
+            const isLastAssistantMessage =
+              message.messageRole === "assistant" &&
+              !isStreaming &&
+              !retryIsStreaming &&
+              !isSharedChat &&
+              message.externalId &&
+              index === messages.length - 1
+
+            return (
+              <div
+                key={virtualItem.key}
+                data-index={virtualItem.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                <Fragment key={message.externalId ?? index}>
+                  <ChatMessage
+                    key={
+                      message.externalId
+                        ? `${message.externalId}-msg`
+                        : `msg-${index}`
+                    }
+                    message={message.message}
+                    isUser={message.messageRole === "user"}
+                    responseDone={message.externalId !== "current-resp"}
+                    thinking={message.thinking}
+                    citations={message.sources}
+                    imageCitations={message.imageCitations || []}
+                    messageId={message.externalId}
+                    handleRetry={handleRetry}
+                    citationMap={message.citationMap}
+                    isRetrying={message.isRetrying}
+                    dots={
+                      message.isRetrying ||
+                      message.externalId === "current-resp"
+                        ? dots
+                        : ""
+                    }
+                    onToggleSources={() => {
+                      if (
+                        showSources &&
+                        currentMessageId === message.externalId
+                      ) {
+                        setShowSources(false)
+                        setCurrentCitations([])
+                        setCurrentMessageId(null)
+                      } else {
+                        setCurrentCitations(message?.sources || [])
+                        setShowSources(true)
+                        setCurrentMessageId(message.externalId)
+                        // Close citation preview when opening sources
+                        setIsCitationPreviewOpen(false)
+                        setSelectedCitation(null)
+                      }
+                    }}
+                    sourcesVisible={isSourcesVisible}
+                    isStreaming={
+                      message.externalId === "current-resp"
+                        ? isStreaming
+                        : false
+                    }
+                    isDebugMode={isDebugMode}
+                    onShowRagTrace={handleShowRagTrace}
+                    feedbackStatus={feedbackMap[message.externalId!] || null}
+                    onFeedback={!isSharedChat ? handleFeedback : undefined}
+                    onShare={!isSharedChat && handleShare ? () => handleShare() : undefined}
+                    disableRetry={disableRetry}
+                    attachments={message.attachments || []}
+                    onCitationClick={onCitationClick}
+                    isCitationPreviewOpen={isCitationPreviewOpen}
+                  />
+
+                  {userMessageWithErr && (
+                    <ChatMessage
+                      key={
+                        message.externalId
+                          ? `${message.externalId}-err`
+                          : `err-${index}`
+                      }
+                      message={message.errorMessage}
+                      thinking={message.thinking}
+                      isUser={false}
+                      responseDone={true}
+                      citations={message.sources}
+                      imageCitations={message.imageCitations || []}
+                      messageId={message.externalId}
+                      handleRetry={handleRetry}
+                      citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
+                      dots={message.isRetrying ? dots : ""}
+                      onToggleSources={() => {
+                        if (
+                          showSources &&
+                          currentMessageId === message.externalId
+                        ) {
+                          setShowSources(false)
+                          setCurrentCitations([])
+                          setCurrentMessageId(null)
+                        } else {
+                          setCurrentCitations(message?.sources || [])
+                          setShowSources(true)
+                          setCurrentMessageId(message.externalId)
+                          // Close citation preview when opening sources
+                          setIsCitationPreviewOpen(false)
+                          setSelectedCitation(null)
+                        }
+                      }}
+                      sourcesVisible={isSourcesVisible}
+                      isStreaming={isStreaming}
+                      isDebugMode={isDebugMode}
+                      onShowRagTrace={handleShowRagTrace}
+                      feedbackStatus={feedbackMap[message.externalId!] || null}
+                      onFeedback={!isSharedChat ? handleFeedback : undefined}
+                      onShare={!isSharedChat && handleShare ? () => handleShare() : undefined}
+                      disableRetry={disableRetry}
+                      attachments={message.attachments || []}
+                      onCitationClick={onCitationClick}
+                      isCitationPreviewOpen={isCitationPreviewOpen}
+                    />
+                  )}
+
+                  {/* Show follow-up questions only for the latest assistant message */}
+                  {isLastAssistantMessage && chatId && (
+                    <FollowUpQuestions
+                      chatId={chatId}
+                      messageId={message.externalId}
+                      onQuestionClick={(question: string) => {
+                        // Use ChatBox's sendMessage method which includes all internal state
+                        // (tools, connectors, agent ID, etc.)
+                        chatBoxRef.current?.sendMessage(question)
+                      }}
+                      isStreaming={isStreaming || retryIsStreaming}
+                      onQuestionsLoaded={scrollToBottom}
+                    />
+                  )}
+                </Fragment>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+VirtualizedMessages.displayName = 'VirtualizedMessages'
 
 export const ChatMessage = ({
   message,

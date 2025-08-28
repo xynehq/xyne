@@ -426,11 +426,11 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-        if (item.fields.sddocname === dataSourceFileSchema) {
-          // Skip datasource and collection files from citations
-          continue
-        }
-        yield {
+          if (item.fields.sddocname === dataSourceFileSchema) {
+            // Skip datasource and collection files from citations
+            continue
+          }
+          yield {
             citation: {
               index: citationIndex,
               item: searchToCitation(item as VespaSearchResults),
@@ -1163,8 +1163,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let channelIds:string[] = []
-  let selectedItem ={}
+  let channelIds: string[] = []
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1193,8 +1193,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
-          } 
-          else {
+          } else {
             // Handle generic app names
             switch (lowerIntegration) {
               case Apps.GoogleDrive.toLowerCase():
@@ -1248,45 +1247,52 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      const { selectedApps, selectedItems } = parseAppSelections(
+        agentPromptData.appIntegrations,
+      )
       // Use selectedApps and selectedItems
-      selectedItem=selectedItems
-      // agentAppEnums = selectedApps.filter(isValidApp); 
-      agentAppEnums =[... new Set(selectedApps)]
-      
-      // Extract collection selections from knowledge_base selections  
+      selectedItem = selectedItems
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      agentAppEnums = [...new Set(selectedApps)]
+
+      // Extract collection selections from knowledge_base selections
       if (selectedItems[Apps.KnowledgeBase]) {
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-        
+
         for (const itemId of selectedItems[Apps.KnowledgeBase]) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
           } else if (itemId.startsWith("clfd-")) {
             // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
-        
+
         // Create the key-value pair object
-        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+        if (
+          collectionIds.length > 0 ||
+          collectionFolderIds.length > 0 ||
+          collectionFileIds.length > 0
+        ) {
           agentSpecificCollectionSelections.push({
             collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+            collectionFolderIds:
+              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds:
+              collectionFileIds.length > 0 ? collectionFileIds : undefined,
           })
         }
       } else {
-        console.log('No KnowledgeBase items found in selectedItems');
+        console.log("No KnowledgeBase items found in selectedItems")
       }
     }
   }
-  console.log(agentSpecificCollectionSelections);
 
   let message = input
 
@@ -1378,7 +1384,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem:selectedItem
+        selectedItem: selectedItem,
       },
     )
   }
@@ -1438,7 +1444,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             collectionSelections: agentSpecificCollectionSelections,
-            selectedItem:selectedItem
+            selectedItem: selectedItem,
           },
         )
       }
@@ -1501,7 +1507,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
               collectionSelections: agentSpecificCollectionSelections,
-              selectedItem:selectedItem
+              selectedItem: selectedItem,
             }))
 
         // Expand email threads in the results
@@ -1542,24 +1548,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
-        results = await searchVespaAgent(
-          query,
-          email,
-          null,
-          null,
-          agentAppEnums,
-          {
-            limit: pageSize,
-            alpha: userAlpha,
-            excludedIds: latestResults
-              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-              ?.filter((v) => !!v),
-            dataSourceIds: agentSpecificDataSourceIds,
-            channelIds,
-            collectionSelections: agentSpecificCollectionSelections,
-            selectedItem:selectedItem
-          }
-        )
+          results = await searchVespaAgent(
+            query,
+            email,
+            null,
+            null,
+            agentAppEnums,
+            {
+              limit: pageSize,
+              alpha: userAlpha,
+              excludedIds: latestResults
+                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+                ?.filter((v) => !!v),
+              dataSourceIds: agentSpecificDataSourceIds,
+              channelIds,
+              collectionSelections: agentSpecificCollectionSelections,
+              selectedItem: selectedItem,
+            },
+          )
         }
 
         // Expand email threads in the results
@@ -1671,7 +1677,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             dataSourceIds: agentSpecificDataSourceIds,
             collectionSelections: agentSpecificCollectionSelections,
             channelIds: channelIds,
-            selectedItem:selectedItem
+            selectedItem: selectedItem,
           },
         )
       }
@@ -1724,8 +1730,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             span: searchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             collectionSelections: agentSpecificCollectionSelections,
-            channelIds:channelIds,
-            selectedItem:selectedItem
+            channelIds: channelIds,
+            selectedItem: selectedItem,
           },
         )
       }
@@ -2436,43 +2442,49 @@ async function* generatePointQueryTimeExpansion(
 
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      const { selectedApps, selectedItems } = parseAppSelections(
+        agentPromptData.appIntegrations,
+      )
       // Use selectedApps and selectedItems
-      selectedItem=selectedItems
+      selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
-      agentAppEnums =[... new Set(selectedApps)]
-      
+      agentAppEnums = [...new Set(selectedApps)]
+
       // Extract collection selections from knowledge_base selections
       if (selectedItems[Apps.KnowledgeBase]) {
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-        
+
         for (const itemId of selectedItems[Apps.KnowledgeBase]) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
           } else if (itemId.startsWith("clfd-")) {
             // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
-        
+
         // Create the key-value pair object
-        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+        if (
+          collectionIds.length > 0 ||
+          collectionFolderIds.length > 0 ||
+          collectionFileIds.length > 0
+        ) {
           agentSpecificCollectionSelections.push({
             collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+            collectionFolderIds:
+              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds:
+              collectionFileIds.length > 0 ? collectionFileIds : undefined,
           })
         }
       }
     }
-
-
   }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
@@ -2613,7 +2625,7 @@ async function* generatePointQueryTimeExpansion(
               span: calenderSearchSpan,
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
-              selectedItem:selectedItem,
+              selectedItem: selectedItem,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2623,8 +2635,8 @@ async function* generatePointQueryTimeExpansion(
             notInMailLabels: ["CATEGORY_PROMOTIONS"],
             span: emailSearchSpan,
             dataSourceIds: agentSpecificDataSourceIds,
-            channelIds:channelIds,
-            selectedItem:selectedItem
+            channelIds: channelIds,
+            selectedItem: selectedItem,
           }),
         ])
         results.root.children = [
@@ -2822,7 +2834,7 @@ async function* processResultsForMetadata(
   items: VespaSearchResult[],
   input: string,
   userCtx: string,
-  app: Apps,
+  app: Apps[] | null,
   entity: any,
   chunksCount: number | undefined,
   userRequestsReasoning?: boolean,
@@ -2830,7 +2842,7 @@ async function* processResultsForMetadata(
   email?: string,
   agentContext?: string,
 ) {
-  if (app === Apps.GoogleDrive) {
+  if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
     loggerWithChild({ email: email ?? "" }).info(
       `Google Drive, Chunk size: ${chunksCount}`,
@@ -2855,7 +2867,7 @@ async function* processResultsForMetadata(
   }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
-  if (app === Apps.Gmail) {
+  if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
     iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
   } else {
@@ -2890,7 +2902,7 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { app, entity, startTime, endTime, sortDirection, intent } =
+  const { apps, entities, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
@@ -2898,7 +2910,9 @@ async function* generateMetadataQueryAnswer(
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
   const isValidAppOrEntity =
-    isValidApp(app as Apps) || isValidEntity(entity as any)
+    (apps && apps.every((a) => isValidApp(a))) ||
+    (entities && entities.every((e) => isValidEntity(e)))
+
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
   let agentSpecificCollectionSelections: Array<{
@@ -2906,7 +2920,7 @@ async function* generateMetadataQueryAnswer(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem ={}
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2985,43 +2999,49 @@ async function* generateMetadataQueryAnswer(
     }
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(agentPromptData.appIntegrations);
+      const { selectedApps, selectedItems } = parseAppSelections(
+        agentPromptData.appIntegrations,
+      )
       // Use selectedApps and selectedItems
-      selectedItem=selectedItems
+      selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
-      agentAppEnums =[... new Set(selectedApps)]
-      
+      agentAppEnums = [...new Set(selectedApps)]
+
       // Extract collection selections from knowledge_base selections
       if (selectedItems[Apps.KnowledgeBase]) {
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-        
+
         for (const itemId of selectedItems[Apps.KnowledgeBase]) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ''))
+            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
           } else if (itemId.startsWith("clfd-")) {
             // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ''))
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ''))
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
-        
+
         // Create the key-value pair object
-        if (collectionIds.length > 0 || collectionFolderIds.length > 0 || collectionFileIds.length > 0) {
+        if (
+          collectionIds.length > 0 ||
+          collectionFolderIds.length > 0 ||
+          collectionFileIds.length > 0
+        ) {
           agentSpecificCollectionSelections.push({
             collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds: collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds: collectionFileIds.length > 0 ? collectionFileIds : undefined
+            collectionFolderIds:
+              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+            collectionFileIds:
+              collectionFileIds.length > 0 ? collectionFileIds : undefined,
           })
         }
       }
     }
-
-
   }
 
   // Process timestamp
@@ -3050,14 +3070,16 @@ async function* generateMetadataQueryAnswer(
   const directionText = direction === "prev" ? "going back" : "up to"
 
   loggerWithChild({ email: email }).info(
-    `App : "${app}" , Entity : "${entity}"` +
+    `Apps : "${apps?.join(", ")}" , Entities : "${entities?.join(", ")}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
-  let schema: VespaSchema | null
-  if (!entity && app) {
-    schema = appToSchemaMapper(app)
-  } else {
-    schema = entityToSchemaMapper(entity, app)
+  let schema: VespaSchema[] | null = null
+  if (!entities?.length && apps?.length) {
+    schema = apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null)
+  } else if (entities?.length) {
+    schema = entities
+      .map((entity) => entityToSchemaMapper(entity))
+      .filter((s) => s !== null)
   }
 
   let items: VespaSearchResult[] = []
@@ -3069,7 +3091,11 @@ async function* generateMetadataQueryAnswer(
     classification.filters?.sortDirection === "desc"
   ) {
     let resolvedIntent = intent || {}
-    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+    if (
+      intent &&
+      Object.keys(intent).length > 0 &&
+      apps?.includes(Apps.Gmail)
+    ) {
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
@@ -3107,8 +3133,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespa(
           classification.filterQuery,
           email,
-          app ?? null,
-          entity ?? null,
+          apps ?? null,
+          entities ?? null,
           {
             ...searchOps,
             offset: pageSize * iteration,
@@ -3120,8 +3146,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
-          app ?? null,
-          entity ?? null,
+          apps ?? null,
+          entities ?? null,
           agentAppEnums,
           {
             ...searchOps,
@@ -3129,7 +3155,7 @@ async function* generateMetadataQueryAnswer(
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
-            selectedItem:selectedItem
+            selectedItem: selectedItem,
           },
         )
       }
@@ -3176,8 +3202,8 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
-        app as Apps,
-        entity,
+        apps,
+        entities,
         undefined,
         userRequestsReasoning,
         span,
@@ -3223,7 +3249,11 @@ async function* generateMetadataQueryAnswer(
     )
 
     let resolvedIntent = intent || {}
-    if (intent && Object.keys(intent).length > 0 && app === Apps.Gmail) {
+    if (
+      intent &&
+      Object.keys(intent).length > 0 &&
+      apps?.includes(Apps.Gmail)
+    ) {
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
@@ -3235,11 +3265,14 @@ async function* generateMetadataQueryAnswer(
 
     if (!schema) {
       loggerWithChild({ email: email }).error(
-        `[generateMetadataQueryAnswer] Could not determine a valid schema for app: ${app}, entity: ${entity}`,
+        `[generateMetadataQueryAnswer] Could not determine a valid schema for apps: ${JSON.stringify(apps)}, entities: ${JSON.stringify(entities)}`,
       )
       span?.setAttribute("error", "Schema determination failed")
-      span?.setAttribute("app_for_schema_failure", app || "undefined")
-      span?.setAttribute("entity_for_schema_failure", entity || "undefined")
+      span?.setAttribute("apps_for_schema_failure", JSON.stringify(apps))
+      span?.setAttribute(
+        "entities_for_schema_failure",
+        JSON.stringify(entities),
+      )
 
       yield { text: METADATA_FALLBACK_TO_RAG }
       return
@@ -3247,16 +3280,17 @@ async function* generateMetadataQueryAnswer(
     let searchResults
     items = []
     if (agentPrompt) {
-      if (agentAppEnums.find((x) => x == app)) {
+      const agentApps = agentAppEnums.filter((a) => apps?.includes(a))
+      if (agentApps.length) {
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
-          app: app ?? null,
-          entity: entity ?? null,
+          app: apps ?? null,
+          entity: entities ?? null,
           timestampRange,
           limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
@@ -3270,14 +3304,14 @@ async function* generateMetadataQueryAnswer(
       }
     } else {
       loggerWithChild({ email: email }).info(
-        `[GetItems] Calling getItems - Schema: ${schema}, App: ${app}, Entity: ${entity}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
       )
 
       const getItemsParams = {
         email,
         schema,
-        app: app ?? null,
-        entity: entity ?? null,
+        app: apps ?? null,
+        entity: entities ?? null,
         timestampRange,
         limit: userSpecifiedCountLimit,
         asc: sortDirection === "asc",
@@ -3323,8 +3357,8 @@ async function* generateMetadataQueryAnswer(
       items,
       input,
       userCtx,
-      app as Apps,
-      entity,
+      apps,
+      entities,
       maxSummaryCount,
       userRequestsReasoning,
       span,
@@ -3386,8 +3420,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespa(
           query,
           email,
-          app ?? null,
-          entity ?? null,
+          apps ?? null,
+          entities ?? null,
           {
             ...searchOptions,
             offset: pageSize * iteration,
@@ -3398,15 +3432,15 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespaAgent(
           query,
           email,
-          app ?? null,
-          entity ?? null,
+          apps ?? null,
+          entities ?? null,
           agentAppEnums,
           {
             ...searchOptions,
             offset: pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
-            selectedItem:selectedItem
+            selectedItem: selectedItem,
           },
         )
       }
@@ -3458,8 +3492,8 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
-        app as Apps,
-        entity,
+        apps,
+        entities,
         undefined,
         userRequestsReasoning,
         span,
@@ -3492,7 +3526,7 @@ async function* generateMetadataQueryAnswer(
 }
 
 const fallbackText = (classification: QueryRouterLLMResponse): string => {
-  const { app, entity } = classification.filters
+  const { apps, entities } = classification.filters
   const direction = classification.direction || ""
   const { startTime, endTime } = classification.filters
   const from = new Date(startTime ?? "").getTime()
@@ -3501,33 +3535,53 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
 
   let searchDescription = ""
 
-  if (app === Apps.GoogleCalendar && entity === "event") {
-    searchDescription = "calendar events"
-  } else if (app === Apps.Gmail) {
-    if (entity === "mail") {
-      searchDescription = "emails"
-    } else if (entity === "pdf") {
-      searchDescription = "email attachments"
-    }
-  } else if (app === Apps.GoogleDrive) {
-    if (entity === "driveFile") {
-      searchDescription = "files"
-    } else if (entity === "docs") {
-      searchDescription = "Google Docs"
-    } else if (entity === "sheets") {
-      searchDescription = "Google Sheets"
-    } else if (entity === "slides") {
-      searchDescription = "Google Slides"
-    } else if (entity === "pdf") {
-      searchDescription = "PDF files"
-    } else if (entity === "folder") {
-      searchDescription = "folders"
-    }
-  } else if (
-    app === Apps.GoogleWorkspace &&
-    entity === GooglePeopleEntity.Contacts
-  ) {
-    searchDescription = "contacts"
+  // Handle apps array
+  if (apps && apps.length > 0) {
+    const appNames = apps
+      .map((a) => {
+        switch (a) {
+          case Apps.Gmail:
+            return "emails"
+          case Apps.GoogleCalendar:
+            return "calendar events"
+          case Apps.GoogleDrive:
+            return "files"
+          case Apps.GoogleWorkspace:
+            return "contacts"
+          default:
+            return "items"
+        }
+      })
+      .join(", ")
+    searchDescription = appNames
+  } else if (entities && entities.length > 0) {
+    const entityNames = entities
+      .map((e) => {
+        switch (e) {
+          case "mail":
+            return "emails"
+          case "event":
+            return "calendar events"
+          case "driveFile":
+            return "files"
+          case "docs":
+            return "Google Docs"
+          case "sheets":
+            return "Google Sheets"
+          case "slides":
+            return "Google Slides"
+          case "pdf":
+            return "PDF files"
+          case "folder":
+            return "folders"
+          case GooglePeopleEntity.Contacts:
+            return "contacts"
+          default:
+            return "items"
+        }
+      })
+      .join(", ")
+    searchDescription = entityNames
   } else {
     searchDescription = "information"
   }
@@ -3627,7 +3681,7 @@ export async function* UnderstandMessageAndAnswer(
 
   if (
     classification.direction !== null &&
-    classification.filters.app === Apps.GoogleCalendar
+    classification.filters.apps?.includes(Apps.GoogleCalendar)
   ) {
     // user is talking about an event
     loggerWithChild({ email: email }).info(
@@ -4093,7 +4147,6 @@ export const MessageApi = async (c: Context) => {
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)
           ) {
-
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -4390,8 +4443,8 @@ export const MessageApi = async (c: Context) => {
             let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
-              app: "",
-              entity: "",
+              apps: [],
+              entities: [],
               startTime: "",
               endTime: "",
               count: 0,
@@ -4510,10 +4563,10 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.end()
             let classification
             const {
-              app,
+              apps,
               count,
               endTime,
-              entity,
+              entities,
               sortDirection,
               startTime,
               intent,
@@ -4524,8 +4577,8 @@ export const MessageApi = async (c: Context) => {
               filterQuery: parsed.filterQuery,
               isFollowUp: parsed.isFollowUp,
               filters: {
-                app: app as Apps,
-                entity: entity as Entity,
+                apps: apps as Apps[] | undefined,
+                entities: entities as Entity[] | undefined,
                 endTime,
                 sortDirection,
                 startTime,
@@ -5575,8 +5628,8 @@ export const MessageRetryApi = async (c: Context) => {
             let citations: Citation[] = [] // Changed to Citation[] for consistency
             let citationMap: Record<number, number> = {}
             let queryFilters = {
-              app: "",
-              entity: "",
+              apps: [],
+              entities: [],
               startTime: "",
               endTime: "",
               count: 0,
@@ -5703,16 +5756,22 @@ export const MessageRetryApi = async (c: Context) => {
                   "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const { app, count, endTime, entity, sortDirection, startTime } =
-                parsed?.filters
+              const {
+                apps,
+                count,
+                endTime,
+                entities,
+                sortDirection,
+                startTime,
+              } = parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
                 filterQuery: parsed.filterQuery,
                 isFollowUp: parsed.isFollowUp,
                 filters: {
-                  app: app as Apps,
-                  entity: entity as Entity,
+                  apps: apps,
+                  entities: entities as Entity[],
                   endTime,
                   sortDirection,
                   startTime,

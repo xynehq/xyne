@@ -241,7 +241,12 @@ const initializeProviders = (): void => {
   }
 
   if (OllamaModel) {
-    const ollama = new Ollama()
+    const ollama = new Ollama({
+      ...(aiProviderBaseUrl ? { host: aiProviderBaseUrl } : {}),
+    })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and Ollama model, using base_url for LLM`)
+    }
     ollamaProvider = new OllamaProvider(ollama)
   }
 

@@ -109,12 +109,12 @@ const DocumentViewerContainer = memo(
     loadingDocument: boolean
   }) => {
     return (
-      <div className="flex-1 overflow-y-auto bg-white relative">
+      <div className="flex-1 overflow-y-auto bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
-          <div className="absolute inset-0 bg-white bg-opacity-90 z-10 flex items-center justify-center">
+          <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading document...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
+              <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
             </div>
           </div>
         )}
@@ -151,12 +151,6 @@ const DocumentViewerContainer = memo(
                 }
                 className="h-full"
                 style={{ height: "100%", overflow: "auto" }}
-                theme={
-                  document.documentElement.getAttribute("data-color-mode") ===
-                  "dark"
-                    ? "dark"
-                    : "light"
-                }
               />
             ) : (
               <div className="h-full p-6 overflow-auto">
@@ -195,7 +189,7 @@ const DocumentViewerContainer = memo(
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500">Select a document to view</p>
+            <p className="text-gray-500 dark:text-gray-400">Select a document to view</p>
           </div>
         )}
       </div>
@@ -946,10 +940,10 @@ function RouteComponent() {
           // Document viewer layout
           <div className="flex h-full flex-col lg:flex-row">
             {/* Left pane - File tree */}
-            <div className="bg-gray-100 flex flex-col border-r border-gray-200 w-full lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
+            <div className="bg-gray-100 dark:bg-[#1E1E1E] flex flex-col border-r border-gray-200 dark:border-gray-700 w-full lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
               {/* Collection Header */}
               <div className="px-4 py-4">
-                <h2 className="text-sm font-bold font-mono text-gray-400 uppercase tracking-wider truncate">
+                <h2 className="text-sm font-bold font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider truncate">
                   {selectedDocument.collection.name}
                 </h2>
               </div>
@@ -1048,20 +1042,20 @@ function RouteComponent() {
             </div>
 
             {/* Right pane - Document viewer */}
-            <div className="flex-1 flex flex-col bg-white min-h-0">
+            <div className="flex-1 flex flex-col bg-white dark:bg-[#1E1E1E] min-h-0">
               {/* Document header */}
-              <div className="h-12 bg-white flex items-center px-6 border-b border-gray-200">
+              <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-4">
                   <Button
                     onClick={handleBackToCollections}
                     variant="ghost"
                     size="sm"
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 px-2 py-1 h-auto"
+                    className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-[#2d2d2d] px-2 py-1 h-auto"
                   >
                     <ArrowLeft size={16} />
                   </Button>
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm font-medium text-gray-700 truncate">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
                       {selectedDocument.file.name}
                     </span>
                   </div>
@@ -1088,7 +1082,7 @@ function RouteComponent() {
                   <Button
                     onClick={() => setShowNewCollection(true)}
                     disabled={isUploading}
-                    className="bg-slate-800 hover:bg-slate-700 text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Plus size={16} />
                     <span className="font-mono text-[12px] font-medium">
@@ -1166,7 +1160,7 @@ function RouteComponent() {
                       <div className="flex items-center gap-4">
                         <Plus
                           size={16}
-                          className={`cursor-pointer ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                          className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             !isUploading && handleOpenAddFilesModal(collection)
@@ -1176,7 +1170,7 @@ function RouteComponent() {
                           <DropdownMenuTrigger asChild>
                             <MoreHorizontal
                               size={16}
-                              className={`cursor-pointer ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                              className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                               onClick={(e) => e.stopPropagation()}
                             />
                           </DropdownMenuTrigger>
