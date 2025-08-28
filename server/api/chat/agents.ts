@@ -4612,6 +4612,7 @@ export const AgentChatMessageApi = async (c: Context) => {
     // Get email and workspaceId from ApiMiddleware context
     const email = c.get("email")
     const workspaceId = c.get("workspaceId")
+    const apiKey = c.get("apiKey")
     let sub = email
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -4631,6 +4632,14 @@ export const AgentChatMessageApi = async (c: Context) => {
       agentId,
       shouldStream,
     } = body
+
+    const verifiedAgentId = c.get("agentId") as string
+    if (!verifiedAgentId || agentId !== verifiedAgentId) {
+      throw new HTTPException(403, {
+        message: "Invalid Request",
+      })
+    }
+
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -4704,6 +4713,7 @@ export const AgentChatMessageApi = async (c: Context) => {
             title,
             attachments: [],
             agentId: agentIdToStore,
+            apiKey,
           })
 
           const insertedMsg = await insertMessage(tx, {
