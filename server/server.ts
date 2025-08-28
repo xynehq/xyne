@@ -17,6 +17,7 @@ import {
   SearchApi,
   chatStopSchema,
   SearchSlackChannels,
+  agentChatMessageSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -728,29 +729,7 @@ export const AppRoutes = app
   .post(
     "/agent/chat",
     ApiKeyMiddleware,
-    zValidator(
-      "query",
-      z.object({
-        message: z.string(),
-        chatId: z.string().optional(),
-        modelId: z.string().optional(),
-        isReasoningEnabled: z
-          .string()
-          .optional()
-          .transform((val) => {
-            if (!val) return false
-            return val.toLowerCase() === "true"
-          }),
-        agentId: z.string(),
-        shouldStream: z
-          .string()
-          .optional()
-          .transform((val) => {
-            if (!val) return false
-            return val.toLowerCase() === "true"
-          }),
-      }),
-    ),
+    zValidator("query", agentChatMessageSchema),
     AgentChatMessageApi,
   )
   .post("/validate-token", handleAppValidation)

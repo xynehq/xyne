@@ -23,7 +23,6 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
-  baselineCustomRAGOffJsonStream,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -4373,8 +4372,8 @@ export const AgentChatMessageApi = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
-      shouldStream,
-    } = body
+      streamOff,
+    }: MessageReqType & { streamOff: boolean } = body
 
     const verifiedAgentId = c.get("agentId") as string
     if (!verifiedAgentId || agentId !== verifiedAgentId) {
@@ -4549,7 +4548,7 @@ export const AgentChatMessageApi = async (c: Context) => {
       chat = existingChat
       chatCreationSpan.end()
     }
-    if (shouldStream) {
+    if (!streamOff) {
       return streamSSE(
         c,
         async (stream) => {
@@ -5559,21 +5558,22 @@ export const AgentChatMessageApi = async (c: Context) => {
 
         // Buffer the JSON-ish control stream
         let buffer = ""
+        let queryFilters = {
+          apps: [],
+          entities: [],
+          startTime: "",
+          endTime: "",
+          count: 0,
+          sortDirection: "",
+        }
         let parsed = {
           answer: "",
           queryRewrite: "",
-          temporalDirection: null as null | string,
+          temporalDirection: null,
           filter_query: "",
           type: "",
-          intent: {} as Record<string, any>,
-          filters: {
-            apps: [] as any[],
-            entities: [] as any[],
-            startTime: "",
-            endTime: "",
-            count: 0,
-            sortDirection: "",
-          },
+          intent: {},
+          filters: queryFilters,
         }
         let costArrA: number[] = []
         let tokenArrA: { inputTokens: number; outputTokens: number }[] = []

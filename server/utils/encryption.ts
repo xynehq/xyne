@@ -65,7 +65,7 @@ export class Encryption {
       .createHash("sha256")
       .update(this.key + "api_key_salt_scrypt")
       .digest()
-      .subarray(0, 32)
+      .subarray(0, 32) as crypto.BinaryLike
 
     // Use scrypt with secure parameters
     const hash = crypto.scryptSync(str, salt, 32, {
