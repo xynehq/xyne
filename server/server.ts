@@ -209,6 +209,7 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
+
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
 import { AgentMessageCustomApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
@@ -719,6 +720,34 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post(
+    "/agent/chat",
+    ApiKeyMiddleware,
+    zValidator(
+      "query",
+      z.object({
+        message: z.string(),
+        chatId: z.string().optional(),
+        modelId: z.string().optional(),
+        isReasoningEnabled: z
+          .string()
+          .optional()
+          .transform((val) => {
+            if (!val) return false
+            return val.toLowerCase() === "true"
+          }),
+        agentId: z.string(),
+        shouldStream: z
+          .string()
+          .optional()
+          .transform((val) => {
+            if (!val) return false
+            return val.toLowerCase() === "true"
+          }),
+      }),
+    ),
+    AgentChatMessageApi,
+  )
   .post(
     "/agent/completion",
     ApiKeyMiddleware,
