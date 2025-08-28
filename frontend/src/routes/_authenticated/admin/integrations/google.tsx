@@ -69,6 +69,30 @@ const submitServiceAccountForm = async (
   return response.json()
 }
 
+const submitUpdateServiceAccountForm = async (
+  value: UpdateServiceAccountFormData,
+  navigate: UseNavigateResult<string>,
+) => {
+  const response = await api.admin.service_account.$put({
+    form: {
+      "service-key": value.file,
+      connectorId: value.connectorId,
+    },
+  })
+  if (!response.ok) {
+    // If unauthorized or status code is 401, navigate to '/auth'
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to update service account: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
 const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
@@ -114,6 +138,11 @@ type ServiceAccountFormData = {
   email: string
   file: any
   whitelistedEmails?: string
+}
+
+type UpdateServiceAccountFormData = {
+  connectorId: string
+  file: any
 }
 
 type OAuthFormData = {
@@ -355,6 +384,107 @@ export const ServiceAccountForm = ({
 
       <Button type="submit">Upload</Button>
     </form>
+  )
+}
+
+export const UpdateServiceAccountForm = ({
+  connectorId,
+  onSuccess,
+  onCancel,
+  refetch,
+}: {
+  connectorId: string
+  onSuccess: any
+  onCancel: any
+  refetch: any
+}) => {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+
+  const form = useForm<UpdateServiceAccountFormData>({
+    defaultValues: {
+      connectorId: connectorId,
+      file: null,
+    },
+    onSubmit: async ({ value }) => {
+      if (!value.file) {
+        toast({
+          title: "No file selected",
+          description: "Please upload a file before submitting.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      try {
+        await submitUpdateServiceAccountForm(value, navigate)
+        await refetch()
+        toast({
+          title: "Service account key updated successfully",
+          description: "Integration will restart with new credentials",
+        })
+        onSuccess()
+      } catch (error) {
+        toast({
+          title: "Could not update the service account key",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      }
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium">Update Service Account Key</h3>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          form.handleSubmit()
+        }}
+        className="grid w-full max-w-sm items-center gap-1.5"
+      >
+        <Label htmlFor="update-service-key">
+          New Google Service Account Key
+        </Label>
+        <form.Field
+          name="file"
+          validators={{
+            onChange: ({ value }) => (!value ? "File is required" : undefined),
+          }}
+          children={(field) => (
+            <>
+              <Input
+                id="update-service-key"
+                type="file"
+                onChange={(e) => field.handleChange(e.target.files?.[0])}
+                className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
+              />
+              {field.state.meta.isTouched && field.state.meta.errors.length ? (
+                <p className="text-red-600 dark:text-red-400 text-sm">
+                  {field.state.meta.errors.join(", ")}
+                </p>
+              ) : null}
+            </>
+          )}
+        />
+
+        <div className="flex gap-2 mt-4">
+          <Button type="submit" disabled={form.state.isSubmitting}>
+            {form.state.isSubmitting ? (
+              <LoadingSpinner className="mr-2 h-4 w-4" />
+            ) : null}
+            Update
+          </Button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -747,6 +877,8 @@ const ServiceAccountTab = ({
   userStats: any
   refetch: any
 }) => {
+  const [showUpdateForm, setShowUpdateForm] = useState(false)
+
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   ) as
@@ -801,6 +933,27 @@ const ServiceAccountTab = ({
             </CardDescription>
           )}
         </CardHeader>
+        {googleSAConnector && (
+          <CardContent>
+            {!showUpdateForm ? (
+              <Button onClick={() => setShowUpdateForm(true)} variant="outline">
+                Update Service Account Key
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <UpdateServiceAccountForm
+                  connectorId={googleSAConnector.id || ""}
+                  onSuccess={() => {
+                    setShowUpdateForm(false)
+                    onSuccess()
+                  }}
+                  onCancel={() => setShowUpdateForm(false)}
+                  refetch={refetch}
+                />
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
     )
   }

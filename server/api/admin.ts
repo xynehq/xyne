@@ -27,6 +27,7 @@ import {
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
+  type UpdateServiceAccountConnection,
   type ApiKeyMCPConnector,
   type StdioMCPConnector,
   MCPClientStdioConfig,
@@ -467,6 +468,70 @@ export const AddServiceConnection = async (c: Context) => {
     })
   }
   // })
+}
+
+export const UpdateServiceConnection = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({ email: sub }).info("UpdateServiceConnection")
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: UpdateServiceAccountConnection = c.req.valid("form")
+  const serviceKeyData = await form["service-key"].text()
+  const connectorId = form.connectorId
+
+  try {
+    // Get the existing connector
+    const existingConnector = await getConnectorByExternalId(
+      db,
+      connectorId,
+      user.id,
+    )
+    if (!existingConnector) {
+      throw new HTTPException(404, {
+        message: "Service account connector not found",
+      })
+    }
+
+    // Verify it's a service account connector
+    if (existingConnector.authType !== AuthType.ServiceAccount) {
+      throw new HTTPException(400, {
+        message: "Connector is not a service account type",
+      })
+    }
+
+    // Update the connector with new credentials
+    await updateConnector(db, existingConnector.id, {
+      credentials: serviceKeyData,
+      status: ConnectorStatus.Connected,
+    })
+
+    return c.json({
+      success: true,
+      message: "Service account updated",
+      id: existingConnector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(500, {
+      message: "Error updating service account connection",
+    })
+  }
 }
 
 // adding first for slack

@@ -1293,7 +1293,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
     }
   }
-  console.log(agentSpecificCollectionSelections)
 
   let message = input
 

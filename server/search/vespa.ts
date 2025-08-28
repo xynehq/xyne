@@ -843,8 +843,7 @@ export const HybridDefaultProfileForAgent = async (
       )`
   }
 
-  const buildCollectionFileYQL = async () => {
-    console.log("collectionSelections:", collectionSelections)
+  const buildCollectionFileYQL = async () => {    
 
     // Extract all IDs from the key-value pairs
     const collectionIds: string[] = []
@@ -898,10 +897,8 @@ export const HybridDefaultProfileForAgent = async (
         conditions.push(fileCondition)
       }
     }
-
-    const finalCondition =
-      conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
-    console.log(finalCondition)
+    
+    const finalCondition = conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
     // Collection files use clId for collections and docId for folders/files
     return `
       (
