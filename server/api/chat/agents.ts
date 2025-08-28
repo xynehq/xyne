@@ -4610,7 +4610,7 @@ export const AgentChatMessageApi = async (c: Context) => {
 
   try {
     // Get email and workspaceId from ApiMiddleware context
-    const email = c.get("email")
+    const email = c.get("userEmail")
     const workspaceId = c.get("workspaceId")
     const apiKey = c.get("apiKey")
     let sub = email

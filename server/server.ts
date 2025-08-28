@@ -211,7 +211,7 @@ import {
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
-import { AgentMessageCustomApi } from "./api/chat/agents"
+import { AgentChatMessageApi, AgentMessageCustomApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
@@ -311,7 +311,6 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     c.set("apiKey", apiKey)
     c.set("workspaceId", foundApiKey.workspaceId)
     c.set("userEmail", foundApiKey.userEmail)
-    
 
     Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
 
