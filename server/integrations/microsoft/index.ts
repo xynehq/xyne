@@ -1,25 +1,14 @@
 import {
-  MessageTypes,
-  OperationStatus,
   Subsystem,
   SyncCron,
-  WorkerResponseTypes,
   type OAuthCredentials,
-  type SaaSJob,
   type SaaSOAuthJob,
 } from "@/types"
-import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
+import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
-  GetDocument,
-  ifDocumentsExist,
-  insert,
-  insertDocument,
   insertUser,
-  UpdateEventCancelledInstances,
   insertWithRetry,
 } from "@/search/vespa"
-import { SaaSQueue } from "@/queue"
-import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import {
   connectors,
@@ -27,7 +16,6 @@ import {
   type SelectOAuthProvider,
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { getWorkspaceById } from "@/db/workspace"
 import {
   Apps,
   AuthType,
@@ -37,47 +25,38 @@ import {
 } from "@/shared/types"
 import { MicrosoftPeopleEntity } from "@/search/types"
 import {
-  getAppSyncJobs,
-  getAppSyncJobsByEmail,
   insertSyncJob,
-  updateSyncJob,
 } from "@/db/syncJob"
-import { insertSyncHistory } from "@/db/syncHistory"
-import { getErrorMessage, retryWithBackoff } from "@/utils"
+import { getErrorMessage, hashPdfFilename } from "@/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   CalendarEntity,
   eventSchema,
-  type VespaEvent,
   type VespaFileWithDrivePermission,
   fileSchema,
   MailEntity,
-  MailSchema,
   mailSchema,
 } from "@/search/types"
 import {
-  UserListingError,
   CouldNotFinishJobSuccessfully,
   ContactListingError,
   ContactMappingError,
   ErrorInsertingDocument,
   DeleteDocumentError,
-  DownloadDocumentError,
   CalendarEventsListingError,
 } from "@/errors"
-import fs, { existsSync, mkdirSync } from "node:fs"
-import path, { join } from "node:path"
+import fs from "node:fs"
+import path from "node:path"
 import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import { chunkDocument } from "@/chunks"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import {
   StatType,
   Tracker,
 } from "@/integrations/tracker"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
-import config from "@/config"
-import { getConnectorByExternalId } from "@/db/connector"
-import { v4 as uuidv4 } from "uuid"
 import { closeWs, sendWebsocketMessage } from "@/integrations/metricStream"
 import {
   ingestionDuration,
@@ -85,10 +64,14 @@ import {
 } from "@/metrics/google/metadata_metrics"
 import {
   createMicrosoftGraphClient,
+  downloadFileFromGraph,
   makeGraphApiCall,
   makePagedGraphApiCall,
   type MicrosoftGraphClient,
 } from "./client"
+import type { Client } from "@microsoft/microsoft-graph-client"
+import type { DriveItem } from "@microsoft/microsoft-graph-types"
+import { Schema } from "zod"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
@@ -102,7 +85,7 @@ export const getUniqueEmails = (permissions: string[]): string[] => {
   return Array.from(new Set(permissions.filter((email) => email.trim() !== "")))
 }
 
-// Convert HTML to text (similar to Google's implementation)
+// Convert HTML to text 
 const htmlToText = require("html-to-text")
 
 export const getTextFromEventDescription = (description: string): string => {
@@ -767,7 +750,7 @@ const insertFilesForUser = async (
             photoLink: "",
             ownerEmail: userEmail,
             entity: DriveEntity.Misc,
-            chunks: [], // For now, we'll index metadata only
+            chunks: await processFileContent(client, file, userEmail), // For now, we'll index metadata only
             permissions: [userEmail], // Basic permission - could be enhanced
             mimeType: file.file?.mimeType ?? "application/octet-stream",
             metadata: JSON.stringify({
@@ -1148,5 +1131,271 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
       entity: "files",
       cause: error as Error,
     })
+  }
+}
+
+// Download directory setup 
+export const downloadDir = path.resolve(__dirname, "../../downloads")
+
+if (process.env.NODE_ENV !== "production") {
+  const init = () => {
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true })
+    }
+  }
+  init()
+}
+
+// Helper function to delete files 
+export const deleteDocument = async (filePath: string) => {
+  try {
+    await unlink(filePath)
+    Logger.debug(`File at ${filePath} deleted successfully`)
+  } catch (err) {
+    Logger.error(
+      err,
+      `Error deleting file at ${filePath}: ${err} ${(err as Error).stack}`,
+      err,
+    )
+    throw new DeleteDocumentError({
+      message: "Error in the catch of deleting file",
+      cause: err as Error,
+      integration: Apps.MicrosoftDrive,
+      entity: DriveEntity.PDF,
+    })
+  }
+}
+
+// Helper function for safer PDF loading 
+export async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
+  try {
+    const loader = new PDFLoader(pdfPath)
+    return await loader.load()
+  } catch (error) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
+      Logger.warn("Password protected PDF, skipping")
+    } else {
+      Logger.error(error, `PDF load error: ${error}`)
+    }
+    return []
+  }
+}
+
+
+
+// Process Microsoft PDF files (similar to googlePDFsVespa)
+async function processMicrosoftPDFs(
+  graphClient: Client,
+  pdfFiles: DriveItem[],
+  userEmail: string
+): Promise<VespaFileWithDrivePermission[]> {
+  const results: VespaFileWithDrivePermission[] = []
+  
+  for (const file of pdfFiles) {
+    try {
+      // Download PDF content
+      const pdfBuffer = await downloadFileFromGraph(graphClient, file.id!)
+      
+      // Save temporarily (reuse Google's download directory pattern)
+      const pdfFileName = `${hashPdfFilename(`${userEmail}_${file.id}_${file.name}`)}.pdf`
+      const pdfPath = `${downloadDir}/${pdfFileName}`
+      
+      // Write buffer to file
+      await fs.promises.writeFile(pdfPath, pdfBuffer)
+      
+      // Use existing PDF processing utilities
+      const docs = await safeLoadPDF(pdfPath)
+      if (!docs || docs.length === 0) {
+        await deleteDocument(pdfPath)
+        continue
+      }
+      
+      // Use existing chunking utilities
+      const chunks = docs.flatMap((doc: Document) => chunkDocument(doc.pageContent))
+      
+      // Cleanup
+      await deleteDocument(pdfPath)
+      
+      // Create Vespa document structure
+      results.push({
+        title: file.name!,
+        url: file.webUrl ?? "",
+        app: Apps.MicrosoftDrive,
+        docId: file.id!,
+        parentId: file.parentReference?.id ?? null,
+        owner: "", // Extract from file.createdBy if available
+        photoLink: "",
+        ownerEmail: userEmail,
+        entity: DriveEntity.PDF,
+        chunks: chunks.map((c: any) => c.chunk),
+        permissions: [], // Process file.permissions if available
+        mimeType: file.file?.mimeType ?? "",
+        metadata: JSON.stringify({ 
+          parentPath: file.parentReference?.path,
+          size: file.size 
+        }),
+        createdAt: new Date(file.createdDateTime!).getTime(),
+        updatedAt: new Date(file.lastModifiedDateTime!).getTime(),
+      })
+    } catch (error) {
+      console.error(`Error processing PDF ${file.name}:`, error)
+      continue
+    }
+  }
+  
+  return results
+}
+
+// Process Microsoft Word documents
+async function processMicrosoftWord(
+  graphClient: Client,
+  wordFiles: DriveItem[],
+  userEmail: string
+): Promise<VespaFileWithDrivePermission[]> {
+  const results: VespaFileWithDrivePermission[] = []
+  
+  for (const file of wordFiles) {
+    try {
+      // Download DOCX content
+      const docxBuffer = await downloadFileFromGraph(graphClient, file.id!)
+      
+      // Use existing DOCX processing utilities from server/docxChunks.ts
+      const extractedContent = await extractTextAndImagesWithChunksFromDocx(docxBuffer)
+      
+      results.push({
+        title: file.name!,
+        url: file.webUrl ?? "",
+        app: Apps.MicrosoftDrive,
+        docId: file.id!,
+        parentId: file.parentReference?.id ?? null,
+        owner: "",
+        photoLink: "",
+        ownerEmail: userEmail,
+        entity: DriveEntity.Docs, // Reuse Google's entity types
+        chunks: extractedContent.text_chunks || [], // Use text_chunks property
+        permissions: [],
+        mimeType: file.file?.mimeType ?? "",
+        metadata: JSON.stringify({ 
+          parentPath: file.parentReference?.path,
+          size: file.size,
+          images: extractedContent.image_chunks?.length || 0 // Use image_chunks property
+        }),
+        createdAt: new Date(file.createdDateTime!).getTime(),
+        updatedAt: new Date(file.lastModifiedDateTime!).getTime(),
+      })
+    } catch (error) {
+      console.error(`Error processing Word document ${file.name}:`, error)
+      continue
+    }
+  }
+  
+  return results
+}
+
+// Process Microsoft Excel files
+async function processMicrosoftExcel(
+  graphClient: Client,
+  excelFiles: DriveItem[],
+  userEmail: string
+): Promise<VespaFileWithDrivePermission[]> {
+  const results: VespaFileWithDrivePermission[] = []
+  
+  for (const file of excelFiles) {
+    try {
+      // Use Microsoft Graph API to get workbook data
+      const workbook = await graphClient
+        .api(`/me/drive/items/${file.id}/workbook/worksheets`)
+        .get()
+      
+      const chunks: string[] = []
+      
+      for (const worksheet of workbook.value) {
+        try {
+          // Get worksheet data
+          const worksheetData = await graphClient
+            .api(`/me/drive/items/${file.id}/workbook/worksheets/${worksheet.id}/usedRange`)
+            .get()
+          
+          if (worksheetData.values) {
+            // Process similar to Google Sheets - filter textual content
+            const textualContent = worksheetData.values
+              .flat()
+              .filter((cell: any) => cell && typeof cell === 'string' && isNaN(Number(cell)))
+              .join(' ')
+            
+            if (textualContent.length > 0) {
+              const worksheetChunks = chunkDocument(textualContent)
+              chunks.push(...worksheetChunks.map((c: any) => c.chunk))
+            }
+          }
+        } catch (worksheetError) {
+          console.error(`Error processing worksheet ${worksheet.name}:`, worksheetError)
+          continue
+        }
+      }
+      
+      results.push({
+        title: file.name!,
+        url: file.webUrl ?? "",
+        app: Apps.MicrosoftDrive,
+        docId: file.id!,
+        parentId: file.parentReference?.id ?? null,
+        owner: "",
+        photoLink: "",
+        ownerEmail: userEmail,
+        entity: DriveEntity.Sheets,
+        chunks,
+        permissions: [],
+        mimeType: file.file?.mimeType ?? "",
+        metadata: JSON.stringify({ 
+          parentPath: file.parentReference?.path,
+          size: file.size,
+          worksheetCount: workbook.value?.length || 0
+        }),
+        createdAt: new Date(file.createdDateTime!).getTime(),
+        updatedAt: new Date(file.lastModifiedDateTime!).getTime(),
+      })
+    } catch (error) {
+      console.error(`Error processing Excel file ${file.name}:`, error)
+      continue
+    }
+  }
+  
+  return results
+}
+
+
+async function processFileContent(
+  graphClient: MicrosoftGraphClient,
+  file: DriveItem,
+  userEmail: string
+): Promise<string[]> {
+  const mimeType = file.file?.mimeType;
+  
+  try {
+    switch (mimeType) {
+      case 'application/pdf':
+        const pdfResults = await processMicrosoftPDFs(graphClient.client, [file], userEmail);
+        return pdfResults[0]?.chunks || [];
+        
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        const wordResults = await processMicrosoftWord(graphClient.client, [file], userEmail);
+        return wordResults[0]?.chunks || [];
+        
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        const excelResults = await processMicrosoftExcel(graphClient.client, [file], userEmail);
+        return excelResults[0]?.chunks || [];
+        
+      default:
+        // For unsupported file types, return empty chunks (metadata only)
+        return [];
+    }
+  } catch (error) {
+    console.error(`Error processing file content for ${file.name}:`, error);
+    return []; // Fallback to metadata only on error
   }
 }

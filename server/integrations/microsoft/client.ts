@@ -119,5 +119,31 @@ export const makePagedGraphApiCall = async (
   return results
 }
 
+// Download file from Microsoft Graph
+export async function downloadFileFromGraph(
+  graphClient: Client,
+  fileId: string
+): Promise<Buffer> {
+  try {
+    const response = await graphClient
+      .api(`/me/drive/items/${fileId}/content`)
+      .get()
+    
+    // Convert response to Buffer
+    if (response instanceof ArrayBuffer) {
+      return Buffer.from(response)
+    } else if (Buffer.isBuffer(response)) {
+      return response
+    } else if (typeof response === 'string') {
+      return Buffer.from(response, 'binary')
+    } else {
+      // For other types, try to convert to string first
+      return Buffer.from(String(response), 'binary')
+    }
+  } catch (error) {
+    throw new Error(`Failed to download file ${fileId}: ${error}`)
+  }
+}
+
 // Export types for consistency with Google integration
 export type { Client as MicrosoftClient }
