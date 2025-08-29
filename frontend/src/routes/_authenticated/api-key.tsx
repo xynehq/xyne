@@ -43,7 +43,8 @@ const ApiKeyGenerator = () => {
   const [apiKeyData, setApiKeyData] = useState<ApiKeyResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPublicApiKey, setIsPublicApiKey] = useState(true)
-  const [publicApiKeyData, setPublicApiKeyData] = useState<PublicApiKeyResponse | null>(null)
+  const [publicApiKeyData, setPublicApiKeyData] =
+    useState<PublicApiKeyResponse | null>(null)
   const { toast } = useToast()
 
   const validateDuration = (): string | null => {
@@ -87,7 +88,7 @@ const ApiKeyGenerator = () => {
     try {
       if (isPublicApiKey) {
         // Call public API key endpoint
-        const response = await authFetch('/api/v1/admin/workspace/api-key')
+        const response = await authFetch("/api/v1/admin/workspace/api-key")
         const data = await response.json()
 
         if (response.ok && !data.error) {
@@ -166,10 +167,9 @@ const ApiKeyGenerator = () => {
     }
   }
 
-
   const handlePublicApiKeyToggle = (checked: boolean) => {
     setIsPublicApiKey(checked)
-    
+
     if (!checked) {
       setPublicApiKeyData(null)
       setApiKeyData(null)
@@ -177,7 +177,9 @@ const ApiKeyGenerator = () => {
   }
 
   const copyToClipboard = async () => {
-    const keyToCopy = isPublicApiKey ? publicApiKeyData?.data?.key : apiKeyData?.apiKey
+    const keyToCopy = isPublicApiKey
+      ? publicApiKeyData?.data?.key
+      : apiKeyData?.apiKey
     if (!keyToCopy) return
 
     try {
@@ -238,7 +240,6 @@ const ApiKeyGenerator = () => {
             {isPublicApiKey && (
               <CardDescription className="text-lg">
                 Generate a secure API key for your workspace
-                
               </CardDescription>
             )}
           </CardHeader>
@@ -278,7 +279,9 @@ const ApiKeyGenerator = () => {
                       >
                         Minutes
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setDurationUnit("hours")}>
+                      <DropdownMenuItem
+                        onClick={() => setDurationUnit("hours")}
+                      >
                         Hours
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setDurationUnit("days")}>
@@ -298,15 +301,15 @@ const ApiKeyGenerator = () => {
                 checked={isPublicApiKey}
                 onChange={(e) => handlePublicApiKeyToggle(e.target.checked)}
                 style={{
-                  width: '16px',
-                  height: '16px',
-                  accentColor: 'hsl(var(--primary))',
-                  cursor: 'pointer'
+                  width: "16px",
+                  height: "16px",
+                  accentColor: "hsl(var(--primary))",
+                  cursor: "pointer",
                 }}
               />
-              <Label 
-                htmlFor="publicApiKey" 
-                style={{ cursor: 'pointer', fontSize: '14px' }}
+              <Label
+                htmlFor="publicApiKey"
+                style={{ cursor: "pointer", fontSize: "14px" }}
               >
                 Public API Key
               </Label>
@@ -327,7 +330,9 @@ const ApiKeyGenerator = () => {
               ) : (
                 <>
                   <Key className="mr-2 h-4 w-4" />
-                  {isPublicApiKey ? "Retrieve Public API Key" : "Generate API Key"}
+                  {isPublicApiKey
+                    ? "Retrieve Public API Key"
+                    : "Generate API Key"}
                 </>
               )}
             </Button>

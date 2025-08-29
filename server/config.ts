@@ -40,7 +40,6 @@ let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
-let apiKeyEncryptionKey = process.env.PUBLIC_API_KEY_ENCRYPTION_KEY
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
@@ -195,5 +194,4 @@ export default {
   AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
   RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
   MAX_IMAGE_SIZE_BYTES,
-  apiKeyEncryptionKey
 }

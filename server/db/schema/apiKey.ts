@@ -9,10 +9,10 @@ const apiKeyEncryption = new Encryption(process.env.ENCRYPTION_KEY!)
 
 export const apiKeys = pgTable("api_keys", {
   id: serial("id").primaryKey(),
-  userId:text("user_id")
+  userId: text("user_id")
     .references(() => users.externalId, { onDelete: "cascade" })
     .notNull(),
-  workspaceId:text("workspace_id")
+  workspaceId: text("workspace_id")
     .references(() => workspaces.externalId, { onDelete: "cascade" })
     .notNull(),
   key: oneWayEncryption(apiKeyEncryption)("key").notNull(), // encrypted key

@@ -300,7 +300,6 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         workspaceId: apiKeys.workspaceId,
         userId: apiKeys.userId,
         userEmail: users.email,
-        userName: users.name, // Optional: might be useful too
       })
       .from(apiKeys)
       .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
@@ -871,7 +870,7 @@ export const AppRoutes = app
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema),
-    SearchKnowledgeBaseApi
+    SearchKnowledgeBaseApi,
   )
   .get("/cl/:clId", GetCollectionApi)
   .put("/cl/:clId", UpdateCollectionApi)

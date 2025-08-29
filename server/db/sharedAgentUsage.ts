@@ -931,7 +931,7 @@ export async function getAllUserFeedbackMessages({
 export async function getWorkspaceApiKeys({
   db,
   userId,
-  workspaceId
+  workspaceId,
 }: {
   db: TxnOrClient
   userId: string
@@ -943,18 +943,15 @@ export async function getWorkspaceApiKeys({
 }> {
   try {
     // Generate random MD5 hash
-    
-    const md5Hash = crypto.randomBytes(8).toString('hex');
+
+    const md5Hash = crypto.randomBytes(8).toString("hex")
 
     // Store encrypted API key in database
-    const [inserted] = await db
-      .insert(apiKeys)
-      .values({
-        userId,
-        workspaceId,
-        key: md5Hash, // Direct encrypted string
-      })
-    console.log(md5Hash);
+    const [inserted] = await db.insert(apiKeys).values({
+      userId,
+      workspaceId,
+      key: md5Hash, // Direct encrypted string
+    })
     return { success: true, key: md5Hash }
   } catch (err) {
     console.error("[createAgentApiKey] Error:", err)

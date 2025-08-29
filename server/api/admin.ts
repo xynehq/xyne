@@ -1708,7 +1708,7 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
 }
 
 export const GetWorkspaceApiKeys = async (c: Context) => {
-   let email = ""
+  let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub
@@ -1725,7 +1725,11 @@ export const GetWorkspaceApiKeys = async (c: Context) => {
     ) {
       return c.json({ message: "User or workspace not found" }, 404)
     }
-    const apiKeys = await getWorkspaceApiKeys({ db,userId:userAndWorkspace.user.externalId, workspaceId: userAndWorkspace.workspace.externalId })    
+    const apiKeys = await getWorkspaceApiKeys({
+      db,
+      userId: userAndWorkspace.user.externalId,
+      workspaceId: userAndWorkspace.workspace.externalId,
+    })
     return c.json({
       success: true,
       data: apiKeys,

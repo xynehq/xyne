@@ -69,9 +69,9 @@ export class Encryption {
 
     // Use scrypt with secure parameters
     const hash = crypto.scryptSync(str, salt, 32, {
-      N: 16384,  // CPU/memory cost parameter
-      r: 8,      // Block size parameter
-      p: 1       // Parallelization parameter
+      N: 16384, // CPU/memory cost parameter
+      r: 8, // Block size parameter
+      p: 1, // Parallelization parameter
     })
     
     return hash.toString(this.encoding)
