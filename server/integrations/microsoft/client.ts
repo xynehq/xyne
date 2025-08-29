@@ -84,12 +84,12 @@ export const makeGraphApiCall = async (
 }
 
 // Helper function for paginated requests
-export const makePagedGraphApiCall = async <T>(
+export const makePagedGraphApiCall = async (
   graphClient: MicrosoftGraphClient,
   endpoint: string,
   options?: any
-): Promise<T[]> => {
-  const results: T[] = []
+): Promise<any[]> => {
+  const results: any[] = []
   let nextLink: string | undefined = endpoint
 
   while (nextLink) {
