@@ -28,6 +28,12 @@ interface ApiKeyResponse {
   instructions: string
 }
 
+interface PublicApiKeyResponse {
+  data: {
+    key: string
+  }
+}
+
 const ApiKeyGenerator = () => {
   const [durationValue, setDurationValue] = useState(1)
   const [durationUnit, setDurationUnit] = useState<
@@ -36,6 +42,8 @@ const ApiKeyGenerator = () => {
   const [isGenerating, setIsGenerating] = useState(false)
   const [apiKeyData, setApiKeyData] = useState<ApiKeyResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isPublicApiKey, setIsPublicApiKey] = useState(true)
+  const [publicApiKeyData, setPublicApiKeyData] = useState<PublicApiKeyResponse | null>(null)
   const { toast } = useToast()
 
   const validateDuration = (): string | null => {
@@ -73,50 +81,77 @@ const ApiKeyGenerator = () => {
   }
 
   const generateApiKey = async () => {
-    const validationError = validateDuration()
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
     setError(null)
     setIsGenerating(true)
 
     try {
-      // Convert to days for backend
-      let expirationDays: number
-      switch (durationUnit) {
-        case "minutes":
-          expirationDays = durationValue / (24 * 60)
-          break
-        case "hours":
-          expirationDays = durationValue / 24
-          break
-        case "days":
-          expirationDays = durationValue
-          break
-      }
+      if (isPublicApiKey) {
+        // Call public API key endpoint
+        const response = await authFetch('/api/v1/admin/workspace/api-key')
+        const data = await response.json()
 
-      const response = await authFetch(
-        `/api/v1/auth/generate-api-key?expirationDays=${expirationDays}`,
-      )
-      const data = await response.json()
-
-      if (response.ok && !data.error) {
-        setApiKeyData(data)
-        toast({
-          title: "API Key Generated",
-          description: "Your API key has been generated successfully!",
-        })
+        if (response.ok && !data.error) {
+          setPublicApiKeyData(data)
+          setApiKeyData(null) // Clear regular API key data
+          toast({
+            title: "Public API Key Retrieved",
+            description: "Your public API key has been retrieved successfully!",
+          })
+        } else {
+          const errorMessage =
+            data.message || data.error || "Failed to retrieve public API key"
+          setError(errorMessage)
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          })
+        }
       } else {
-        const errorMessage =
-          data.message || data.error || "Failed to generate API key"
-        setError(errorMessage)
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        })
+        // Regular API key generation
+        const validationError = validateDuration()
+        if (validationError) {
+          setError(validationError)
+          setIsGenerating(false)
+          return
+        }
+
+        // Convert to days for backend
+        let expirationDays: number
+        switch (durationUnit) {
+          case "minutes":
+            expirationDays = durationValue / (24 * 60)
+            break
+          case "hours":
+            expirationDays = durationValue / 24
+            break
+          case "days":
+            expirationDays = durationValue
+            break
+        }
+
+        const response = await authFetch(
+          `/api/v1/auth/generate-api-key?expirationDays=${expirationDays}`,
+        )
+        const data = await response.json()
+
+        if (response.ok && !data.error) {
+          setApiKeyData(data)
+          setPublicApiKeyData(null) // Clear public API key data
+          toast({
+            title: "API Key Generated",
+            description: "Your API key has been generated successfully!",
+          })
+        } else {
+          const errorMessage =
+            data.message || data.error || "Failed to generate API key"
+          setError(errorMessage)
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          })
+        }
       }
     } catch (error) {
       const errorMessage = `Network error: ${error instanceof Error ? error.message : "Unknown error"}`
@@ -131,11 +166,22 @@ const ApiKeyGenerator = () => {
     }
   }
 
+
+  const handlePublicApiKeyToggle = (checked: boolean) => {
+    setIsPublicApiKey(checked)
+    
+    if (!checked) {
+      setPublicApiKeyData(null)
+      setApiKeyData(null)
+    }
+  }
+
   const copyToClipboard = async () => {
-    if (!apiKeyData?.apiKey) return
+    const keyToCopy = isPublicApiKey ? publicApiKeyData?.data?.key : apiKeyData?.apiKey
+    if (!keyToCopy) return
 
     try {
-      await navigator.clipboard.writeText(apiKeyData.apiKey)
+      await navigator.clipboard.writeText(keyToCopy)
       toast({
         title: "Copied!",
         description: "API key copied to clipboard",
@@ -143,7 +189,7 @@ const ApiKeyGenerator = () => {
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement("textarea")
-      textArea.value = apiKeyData.apiKey
+      textArea.value = keyToCopy
       document.body.appendChild(textArea)
       textArea.select()
       document.execCommand("copy")
@@ -180,58 +226,90 @@ const ApiKeyGenerator = () => {
                 API Key Generator
               </CardTitle>
             </div>
-            <CardDescription className="text-lg">
-              Generate a secure API key to access the Vespa proxy endpoints
-              <br />
-              <span className="text-sm text-muted-foreground">
-                Expiration range: 1 minute to 30 days
-              </span>
-            </CardDescription>
+            {!isPublicApiKey && (
+              <CardDescription className="text-lg">
+                Generate a secure API key to access the Vespa proxy endpoints
+                <br />
+                <span className="text-sm text-muted-foreground">
+                  Expiration range: 1 minute to 30 days
+                </span>
+              </CardDescription>
+            )}
+            {isPublicApiKey && (
+              <CardDescription className="text-lg">
+                Generate a secure API key for your workspace
+                
+              </CardDescription>
+            )}
           </CardHeader>
 
           <CardContent className="space-y-6">
-            {/* Duration Input */}
-            <div className="space-y-2">
-              <Label htmlFor="duration">Expiration Time</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="duration"
-                  type="number"
-                  min="1"
-                  max={getMaxValue()}
-                  value={durationValue}
-                  onChange={(e) =>
-                    setDurationValue(parseInt(e.target.value) || 1)
-                  }
-                  placeholder="Enter duration"
-                  className="flex-1"
-                />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="flex-1 h-9 justify-between"
-                    >
-                      {durationUnit.charAt(0).toUpperCase() +
-                        durationUnit.slice(1)}
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => setDurationUnit("minutes")}
-                    >
-                      Minutes
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDurationUnit("hours")}>
-                      Hours
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDurationUnit("days")}>
-                      Days
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            {/* Duration Input - Only show when not public API key */}
+            {!isPublicApiKey && (
+              <div className="space-y-2">
+                <Label htmlFor="duration">Expiration Time</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="duration"
+                    type="number"
+                    min="1"
+                    max={getMaxValue()}
+                    value={durationValue}
+                    onChange={(e) =>
+                      setDurationValue(parseInt(e.target.value) || 1)
+                    }
+                    placeholder="Enter duration"
+                    className="flex-1"
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="flex-1 h-9 justify-between"
+                      >
+                        {durationUnit.charAt(0).toUpperCase() +
+                          durationUnit.slice(1)}
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => setDurationUnit("minutes")}
+                      >
+                        Minutes
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDurationUnit("hours")}>
+                        Hours
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDurationUnit("days")}>
+                        Days
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
+            )}
+
+            {/* Public API Key Checkbox */}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="publicApiKey"
+                checked={isPublicApiKey}
+                onChange={(e) => handlePublicApiKeyToggle(e.target.checked)}
+                style={{
+                  width: '16px',
+                  height: '16px',
+                  accentColor: 'hsl(var(--primary))',
+                  cursor: 'pointer'
+                }}
+              />
+              <Label 
+                htmlFor="publicApiKey" 
+                style={{ cursor: 'pointer', fontSize: '14px' }}
+              >
+                Public API Key
+              </Label>
             </div>
 
             {/* Generate Button */}
@@ -244,12 +322,12 @@ const ApiKeyGenerator = () => {
               {isGenerating ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating...
+                  {isPublicApiKey ? "Retrieving..." : "Generating..."}
                 </>
               ) : (
                 <>
                   <Key className="mr-2 h-4 w-4" />
-                  Generate API Key
+                  {isPublicApiKey ? "Retrieve Public API Key" : "Generate API Key"}
                 </>
               )}
             </Button>
@@ -261,8 +339,35 @@ const ApiKeyGenerator = () => {
               </div>
             )}
 
-            {/* API Key Result */}
-            {apiKeyData && (
+            {/* Public API Key Result */}
+            {publicApiKeyData && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="text-xl text-center">
+                    🎉 Your Public API Key
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* API Key Display */}
+                  <div className="relative">
+                    <div className="bg-muted/50 border rounded-lg p-4 font-mono text-sm break-all">
+                      {publicApiKeyData.data.key}
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={copyToClipboard}
+                      className="absolute top-2 right-2"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Regular API Key Result */}
+            {apiKeyData && !isPublicApiKey && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="text-xl text-center">
