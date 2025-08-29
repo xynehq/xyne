@@ -83,6 +83,12 @@ import {
   ingestionDuration,
   metadataFiles,
 } from "@/metrics/google/metadata_metrics"
+import {
+  createMicrosoftGraphClient,
+  makeGraphApiCall,
+  makePagedGraphApiCall,
+  type MicrosoftGraphClient,
+} from "./client"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
@@ -90,53 +96,6 @@ export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "microsoft",
 })
 
-// Simple Microsoft Graph API client interface
-interface MicrosoftGraphClient {
-  accessToken: string
-  refreshToken: string
-  clientId: string
-  clientSecret: string
-}
-
-// Create Microsoft Graph client
-const createMicrosoftGraphClient = (
-  accessToken: string,
-  refreshToken: string,
-  clientId: string,
-  clientSecret: string,
-): MicrosoftGraphClient => {
-  return {
-    accessToken,
-    refreshToken,
-    clientId,
-    clientSecret,
-  }
-}
-
-// Helper function to make Microsoft Graph API calls
-const makeGraphApiCall = async (
-  client: MicrosoftGraphClient,
-  endpoint: string,
-  method: string = "GET",
-  body?: any,
-): Promise<any> => {
-  const url = `https://graph.microsoft.com/v1.0${endpoint}`
-  
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${client.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-
-  if (!response.ok) {
-    throw new Error(`Microsoft Graph API error: ${response.status} ${response.statusText}`)
-  }
-
-  return response.json()
-}
 
 // Get unique emails from permissions
 export const getUniqueEmails = (permissions: string[]): string[] => {
@@ -267,19 +226,35 @@ const insertCalendarEvents = async (
   }
 
   try {
-    let nextLink: string | undefined
-    do {
-      const response = nextLink
-        ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, `/me/events?${new URLSearchParams(queryParams).toString()}`)
-
-      if (response.value) {
-        events = events.concat(response.value)
+    const endpoint = `/me/events?${new URLSearchParams(queryParams).toString()}`
+    const response: any = await makeGraphApiCall(client, endpoint)
+    
+    // Save the actual response to a file for analysis
+    try {
+      const responsesDir = path.join(__dirname, "responses")
+      if (!fs.existsSync(responsesDir)) {
+        fs.mkdirSync(responsesDir, { recursive: true })
       }
-
-      nextLink = response["@odata.nextLink"]
-      deltaToken = response["@odata.deltaLink"] || deltaToken
-    } while (nextLink)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const filename = `calendar-events-${timestamp}.json`
+      fs.writeFileSync(
+        path.join(responsesDir, filename),
+        JSON.stringify(response, null, 2)
+      )
+      loggerWithChild({ email: userEmail }).info(
+        `Saved calendar events response to ${filename}`
+      )
+    } catch (saveError) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Could not save calendar events response: ${saveError}`
+      )
+    }
+    
+    if (response.value) {
+      events = response.value
+    }
+    
+    deltaToken = response["@odata.deltaLink"] || ""
   } catch (error: any) {
     // Check if user doesn't have calendar access
     if (error?.code === "Forbidden" || error?.status === 403) {
@@ -419,6 +394,23 @@ export const listAllContacts = async (
       const response = nextLink
         ? await makeGraphApiCall(client, nextLink)
         : await makeGraphApiCall(client, "/me/contacts?$select=id,displayName,emailAddresses,businessPhones,homePhones,mobilePhone,jobTitle,companyName,department,officeLocation,birthday,personalNotes&$top=1000")
+
+      // Save the actual response to a file for analysis
+      try {
+        const responsesDir = path.join(__dirname, "responses")
+        if (!fs.existsSync(responsesDir)) {
+          fs.mkdirSync(responsesDir, { recursive: true })
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+        const filename = `contacts-${timestamp}.json`
+        fs.writeFileSync(
+          path.join(responsesDir, filename),
+          JSON.stringify(response, null, 2)
+        )
+        Logger.info(`Saved contacts response to ${filename}`)
+      } catch (saveError) {
+        Logger.warn(`Could not save contacts response: ${saveError}`)
+      }
 
       if (response.value) {
         contacts.push(...response.value)
@@ -741,6 +733,27 @@ const insertFilesForUser = async (
         ? await makeGraphApiCall(client, nextLink)
         : await makeGraphApiCall(client, `/me/drive/root/children?${new URLSearchParams(queryParams).toString()}`)
 
+      // Save the actual response to a file for analysis
+      try {
+        const responsesDir = path.join(__dirname, "responses")
+        if (!fs.existsSync(responsesDir)) {
+          fs.mkdirSync(responsesDir, { recursive: true })
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+        const filename = `onedrive-files-${timestamp}.json`
+        fs.writeFileSync(
+          path.join(responsesDir, filename),
+          JSON.stringify(response, null, 2)
+        )
+        loggerWithChild({ email: userEmail }).info(
+          `Saved OneDrive files response to ${filename}`
+        )
+      } catch (saveError) {
+        loggerWithChild({ email: userEmail }).warn(
+          `Could not save OneDrive files response: ${saveError}`
+        )
+      }
+
       if (response.value) {
         for (const file of response.value) {
           try {
@@ -843,6 +856,27 @@ const handleOutlookIngestion = async (
         ? await makeGraphApiCall(client, nextLink)
         : await makeGraphApiCall(client, `/me/messages?${new URLSearchParams(queryParams).toString()}`)
 
+      // Save the actual response to a file for analysis
+      try {
+        const responsesDir = path.join(__dirname, "responses")
+        if (!fs.existsSync(responsesDir)) {
+          fs.mkdirSync(responsesDir, { recursive: true })
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+        const filename = `outlook-messages-${timestamp}.json`
+        fs.writeFileSync(
+          path.join(responsesDir, filename),
+          JSON.stringify(response, null, 2)
+        )
+        loggerWithChild({ email: userEmail }).info(
+          `Saved Outlook messages response to ${filename}`
+        )
+      } catch (saveError) {
+        loggerWithChild({ email: userEmail }).warn(
+          `Could not save Outlook messages response: ${saveError}`
+        )
+      }
+      
       if (response.value) {
         for (const message of response.value) {
           try {

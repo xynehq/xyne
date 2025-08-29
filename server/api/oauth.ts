@@ -146,6 +146,7 @@ export const OAuthCallback = async (c: Context) => {
           accessTokenExpiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
         }
       } as OAuthCredentials
+      
     } else {
       throw new HTTPException(500, { message: "Invalid App" })
     }
@@ -169,6 +170,14 @@ export const OAuthCallback = async (c: Context) => {
         loggerWithChild({ email: email }).error(
           error,
           `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
+      })
+    } else if (IsMicrosoftApp(app)) {
+      // Start Microsoft ingestion in the background, but catch any errors it might throw later
+      handleMicrosoftOAuthIngestion(SaasJobPayload).catch((error) => {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Background Microsoft OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
         )
       })
     } else if (app === Apps.Slack) {
