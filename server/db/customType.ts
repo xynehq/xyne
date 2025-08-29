@@ -34,6 +34,29 @@ export const encryptedText = (encryption: Encryption) => {
     },
   })
 }
+export const oneWayEncryption = (encryption: Encryption) => {
+  return customType<{ data: string | null; notNull: false }>({
+    dataType() {
+      return "text"
+    },
+    /**
+     * Values from database are already hashed - return as-is
+     */
+    fromDriver(value: unknown): string | null {
+      return value as string | null
+    },
+    /**
+     * Hash the value before storing in database
+     */
+    toDriver(value: string | null): string | null {
+      if (!value) {
+        return value
+      }
+      // Use the most secure hashing method
+      return encryption.hashOneWayScrypt(value)
+    },
+  })
+}
 /**
  * Custom type for binary data (bytea) using Buffer.
  * This is a simple passthrough type for binary data.

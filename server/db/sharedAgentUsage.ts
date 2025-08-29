@@ -4,6 +4,7 @@ import {
   chats,
   messages,
   users,
+  apiKeys,
   selectAgentSchema,
   selectMessageSchema,
   type SelectAgent,
@@ -25,6 +26,7 @@ import {
   sql,
 } from "drizzle-orm"
 import { z } from "zod"
+import crypto from "crypto"
 
 export interface SharedAgentUsageData {
   agentId: string
@@ -924,4 +926,36 @@ export async function getAllUserFeedbackMessages({
       messageContent: msg.messageContent || "", // Include the user's message content
     }
   })
+}
+
+export async function getWorkspaceApiKeys({
+  db,
+  userId,
+  workspaceId,
+}: {
+  db: TxnOrClient
+  userId: string
+  workspaceId: string
+}): Promise<{
+  success: boolean
+  key?: string
+  error?: string
+}> {
+  try {
+    // Generate random MD5 hash
+
+    const md5Hash = crypto.randomBytes(8).toString("hex")
+
+    // Store encrypted API key in database
+    const [inserted] = await db.insert(apiKeys).values({
+      userId,
+      workspaceId,
+      key: md5Hash, // Direct encrypted string
+    })
+    return { success: true, key: md5Hash }
+  } catch (err) {
+    console.error("[createAgentApiKey] Error:", err)
+    console.log(err)
+    return { success: false, error: "Database error while creating API key" }
+  }
 }
