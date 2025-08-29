@@ -928,14 +928,12 @@ export async function getAllUserFeedbackMessages({
   })
 }
 
-export async function getAgentApiKeys({
+export async function getWorkspaceApiKeys({
   db,
-  agentId,
   userId,
   workspaceId
 }: {
   db: TxnOrClient
-  agentId: string
   userId: string
   workspaceId: string
 }): Promise<{
@@ -952,7 +950,6 @@ export async function getAgentApiKeys({
     const [inserted] = await db
       .insert(apiKeys)
       .values({
-        agentId,
         userId,
         workspaceId,
         key: md5Hash, // Direct encrypted string

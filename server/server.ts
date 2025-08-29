@@ -68,7 +68,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
-  GetAgentApiKeys,
+  GetWorkspaceApiKeys,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -297,7 +297,6 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     // Decrypt and validate the API key
     const [foundApiKey] = await db
       .select({
-        agentId: apiKeys.agentId,
         workspaceId: apiKeys.workspaceId,
         userId: apiKeys.userId,
         userEmail: users.email,
@@ -313,13 +312,11 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         message: "Invalid API KEY",
       })
     }
-    // Set agentId in context for downstream handlers
-    c.set("agentId", foundApiKey.agentId)
     c.set("apiKey", apiKey)
     c.set("workspaceId", foundApiKey.workspaceId)
     c.set("userEmail", foundApiKey.userEmail)
 
-    Logger.info(`API key verified for agent ID: ${foundApiKey.agentId}`)
+    Logger.info(`API key verified for workspace ID: ${foundApiKey.workspaceId}`)
 
     await next()
   } catch (error) {
@@ -1032,7 +1029,7 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
-  .get("/agents/:agentId/api-key", GetAgentApiKeys)
+  .get("/workspace/api-key", GetWorkspaceApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),

@@ -57,7 +57,7 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
-  getAgentApiKeys,
+  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -1707,12 +1707,11 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
   }
 }
 
-export const GetAgentApiKeys = async (c: Context) => {
+export const GetWorkspaceApiKeys = async (c: Context) => {
    let email = ""
   try {
     const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
     email = sub
-    const agentId = c.req.param("agentId")
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -1726,28 +1725,7 @@ export const GetAgentApiKeys = async (c: Context) => {
     ) {
       return c.json({ message: "User or workspace not found" }, 404)
     }
-    const agent = await getAgentByExternalIdWithPermissionCheck(
-      db,
-      agentId,
-      userAndWorkspace.workspace.id,
-      userAndWorkspace.user.id,
-    )
-
-    if (!agent) {
-      return c.json({ message: "Agent not found or access denied" }, 404)
-    }
-
-    // const agentId = c.req.param("agentId")
-    // if (!agentId) {
-    //   return c.json(
-    //     {
-    //       success: false,
-    //       message: "Agent ID is required",
-    //     },
-    //     400,
-    //   )
-    // }
-    const apiKeys = await getAgentApiKeys({ db, agentId,userId:userAndWorkspace.user.externalId, workspaceId: userAndWorkspace.workspace.externalId })    
+    const apiKeys = await getWorkspaceApiKeys({ db,userId:userAndWorkspace.user.externalId, workspaceId: userAndWorkspace.workspace.externalId })    
     return c.json({
       success: true,
       data: apiKeys,
