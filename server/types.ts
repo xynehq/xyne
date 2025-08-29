@@ -90,7 +90,22 @@ export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
-  "service-key": z.any(),
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        JSON.parse(content) // Just validate it's valid JSON
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid JSON"),
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
@@ -101,8 +116,23 @@ export type ServiceAccountConnection = z.infer<
 >
 
 export const updateServiceConnectionSchema = z.object({
-  "service-key": z.any(),
-  connectorId: z.string(),
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        JSON.parse(content) // Just validate it's valid JSON
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid JSON"),
+  connectorId: z.string().min(1, "Connector ID is required"),
 })
 
 export type UpdateServiceAccountConnection = z.infer<
