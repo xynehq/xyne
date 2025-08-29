@@ -4354,7 +4354,6 @@ export const AgentChatMessageApi = async (c: Context) => {
     // Get email and workspaceId from ApiMiddleware context
     const email = c.get("userEmail")
     const workspaceId = c.get("workspaceId")
-    const apiKey = c.get("apiKey")
     let sub = email
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -4374,13 +4373,6 @@ export const AgentChatMessageApi = async (c: Context) => {
       agentId,
       streamOff,
     }: MessageReqType & { streamOff: boolean } = body
-
-    const verifiedAgentId = c.get("agentId") as string
-    if (!verifiedAgentId || agentId !== verifiedAgentId) {
-      throw new HTTPException(403, {
-        message: "Invalid Request",
-      })
-    }
 
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
