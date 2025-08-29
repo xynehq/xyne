@@ -2710,10 +2710,22 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   let email = ""
+  let workspaceId = ""
+  let via_apiKey = false
 
   try {
-    const { sub, workspaceId } = c.get(JwtPayloadKey)
-    email = sub
+    let jwtPayload
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {}
+    if (jwtPayload) {
+      email = jwtPayload?.sub
+      workspaceId = jwtPayload?.workspaceId
+    } else {
+      email = c.get("userEmail") ?? ""
+      workspaceId = c.get("workspaceId") ?? ""
+      via_apiKey = true
+    }
     loggerWithChild({ email: email }).info("AgentMessageApiRagOff..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -2730,6 +2742,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
+      streamOff,
     }: MessageReqType = body
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2811,6 +2824,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             title,
             attachments: [],
             agentId: agentIdToStore,
+            via_apiKey,
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -2885,55 +2899,335 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       chat = existingChat
       chatCreationSpan.end()
     }
-    return streamSSE(c, async (stream) => {
-      streamKey = `${chat.externalId}` // Create the stream key
-      activeStreams.set(streamKey, stream) // Add stream to the map
-      Logger.info(`Added stream ${streamKey} to active streams map.`)
-      let wasStreamClosedPrematurely = false
-      const streamSpan = rootSpan.startSpan("stream_response")
-      streamSpan.setAttribute("chatId", chat.externalId)
-      const messagesWithNoErrResponse = messages
-        .slice(0, messages.length - 1)
-        .filter((msg) => !msg?.errorMessage)
-        .map((m) => ({
-          role: m.messageRole as ConversationRole,
-          content: [{ text: m.message }],
-        }))
-      try {
-        if (!chatId) {
-          const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+    if (!streamOff) {
+      return streamSSE(c, async (stream) => {
+        streamKey = `${chat.externalId}` // Create the stream key
+        activeStreams.set(streamKey, stream) // Add stream to the map
+        Logger.info(`Added stream ${streamKey} to active streams map.`)
+        let wasStreamClosedPrematurely = false
+        const streamSpan = rootSpan.startSpan("stream_response")
+        streamSpan.setAttribute("chatId", chat.externalId)
+        const messagesWithNoErrResponse = messages
+          .slice(0, messages.length - 1)
+          .filter((msg) => !msg?.errorMessage)
+          .map((m) => ({
+            role: m.messageRole as ConversationRole,
+            content: [{ text: m.message }],
+          }))
+        try {
+          if (!chatId) {
+            const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+            titleUpdateSpan.end()
+          }
+
+          Logger.info("Chat stream started")
+          // we do not set the message Id as we don't have it
           await stream.writeSSE({
-            data: title,
-            event: ChatSSEvents.ChatTitleUpdate,
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+            }),
           })
-          titleUpdateSpan.end()
+
+          const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
+          const allDataSources = await getAllDocumentsForAgent(
+            [Apps.DataSource],
+            agentForDb?.appIntegrations as string[],
+          )
+          dataSourceSpan.end()
+          loggerWithChild({ email }).info(
+            `Found ${allDataSources?.root?.children?.length} data sources for agent`,
+          )
+
+          let docIds: string[] = []
+          if (
+            allDataSources &&
+            allDataSources.root &&
+            allDataSources.root.children
+          ) {
+            docIds = [
+              ...new Set(
+                allDataSources.root.children
+                  .map(
+                    (child: VespaSearchResult) =>
+                      (child.fields as any)?.docId as string,
+                  )
+                  .filter(Boolean),
+              ),
+            ]
+          }
+
+          let context = ""
+          let finalImageFileNames: string[] = []
+          let fragments: MinimalAgentFragment[] = []
+          if (docIds.length > 0) {
+            let previousResultsLength = 0
+            const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
+            const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
+            // const allChunksCopy
+            chunksSpan.end()
+            if (allChunks?.root?.children) {
+              const startIndex = 0
+              fragments = allChunks.root.children.map((child, idx) =>
+                vespaResultToMinimalAgentFragment(child, idx),
+              )
+              context = answerContextMapFromFragments(
+                fragments,
+                maxDefaultSummary,
+              )
+
+              const { imageFileNames } = extractImageFileNames(
+                context,
+                fragments.map(
+                  (v) =>
+                    ({
+                      fields: {
+                        docId: v.source.docId,
+                        title: v.source.title,
+                        url: v.source.url,
+                      },
+                    }) as any,
+                ),
+              )
+              Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
+              finalImageFileNames = imageFileNames || []
+              // context = initialContext;
+            }
+          }
+          if (attachmentFileIds?.length) {
+            finalImageFileNames.push(
+              ...attachmentFileIds.map(
+                (fileid, index) => `${index}_${fileid}_${0}`,
+              ),
+            )
+          }
+
+          const ragOffIterator = nonRagIterator(
+            message,
+            ctx,
+            context,
+            fragments,
+            agentPromptForLLM,
+            messagesWithNoErrResponse,
+            finalImageFileNames,
+            attachmentFileIds,
+            email,
+            isReasoningEnabled,
+          )
+          let answer = ""
+          let citations: any[] = []
+          let imageCitations: any[] = []
+          let citationMap: Record<number, number> = {}
+          let citationValues: Record<number, any> = {}
+          let thinking = ""
+          let reasoning = isReasoningEnabled
+          for await (const chunk of ragOffIterator) {
+            if (stream.closed) {
+              Logger.info("[AgentMessageApiRagOff] Stream closed. Breaking.")
+              wasStreamClosedPrematurely = true
+              break
+            }
+            if (chunk.text) {
+              if (reasoning && chunk.reasoning) {
+                thinking += chunk.text
+                stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: chunk.text,
+                })
+                // reasoningSpan.end()
+              }
+              if (!chunk.reasoning) {
+                answer += chunk.text
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk.text,
+                })
+              }
+            }
+
+            if (chunk.citation) {
+              const { index, item } = chunk.citation
+              citations.push(item)
+              citationMap[index] = citations.length - 1
+              loggerWithChild({ email }).info(
+                `Found citations and sending it, current count: ${citations.length}`,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: citations,
+                  citationMap,
+                }),
+              })
+              citationValues[index] = item
+            }
+
+            if (chunk.imageCitation) {
+              loggerWithChild({ email: email }).info(
+                `Found image citation, sending it`,
+                { citationKey: chunk.imageCitation.citationKey },
+              )
+              imageCitations.push(chunk.imageCitation)
+              stream.writeSSE({
+                event: ChatSSEvents.ImageCitationUpdate,
+                data: JSON.stringify(chunk.imageCitation),
+              })
+            }
+
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
+            }
+            if (chunk.metadata?.usage) {
+              tokenArr.push({
+                inputTokens: chunk.metadata.usage.inputTokens,
+                outputTokens: chunk.metadata.usage.outputTokens,
+              })
+            }
+          }
+
+          if (answer) {
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+            const totalTokens = tokenArr.reduce(
+              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+              0,
+            )
+
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: citations,
+              imageCitations: imageCitations,
+              message: processMessage(answer, citationMap),
+              thinking: thinking,
+              modelId: defaultBestModel,
+              cost: totalCost.toString(),
+              tokensUsed: totalTokens,
+            })
+            assistantMessageId = msg.externalId
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: assistantMessageId,
+              }),
+            })
+          } else if (wasStreamClosedPrematurely) {
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+            const totalTokens = tokenArr.reduce(
+              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+              0,
+            )
+
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: citations,
+              imageCitations: imageCitations,
+              message: processMessage(answer, citationMap),
+              thinking: thinking,
+              modelId: defaultBestModel,
+              cost: totalCost.toString(),
+              tokensUsed: totalTokens,
+            })
+            assistantMessageId = msg.externalId
+          } else {
+            const errorMessage =
+              "There seems to be an issue on our side. Please try again after some time."
+
+            // Calculate total cost and tokens
+            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+            const totalTokens = tokenArr.reduce(
+              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+              0,
+            )
+
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: citations,
+              imageCitations: imageCitations,
+              message: processMessage(errorMessage, citationMap),
+              thinking: thinking,
+              modelId: defaultBestModel,
+              cost: totalCost.toString(),
+              tokensUsed: totalTokens,
+            })
+            assistantMessageId = msg.externalId
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: assistantMessageId,
+              }),
+            })
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: errorMessage,
+            })
+          }
+
+          const endSpan = streamSpan.startSpan("send_end_event")
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          endSpan.end()
+          streamSpan.end()
+          rootSpan.end()
+        } catch (error) {
+          // ... (error handling as in AgentMessageApi)
+        } finally {
+          if (streamKey && activeStreams.has(streamKey)) {
+            activeStreams.delete(streamKey)
+            Logger.info(`Removed stream ${streamKey} from active streams map.`)
+          }
         }
+      })
+    } else {
+      const nonStreamSpan = rootSpan.startSpan("nonstream_response")
+      nonStreamSpan.setAttribute("chatId", chat.externalId)
 
-        Logger.info("Chat stream started")
-        // we do not set the message Id as we don't have it
-        await stream.writeSSE({
-          event: ChatSSEvents.ResponseMetadata,
-          data: JSON.stringify({
-            chatId: chat.externalId,
-          }),
-        })
+      try {
+        const messagesWithNoErrResponse = messages
+          .slice(0, messages.length - 1)
+          .filter((msg) => !msg?.errorMessage)
+          .map((m) => ({
+            role: m.messageRole as ConversationRole,
+            content: [{ text: m.message }],
+          }))
 
-        const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
+        // Build “context + fragments” (same as streaming path) -----------------------
+        const dataSourceSpan = nonStreamSpan.startSpan("get_all_data_sources")
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
           agentForDb?.appIntegrations as string[],
         )
         dataSourceSpan.end()
-        loggerWithChild({ email: sub }).info(
+        loggerWithChild({ email }).info(
           `Found ${allDataSources?.root?.children?.length} data sources for agent`,
         )
 
         let docIds: string[] = []
-        if (
-          allDataSources &&
-          allDataSources.root &&
-          allDataSources.root.children
-        ) {
+        if (allDataSources?.root?.children) {
           docIds = [
             ...new Set(
               allDataSources.root.children
@@ -2947,16 +3241,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         }
 
         let context = ""
-        let finalImageFileNames: string[] = []
         let fragments: MinimalAgentFragment[] = []
+        const chunksSpan = nonStreamSpan.startSpan("get_documents_by_doc_ids")
         if (docIds.length > 0) {
-          let previousResultsLength = 0
-          const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
-          // const allChunksCopy
-          chunksSpan.end()
           if (allChunks?.root?.children) {
-            const startIndex = 0
             fragments = allChunks.root.children.map((child, idx) =>
               vespaResultToMinimalAgentFragment(child, idx),
             )
@@ -2964,24 +3253,26 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               fragments,
               maxDefaultSummary,
             )
-
-            const { imageFileNames } = extractImageFileNames(
-              context,
-              fragments.map(
-                (v) =>
-                  ({
-                    fields: {
-                      docId: v.source.docId,
-                      title: v.source.title,
-                      url: v.source.url,
-                    },
-                  }) as any,
-              ),
-            )
-            Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
-            finalImageFileNames = imageFileNames || []
-            // context = initialContext;
           }
+        }
+        chunksSpan.end()
+
+        let finalImageFileNames: string[] = []
+        if (context && fragments.length) {
+          const { imageFileNames } = extractImageFileNames(
+            context,
+            fragments.map(
+              (v) =>
+                ({
+                  fields: {
+                    docId: v.source.docId,
+                    title: v.source.title,
+                    url: v.source.url,
+                  },
+                }) as any,
+            ),
+          )
+          finalImageFileNames = imageFileNames || []
         }
         if (attachmentFileIds?.length) {
           finalImageFileNames.push(
@@ -2991,6 +3282,54 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           )
         }
 
+        // Helper: persist & return JSON once ----------------------------------------
+        const finalizeAndRespond = async (params: {
+          answer: string
+          thinking: string
+          citations: any[]
+          imageCitations: any[]
+          citationMap: Record<number, number>
+          costArr: number[]
+          tokenArr: { inputTokens: number; outputTokens: number }[]
+        }) => {
+          const processed = processMessage(params.answer, params.citationMap)
+          const totalCost = params.costArr.reduce((s, c) => s + c, 0)
+          const totalTokens = params.tokenArr.reduce(
+            (s, t) => s + t.inputTokens + t.outputTokens,
+            0,
+          )
+
+          const msg = await insertMessage(db, {
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
+            messageRole: MessageRole.Assistant,
+            email: user.email,
+            sources: params.citations,
+            imageCitations: params.imageCitations,
+            message: processed,
+            thinking: params.thinking, // ALWAYS include collected thinking
+            modelId: defaultBestModel,
+            cost: totalCost.toString(),
+            tokensUsed: totalTokens,
+          })
+          assistantMessageId = msg.externalId
+
+          nonStreamSpan.end()
+          rootSpan.end()
+
+          return c.json({
+            chatId: chat.externalId,
+            messageId: assistantMessageId,
+            answer: processed,
+            // thinking: params.thinking,
+            citations: params.citations,
+            imageCitations: params.imageCitations,
+          })
+        }
+
+        // Build iterator and collect -------------------------------------------------
         const ragOffIterator = nonRagIterator(
           message,
           ctx,
@@ -3003,190 +3342,55 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           email,
           isReasoningEnabled,
         )
-        let answer = ""
-        let citations: any[] = []
-        let imageCitations: any[] = []
-        let citationMap: Record<number, number> = {}
-        let citationValues: Record<number, any> = {}
-        let thinking = ""
-        let reasoning = isReasoningEnabled
-        for await (const chunk of ragOffIterator) {
-          if (stream.closed) {
-            Logger.info("[AgentMessageApiRagOff] Stream closed. Breaking.")
-            wasStreamClosedPrematurely = true
-            break
-          }
-          if (chunk.text) {
-            if (reasoning && chunk.reasoning) {
-              thinking += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: chunk.text,
-              })
-              // reasoningSpan.end()
-            }
-            if (!chunk.reasoning) {
-              answer += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: chunk.text,
-              })
-            }
-          }
 
-          if (chunk.citation) {
-            const { index, item } = chunk.citation
-            citations.push(item)
-            citationMap[index] = citations.length - 1
-            loggerWithChild({ email: sub }).info(
-              `Found citations and sending it, current count: ${citations.length}`,
-            )
-            stream.writeSSE({
-              event: ChatSSEvents.CitationsUpdate,
-              data: JSON.stringify({
-                contextChunks: citations,
-                citationMap,
-              }),
-            })
-            citationValues[index] = item
-          }
+        const {
+          answer,
+          thinking,
+          citations,
+          imageCitations,
+          citationMap,
+          costArr: costArrCollected,
+          tokenArr: tokenArrCollected,
+        } = await collectIterator(ragOffIterator)
 
-          if (chunk.imageCitation) {
-            loggerWithChild({ email: email }).info(
-              `Found image citation, sending it`,
-              { citationKey: chunk.imageCitation.citationKey },
-            )
-            imageCitations.push(chunk.imageCitation)
-            stream.writeSSE({
-              event: ChatSSEvents.ImageCitationUpdate,
-              data: JSON.stringify(chunk.imageCitation),
-            })
-          }
-
-          if (chunk.cost) {
-            costArr.push(chunk.cost)
-          }
-          if (chunk.metadata?.usage) {
-            tokenArr.push({
-              inputTokens: chunk.metadata.usage.inputTokens,
-              outputTokens: chunk.metadata.usage.outputTokens,
-            })
-          }
-        }
-
-        if (answer) {
-          // Calculate total cost and tokens
-          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-          const totalTokens = tokenArr.reduce(
-            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-            0,
-          )
-
-          const msg = await insertMessage(db, {
-            chatId: chat.id,
-            userId: user.id,
-            workspaceExternalId: workspace.externalId,
-            chatExternalId: chat.externalId,
-            messageRole: MessageRole.Assistant,
-            email: user.email,
-            sources: citations,
-            imageCitations: imageCitations,
-            message: processMessage(answer, citationMap),
-            thinking: thinking,
-            modelId: defaultBestModel,
-            cost: totalCost.toString(),
-            tokensUsed: totalTokens,
+        if (answer || thinking) {
+          return await finalizeAndRespond({
+            answer,
+            thinking, // always forwarded
+            citations,
+            imageCitations,
+            citationMap,
+            costArr: costArr.concat(costArrCollected),
+            tokenArr: tokenArr.concat(tokenArrCollected),
           })
-          assistantMessageId = msg.externalId
-
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
-            data: JSON.stringify({
-              chatId: chat.externalId,
-              messageId: assistantMessageId,
-            }),
-          })
-        } else if (wasStreamClosedPrematurely) {
-          // Calculate total cost and tokens
-          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-          const totalTokens = tokenArr.reduce(
-            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-            0,
-          )
-
-          const msg = await insertMessage(db, {
-            chatId: chat.id,
-            userId: user.id,
-            workspaceExternalId: workspace.externalId,
-            chatExternalId: chat.externalId,
-            messageRole: MessageRole.Assistant,
-            email: user.email,
-            sources: citations,
-            imageCitations: imageCitations,
-            message: processMessage(answer, citationMap),
-            thinking: thinking,
-            modelId: defaultBestModel,
-            cost: totalCost.toString(),
-            tokensUsed: totalTokens,
-          })
-          assistantMessageId = msg.externalId
         } else {
-          const errorMessage =
+          // Graceful error response
+          const msgText =
             "There seems to be an issue on our side. Please try again after some time."
-
-          // Calculate total cost and tokens
-          const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-          const totalTokens = tokenArr.reduce(
-            (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-            0,
-          )
-
-          const msg = await insertMessage(db, {
-            chatId: chat.id,
-            userId: user.id,
-            workspaceExternalId: workspace.externalId,
-            chatExternalId: chat.externalId,
-            messageRole: MessageRole.Assistant,
-            email: user.email,
-            sources: citations,
-            imageCitations: imageCitations,
-            message: processMessage(errorMessage, citationMap),
-            thinking: thinking,
-            modelId: defaultBestModel,
-            cost: totalCost.toString(),
-            tokensUsed: totalTokens,
-          })
-          assistantMessageId = msg.externalId
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
-            data: JSON.stringify({
+          nonStreamSpan.end()
+          rootSpan.end()
+          return c.json(
+            {
               chatId: chat.externalId,
-              messageId: assistantMessageId,
-            }),
-          })
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseUpdate,
-            data: errorMessage,
-          })
+              messageId: messages[messages.length - 1]?.externalId,
+              error: msgText,
+            },
+            400,
+          )
         }
-
-        const endSpan = streamSpan.startSpan("send_end_event")
-        await stream.writeSSE({
-          data: "",
-          event: ChatSSEvents.End,
-        })
-        endSpan.end()
-        streamSpan.end()
-        rootSpan.end()
       } catch (error) {
-        // ... (error handling as in AgentMessageApi)
-      } finally {
-        if (streamKey && activeStreams.has(streamKey)) {
-          activeStreams.delete(streamKey)
-          Logger.info(`Removed stream ${streamKey} from active streams map.`)
-        }
+        const span = nonStreamSpan.startSpan("handle_nonstream_error")
+        span.addEvent("error", {
+          message: getErrorMessage(error),
+          stack: (error as Error).stack || "",
+        })
+        const errFromMap = handleError(error)
+        span.end()
+        nonStreamSpan.end()
+        rootSpan.end()
+        return c.json({ error: errFromMap }, 500)
       }
-    })
+    }
   } catch (error) {
     // ... (error handling as in AgentMessageApi)
   }
