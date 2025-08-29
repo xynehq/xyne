@@ -830,7 +830,7 @@ const getAllOneDriveFiles = async (
     logger.info(`Fetching files from folder: ${folderPath} (ID: ${folderId})`)
     
     // Get all items in current folder with pagination
-    const items = await concatPaginatedResponses(client, url)
+    const items = await makePagedGraphApiCall(client, url)
     
     let allFiles: any[] = []
     
@@ -872,33 +872,6 @@ const getAllOneDriveFiles = async (
   }
 }
 
-const concatPaginatedResponses = async (
-  client: MicrosoftGraphClient,
-  url: string,
-): Promise<any[]> => {
-  let nextLink: string | undefined = url
-  let allItems: any[] = []
-  
-  try {
-    do {
-      const response = await makeGraphApiCall(client, nextLink)
-      
-      if (response.value && Array.isArray(response.value)) {
-        allItems.push(...response.value)
-      }
-      
-      // Get the next page URL from the response
-      nextLink = response["@odata.nextLink"]
-      
-    } while (nextLink)
-    
-    return allItems
-    
-  } catch (error) {
-    Logger.error(`Error in paginated response concatenation: ${(error as Error).message}`)
-    throw error
-  }
-}
 
 // Outlook email ingestion implementation
 const handleOutlookIngestion = async (
