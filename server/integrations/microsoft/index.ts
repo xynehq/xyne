@@ -220,15 +220,15 @@ const insertCalendarEvents = async (
     const endDateObj = new Date(endDate)
     const existingFilter = queryParams.$filter || ""
     const endFilter = `end/dateTime le '${endDateObj.toISOString()}'`
-    queryParams.$filter = existingFilter 
-      ? `${existingFilter} and ${endFilter}` 
+    queryParams.$filter = existingFilter
+      ? `${existingFilter} and ${endFilter}`
       : endFilter
   }
 
   try {
     const endpoint = `/me/events?${new URLSearchParams(queryParams).toString()}`
     const response: any = await makeGraphApiCall(client, endpoint)
-    
+
     // Save the actual response to a file for analysis
     try {
       const responsesDir = path.join(__dirname, "responses")
@@ -249,11 +249,11 @@ const insertCalendarEvents = async (
         `Could not save calendar events response: ${saveError}`
       )
     }
-    
+
     if (response.value) {
       events = response.value
     }
-    
+
     deltaToken = response["@odata.deltaLink"] || ""
   } catch (error: any) {
     // Check if user doesn't have calendar access
@@ -571,14 +571,12 @@ export async function countOneDriveFiles(
   startDate?: string,
   endDate?: string,
 ): Promise<number> {
-  let fileCount = 0
-  let nextLink: string | undefined
-
-  loggerWithChild({ email: email ?? "" }).info(`Started Counting OneDrive Files`)
+  const logger = loggerWithChild({ email: email ?? "" })
+  logger.info(`Started Counting OneDrive Files`)
 
   const queryParams: any = {
     $top: 1000,
-    $select: "id",
+    $select: "id,file,folder",
   }
 
   if (startDate || endDate) {
@@ -598,26 +596,21 @@ export async function countOneDriveFiles(
   }
 
   try {
-    do {
-      const response = nextLink
-        ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, `/me/drive/root/children?${new URLSearchParams(queryParams).toString()}`)
-
-      fileCount += response.value?.length || 0
-      nextLink = response["@odata.nextLink"]
-    } while (nextLink)
+    // Use the recursive function to get all files
+    const allFiles = await getAllOneDriveFiles(client, queryParams, email)
+    
+    // Count only actual files (not folders)
+    const fileCount = allFiles.filter(item => item.file).length
+    
+    logger.info(`Counted ${fileCount} OneDrive files`)
+    return fileCount
   } catch (error) {
-    loggerWithChild({ email: email ?? "" }).error(
+    logger.error(
       error,
       `Error counting OneDrive files: ${(error as Error).message}`,
     )
     return 0
   }
-
-  loggerWithChild({ email: email ?? "" }).info(
-    `Counted ${fileCount} OneDrive files`,
-  )
-  return fileCount
 }
 
 // Get Outlook email counts
@@ -727,83 +720,81 @@ const insertFilesForUser = async (
       }
     }
 
-    let nextLink: string | undefined
-    do {
-      const response = nextLink
-        ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, `/me/drive/root/children?${new URLSearchParams(queryParams).toString()}`)
-
-      // Save the actual response to a file for analysis
+    const allFiles = await getAllOneDriveFiles(client, queryParams, userEmail);
+    
+    // Save all retrieved files metadata to a JSON file for reference
+    try {
+      const responsesDir = path.join(__dirname, "responses")
+      if (!fs.existsSync(responsesDir)) {
+        fs.mkdirSync(responsesDir, { recursive: true })
+      }
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const filename = `onedrive-all-files-${timestamp}.json`
+      fs.writeFileSync(
+        path.join(responsesDir, filename),
+        JSON.stringify({
+          totalFiles: allFiles.length,
+          retrievedAt: new Date().toISOString(),
+          userEmail: userEmail,
+          files: allFiles
+        }, null, 2)
+      )
+      loggerWithChild({ email: userEmail }).info(
+        `Saved all OneDrive files metadata to ${filename} (${allFiles.length} files)`
+      )
+    } catch (saveError) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Could not save OneDrive files metadata: ${saveError}`
+      )
+    }
+    
+    for (const file of allFiles) {
       try {
-        const responsesDir = path.join(__dirname, "responses")
-        if (!fs.existsSync(responsesDir)) {
-          fs.mkdirSync(responsesDir, { recursive: true })
+        // Skip folders for now
+        if (file.folder) {
+          continue
         }
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-        const filename = `onedrive-files-${timestamp}.json`
-        fs.writeFileSync(
-          path.join(responsesDir, filename),
-          JSON.stringify(response, null, 2)
-        )
-        loggerWithChild({ email: userEmail }).info(
-          `Saved OneDrive files response to ${filename}`
-        )
-      } catch (saveError) {
-        loggerWithChild({ email: userEmail }).warn(
-          `Could not save OneDrive files response: ${saveError}`
-        )
-      }
 
-      if (response.value) {
-        for (const file of response.value) {
-          try {
-            // Skip folders for now
-            if (file.folder) {
-              continue
-            }
-
-            // Process only files with content
-            if (file.file && file.size > 0) {
-              const fileToBeIngested = {
-                title: file.name ?? "",
-                url: file.webUrl ?? "",
-                app: Apps.MicrosoftDrive,
-                docId: file.id ?? "",
-                parentId: null, // Could be enhanced to get parent folder info
-                owner: userEmail,
-                photoLink: "",
-                ownerEmail: userEmail,
-                entity: DriveEntity.Misc,
-                chunks: [], // For now, we'll index metadata only
-                permissions: [userEmail], // Basic permission - could be enhanced
-                mimeType: file.file?.mimeType ?? "application/octet-stream",
-                metadata: JSON.stringify({
-                  size: file.size,
-                  downloadUrl: file["@microsoft.graph.downloadUrl"],
-                }),
-                createdAt: new Date(file.createdDateTime).getTime(),
-                updatedAt: new Date(file.lastModifiedDateTime).getTime(),
-              }
-
-              await insertWithRetry(fileToBeIngested, fileSchema)
-              tracker.updateUserStats(userEmail, StatType.Drive, 1)
-              processedFiles++
-
-              loggerWithChild({ email: userEmail }).info(
-                `Processed OneDrive file: ${file.name}`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).error(
-              error,
-              `Error processing OneDrive file ${file.id}: ${(error as Error).message}`,
-            )
+        // Process only files with content
+        if (file.file && file.size > 0) {
+          const fileToBeIngested = {
+            title: file.name ?? "",
+            url: file.webUrl ?? "",
+            app: Apps.MicrosoftDrive,
+            docId: file.id ?? "",
+            parentId: file.parentFolderId ?? null, // Now includes parent folder ID from traversal
+            owner: userEmail,
+            photoLink: "",
+            ownerEmail: userEmail,
+            entity: DriveEntity.Misc,
+            chunks: [], // For now, we'll index metadata only
+            permissions: [userEmail], // Basic permission - could be enhanced
+            mimeType: file.file?.mimeType ?? "application/octet-stream",
+            metadata: JSON.stringify({
+              size: file.size,
+              downloadUrl: file["@microsoft.graph.downloadUrl"],
+              folderPath: file.parentFolderPath ?? "/", // Include the full folder path
+              parentFolderId: file.parentFolderId ?? null, // Include parent folder ID in metadata
+            }),
+            createdAt: new Date(file.createdDateTime).getTime(),
+            updatedAt: new Date(file.lastModifiedDateTime).getTime(),
           }
-        }
-      }
 
-      nextLink = response["@odata.nextLink"]
-    } while (nextLink)
+          await insertWithRetry(fileToBeIngested, fileSchema)
+          tracker.updateUserStats(userEmail, StatType.Drive, 1)
+          processedFiles++
+
+          loggerWithChild({ email: userEmail }).info(
+            `Processed OneDrive file: ${file.name}`,
+          )
+        }
+      } catch (error) {
+        loggerWithChild({ email: userEmail }).error(
+          error,
+          `Error processing OneDrive file ${file.id}: ${(error as Error).message}`,
+        )
+      }
+    }
 
     loggerWithChild({ email: userEmail }).info(
       `Processed ${processedFiles} OneDrive files`,
@@ -814,6 +805,98 @@ const insertFilesForUser = async (
       error,
       `Could not insert OneDrive files for user: ${errorMessage} ${(error as Error).stack}`,
     )
+  }
+}
+
+// Recursive function to get all OneDrive files with pagination support
+const getAllOneDriveFiles = async (
+  client: MicrosoftGraphClient,
+  queryParams: any,
+  userEmail?: string,
+  folderId: string = 'root',
+  folderPath: string = '/',
+  parentFolderId?: string,
+): Promise<any[]> => {
+  const logger = userEmail ? loggerWithChild({ email: userEmail }) : Logger
+  
+  try {
+    // Fix the typo: "chidren" should be "children"
+    const baseUrl = folderId === 'root' 
+      ? `/me/drive/root/children`
+      : `/me/drive/items/${folderId}/children`
+    
+    const url = `${baseUrl}?${new URLSearchParams(queryParams).toString()}`
+    
+    logger.info(`Fetching files from folder: ${folderPath} (ID: ${folderId})`)
+    
+    // Get all items in current folder with pagination
+    const items = await concatPaginatedResponses(client, url)
+    
+    let allFiles: any[] = []
+    
+    for (const item of items) {
+      if (item.folder) {
+        // If it's a folder, recursively get files from it
+        logger.info(`Recursively processing folder: ${item.name}`)
+        try {
+          const subFolderFiles = await getAllOneDriveFiles(
+            client,
+            queryParams,
+            userEmail,
+            item.id,
+            `${folderPath}${item.name}/`,
+            item.id // Pass the current folder ID as parent for its children
+          )
+          allFiles.push(...subFolderFiles)
+        } catch (error) {
+          logger.warn(`Failed to process subfolder ${item.name}: ${(error as Error).message}`)
+          // Continue processing other folders even if one fails
+        }
+      } else if (item.file) {
+        // If it's a file, add it to our collection with parent information
+        allFiles.push({
+          ...item,
+          folderPath: folderPath,
+          parentFolderId: folderId === 'root' ? null : folderId, // Track the immediate parent folder ID
+          parentFolderPath: folderPath, // Track the full parent folder path
+        })
+      }
+    }
+    
+    logger.info(`Retrieved ${allFiles.length} files from ${folderPath}`)
+    return allFiles
+    
+  } catch (error) {
+    logger.error(`Error getting files from folder ${folderPath}: ${(error as Error).message}`)
+    throw error
+  }
+}
+
+const concatPaginatedResponses = async (
+  client: MicrosoftGraphClient,
+  url: string,
+): Promise<any[]> => {
+  let nextLink: string | undefined = url
+  let allItems: any[] = []
+  
+  try {
+    do {
+      const response = await makeGraphApiCall(client, nextLink)
+      
+      if (response.value && Array.isArray(response.value)) {
+        allItems.push(...response.value)
+      }
+      
+      // Get the next page URL from the response
+      nextLink = response["@odata.nextLink"]
+      
+    } while (nextLink)
+    
+    return allItems
+    
+  } catch (error) {
+    Logger.error(`Error in paginated response concatenation: ${(error as Error).message}`)
+    throw error
   }
 }
 
@@ -876,7 +959,7 @@ const handleOutlookIngestion = async (
           `Could not save Outlook messages response: ${saveError}`
         )
       }
-      
+
       if (response.value) {
         for (const message of response.value) {
           try {
@@ -885,7 +968,7 @@ const handleOutlookIngestion = async (
               threadId: message.conversationId ?? "",
               mailId: message.internetMessageId ?? message.id ?? "",
               subject: message.subject ?? "",
-              chunks: message.body?.content 
+              chunks: message.body?.content
                 ? chunkDocument(getTextFromEventDescription(message.body.content)).map(c => c.chunk)
                 : [],
               timestamp: new Date(message.receivedDateTime || message.sentDateTime).getTime(),
