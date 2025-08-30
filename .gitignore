@@ -209,3 +209,6 @@ server/.venv/*
 
 deployment/grafana/grafana-storage
 deployment/loki/*
+deployment/xyne-portable-*
+
+data/app-assets/
