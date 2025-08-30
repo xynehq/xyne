@@ -44,10 +44,21 @@ import {
   getOAuthProvider,
 } from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
-import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
+import {
+  generateCodeVerifier,
+  generateState,
+  Google,
+  Slack,
+  MicrosoftEntraId,
+} from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { users, chats, messages, agents } from "@/db/schema" // Add database schema imports
-import { getErrorMessage, IsGoogleApp, IsMicrosoftApp, setCookieByEnv } from "@/utils"
+import {
+  getErrorMessage,
+  IsGoogleApp,
+  IsMicrosoftApp,
+  setCookieByEnv,
+} from "@/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   getUserAgentLeaderboard,
@@ -239,25 +250,30 @@ const getAuthorizationUrl = async (
     url.searchParams.set("code", codeVerifier)
     url.searchParams.set("user_scope", oauthScopes.join(","))
   } else if (IsMicrosoftApp(app)) {
-    // Microsoft OAuth authorization URL
+    const microsoft = new MicrosoftEntraId(
+      "common",
+      clientId as string,
+      clientSecret,
+      `${config.host}/oauth/callback`,
+    )
+
+    // adding some data to state
     const newState = JSON.stringify({ app, random: state })
-    url = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
-    url.searchParams.set("client_id", clientId!)
-    url.searchParams.set("response_type", "code")
-    url.searchParams.set("redirect_uri", `${config.host}/oauth/callback`)
-    url.searchParams.set("response_mode", "query")
-    // Ensure scopes are properly formatted - filter out empty strings and join with spaces
-    const validScopes = oauthScopes.filter(scope => scope && scope.trim() !== "")
-    if (validScopes.length > 0) {
-      url.searchParams.set("scope", validScopes.join(" "))
-    } else {
+
+    // Ensure scopes are properly formatted - filter out empty strings
+    const validScopes = oauthScopes.filter(
+      (scope) => scope && scope.trim() !== "",
+    )
+    let scopesToUse = validScopes
+    if (validScopes.length === 0) {
       // Use default Microsoft scopes if none provided
-      const { scopes: defaultScopes } = await import("@/integrations/microsoft/config")
-      url.searchParams.set("scope", defaultScopes.join(" "))
+      const { scopes: defaultScopes } = await import(
+        "@/integrations/microsoft/config"
+      )
+      scopesToUse = defaultScopes
     }
-    url.searchParams.set("state", newState)
-    url.searchParams.set("code_challenge", codeVerifier)
-    url.searchParams.set("code_challenge_method", "plain")
+
+    url = microsoft.createAuthorizationURL(newState, codeVerifier, scopesToUse)
   } else {
     throw new Error(`Unsupported app: ${app}`)
   }

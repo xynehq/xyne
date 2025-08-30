@@ -3,8 +3,9 @@ import { UserRole } from "shared/types"
 import SlackSvg from "@/assets/slack.svg"
 import GoogleSvg from "@/assets/google-logo.svg"
 import GithubSvg from "@/assets/github.svg"
+import microsoftSvg from "@/assets/microsoft.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
-import { Upload, Grid3X3 } from "lucide-react"
+import { Upload } from "lucide-react"
 
 export const IntegrationsSidebar = ({
   role,
@@ -49,7 +50,7 @@ export const IntegrationsSidebar = ({
                 })
               }}
             >
-              <Grid3X3 className="w-4 h-4 ml-[8px] text-[#00A4EF] dark:text-[#00A4EF]" />
+              <img width={16} src={microsoftSvg} className="ml-[8px]" />
               <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
                 Microsoft
               </span>

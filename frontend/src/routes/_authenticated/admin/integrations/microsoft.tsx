@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Card,
   CardContent,
@@ -27,7 +28,6 @@ import { Connectors, OAuthIntegrationStatus } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
-import { Progress } from "@/components/ui/progress"
 import { errorComponent } from "@/components/error"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
@@ -94,14 +94,7 @@ export const OAuthForm = ({
     defaultValues: {
       clientId: "",
       clientSecret: "",
-      scopes: [
-        "https://graph.microsoft.com/Files.Read.All",
-        "https://graph.microsoft.com/Mail.Read",
-        "https://graph.microsoft.com/Calendars.Read",
-        "https://graph.microsoft.com/Contacts.Read",
-        "https://graph.microsoft.com/User.Read",
-        "offline_access",
-      ],
+      scopes: [],
     },
     onSubmit: async ({ value }) => {
       try {
@@ -128,7 +121,7 @@ export const OAuthForm = ({
       }}
       className="grid w-full max-w-sm items-center gap-1.5"
     >
-      <Label htmlFor="clientId">Client ID</Label>
+      <Label htmlFor="clientId">client id</Label>
       <form.Field
         name="clientId"
         validators={{
@@ -142,7 +135,7 @@ export const OAuthForm = ({
               type="text"
               value={field.state.value}
               onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter Microsoft Client ID"
+              placeholder="Enter client id"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
               <p className="text-red-600 dark:text-red-400 text-sm">
@@ -152,7 +145,7 @@ export const OAuthForm = ({
           </>
         )}
       />
-      <Label htmlFor="clientSecret">Client Secret</Label>
+      <Label htmlFor="clientSecret">client secret</Label>
       <form.Field
         name="clientSecret"
         validators={{
@@ -166,7 +159,7 @@ export const OAuthForm = ({
               type="password"
               value={field.state.value}
               onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter Microsoft Client Secret"
+              placeholder="Enter client secret"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
               <p className="text-red-600 dark:text-red-400 text-sm">
@@ -176,25 +169,21 @@ export const OAuthForm = ({
           </>
         )}
       />
-      <Label htmlFor="scopes">Scopes</Label>
+      <Label htmlFor="scopes">scopes</Label>
       <form.Field
         name="scopes"
         validators={{
-          onChange: ({ value }) => (!value ? "Scopes are required" : undefined),
+          onChange: ({ value }) => (!value ? "scopes are required" : undefined),
         }}
         children={(field) => (
           <>
             <Input
               id="scopes"
               type="text"
-              value={field.state.value.join(",")}
-              onChange={(e) => field.handleChange(e.target.value.split(",").map(s => s.trim()))}
-              placeholder="Enter Microsoft Graph scopes"
-              disabled
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value.split(","))}
+              placeholder="Enter OAuth scopes"
             />
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Default Microsoft Graph scopes for OneDrive, Outlook, Calendar, and Contacts
-            </p>
             {field.state.meta.isTouched && field.state.meta.errors.length ? (
               <p className="text-red-600 dark:text-red-400 text-sm">
                 {field.state.meta.errors.join(", ")}
@@ -306,7 +295,7 @@ export const deleteOauthConnector = async (
   }
 }
 
-const MicrosoftOAuthTab = ({
+export const MicrosoftOAuthTab = ({
   isPending,
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
@@ -445,13 +434,15 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
   })
 
   const [updateStatus, setUpateStatus] = useState("")
-  const [progress, setProgress] = useState<number>(0)
+  const [_, setProgress] = useState<number>(0)
   const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
+  const [activeTab, setActiveTab] = useState<string>("oauth")
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
         ? !!data.find(
-            (v) => v.app === Apps.MicrosoftDrive && v.authType === AuthType.OAuth,
+            (v) =>
+              v.app === Apps.MicrosoftDrive && v.authType === AuthType.OAuth,
           )
           ? OAuthIntegrationStatus.OAuth
           : OAuthIntegrationStatus.Provider
@@ -490,7 +481,9 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
           query: { id: oauthConnector.id },
         })
         oauthSocket?.addEventListener("open", () => {
-          logger.info(`Microsoft OAuth WebSocket opened for ${oauthConnector.id}`)
+          logger.info(
+            `Microsoft OAuth WebSocket opened for ${oauthConnector.id}`,
+          )
         })
         oauthSocket?.addEventListener("message", (e) => {
           const data = JSON.parse(e.data)
@@ -518,6 +511,21 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       refetch()
     }
   }, [oauthIntegrationStatus, refetch])
+
+  const showUserStats = (
+    userStats: { [email: string]: any },
+    activeTab: string,
+    oauthIntegrationStatus: OAuthIntegrationStatus,
+  ) => {
+    if (!Object.keys(userStats).length) return false
+    if (activeTab !== "oauth") return false
+
+    const currentAuthType = AuthType.OAuth
+    return (
+      oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting &&
+      Object.values(userStats).some((stats) => stats.type === currentAuthType)
+    )
+  }
 
   const handleDelete = async () => {
     const microsoftOAuthConnector = data?.find(
@@ -550,17 +558,6 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
 
   if (error) return "An error has occurred: " + error.message
 
-  const showUserStats = (
-    userStats: { [email: string]: any },
-    oauthIntegrationStatus: OAuthIntegrationStatus,
-  ) => {
-    if (!Object.keys(userStats).length) return false
-    return (
-      oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting &&
-      Object.values(userStats).some((stats) => stats.type === AuthType.OAuth)
-    )
-  }
-
   return (
     <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
@@ -569,20 +566,30 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         isAgentMode={agentWhiteList}
       />
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
-      <div className="w-full h-full flex justify-center items-center">
-        <div className="flex flex-col items-center w-full max-w-[600px] p-4 justify-center h-full">
-          {/* Main content area */}
-          <div className="flex flex-col space-y-6 w-full">
-            {/* Tab content container - fixed width for forms */}
-            <div className="max-w-[400px] mx-auto w-full">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Microsoft Integration</CardTitle>
-                  <CardDescription>
-                    Connect your Microsoft account to sync OneDrive, Outlook, Calendar, and Contacts
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+      <div className={cn("w-full h-full flex justify-center", "items-center")}>
+        <div
+          className={cn(
+            "flex flex-col items-center w-full max-w-[600px] p-4",
+            "justify-center h-full",
+          )}
+        >
+          {/* Tab navigation */}
+          <Tabs
+            defaultValue="oauth"
+            className="w-full flex flex-col"
+            onValueChange={(newTab) => {
+              setActiveTab(newTab)
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-1 flex-shrink-0 max-w-[400px] mx-auto">
+              <TabsTrigger value="oauth">Microsoft OAuth</TabsTrigger>
+            </TabsList>
+
+            {/* Main content area - tab panels */}
+            <div className="flex flex-col space-y-6 w-full mt-4">
+              {/* Tab content container - fixed width for forms */}
+              <div className="max-w-[400px] mx-auto w-full">
+                <TabsContent value="oauth">
                   <MicrosoftOAuthTab
                     isPending={isPending}
                     oauthIntegrationStatus={oauthIntegrationStatus}
@@ -591,23 +598,24 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                     handleDelete={handleDelete}
                     userRole={user.role}
                   />
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* OAuth user stats - full width container */}
-            {showUserStats(userStats, oauthIntegrationStatus) && (
-              <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-8">
-                <h3 className="text-lg font-medium mb-2 dark:text-gray-100">
-                  Ingested Users
-                </h3>
-                <UserStatsTable
-                  userStats={userStats}
-                  type={AuthType.OAuth}
-                />
+                </TabsContent>
               </div>
-            )}
-          </div>
+
+              {/* OAuth user stats - full width container */}
+              {activeTab === "oauth" &&
+                showUserStats(userStats, "oauth", oauthIntegrationStatus) && (
+                  <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-8">
+                    <h3 className="text-lg font-medium mb-2 dark:text-gray-100">
+                      Ingested Users
+                    </h3>
+                    <UserStatsTable
+                      userStats={userStats}
+                      type={AuthType.OAuth}
+                    />
+                  </div>
+                )}
+            </div>
+          </Tabs>
         </div>
       </div>
     </div>
