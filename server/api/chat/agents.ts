@@ -199,7 +199,8 @@ import {
   type TraceEvent as JAFTraceEvent,
   type JAFError,
 } from "@xynehq/jaf"
-import { makeLiteLLMProvider } from "@xynehq/jaf"
+// Replace LiteLLM provider with Xyne-backed JAF provider
+import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildInternalJAFTools,
   buildMCPJAFTools,
@@ -1274,9 +1275,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               : ""
             return (
               `You are Xyne, an enterprise search assistant.\n` +
-              `- Use tools when helpful and safe.\n` +
-              `- Cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-              `- If insufficient context, use search/metadata tools to gather more.\n` +
+              `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
+              `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
+              `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
+              `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
               `- Be concise, accurate, and avoid hallucinations.\n` +
               `\nAvailable Tools:\n${toolOverview}` +
               contextSection +
@@ -1300,14 +1302,10 @@ export const MessageWithToolsApi = async (c: Context) => {
             name: "xyne-agent",
             instructions: () => agentInstructions(null),
             tools: allJAFTools,
-            // modelConfig: { name: modelId || defaultBestModel },
-            modelConfig: { name: "gemini-2.5-pro" },
+            modelConfig: { name: (modelId || defaultBestModel) as unknown as string },
           }
 
-          const modelProvider = makeLiteLLMProvider<JAFAdapterCtx>(
-            process.env.LITELLM_URL!,
-            process.env.LITELLM_API_KEY
-          )
+          const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
 
           const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
             [jafAgent.name, jafAgent],
@@ -1325,7 +1323,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const runCfg: JAFRunConfig<JAFAdapterCtx> = {
             agentRegistry,
             modelProvider,
-            maxTurns: 10
+            maxTurns: 10,
+            modelOverride: (modelId || defaultBestModel) as unknown as string,
           }
 
           // Note: ResponseMetadata was already sent above with chatId
