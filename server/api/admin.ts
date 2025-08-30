@@ -44,10 +44,21 @@ import {
   getOAuthProvider,
 } from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
-import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
+import {
+  generateCodeVerifier,
+  generateState,
+  Google,
+  Slack,
+  MicrosoftEntraId,
+} from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { users, chats, messages, agents } from "@/db/schema" // Add database schema imports
-import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
+import {
+  getErrorMessage,
+  IsGoogleApp,
+  IsMicrosoftApp,
+  setCookieByEnv,
+} from "@/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   getUserAgentLeaderboard,
@@ -238,6 +249,31 @@ const getAuthorizationUrl = async (
     url.searchParams.set("state", newState)
     url.searchParams.set("code", codeVerifier)
     url.searchParams.set("user_scope", oauthScopes.join(","))
+  } else if (IsMicrosoftApp(app)) {
+    const microsoft = new MicrosoftEntraId(
+      "common",
+      clientId as string,
+      clientSecret,
+      `${config.host}/oauth/callback`,
+    )
+
+    // adding some data to state
+    const newState = JSON.stringify({ app, random: state })
+
+    // Ensure scopes are properly formatted - filter out empty strings
+    const validScopes = oauthScopes.filter(
+      (scope) => scope && scope.trim() !== "",
+    )
+    let scopesToUse = validScopes
+    if (validScopes.length === 0) {
+      // Use default Microsoft scopes if none provided
+      const { scopes: defaultScopes } = await import(
+        "@/integrations/microsoft/config"
+      )
+      scopesToUse = defaultScopes
+    }
+
+    url = microsoft.createAuthorizationURL(newState, codeVerifier, scopesToUse)
   } else {
     throw new Error(`Unsupported app: ${app}`)
   }
