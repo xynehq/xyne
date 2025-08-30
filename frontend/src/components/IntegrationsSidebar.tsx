@@ -3,6 +3,7 @@ import { UserRole } from "shared/types"
 import SlackSvg from "@/assets/slack.svg"
 import GoogleSvg from "@/assets/google-logo.svg"
 import GithubSvg from "@/assets/github.svg"
+import microsoftSvg from "@/assets/microsoft.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
 import { Upload } from "lucide-react"
 
@@ -36,6 +37,22 @@ export const IntegrationsSidebar = ({
               <img width={16} src={GoogleSvg} className="ml-[8px]" />
               <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
                 Google
+              </span>
+            </li>
+            <li
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/microsoft") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
+              onClick={() => {
+                router.navigate({
+                  to:
+                    role === UserRole.SuperAdmin || role === UserRole.Admin
+                      ? "/admin/integrations/microsoft"
+                      : "/integrations/microsoft",
+                })
+              }}
+            >
+              <img width={16} src={microsoftSvg} className="ml-[8px]" />
+              <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                Microsoft
               </span>
             </li>
             <li
