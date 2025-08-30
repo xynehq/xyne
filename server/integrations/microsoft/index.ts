@@ -70,10 +70,7 @@ import path, { join } from "node:path"
 import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { chunkDocument } from "@/chunks"
-import {
-  StatType,
-  Tracker,
-} from "@/integrations/tracker"
+import { StatType, Tracker } from "@/integrations/tracker"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
@@ -86,16 +83,17 @@ import {
 import {
   createMicrosoftGraphClient,
   makeGraphApiCall,
+  makeGraphApiCallWithHeaders,
   makePagedGraphApiCall,
   type MicrosoftGraphClient,
 } from "./client"
+import { handleOutlookIngestion } from "./outlook"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
 export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "microsoft",
 })
-
 
 // Get unique emails from permissions
 export const getUniqueEmails = (permissions: string[]): string[] => {
@@ -199,64 +197,61 @@ const insertCalendarEvents = async (
   client: MicrosoftGraphClient,
   userEmail: string,
   tracker: Tracker,
-  startDate?: string,
-  endDate?: string,
-) => {
+): Promise<{ events: any[]; calendarEventsToken: string }> => {
   let events: any[] = []
   let deltaToken: string = ""
 
-  // Build query parameters
-  const queryParams: any = {
-    $top: 1000,
-    $select: "id,subject,body,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled",
-  }
-
-  if (startDate) {
-    const startDateObj = new Date(startDate)
-    queryParams.$filter = `start/dateTime ge '${startDateObj.toISOString()}'`
-  }
-
-  if (endDate) {
-    const endDateObj = new Date(endDate)
-    const existingFilter = queryParams.$filter || ""
-    const endFilter = `end/dateTime le '${endDateObj.toISOString()}'`
-    queryParams.$filter = existingFilter
-      ? `${existingFilter} and ${endFilter}`
-      : endFilter
-  }
-
   try {
-    const endpoint = `/me/events?${new URLSearchParams(queryParams).toString()}`
-    const response: any = await makeGraphApiCall(client, endpoint)
+    let endpoint: string
 
-    // Save the actual response to a file for analysis
-    try {
-      const responsesDir = path.join(__dirname, "responses")
-      if (!fs.existsSync(responsesDir)) {
-        fs.mkdirSync(responsesDir, { recursive: true })
+    // INITIAL SYNC: Use /me/events to get all events
+    loggerWithChild({ email: userEmail }).info(
+      "Performing initial calendar sync using /me/events",
+    )
+    endpoint =
+      "/me/events?$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999"
+
+    // Process events
+    while (endpoint) {
+      const response: any = await makeGraphApiCallWithHeaders(
+        client,
+        endpoint,
+        {
+          Prefer: "odata.maxpagesize=999",
+        },
+      )
+
+      if (response.value) {
+        // Process events from response
+        for (const event of response.value) {
+          // Check if this is a removed event (for delta responses)
+          if (event["@removed"]) {
+            loggerWithChild({ email: userEmail }).info(
+              `Event removed: ${event.id}, reason: ${event["@removed"].reason}`,
+            )
+            // Handle removed events (could implement deletion logic here)
+            continue
+          }
+
+          // Add valid events to our collection
+          events.push(event)
+        }
       }
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-      const filename = `calendar-events-${timestamp}.json`
-      fs.writeFileSync(
-        path.join(responsesDir, filename),
-        JSON.stringify(response, null, 2)
-      )
-      loggerWithChild({ email: userEmail }).info(
-        `Saved calendar events response to ${filename}`
-      )
-    } catch (saveError) {
-      loggerWithChild({ email: userEmail }).warn(
-        `Could not save calendar events response: ${saveError}`
-      )
-    }
 
-    if (response.value) {
-      events = response.value
+      // Check for pagination
+      if (response["@odata.nextLink"]) {
+        // More pages available, continue with next page
+        endpoint = response["@odata.nextLink"]
+      } else if (response["@odata.deltaLink"]) {
+        // Delta sync complete, save delta token for next sync
+        deltaToken = response["@odata.deltaLink"]
+        endpoint = ""
+      } else {
+        // No more data
+        endpoint = ""
+      }
     }
-
-    deltaToken = response["@odata.deltaLink"] || ""
   } catch (error: any) {
-    // Check if user doesn't have calendar access
     if (error?.code === "Forbidden" || error?.status === 403) {
       loggerWithChild({ email: userEmail }).warn(
         `User ${userEmail} does not have calendar access. Returning empty event set.`,
@@ -266,8 +261,12 @@ const insertCalendarEvents = async (
     throw error
   }
 
-  if (events.length === 0) {
-    return { events: [], calendarEventsToken: deltaToken }
+  // Ensure we have a delta token for future syncs
+  if (!deltaToken) {
+    deltaToken = `microsoft-calendar-${new Date().toISOString()}`
+    loggerWithChild({ email: userEmail }).warn(
+      `No delta token returned from Microsoft Calendar API, using fallback: ${deltaToken}`,
+    )
   }
 
   const confirmedEvents = events.filter((e) => !e.isCancelled)
@@ -333,13 +332,10 @@ const insertCalendarEvents = async (
     }
   }
 
-  // Handle cancelled events (similar to Google implementation)
+  // Handle cancelled events
   for (const event of cancelledEvents) {
-    // For Microsoft, we might need different logic for recurring event cancellations
-    // This is a simplified version - Microsoft handles recurring events differently
     try {
       const eventId = event.id ?? ""
-      // For now, we'll just log cancelled events
       loggerWithChild({ email: userEmail }).info(
         `Cancelled event found: ${eventId}`,
       )
@@ -349,14 +345,6 @@ const insertCalendarEvents = async (
         `Error handling cancelled Microsoft event ${event.id}`,
       )
     }
-  }
-
-  if (!deltaToken) {
-    throw new CalendarEventsListingError({
-      message: "Could not get delta token for Microsoft Calendar Events",
-      integration: Apps.MicrosoftCalendar,
-      entity: CalendarEntity.Event,
-    })
   }
 
   totalDurationForEventIngestion()
@@ -393,24 +381,10 @@ export const listAllContacts = async (
     do {
       const response = nextLink
         ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, "/me/contacts?$select=id,displayName,emailAddresses,businessPhones,homePhones,mobilePhone,jobTitle,companyName,department,officeLocation,birthday,personalNotes&$top=1000")
-
-      // Save the actual response to a file for analysis
-      try {
-        const responsesDir = path.join(__dirname, "responses")
-        if (!fs.existsSync(responsesDir)) {
-          fs.mkdirSync(responsesDir, { recursive: true })
-        }
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-        const filename = `contacts-${timestamp}.json`
-        fs.writeFileSync(
-          path.join(responsesDir, filename),
-          JSON.stringify(response, null, 2)
-        )
-        Logger.info(`Saved contacts response to ${filename}`)
-      } catch (saveError) {
-        Logger.warn(`Could not save contacts response: ${saveError}`)
-      }
+        : await makeGraphApiCall(
+            client,
+            "/me/contacts?$select=id,displayName,emailAddresses,businessPhones,homePhones,mobilePhone,jobTitle,companyName,department,officeLocation,birthday,personalNotes&$top=1000",
+          )
 
       if (response.value) {
         contacts.push(...response.value)
@@ -598,10 +572,10 @@ export async function countOneDriveFiles(
   try {
     // Use the recursive function to get all files
     const allFiles = await getAllOneDriveFiles(client, queryParams, email)
-    
+
     // Count only actual files (not folders)
-    const fileCount = allFiles.filter(item => item.file).length
-    
+    const fileCount = allFiles.filter((item) => item.file).length
+
     logger.info(`Counted ${fileCount} OneDrive files`)
     return fileCount
   } catch (error) {
@@ -657,7 +631,10 @@ export async function getOutlookCounts(
     do {
       const response = nextLink
         ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, `/me/messages?${new URLSearchParams(queryParams).toString()}`)
+        : await makeGraphApiCall(
+            client,
+            `/me/messages?${new URLSearchParams(queryParams).toString()}`,
+          )
 
       messagesTotal += response.value?.length || 0
       nextLink = response["@odata.nextLink"]
@@ -666,7 +643,6 @@ export async function getOutlookCounts(
     // For promotions, we'll use a simple heuristic or skip for now
     // Microsoft doesn't have the same category system as Gmail
     promotionMessages = 0
-
   } catch (error) {
     loggerWithChild({ email: email ?? "" }).error(
       error,
@@ -701,7 +677,8 @@ const insertFilesForUser = async (
 
     const queryParams: any = {
       $top: 1000,
-      $select: "id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,@microsoft.graph.downloadUrl",
+      $select:
+        "id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,@microsoft.graph.downloadUrl",
     }
 
     if (startDate || endDate) {
@@ -720,34 +697,7 @@ const insertFilesForUser = async (
       }
     }
 
-    const allFiles = await getAllOneDriveFiles(client, queryParams, userEmail);
-    
-    // Save all retrieved files metadata to a JSON file for reference
-    try {
-      const responsesDir = path.join(__dirname, "responses")
-      if (!fs.existsSync(responsesDir)) {
-        fs.mkdirSync(responsesDir, { recursive: true })
-      }
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-      const filename = `onedrive-all-files-${timestamp}.json`
-      fs.writeFileSync(
-        path.join(responsesDir, filename),
-        JSON.stringify({
-          totalFiles: allFiles.length,
-          retrievedAt: new Date().toISOString(),
-          userEmail: userEmail,
-          files: allFiles
-        }, null, 2)
-      )
-      loggerWithChild({ email: userEmail }).info(
-        `Saved all OneDrive files metadata to ${filename} (${allFiles.length} files)`
-      )
-    } catch (saveError) {
-      loggerWithChild({ email: userEmail }).warn(
-        `Could not save OneDrive files metadata: ${saveError}`
-      )
-    }
-    
+    const allFiles = await getAllOneDriveFiles(client, queryParams, userEmail)
     for (const file of allFiles) {
       try {
         // Skip folders for now
@@ -813,27 +763,28 @@ const getAllOneDriveFiles = async (
   client: MicrosoftGraphClient,
   queryParams: any,
   userEmail?: string,
-  folderId: string = 'root',
-  folderPath: string = '/',
+  folderId: string = "root",
+  folderPath: string = "/",
   parentFolderId?: string,
 ): Promise<any[]> => {
   const logger = userEmail ? loggerWithChild({ email: userEmail }) : Logger
-  
+
   try {
     // Fix the typo: "chidren" should be "children"
-    const baseUrl = folderId === 'root' 
-      ? `/me/drive/root/children`
-      : `/me/drive/items/${folderId}/children`
-    
+    const baseUrl =
+      folderId === "root"
+        ? `/me/drive/root/children`
+        : `/me/drive/items/${folderId}/children`
+
     const url = `${baseUrl}?${new URLSearchParams(queryParams).toString()}`
-    
+
     logger.info(`Fetching files from folder: ${folderPath} (ID: ${folderId})`)
-    
+
     // Get all items in current folder with pagination
     const items = await makePagedGraphApiCall(client, url)
-    
+
     let allFiles: any[] = []
-    
+
     for (const item of items) {
       if (item.folder) {
         // If it's a folder, recursively get files from it
@@ -845,11 +796,13 @@ const getAllOneDriveFiles = async (
             userEmail,
             item.id,
             `${folderPath}${item.name}/`,
-            item.id // Pass the current folder ID as parent for its children
+            item.id, // Pass the current folder ID as parent for its children
           )
           allFiles.push(...subFolderFiles)
         } catch (error) {
-          logger.warn(`Failed to process subfolder ${item.name}: ${(error as Error).message}`)
+          logger.warn(
+            `Failed to process subfolder ${item.name}: ${(error as Error).message}`,
+          )
           // Continue processing other folders even if one fails
         }
       } else if (item.file) {
@@ -857,144 +810,19 @@ const getAllOneDriveFiles = async (
         allFiles.push({
           ...item,
           folderPath: folderPath,
-          parentFolderId: folderId === 'root' ? null : folderId, // Track the immediate parent folder ID
+          parentFolderId: folderId === "root" ? null : folderId, // Track the immediate parent folder ID
           parentFolderPath: folderPath, // Track the full parent folder path
         })
       }
     }
-    
+
     logger.info(`Retrieved ${allFiles.length} files from ${folderPath}`)
     return allFiles
-    
   } catch (error) {
-    logger.error(`Error getting files from folder ${folderPath}: ${(error as Error).message}`)
+    logger.error(
+      `Error getting files from folder ${folderPath}: ${(error as Error).message}`,
+    )
     throw error
-  }
-}
-
-
-// Outlook email ingestion implementation
-const handleOutlookIngestion = async (
-  client: MicrosoftGraphClient,
-  userEmail: string,
-  tracker: Tracker,
-  startDate?: string,
-  endDate?: string,
-): Promise<string> => {
-  try {
-    let totalMails = 0
-    let deltaToken = ""
-
-    const queryParams: any = {
-      $top: 1000,
-      $select: "id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,hasAttachments,internetMessageId,conversationId",
-    }
-
-    if (startDate || endDate) {
-      const filters: string[] = []
-      if (startDate) {
-        const startDateObj = new Date(startDate)
-        filters.push(`receivedDateTime ge ${startDateObj.toISOString()}`)
-      }
-      if (endDate) {
-        const endDateObj = new Date(endDate)
-        endDateObj.setDate(endDateObj.getDate() + 1)
-        filters.push(`receivedDateTime lt ${endDateObj.toISOString()}`)
-      }
-      if (filters.length > 0) {
-        queryParams.$filter = filters.join(" and ")
-      }
-    }
-
-    let nextLink: string | undefined
-    do {
-      const response = nextLink
-        ? await makeGraphApiCall(client, nextLink)
-        : await makeGraphApiCall(client, `/me/messages?${new URLSearchParams(queryParams).toString()}`)
-
-      // Save the actual response to a file for analysis
-      try {
-        const responsesDir = path.join(__dirname, "responses")
-        if (!fs.existsSync(responsesDir)) {
-          fs.mkdirSync(responsesDir, { recursive: true })
-        }
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-        const filename = `outlook-messages-${timestamp}.json`
-        fs.writeFileSync(
-          path.join(responsesDir, filename),
-          JSON.stringify(response, null, 2)
-        )
-        loggerWithChild({ email: userEmail }).info(
-          `Saved Outlook messages response to ${filename}`
-        )
-      } catch (saveError) {
-        loggerWithChild({ email: userEmail }).warn(
-          `Could not save Outlook messages response: ${saveError}`
-        )
-      }
-
-      if (response.value) {
-        for (const message of response.value) {
-          try {
-            const mailData = {
-              docId: message.id ?? "",
-              threadId: message.conversationId ?? "",
-              mailId: message.internetMessageId ?? message.id ?? "",
-              subject: message.subject ?? "",
-              chunks: message.body?.content
-                ? chunkDocument(getTextFromEventDescription(message.body.content)).map(c => c.chunk)
-                : [],
-              timestamp: new Date(message.receivedDateTime || message.sentDateTime).getTime(),
-              app: Apps.MicrosoftOutlook,
-              userMap: { [userEmail]: message.id },
-              entity: MailEntity.Email,
-              permissions: [
-                message.from?.emailAddress?.address,
-                ...(message.toRecipients?.map((r: any) => r.emailAddress?.address) || []),
-                ...(message.ccRecipients?.map((r: any) => r.emailAddress?.address) || []),
-                ...(message.bccRecipients?.map((r: any) => r.emailAddress?.address) || []),
-              ].filter(Boolean),
-              from: message.from?.emailAddress?.address ?? "",
-              to: message.toRecipients?.map((r: any) => r.emailAddress?.address) || [],
-              cc: message.ccRecipients?.map((r: any) => r.emailAddress?.address) || [],
-              bcc: message.bccRecipients?.map((r: any) => r.emailAddress?.address) || [],
-              mimeType: "text/html",
-              attachmentFilenames: [], // Could be enhanced to get attachment info
-              attachments: [],
-              labels: [],
-            }
-
-            await insertWithRetry(mailData, mailSchema)
-            tracker.updateUserStats(userEmail, StatType.Gmail, 1)
-            totalMails++
-
-            loggerWithChild({ email: userEmail }).info(
-              `Processed Outlook email: ${message.subject}`,
-            )
-          } catch (error) {
-            loggerWithChild({ email: userEmail }).error(
-              error,
-              `Error processing Outlook message ${message.id}: ${(error as Error).message}`,
-            )
-          }
-        }
-      }
-
-      nextLink = response["@odata.nextLink"]
-      deltaToken = response["@odata.deltaLink"] || deltaToken
-    } while (nextLink)
-
-    loggerWithChild({ email: userEmail }).info(
-      `Processed ${totalMails} Outlook emails`,
-    )
-
-    return deltaToken || "outlook-delta-token"
-  } catch (error) {
-    loggerWithChild({ email: userEmail }).error(
-      error,
-      `Error in Outlook email ingestion: ${(error as Error).message}`,
-    )
-    return "outlook-delta-token-error"
   }
 }
 
@@ -1052,7 +880,10 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
     await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
 
     // Get initial delta token for OneDrive changes
-    const driveResponse = await makeGraphApiCall(graphClient, "/me/drive/root/delta?$select=id")
+    const driveResponse = await makeGraphApiCall(
+      graphClient,
+      "/me/drive/root/delta?$select=id",
+    )
     const driveDeltaToken = driveResponse["@odata.deltaLink"] || ""
 
     const [_, outlookDeltaToken, { calendarEventsToken }] = await Promise.all([

@@ -54,7 +54,7 @@ export enum Apps {
 
   // Microsoft apps (mirroring Google structure)
   MicrosoftDrive = "microsoft-drive",
-  MicrosoftOutlook = "microsoft-outlook", 
+  MicrosoftOutlook = "microsoft-outlook",
   MicrosoftCalendar = "microsoft-calendar",
 
   Slack = "slack",
@@ -183,10 +183,10 @@ export enum MailAttachmentEntity {
   NotValid = "notvalid",
 }
 export enum KnowledgeBaseEntity {
-  File = "file",                    // Files within collections
-  Folder = 'folder',               // Folders within collections  
-  Collection = 'collection',       // Collections (main containers)
-  KnowledgeBase = 'knowledgebase', // Legacy alias for collection
+  File = "file", // Files within collections
+  Folder = "folder", // Folders within collections
+  Collection = "collection", // Collections (main containers)
+  KnowledgeBase = "knowledgebase", // Legacy alias for collection
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
@@ -197,7 +197,9 @@ export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
-export type MicrosoftPeopleEntityType = z.infer<typeof MicrosoftPeopleEntitySchema>
+export type MicrosoftPeopleEntityType = z.infer<
+  typeof MicrosoftPeopleEntitySchema
+>
 
 export enum NotionEntity {
   Page = "page",
@@ -491,7 +493,10 @@ export const VespaUserSchema = z
     name: z.string().optional(), //.min(1),
     email: z.string().min(1).email(),
     app: z.nativeEnum(Apps),
-    entity: z.union([z.nativeEnum(GooglePeopleEntity), z.nativeEnum(MicrosoftPeopleEntity)]),
+    entity: z.union([
+      z.nativeEnum(GooglePeopleEntity),
+      z.nativeEnum(MicrosoftPeopleEntity),
+    ]),
     gender: z.string().optional(),
     photoLink: z.string().optional(),
     aliases: z.array(z.string()).optional(),

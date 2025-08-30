@@ -1,7 +1,7 @@
-import { Client } from '@microsoft/microsoft-graph-client'
-import type { AuthenticationProvider } from '@microsoft/microsoft-graph-client'
-import { retryWithBackoff } from '@/utils'
-import { Apps } from '@/shared/types'
+import { Client } from "@microsoft/microsoft-graph-client"
+import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
+import { retryWithBackoff } from "@/utils"
+import { Apps } from "@/shared/types"
 
 // Custom authentication provider for Microsoft Graph
 class CustomAuthProvider implements AuthenticationProvider {
@@ -14,7 +14,7 @@ class CustomAuthProvider implements AuthenticationProvider {
     accessToken: string,
     refreshToken: string,
     clientId: string,
-    clientSecret: string
+    clientSecret: string,
   ) {
     this.accessToken = accessToken
     this.refreshToken = refreshToken
@@ -44,18 +44,18 @@ export const createMicrosoftGraphClient = (
   accessToken: string,
   refreshToken: string,
   clientId: string,
-  clientSecret: string
+  clientSecret: string,
 ): MicrosoftGraphClient => {
   const authProvider = new CustomAuthProvider(
     accessToken,
     refreshToken,
     clientId,
-    clientSecret
+    clientSecret,
   )
 
   const client = Client.initWithMiddleware({
     authProvider,
-    defaultVersion: 'v1.0'
+    defaultVersion: "v1.0",
   })
 
   return {
@@ -63,7 +63,7 @@ export const createMicrosoftGraphClient = (
     accessToken,
     refreshToken,
     clientId,
-    clientSecret
+    clientSecret,
   }
 }
 
@@ -71,7 +71,7 @@ export const createMicrosoftGraphClient = (
 export const makeGraphApiCall = async (
   graphClient: MicrosoftGraphClient,
   endpoint: string,
-  options?: any
+  options?: any,
 ): Promise<any> => {
   return retryWithBackoff(
     async () => {
@@ -79,23 +79,45 @@ export const makeGraphApiCall = async (
       return result
     },
     `Making Microsoft Graph API call to ${endpoint}`,
-    Apps.MicrosoftDrive
+    Apps.MicrosoftDrive,
+  )
+}
+export const makeGraphApiCallWithHeaders = async (
+  graphClient: MicrosoftGraphClient,
+  endpoint: string,
+  headers: Record<string, string>,
+  options?: any,
+): Promise<any> => {
+  return retryWithBackoff(
+    async () => {
+      const request = graphClient.client.api(endpoint)
+
+      // Add custom headers
+      Object.entries(headers).forEach(([key, value]) => {
+        request.header(key, value)
+      })
+
+      const result = await request.get(options)
+      return result
+    },
+    `Making Microsoft Graph API call to ${endpoint} with headers`,
+    Apps.MicrosoftDrive,
   )
 }
 
 // Helper function for paginated requests
-export const makePagedGraphApiCall = async (
+export const makePagedGraphApiCall = async <T>(
   graphClient: MicrosoftGraphClient,
   endpoint: string,
-  options?: any
-): Promise<any[]> => {
-  const results: any[] = []
+  options?: any,
+): Promise<T[]> => {
+  const results: T[] = []
   let nextLink: string | undefined = endpoint
 
   while (nextLink) {
     const response: any = await retryWithBackoff(
       async () => {
-        if (nextLink!.startsWith('http')) {
+        if (nextLink!.startsWith("http")) {
           // This is a full URL from @odata.nextLink
           const url = new URL(nextLink!)
           const path = url.pathname + url.search
@@ -106,14 +128,14 @@ export const makePagedGraphApiCall = async (
         }
       },
       `Making paginated Microsoft Graph API call to ${nextLink}`,
-      Apps.MicrosoftDrive
+      Apps.MicrosoftDrive,
     )
 
     if (response.value) {
       results.push(...response.value)
     }
 
-    nextLink = response['@odata.nextLink']
+    nextLink = response["@odata.nextLink"]
   }
 
   return results
