@@ -116,9 +116,10 @@ services:
       dockerfile: Dockerfile-vespa-gpu
     container_name: vespa
     hostname: vespa
+    runtime: nvidia
     # user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     # ports:
-    #   - "8080:8080"
+    #   - "${VESPA_PORT:-8081}:8080"
     #   - "19071:19071"
     volumes:
       - ./data/vespa-data:/opt/vespa/var
@@ -146,6 +147,8 @@ services:
         max-size: "50m"
         max-file: "6"
     environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M -Djava.io.tmpdir=/opt/vespa/var/tmp
       - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC -Djava.io.tmpdir=/opt/vespa/var/tmp
       - TMPDIR=/opt/vespa/var/tmp
