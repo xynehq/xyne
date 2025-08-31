@@ -199,8 +199,8 @@ import {
   type TraceEvent as JAFTraceEvent,
   type JAFError,
 } from "@xynehq/jaf"
-// Use Xyne’s native providers via a JAF adapter
-import { makeXyneJAFProvider } from "@/api/chat/jaf-xynemodel-provider"
+// Replace LiteLLM provider with Xyne-backed JAF provider
+import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildInternalJAFTools,
   buildMCPJAFTools,
@@ -1275,9 +1275,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               : ""
             return (
               `You are Xyne, an enterprise search assistant.\n` +
-              `- Use tools when helpful and safe.\n` +
-              `- Cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-              `- If insufficient context, use search/metadata tools to gather more.\n` +
+              `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
+              `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
+              `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
+              `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
               `- Be concise, accurate, and avoid hallucinations.\n` +
               `\nAvailable Tools:\n${toolOverview}` +
               contextSection +
@@ -1301,8 +1302,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             name: "xyne-agent",
             instructions: () => agentInstructions(null),
             tools: allJAFTools,
-            // Honor requested model, fallback to defaultBestModel
-            modelConfig: { name: modelId || defaultBestModel },
+            modelConfig: { name: (modelId || defaultBestModel) as unknown as string },
           }
 
           const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1324,7 +1324,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentRegistry,
             modelProvider,
             maxTurns: 10,
-            modelOverride: modelId || defaultBestModel,
+            modelOverride: (modelId || defaultBestModel) as unknown as string,
           }
 
           // Note: ResponseMetadata was already sent above with chatId
