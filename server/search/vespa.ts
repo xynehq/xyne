@@ -2642,17 +2642,18 @@ export const getItems = async (
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
-  // TODO: Add support for grouping and aggregating results across apps,
-  // so that one app should not overwhelm the results
-  // const group = `| all(
-  //     group(app)
-  //     max(itemPerApp)
-  //     each(
-  //       output(summary())
-  //     )
-  //   `
-  // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schemasString} ${whereClause} ${orderByClause}`
+  // Construct YQL query with proper clause ordering and spacing
+  let yql = `select * from sources ${schema} ${whereClause}`
+
+  if (orderByClause) {
+    yql += ` ${orderByClause}`
+  }
+
+  yql += ` limit ${limit}`
+
+  if (offset > 0) {
+    yql += ` offset ${offset}`
+  }
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
   Logger.info(
@@ -2670,8 +2671,6 @@ export const getItems = async (
   const searchPayload = {
     yql,
     "ranking.profile": "unranked",
-    hits: limit,
-    ...(offset ? { offset } : {}),
     timeout: "30s",
   }
 

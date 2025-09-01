@@ -43,6 +43,9 @@ import {
 
 const logger = console
 
+// File size limits to match server configuration
+const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - must match server limit
+
 const submitServiceAccountForm = async (
   value: ServiceAccountFormData,
   navigate: UseNavigateResult<string>,
@@ -363,13 +366,40 @@ export const ServiceAccountForm = ({
       <form.Field
         name="file"
         validators={{
-          onChange: ({ value }) => (!value ? "File is required" : undefined),
+          onChange: ({ value }) => {
+            if (!value) return "File is required"
+            
+            // Check file type
+            if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+              return "File must be a JSON file"
+            }
+            
+            // Check file size
+            if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
+              return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
+            }
+            
+            return undefined
+          },
+          onChangeAsync: async ({ value }) => {
+            if (!value) return undefined
+            
+            // Validate JSON content asynchronously
+            try {
+              const content = await value.text()
+              JSON.parse(content)
+              return undefined
+            } catch {
+              return "File must contain valid JSON"
+            }
+          },
         }}
         children={(field) => (
           <>
             <Input
               id="service-key"
               type="file"
+              accept=".json,application/json"
               onChange={(e) => field.handleChange(e.target.files?.[0])}
               className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
             />
@@ -456,13 +486,40 @@ export const UpdateServiceAccountForm = ({
         <form.Field
           name="file"
           validators={{
-            onChange: ({ value }) => (!value ? "File is required" : undefined),
+            onChange: ({ value }) => {
+              if (!value) return "File is required"
+              
+              // Check file type
+              if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+                return "File must be a JSON file"
+              }
+              
+              // Check file size
+              if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
+                return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
+              }
+              
+              return undefined
+            },
+            onChangeAsync: async ({ value }) => {
+              if (!value) return undefined
+              
+              // Validate JSON content asynchronously
+              try {
+                const content = await value.text()
+                JSON.parse(content)
+                return undefined
+              } catch {
+                return "File must contain valid JSON"
+              }
+            },
           }}
           children={(field) => (
             <>
               <Input
                 id="update-service-key"
                 type="file"
+                accept=".json,application/json"
                 onChange={(e) => field.handleChange(e.target.files?.[0])}
                 className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
               />

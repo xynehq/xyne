@@ -170,6 +170,7 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),
   intent: IntentSchema.optional(),
 })
 
@@ -209,6 +210,16 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
 ])
 
 export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>
+
+export interface ChainBreakClassifications {
+  availableChainBreaks: Array<{
+    chainIndex: number;
+    messageIndex: number;
+    originalQuery: string;
+    classification: QueryRouterLLMResponse;
+  }>;
+  usage: string;
+}
 
 export const QueryContextRank = z.object({
   canBeAnswered: z.boolean(),

@@ -28,10 +28,11 @@ import {
   getConnectorByExternalId,
   getConnectorByApp,
   getConnectorById,
-} from "@/db/connector"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+} from "@/db/connector";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   Models,
   QueryType,
@@ -1108,35 +1109,81 @@ export const MessageWithToolsApi = async (c: Context) => {
               const client = new Client({
                 name: `connector-${connectorId}`,
                 version: connector.config.version,
-              })
+              });
               try {
-                if ("url" in connector.config) {
+                const loadedConfig = connector.config as {
+                  url?: string;
+                  command?: string;
+                  args?: string[];
+                  mode?: "sse" | "streamable-http";
+                  version: string
+                }
+
+                if (loadedConfig.url) {
+                  // This is an HTTP-based connector (SSE or Streamable)
                   isCustomMCP = true
-                  // MCP SSE
-                  const config = connector.config as z.infer<
-                    typeof MCPClientConfig
-                  >
-                  Logger.info(
-                    `invoking client initialize for url: ${new URL(config.url)} ${
-                      config.url
-                    }`,
+                  const loadedUrl = loadedConfig.url
+                  const loadedMode = loadedConfig.mode || "sse" // Default to 'sse' for old connectors
+
+                  let loadedHeaders: Record<string, string> = {}
+                  if (connector.credentials) {
+                    // New format: credentials contain the headers object
+                    try {
+                      loadedHeaders = JSON.parse(connector.credentials)
+                    } catch (error) {
+                      loggerWithChild({ email: sub }).error(
+                        error,
+                        `Failed to parse connector credentials for connectorId: ${connectorId}. Using empty headers.`,
+                      )
+                      loadedHeaders = {}
+                    }
+                  } else if (connector.apiKey) {
+                    // Old format: for backwards compatibility
+                    loadedHeaders["Authorization"] =
+                      `Bearer ${connector.apiKey}`
+                  }
+                 loggerWithChild({ email: sub }).info(
+                    `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
                   )
+
+                  if (loadedMode === "streamable-http") {
+                    const transportOptions: StreamableHTTPClientTransportOptions =
+                      {
+                        requestInit: {
+                          headers: loadedHeaders,
+                        },
+                      }
                   await client.connect(
-                    new SSEClientTransport(new URL(config.url)),
+                    new StreamableHTTPClientTransport(new URL(loadedUrl), transportOptions),
                   )
                 } else {
-                  // MCP Stdio
-                  const config = connector.config as z.infer<
-                    typeof MCPClientStdioConfig
-                  >
-                  Logger.info(
-                    `invoking client initialize for command: ${config.command}`,
+                    // 'sse' mode
+                    const transportOptions: SSEClientTransportOptions = {
+                      requestInit: {
+                        headers: loadedHeaders,
+                      }
+                    }
+                    await client.connect(
+                      new SSEClientTransport(
+                        new URL(loadedUrl),
+                        transportOptions,
+                      ),
+                    )
+                  }
+                } else if (loadedConfig.command) {
+                  // This is an Stdio-based connector
+                  loggerWithChild({ email: sub }).info(
+                    `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
                   )
                   await client.connect(
                     new StdioClientTransport({
-                      command: config.command,
-                      args: config.args,
+                      command: loadedConfig.command,
+                      args: loadedConfig.args || [],
                     }),
+                  )
+                } else {
+                  throw new Error(
+                    "Invalid MCP connector configuration: missing url or command."
                   )
                 }
               } catch (error) {
@@ -1469,11 +1516,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                        "\n",
                      )}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
                  You **MUST** change your strategy.
-                  For example: 
+                  For example:
                     1.  Choose a **DIFFERENT TOOL**.
                     2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
                     3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
-  
+
                   Do NOT make these call again. Formulate a new, distinct plan.
                    ---
                 `
@@ -1483,7 +1530,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             toolsPrompt = ""
             // TODO: make more sense to move this inside prompt such that format of output can be written together.
             if (Object.keys(finalToolsList).length > 0) {
-              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
+              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information.
                 AVAILABLE_TOOLS:\n\n`
 
               // Format each client's tools
@@ -3731,6 +3778,25 @@ export const AgentMessageApi = async (c: Context) => {
             )
             // Limit messages to last 5 for the first LLM call if it's a new chat
             const limitedMessages = messagesWithNoErrResponse.slice(-8)
+            
+            // Extract previous classification for pagination and follow-up queries
+            let previousClassification: QueryRouterLLMResponse | null = null
+            if (messages.length >= 2) {
+              const previousUserMessage = messages[messages.length - 2]
+              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+                try {
+                  const parsedClassification =
+                    typeof previousUserMessage.queryRouterClassification === "string"
+                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                      : previousUserMessage.queryRouterClassification
+                  previousClassification = parsedClassification as QueryRouterLLMResponse
+                  Logger.info(`Found previous classification in agents: ${JSON.stringify(previousClassification)}`)
+                } catch (error) {
+                  Logger.error(`Error parsing previous classification in agents: ${error}`)
+                }
+              }
+            }
+            
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:
@@ -3742,7 +3808,7 @@ export const AgentMessageApi = async (c: Context) => {
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: limitedMessages,
                 agentPrompt: agentPromptForLLM,
-              })
+              }, undefined, previousClassification)
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -3760,6 +3826,8 @@ export const AgentMessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
+              intent: {},
+              offset: 0,
             }
             let parsed = {
               answer: "",

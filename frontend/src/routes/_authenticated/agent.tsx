@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2285,7 +2286,7 @@ function AgentComponent() {
                           placeholder="Search agents.."
                           value={listSearchQuery}
                           onChange={handleListSearchChange}
-                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 dark:bg-slate-700 dark:text-gray-100"
+                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
                         />
                       </div>
                       <Button
@@ -2672,53 +2673,27 @@ function AgentComponent() {
                   </div>
                 </div>
 
-                <div className="w-full">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    RAG
-                  </Label>
-                  <div className="mt-3 space-y-3">
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="radio"
-                        id="ragOn"
-                        name="rag"
-                        checked={isRagOn}
-                        onChange={() => setIsRagOn(true)}
-                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
-                      />
-                      <Label
-                        htmlFor="ragOn"
-                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        On
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
+                        App Integrations
                       </Label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Select knowledge sources for your agent.
+                      </p>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="radio"
-                        id="ragOff"
-                        name="rag"
-                        checked={!isRagOn}
-                        onChange={() => setIsRagOn(false)}
-                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
-                      />
-                      <Label
-                        htmlFor="ragOff"
-                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        Off
+                    <div className="flex items-center gap-3">
+                      <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        RAG
                       </Label>
+                      <Switch
+                        checked={isRagOn}
+                        onCheckedChange={setIsRagOn}
+                        id="rag-toggle"
+                      />
                     </div>
                   </div>
-                </div>
-
-                <div>
-                  <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                    App Integrations
-                  </Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
-                    Select knowledge sources for your agent.
-                  </p>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
                       <span className="text-gray-400 dark:text-gray-400 text-sm">
