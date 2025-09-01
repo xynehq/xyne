@@ -99,6 +99,8 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
+import keycloakRoutes from "@/auth/keycloak/routes"
+import { enhancedJwtMiddleware } from "@/auth/keycloak/middleware"
 import {
   ListDataSourcesApi,
   ListDataSourceFilesApi,
@@ -725,7 +727,7 @@ export const AppRoutes = app
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
-  .use("*", AuthMiddleware)
+  .use("*", enhancedJwtMiddleware())
   .use("*", honoMiddlewareLogger)
   .post(
     "/autocomplete",
@@ -1065,6 +1067,9 @@ const generateTokens = async (
 }
 // we won't allow user to reach the login page if they are already logged in
 // or if they have an expired token
+
+// Mount Keycloak routes
+app.route("/api/keycloak", keycloakRoutes)
 
 // After google oauth is done, google redirects user
 // here and this is where all the onboarding will happen

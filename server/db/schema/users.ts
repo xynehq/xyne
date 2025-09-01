@@ -8,7 +8,7 @@ import {
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core"
-import { createInsertSchema, createSelectSchema } from "drizzle-zod"
+import { createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { UserRole } from "@/shared/types"
 import { workspaces } from "./workspaces"
@@ -37,6 +37,7 @@ export const users = pgTable(
     externalId: text("external_id").unique().notNull(),
     // this will come handy for jwt token
     workspaceExternalId: text("workspace_external_id").notNull(),
+    password: text("password"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -67,6 +68,7 @@ export const userPublicSchema = selectUserSchema.omit({
   deletedAt: true,
   id: true,
   workspaceId: true,
+  password: true,
 })
 
 export type PublicUser = z.infer<typeof userPublicSchema>

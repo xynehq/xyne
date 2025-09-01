@@ -109,6 +109,36 @@ services:
     networks:
       - xyne
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: xyne-keycloak
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
+      - KC_DB_USERNAME=xyne
+      - KC_DB_PASSWORD=xyne
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HTTP_ENABLED=true
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+    ports:
+      - "8081:8080"
+    command: ["start-dev"]
+    depends_on:
+      - xyne-db
+    networks:
+      - xyne
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 networks:
   xyne:
     driver: bridge

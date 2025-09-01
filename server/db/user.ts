@@ -116,6 +116,7 @@ export const createUser = async (
   // refreshToken: string,
   role: string,
   workspaceExternalId: string,
+  password?: string,
 ) => {
   const externalId = createId()
   return await trx
@@ -132,6 +133,7 @@ export const createUser = async (
       lastLogin: new Date(),
       role,
       refreshToken: "",
+      password,
     })
     .returning()
 }
