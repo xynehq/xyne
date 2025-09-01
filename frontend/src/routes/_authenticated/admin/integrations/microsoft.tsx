@@ -632,7 +632,7 @@ export const Route = createFileRoute(
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/admin/integrations/microsoft" })
+      throw redirect({ to: "/integrations/microsoft" })
     }
     return params
   },
