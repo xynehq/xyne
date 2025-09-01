@@ -793,7 +793,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setShowTriggersSidebar(true);
   }, []);
 
-  const handleFormSubmissionSave = useCallback((formConfig: any) => {
+  const handleFormSubmissionSave = useCallback((formConfig: FormConfig) => {
     console.log('Form config saved:', formConfig);
     setShowFormSubmissionUI(false);
     setShowTriggersSidebar(false);
