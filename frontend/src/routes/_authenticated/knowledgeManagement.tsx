@@ -125,7 +125,7 @@ const DocumentViewerContainer = memo(
     loadingDocument: boolean
   }) => {
     return (
-      <div className="flex-1 overflow-y-auto bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
