@@ -218,6 +218,8 @@ import {
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import { TestEmailApi } from "@/api/testEmail"
+import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 
@@ -869,6 +871,8 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  //send Email Route
+  .post("/test-email", TestEmailApi)
 
   // Collection Routes
   .post("/cl", CreateCollectionApi)
@@ -1209,6 +1213,7 @@ app.get(
         UserRole.User,
         existingWorkspace.externalId,
       )
+      
       const accessToken = await generateTokens(
         user.email,
         user.role,
@@ -1222,6 +1227,8 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
+      await emailService.sendWelcomeEmail(user.email, user.name)
+      Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
       const opts = {
         secure: true,
         path: "/",
