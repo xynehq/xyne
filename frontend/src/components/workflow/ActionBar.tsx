@@ -27,7 +27,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
-        Execute Node
+        Execute
       </button>
       
       <div className="flex items-center gap-1 border border-slate-200 rounded-md px-2 py-1.5 bg-white">

@@ -21,14 +21,71 @@ import {
   OnEdgesDelete,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Flow, Step, UserDetail, WorkflowTemplate } from './Types';
-import { workflowTemplatesAPI } from './api/ApiHandlers';
+import { Flow, TemplateFlow, Step, UserDetail, Tool } from './Types';
 import ActionBar from './ActionBar';
+import {
+  DelayIcon,
+  PythonScriptIcon,
+  DefaultToolIcon,
+  EditorIcon,
+  SettingsIcon,
+  ManualTriggerIcon,
+  AppEventIcon,
+  ScheduleIcon,
+  WebhookIcon,
+  FormSubmissionIcon,
+  WorkflowExecutionIcon,
+  ChatMessageIcon,
+  HelpIcon,
+  TemplatesIcon,
+  AddIcon
+} from './WorkflowIcons';
+import { workflowTemplatesAPI, workflowsAPI } from './api/ApiHandlers';
 
+
+// Tool Card Component
+const ToolCard: React.FC<{ tool: Tool }> = ({ tool }) => {
+  const getToolIcon = (type: string) => {
+    switch (type) {
+      case 'delay':
+        return <DelayIcon />;
+      case 'python_script':
+        return <PythonScriptIcon />;
+      default:
+        return <DefaultToolIcon />;
+    }
+  };
+
+  const getToolColor = (type: string) => {
+    switch (type) {
+      case 'delay':
+        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
+      case 'python_script':
+        return 'bg-blue-50 border-blue-200 text-blue-800';
+      default:
+        return 'bg-gray-50 border-gray-200 text-gray-800';
+    }
+  };
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${getToolColor(tool.type)}`}>
+      {getToolIcon(tool.type)}
+      <span>{tool.type}</span>
+      {tool.config.description && (
+        <span className="text-xs opacity-75">• {tool.config.description}</span>
+      )}
+    </div>
+  );
+};
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected }) => {
-  const { step, isActive, isCompleted } = data as { step: Step; isActive?: boolean; isCompleted?: boolean; };
+  const { step, isActive, isCompleted, tools } = data as { 
+    step: Step; 
+    isActive?: boolean; 
+    isCompleted?: boolean; 
+    tools?: Tool[];
+  };
   
   const getNodeClasses = () => {
     const baseClasses = 'rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm';
@@ -66,13 +123,37 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected }) => {
               ✓
             </div>
           )}
-          {isActive && (
+          {isActive && !isCompleted && (
             <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
           )}
           <div className="font-semibold text-base leading-tight">
             {step.name || 'Unnamed Step'}
           </div>
+          {isActive && !isCompleted && (
+            <div className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+              Running
+            </div>
+          )}
         </div>
+        
+        {/* Status indicator */}
+        {step.status && (
+          <div className="text-xs opacity-70 uppercase tracking-wider font-medium mb-1">
+            {step.status === 'running' || step.status === 'in_progress' ? 'In Progress' : 
+             step.status === 'completed' || step.status === 'done' ? 'Completed' : 
+             step.status === 'pending' ? 'Pending' : 
+             step.status}
+          </div>
+        )}
+        
+        {/* Display tools below step name */}
+        {tools && tools.length > 0 && (
+          <div className="flex flex-col gap-1 mt-2 w-full">
+            {tools.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        )}
         
         <Handle
           type="source"
@@ -104,17 +185,11 @@ const Header = () => {
       {/* Editor/Settings Toggle - positioned below divider */}
       <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
         <button className="my-1 mx-1 px-4 py-1.5 bg-white text-slate-800 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-          </svg>
+          <EditorIcon />
           Editor
         </button>
         <button className="px-4 py-1.5 bg-transparent text-slate-500 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
+          <SettingsIcon />
           Settings
         </button>
       </div>
@@ -123,80 +198,42 @@ const Header = () => {
 };
 
 // Right Sidebar - SELECT TRIGGERS Panel
-const TriggersSidebar = ({ isVisible, onClose }: { isVisible: boolean; onClose: () => void }) => {
+const TriggersSidebar = ({ isVisible }: { isVisible: boolean; onClose?: () => void }) => {
   const triggers = [
     {
       id: 'manual',
       name: 'Trigger Manually',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="16"></line>
-          <line x1="8" y1="12" x2="16" y2="12"></line>
-        </svg>
-      )
+      icon: <ManualTriggerIcon width={20} height={20} />
     },
     {
       id: 'app_event',
       name: 'On App Event',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-          <line x1="8" y1="21" x2="16" y2="21"></line>
-          <line x1="12" y1="17" x2="12" y2="21"></line>
-        </svg>
-      )
+      icon: <AppEventIcon width={20} height={20} />
     },
     {
       id: 'schedule',
       name: 'On Schedule',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
-        </svg>
-      )
+      icon: <ScheduleIcon width={20} height={20} />
     },
     {
       id: 'webhook',
       name: 'On Webhook Call',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-          <polyline points="15 3 21 3 21 9"></polyline>
-          <line x1="10" y1="14" x2="21" y2="3"></line>
-        </svg>
-      )
+      icon: <WebhookIcon width={20} height={20} />
     },
     {
       id: 'form',
       name: 'On Form Submission',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-        </svg>
-      )
+      icon: <FormSubmissionIcon width={20} height={20} />
     },
     {
       id: 'workflow',
       name: 'When executed by another workflow',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-      )
+      icon: <WorkflowExecutionIcon width={20} height={20} />
     },
     {
       id: 'chat',
       name: 'On Chat Message',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-      )
+      icon: <ChatMessageIcon width={20} height={20} />
     }
   ];
 
@@ -204,25 +241,12 @@ const TriggersSidebar = ({ isVisible, onClose }: { isVisible: boolean; onClose: 
     {
       id: 'create_workflow',
       name: 'How to create a workflow',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg>
-      )
+      icon: <HelpIcon width={20} height={20} />
     },
     {
       id: 'templates',
       name: 'Templates',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-        </svg>
-      )
+      icon: <TemplatesIcon width={20} height={20} />
     }
   ];
 
@@ -292,10 +316,7 @@ const EmptyCanvas: React.FC<{
         onClick={onAddFirstStep}
         className="px-8 py-5 bg-white border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-xl text-slate-700 text-base font-medium cursor-pointer flex items-center gap-3 transition-all duration-200 min-w-[200px] justify-center hover:bg-slate-50 hover:-translate-y-px hover:shadow-md"
       >
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+        <AddIcon />
         Add first step
       </button>
       
@@ -326,7 +347,7 @@ const nodeTypes = {
 };
 
 interface WorkflowBuilderProps {
-  flow?: Flow;
+  flow?: Flow | TemplateFlow;
   activeStepId?: string;
   onStepClick?: (step: Step) => void;
   user?: UserDetail;
@@ -342,10 +363,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showEmptyCanvas, setShowEmptyCanvas] = useState(true);
   const [showTriggersSidebar, setShowTriggersSidebar] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [workflowTemplates, setWorkflowTemplates] = useState<WorkflowTemplate[]>([]);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
-  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  // Template workflow state (for creating the initial workflow)
+  const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(null);
+  const [, setIsLoadingTemplate] = useState(false);
+  const [, setTemplateError] = useState<string | null>(null);
   
+  // Running workflow state (for real-time updates)
+  const [, setWorkflow] = useState<Flow | null>(null);
+  const [, setIsPolling] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
   // Empty initial state
   const initialNodes: Node[] = [];
   const initialEdges: Edge[] = [];
@@ -354,26 +381,32 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { fitView, zoomTo } = useReactFlow();
 
-  // Fetch workflow templates on component mount
+  // Fetch specific workflow template by ID on component mount
   useEffect(() => {
-    const fetchWorkflowTemplates = async () => {
-      setIsLoadingTemplates(true);
-      setTemplatesError(null);
+    const fetchWorkflowTemplate = async () => {
+      const templateId = 'a50e8400-e29b-41d4-a716-446655440010';
+      setIsLoadingTemplate(true);
+      setTemplateError(null);
       
-      const response = await workflowTemplatesAPI.fetchAll();
-      
-      if (response.error) {
-        console.error('Error fetching workflow templates:', response.error);
-        setTemplatesError(response.error);
-      } else if (response.data) {
-        setWorkflowTemplates(response.data);
-        console.log('Fetched workflow templates:', response.data);
+      try {
+        const response = await workflowTemplatesAPI.fetchById(templateId);
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        
+        if (response.data) {
+          setTemplateWorkflow(response.data);
+        }
+      } catch (error) {
+        console.error('Fetch error:', error);
+        setTemplateError(error instanceof Error ? error.message : 'Network error');
+      } finally {
+        setIsLoadingTemplate(false);
       }
-      
-      setIsLoadingTemplates(false);
     };
 
-    fetchWorkflowTemplates();
+    fetchWorkflowTemplate();
   }, []);
 
 
@@ -409,15 +442,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [onStepClick]);
 
-  const onNodesDelete = useCallback<OnNodesDelete>((deleted) => {
-    console.log('Nodes deleted:', deleted);
-    if (nodes.length === deleted.length) {
+  const onNodesDelete = useCallback<OnNodesDelete>((_deleted) => {
+    if (nodes.length === _deleted.length) {
       setShowEmptyCanvas(true);
     }
   }, [nodes.length]);
 
-  const onEdgesDelete = useCallback<OnEdgesDelete>((deleted) => {
-    console.log('Edges deleted:', deleted);
+  const onEdgesDelete = useCallback<OnEdgesDelete>((_deleted) => {
+    // Handle edge deletion if needed in the future
   }, []);
 
   const addFirstStep = useCallback(() => {
@@ -449,145 +481,79 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [setNodes, fitView]);
 
   const startWithTemplate = useCallback(() => {
-    // Create a workflow template based on the image
-    const templateNodes: Node[] = [
-      {
-        id: '1',
-        type: 'stepNode',
-        position: { x: 540, y: 120 },
-        data: { 
-          step: { 
-            id: '1', 
-            name: 'Chat Message', 
-            status: 'PENDING',
-            contents: [{
-              type: 'TRIGGER',
-              value: 'When chat message received'
-            }]
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      },
-      {
-        id: '2',
-        type: 'stepNode',
-        position: { x: 540, y: 280 },
-        data: { 
-          step: { 
-            id: '2', 
-            name: 'AI Agent', 
-            status: 'PENDING',
-            contents: [{
-              type: 'AGENT',
-              value: 'gpt-oss-120b'
-            }]
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      },
-      {
-        id: '3',
-        type: 'stepNode',
-        position: { x: 400, y: 440 },
-        data: { 
-          step: { 
-            id: '3', 
-            name: 'Select trigger from the sidebar', 
-            status: 'PENDING',
-            contents: [{
-              type: 'CONDITION',
-              value: 'if false'
-            }]
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      },
-      {
-        id: '4',
-        type: 'stepNode',
-        position: { x: 680, y: 440 },
-        data: { 
-          step: { 
-            id: '4', 
-            name: 'Select trigger from the sidebar', 
-            status: 'PENDING',
-            contents: [{
-              type: 'CONDITION',
-              value: 'if true'
-            }]
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      }
-    ];
+    if (!templateWorkflow) {
+      console.error('No template workflow available');
+      return;
+    }
 
-    const templateEdges: Edge[] = [
-      {
-        id: '1-2',
-        source: '1',
-        target: '2',
-        type: 'smoothstep',
-        animated: false,
-        style: {
-          stroke: '#6B7280',
-          strokeWidth: 2,
+    // Convert template workflow template_steps to nodes
+    const templateNodes: Node[] = templateWorkflow.template_steps.map((templateStep, index) => {
+      // Find the associated tool for this step
+      const associatedTool = templateWorkflow.tools?.find(tool => tool.id === templateStep.tool_id);
+      
+      // Get all tools for this step (in case there are multiple)
+      const stepTools = templateStep.tool_id ? 
+        templateWorkflow.tools?.filter(tool => tool.id === templateStep.tool_id) || [] : 
+        [];
+      
+      return {
+        id: templateStep.id,
+        type: 'stepNode',
+        position: { 
+          x: 200 + (index * 300), 
+          y: 200 + (index % 2 === 0 ? 0 : 100) 
         },
-        markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
+        data: { 
+          step: {
+            id: templateStep.id,
+            name: associatedTool ? `${associatedTool.type === 'delay' ? 'Processing Delay' : associatedTool.type === 'python_script' ? (index === 1 ? 'Process Data' : 'Send Notification') : `Step ${index + 1}: ${associatedTool.type}`}` : (index === 0 ? 'Start Workflow' : `Step ${index + 1}`),
+            status: 'pending',
+            description: associatedTool?.config.description || 'Template step',
+            type: associatedTool?.type || 'unknown',
+            tool_id: templateStep.tool_id,
+            prevStepIds: templateStep.prevStepIds,
+            nextStepIds: templateStep.nextStepIds,
+            contents: []
+          }, 
+          tools: stepTools, // Pass tools data to the node
+          isActive: false, 
+          isCompleted: false 
         },
-      },
-      {
-        id: '2-3',
-        source: '2',
-        target: '3',
-        type: 'smoothstep',
-        animated: false,
-        style: {
-          stroke: '#6B7280',
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
-        },
-        label: 'if false',
-      },
-      {
-        id: '2-4',
-        source: '2',
-        target: '4',
-        type: 'smoothstep',
-        animated: false,
-        style: {
-          stroke: '#6B7280',
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
-        },
-        label: 'if true',
-      }
-    ];
+        draggable: true,
+      };
+    });
+
+    // Create edges based on nextStepIds
+    const templateEdges: Edge[] = [];
+    templateWorkflow.template_steps.forEach(templateStep => {
+      templateStep.nextStepIds.forEach(nextStepId => {
+        templateEdges.push({
+          id: `${templateStep.id}-${nextStepId}`,
+          source: templateStep.id,
+          target: nextStepId,
+          type: 'smoothstep',
+          animated: false,
+          style: {
+            stroke: '#3B82F6',
+            strokeWidth: 2,
+          },
+          markerEnd: {
+            type: 'arrowclosed',
+            color: '#3B82F6',
+          },
+        });
+      });
+    });
     
     setNodes(templateNodes);
     setEdges(templateEdges);
-    setNodeCounter(4);
+    setNodeCounter(templateWorkflow.template_steps.length + 1);
     setShowEmptyCanvas(false);
     
     setTimeout(() => {
       fitView({ padding: 0.2 });
     }, 50);
-  }, [setNodes, setEdges, fitView]);
+  }, [templateWorkflow, setNodes, setEdges, fitView]);
 
   const addNewNode = useCallback(() => {
     const newNode: Node = {
@@ -613,7 +579,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setNodes((nds) => [...nds, newNode]);
     setNodeCounter(prev => prev + 1);
     setShowEmptyCanvas(false);
-  }, [nodeCounter, setNodes]);
+  }, [nodeCounter, setNodes, setShowEmptyCanvas]);
+  
+  // Prevent unused variable warning
+  void addNewNode;
 
   const deleteSelectedNodes = useCallback(() => {
     if (selectedNodes.length > 0) {
@@ -624,33 +593,189 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       ));
     }
   }, [selectedNodes, setNodes, setEdges]);
+  
+  // Prevent unused variable warning
+  void deleteSelectedNodes;
 
   const handleZoomChange = useCallback((zoom: number) => {
     setZoomLevel(zoom);
     zoomTo(zoom / 100);
   }, [zoomTo]);
 
-  const executeNode = useCallback(() => {
-    if (selectedNodes.length === 1) {
-      const selectedNode = selectedNodes[0];
-      console.log('Executing node:', selectedNode.id);
-      // Here you would implement the actual execution logic
+  // Function to fetch workflow status
+  const fetchWorkflowStatus = useCallback(async (workflowId: string) => {
+    try {
+      const response = await workflowsAPI.fetchById(workflowId);
       
-      // For demonstration, let's mark the node as completed
-      setNodes(nodes => nodes.map(node => {
-        if (node.id === selectedNode.id) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              isCompleted: true
+      if (response.error) {
+        throw new Error(`Failed to fetch workflow status: ${response.error}`);
+      }
+
+      if (!response.data) {
+        throw new Error('No workflow data received');
+      }
+      
+      const workflowData = response.data;
+      
+      // Update the running workflow state
+      setWorkflow(workflowData);
+      
+      // Update nodes based on workflow step statuses - match by step name
+      if (workflowData?.step_exe) {
+        setNodes(currentNodes => 
+          currentNodes.map(node => {
+            // Try to match by step name first, then fall back to id
+            const stepExeArray = workflowData.step_exe as any[];
+            const matchingStep = stepExeArray?.find((stepItem) => {
+              const step = stepItem as any;
+              // Match by step name (more reliable for template vs running workflow)
+              if (node.data?.step?.name && (step as any).name) {
+                const nameMatch = node.data.step.name === (step as any).name;
+                return nameMatch;
+              }
+              // Fall back to ID matching
+              const idMatch = (step as any)?.id === node.id;
+              return idMatch;
+            });
+            
+            if (matchingStep) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  isActive: matchingStep.status === 'running' || matchingStep.status === 'in_progress',
+                  isCompleted: matchingStep.status === 'completed' || matchingStep.status === 'done',
+                  step: node.data.step ? {
+                    ...node.data.step,
+                    status: matchingStep.status
+                  } : {
+                    id: matchingStep?.id || node.id,
+                    name: matchingStep?.name || 'Unknown Step',
+                    status: matchingStep?.status || 'unknown',
+                    contents: []
+                  }
+                }
+              };
             }
-          };
-        }
-        return node;
-      }));
+            return node;
+          })
+        );
+      }
+      
+      // Check if workflow is completed or failed to stop polling
+      if (workflowData?.workflow_info?.status === 'completed' || workflowData?.workflow_info?.status === 'failed' || workflowData?.workflow_info?.status === 'cancelled') {
+        stopPolling();
+      }
+      
+    } catch (error) {
+      console.error('Error fetching workflow status:', error);
     }
-  }, [selectedNodes, setNodes]);
+  }, [setWorkflow, setNodes]);
+
+  // Function to start polling
+  const startPolling = useCallback((workflowId: string) => {
+    setIsPolling(true);
+    
+    // Clear any existing interval
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+    
+    // Start polling every second
+    const interval = setInterval(() => {
+      fetchWorkflowStatus(workflowId);
+    }, 1000);
+    
+    setPollingInterval(interval);
+  }, [pollingInterval, fetchWorkflowStatus, setIsPolling, setPollingInterval]);
+
+  // Function to stop polling
+  const stopPolling = useCallback(() => {
+    setIsPolling(false);
+    
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  }, [pollingInterval, setIsPolling, setPollingInterval]);
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
+  const executeNode = useCallback(async () => {
+    if (!templateWorkflow) {
+      console.error('No workflow template loaded');
+      return;
+    }
+    
+    try {
+      // Step 1: Instantiate the workflow template
+      const instantiateResponse = await workflowTemplatesAPI.instantiate(templateWorkflow.template_id, {
+        name: "Test Webhook Flow",
+        metadata: {
+          description: "Testing webhook workflow",
+          environment: "test"
+        }
+      });
+      
+      if (instantiateResponse.error || !instantiateResponse.data) {
+        throw new Error(`Failed to instantiate workflow: ${instantiateResponse.error || 'No data returned'}`);
+      }
+      
+      const workflowInstance = instantiateResponse.data;
+      
+      // Set initial workflow state after instantiation
+      try {
+        const initialWorkflowResponse = await workflowsAPI.fetchById(workflowInstance.workflowId);
+        
+        if (!initialWorkflowResponse.error && initialWorkflowResponse.data) {
+          setWorkflow(initialWorkflowResponse.data);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch initial workflow state:', error);
+      }
+      
+      // Step 2: Run the workflow
+      const runResponse = await workflowsAPI.run(workflowInstance.workflowId);
+      
+      if (runResponse.error) {
+        throw new Error(`Failed to run workflow: ${runResponse.error}`);
+      }
+      
+      // const runResult = runResponse.data; // Not used currently
+      
+      // Step 3: Complete a workflow step (root step ID)
+      const stepCompleteResponse = await workflowsAPI.completeStep(workflowInstance.rootStepId);
+
+      if (stepCompleteResponse.error) {
+        console.warn(`Failed to complete step: ${stepCompleteResponse.error}`);
+        // Continue execution even if step completion fails
+      } 
+      
+      // Mark all nodes as active/running initially
+      setNodes(nodes => nodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          isActive: true,
+          isCompleted: false
+        }
+      })));
+      
+      // Start polling for workflow status updates
+      startPolling(workflowInstance.workflowId);
+      
+    } catch (error) {
+      console.error('Error executing workflow:', error);
+      // You could add error state here to show in UI
+    }
+  }, [templateWorkflow, setNodes, startPolling, setWorkflow]);
 
 
   return (
@@ -731,8 +856,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         
         {/* Right Triggers Sidebar */}
         <TriggersSidebar 
-          isVisible={showTriggersSidebar} 
-          onClose={() => setShowTriggersSidebar(false)}
+          isVisible={showTriggersSidebar}
         />
       </div>
     </div>

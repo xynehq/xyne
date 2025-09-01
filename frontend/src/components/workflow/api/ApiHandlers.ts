@@ -1,5 +1,4 @@
-import { WorkflowTemplate, Flow } from '../Types';
-import { API_ENDPOINTS } from './Endpoints';
+import { Flow, TemplateFlow } from '../Types';
 
 // API response types
 interface ApiResponse<T> {
@@ -8,7 +7,10 @@ interface ApiResponse<T> {
   status: number;
 }
 
-// Generic API request handler
+// Base URL for workflow service
+const WORKFLOW_BASE_URL = 'https://53b79c6d27eb.ngrok-free.app/v1';
+
+// Generic API request handler with ngrok headers
 async function apiRequest<T>(
   url: string,
   options?: RequestInit
@@ -17,6 +19,8 @@ async function apiRequest<T>(
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'Accept': 'application/json',
         ...options?.headers,
       },
       ...options,
@@ -45,66 +49,50 @@ async function apiRequest<T>(
 
 // Workflow Templates API
 export const workflowTemplatesAPI = {
+
   /**
-   * Fetch all workflow templates
+   * Fetch a specific workflow template by ID
    */
-  async fetchAll(): Promise<ApiResponse<WorkflowTemplate[]>> {
-    return apiRequest<WorkflowTemplate[]>(API_ENDPOINTS.WORKFLOW_TEMPLATES);
+  async fetchById(id: string): Promise<ApiResponse<TemplateFlow>> {
+    return apiRequest<TemplateFlow>(`${WORKFLOW_BASE_URL}/workflow-template/${id}`);
   },
 
   /**
-   * Create a new workflow template
+   * Instantiate a workflow template
    */
-  async create(template: Omit<WorkflowTemplate, 'id' | 'created_at' | 'updated_at'>): Promise<ApiResponse<WorkflowTemplate>> {
-    return apiRequest<WorkflowTemplate>(API_ENDPOINTS.WORKFLOW_TEMPLATES, {
+  async instantiate(id: string, options: { name: string; metadata?: any }): Promise<ApiResponse<{ workflowId: string; rootStepId: string }>> {
+    return apiRequest<{ workflowId: string; rootStepId: string }>(`${WORKFLOW_BASE_URL}/workflow-template/${id}/instantiate`, {
       method: 'POST',
-      body: JSON.stringify(template),
+      body: JSON.stringify(options),
     });
   },
 };
 
 // Workflows API
 export const workflowsAPI = {
-  /**
-   * Fetch all workflows
-   */
-  async fetchAll(): Promise<ApiResponse<Flow[]>> {
-    return apiRequest<Flow[]>(API_ENDPOINTS.WORKFLOWS);
-  },
 
   /**
    * Fetch a specific workflow by ID
    */
   async fetchById(id: string): Promise<ApiResponse<Flow>> {
-    return apiRequest<Flow>(API_ENDPOINTS.WORKFLOW_BY_ID(id));
+    return apiRequest<Flow>(`${WORKFLOW_BASE_URL}/workflow/${id}`);
   },
 
   /**
-   * Create a new workflow
+   * Run a workflow
    */
-  async create(workflow: Omit<Flow, 'id'>): Promise<ApiResponse<Flow>> {
-    return apiRequest<Flow>(API_ENDPOINTS.WORKFLOWS, {
+  async run(id: string): Promise<ApiResponse<any>> {
+    return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/${id}/run`, {
       method: 'POST',
-      body: JSON.stringify(workflow),
     });
   },
 
   /**
-   * Update an existing workflow
+   * Complete a workflow step
    */
-  async update(id: string, workflow: Partial<Flow>): Promise<ApiResponse<Flow>> {
-    return apiRequest<Flow>(API_ENDPOINTS.WORKFLOW_BY_ID(id), {
-      method: 'PUT',
-      body: JSON.stringify(workflow),
-    });
-  },
-
-  /**
-   * Delete a workflow
-   */
-  async delete(id: string): Promise<ApiResponse<void>> {
-    return apiRequest<void>(API_ENDPOINTS.WORKFLOW_BY_ID(id), {
-      method: 'DELETE',
+  async completeStep(stepId: string): Promise<ApiResponse<any>> {
+    return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/step/${stepId}/complete`, {
+      method: 'POST',
     });
   },
 };
