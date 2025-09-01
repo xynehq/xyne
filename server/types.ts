@@ -1,5 +1,6 @@
 import config from "@/config"
 import { z } from "zod"
+import secureJsonParse from "secure-json-parse"
 import {
   Apps,
   AuthType,
@@ -97,15 +98,22 @@ export const addServiceConnectionSchema = z.object({
         file.type === "application/json" || file.name?.endsWith(".json"),
       "File must be a JSON file",
     )
+    .refine(
+      (file) => file.size <= config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
+      `File size must be less than ${config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`,
+    )
     .refine(async (file) => {
       try {
         const content = await file.text()
-        JSON.parse(content) // Just validate it's valid JSON
+        secureJsonParse(content, undefined, {
+          protoAction: "error",
+          constructorAction: "error",
+        }) // Use secure JSON parsing with strict security options
         return true
       } catch {
         return false
       }
-    }, "File must contain valid JSON"),
+    }, "File must contain valid and secure JSON"),
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
@@ -123,15 +131,22 @@ export const updateServiceConnectionSchema = z.object({
         file.type === "application/json" || file.name?.endsWith(".json"),
       "File must be a JSON file",
     )
+    .refine(
+      (file) => file.size <= config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
+      `File size must be less than ${config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`,
+    )
     .refine(async (file) => {
       try {
         const content = await file.text()
-        JSON.parse(content) // Just validate it's valid JSON
+        secureJsonParse(content, undefined, {
+          protoAction: "error",
+          constructorAction: "error",
+        }) // Use secure JSON parsing with strict security options
         return true
       } catch {
         return false
       }
-    }, "File must contain valid JSON"),
+    }, "File must contain valid and secure JSON"),
   connectorId: z.string().min(1, "Connector ID is required"),
 })
 
