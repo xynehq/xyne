@@ -1811,21 +1811,26 @@ export const webSearchQuestion = (
         "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
     }
 
-    const messages: Message[] = [
-      {
-        role: MessageRole.User,
-        content: [
-          {
-            text: query,
-          },
-        ],
-      },
-    ]
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    if (!config.VertexProjectId || !config.VertexRegion) {
+      Logger.warn(
+        "VertexProjectId/VertexRegion not configured, moving with default provider.",
+      )
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
     const vertexGoogleProvider = new VertexAiProvider({
-      projectId: config.VertexProjectId,
-      region: config.VertexRegion,
+      projectId: config.VertexProjectId!,
+      region: config.VertexRegion!,
       provider: VertexProvider.GOOGLE,
     })
+
     return vertexGoogleProvider.converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in webSearchQuestion")
