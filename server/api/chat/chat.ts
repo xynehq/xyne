@@ -3865,8 +3865,8 @@ function buildTopicConversationThread(
 
 function processWebSearchCitations(
   answer: string,
-  allSources: any[],
-  finalGroundingSupports: any[],
+  allSources: WebSearchSource[],
+  finalGroundingSupports: GroundingSupport[],
   citations: Citation[],
   citationMap: Record<number, number>,
   sourceIndex: number,
@@ -3883,7 +3883,7 @@ function processWebSearchCitations(
     let urlToIndexMap: Map<string, number> = new Map()
 
     for (const support of finalGroundingSupports) {
-      const { startIndex, endIndex } = support.segment
+      const segment = support.segment
       const groundingChunkIndices = support.groundingChunkIndices || []
 
       let citationText = ""
@@ -3916,11 +3916,15 @@ function processWebSearchCitations(
         }
       }
 
-      if (citationText && endIndex <= answerWithCitations.length) {
+      if (
+        citationText &&
+        segment?.endIndex !== undefined &&
+        segment.endIndex <= answerWithCitations.length
+      ) {
         answerWithCitations =
-          answerWithCitations.slice(0, endIndex) +
+          answerWithCitations.slice(0, segment.endIndex) +
           citationText +
-          answerWithCitations.slice(endIndex)
+          answerWithCitations.slice(segment.endIndex)
       }
     }
 
@@ -4686,7 +4690,6 @@ export const MessageApi = async (c: Context) => {
 
               parsed.answer = answer
             } else {
-              // Original conversation search logic
               for await (const chunk of searchOrAnswerIterator) {
                 if (stream.closed) {
                   loggerWithChild({ email: email }).info(
