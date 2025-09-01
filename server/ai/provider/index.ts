@@ -284,7 +284,7 @@ const initializeProviders = (): void => {
     const provider =
       vertexProviderType && VertexProvider[vertexProviderType]
         ? VertexProvider[vertexProviderType]
-        : VertexProvider.ANTHROPIC 
+        : VertexProvider.ANTHROPIC
 
     vertexProvider = new VertexAiProvider({
       projectId: VertexProjectId,

@@ -7,6 +7,7 @@ import {
   PlugZap,
   Github,
   BookOpen,
+  Globe,
 } from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, BookOpen
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
@@ -31,6 +32,7 @@ import {
   ConnectorType,
   SystemEntity,
   DataSourceEntity,
+  WebSearchEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -124,24 +126,23 @@ export const getIcon = (
     return <CalendarDays size={12} className={classNameVal} />
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
-  } else if (app === Apps.KnowledgeBase && 
-    entity === SystemEntity.SystemInfo
-  ) {
+  } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
     return (
-      <BookOpen 
-        size={size?.w || 12} 
+      <BookOpen
+        size={size?.w || 12}
         className={`${classNameVal} dark:stroke-[#F1F3F4]`}
         stroke="#384049"
       />
     )
-  }
-  else if (
+  } else if (
     (app === Apps.Github && entity === ConnectorType.MCP) ||
     entity === SystemEntity.SystemInfo
   ) {
     return <Github size={size?.w || 12} className={classNameVal} />
   } else if (entity === SystemEntity.SystemInfo) {
     return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
+  } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
+    return <Globe size={size?.w || 12} className={classNameVal} />
   } else if (
     app === Apps.DataSource &&
     entity === DataSourceEntity.DataSourceFile
