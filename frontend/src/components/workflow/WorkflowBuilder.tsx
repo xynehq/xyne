@@ -41,6 +41,7 @@ import {
   AddIcon
 } from './WorkflowIcons';
 import { workflowTemplatesAPI, workflowsAPI } from './api/ApiHandlers';
+import OnFormSubmissionUI, { FormConfig } from './OnFormSubmissionUI';
 
 
 // Tool Card Component
@@ -198,7 +199,7 @@ const Header = () => {
 };
 
 // Right Sidebar - SELECT TRIGGERS Panel
-const TriggersSidebar = ({ isVisible }: { isVisible: boolean; onClose?: () => void }) => {
+const TriggersSidebar = ({ isVisible, onTriggerClick }: { isVisible: boolean; onClose?: () => void; onTriggerClick?: (triggerId: string) => void }) => {
   const triggers = [
     {
       id: 'manual',
@@ -269,6 +270,7 @@ const TriggersSidebar = ({ isVisible }: { isVisible: boolean; onClose?: () => vo
         {triggers.map((trigger) => (
           <div
             key={trigger.id}
+            onClick={() => onTriggerClick?.(trigger.id)}
             className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-transparent hover:bg-slate-50 text-slate-700 min-h-[44px]"
           >
             <div className="w-5 h-5 flex items-center justify-center text-slate-500 flex-shrink-0">
@@ -362,6 +364,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [nodeCounter, setNodeCounter] = useState(1);
   const [showEmptyCanvas, setShowEmptyCanvas] = useState(true);
   const [showTriggersSidebar, setShowTriggersSidebar] = useState(false);
+  const [showFormSubmissionUI, setShowFormSubmissionUI] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   // Template workflow state (for creating the initial workflow)
   const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(null);
@@ -778,6 +781,26 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [templateWorkflow, setNodes, startPolling, setWorkflow]);
 
+  const handleTriggerClick = useCallback((triggerId: string) => {
+    if (triggerId === 'form') {
+      setShowFormSubmissionUI(true);
+      setShowTriggersSidebar(false);
+    }
+    // Handle other triggers here as needed
+  }, []);
+
+  const handleFormSubmissionBack = useCallback(() => {
+    setShowFormSubmissionUI(false);
+    setShowTriggersSidebar(true);
+  }, []);
+
+  const handleFormSubmissionSave = useCallback((formConfig: FormConfig) => {
+    console.log('Form config saved:', formConfig);
+    // Here we would save the form configuration
+    // and potentially create a workflow step
+    setShowFormSubmissionUI(false);
+    setShowTriggersSidebar(false);
+  }, []);
 
   return (
     <div className="w-full h-full flex flex-col bg-white relative">
@@ -786,8 +809,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
-        {/* Flow diagram area */}
-        <div className="flex-1 bg-slate-50 relative">
+        {/* Conditionally show OnFormSubmissionUI or Flow diagram area */}
+        {showFormSubmissionUI ? (
+          <OnFormSubmissionUI 
+            onBack={handleFormSubmissionBack}
+            onSave={handleFormSubmissionSave}
+          />
+        ) : (
+          <div className="flex-1 bg-slate-50 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -853,12 +882,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           </Panel>
         )}
       </ReactFlow>
-        </div>
+          </div>
+        )}
         
-        {/* Right Triggers Sidebar */}
-        <TriggersSidebar 
-          isVisible={showTriggersSidebar}
-        />
+        {/* Right Triggers Sidebar - only show when not showing form submission UI */}
+        {!showFormSubmissionUI && (
+          <TriggersSidebar 
+            isVisible={showTriggersSidebar}
+            onTriggerClick={handleTriggerClick}
+          />
+        )}
       </div>
     </div>
   );

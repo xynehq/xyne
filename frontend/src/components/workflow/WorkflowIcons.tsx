@@ -121,3 +121,53 @@ export const AddIcon: React.FC<IconProps> = ({ className = "w-5 h-5", width = 24
     <line x1="5" y1="12" x2="19" y2="12"></line>
   </svg>
 );
+
+// Form Document Icon
+export const FormDocumentIcon: React.FC<IconProps> = ({ className = "", width = 16, height = 16 }) => (
+  <svg 
+    className={className}
+    xmlns="http://www.w3.org/2000/svg" 
+    width={width} 
+    height={height} 
+    viewBox="0 0 16 16" 
+    fill="none"
+    style={{ aspectRatio: '1/1' }}
+  >
+    <path d="M10.794 1.33301C12.8533 1.33301 14 2.51967 14 4.55301V11.4397C14 13.5063 12.8533 14.6663 10.794 14.6663H5.20667C3.18 14.6663 2 13.5063 2 11.4397V4.55301C2 2.51967 3.18 1.33301 5.20667 1.33301H10.794ZM5.38667 10.493C5.18667 10.473 4.99333 10.5663 4.88667 10.7397C4.78 10.9063 4.78 11.1263 4.88667 11.2997C4.99333 11.4663 5.18667 11.5663 5.38667 11.5397H10.6133C10.8793 11.513 11.08 11.2857 11.08 11.0197C11.08 10.7463 10.8793 10.5197 10.6133 10.493H5.38667ZM10.6133 7.45234H5.38667C5.09933 7.45234 4.86667 7.68634 4.86667 7.97301C4.86667 8.25967 5.09933 8.49301 5.38667 8.49301H10.6133C10.9 8.49301 11.1333 8.25967 11.1333 7.97301C11.1333 7.68634 10.9 7.45234 10.6133 7.45234ZM7.37933 4.43301H5.38667V4.43967C5.09933 4.43967 4.86667 4.67301 4.86667 4.95967C4.86667 5.24634 5.09933 5.47967 5.38667 5.47967H7.37933C7.66667 5.47967 7.9 5.24634 7.9 4.95234C7.9 4.66634 7.66667 4.43301 7.37933 4.43301Z" fill="#395A0C"/>
+  </svg>
+);
+
+// Connection Point Circle
+export const ConnectionPointIcon: React.FC<IconProps> = ({ className = "", width = 12, height = 12 }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 12 12" fill="none">
+    <circle cx="6" cy="6" r="5.5" fill="white" stroke="#A0A7AB"/>
+  </svg>
+);
+
+// Vertical Connection Line
+export const VerticalLineIcon: React.FC<IconProps> = ({ className = "", width = 2, height = 26 }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 2 26" fill="none">
+    <path d="M1 1V25" stroke="#C9CCCF" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+
+// Plus Icon for Forms
+export const FormPlusIcon: React.FC<IconProps> = ({ className = "", width = 16, height = 16 }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 16 16" fill="none">
+    <path d="M7.99967 12.6663V7.99967M7.99967 7.99967V3.33301M7.99967 7.99967L3.33301 7.99967M7.99967 7.99967L12.6663 7.99967" stroke="#788187" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+// Back Arrow Icon
+export const BackArrowIcon: React.FC<IconProps> = ({ className = "", width = 24, height = 24 }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 24 24" fill="none">
+    <path fillRule="evenodd" clipRule="evenodd" d="M20.958 10.9995H7.38002L12.422 5.97852L11.011 4.56152L3.54102 12.0005L11.011 19.4385L12.422 18.0215L7.37802 12.9995H20.958V10.9995Z" fill="#181B1D"/>
+  </svg>
+);
+
+// Close/X Icon
+export const CloseIcon: React.FC<IconProps> = ({ className = "", width = 24, height = 24 }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 24 24" fill="none">
+    <path fillRule="evenodd" clipRule="evenodd" d="M13.4142 12.0002L18.7072 6.70725C19.0982 6.31625 19.0982 5.68425 18.7072 5.29325C18.3162 4.90225 17.6842 4.90225 17.2932 5.29325L12.0002 10.5862L6.70725 5.29325C6.31625 4.90225 5.68425 4.90225 5.29325 5.29325C4.90225 5.68425 4.90225 6.31625 5.29325 6.70725L10.5862 12.0002L5.29325 17.2933C4.90225 17.6842 4.90225 18.3162 5.29325 18.7072C5.48825 18.9022 5.74425 19.0002 6.00025 19.0002C6.25625 19.0002 6.51225 18.9022 6.70725 18.7072L12.0002 13.4143L17.2932 18.7072C17.4882 18.9022 17.7442 19.0002 18.0002 19.0002C18.2562 19.0002 18.5122 18.9022 18.7072 18.7072C19.0982 18.3162 19.0982 17.6842 18.7072 17.2933L13.4142 12.0002Z" fill="black"/>
+  </svg>
+);
