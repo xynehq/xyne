@@ -1,4 +1,4 @@
-import { Status, Step, Flow, StepGeneratorData, ComponentListData, SerialComponents } from './Types';
+import { Status, Step, Flow, LegacyFlow, StepGeneratorData, ComponentListData, SerialComponents } from './Types';
 import { defaultStep } from './Default';
 
 export function padWithZero(value: number): string {
@@ -53,7 +53,7 @@ export function getFirstActiveSubStepInfo(
   stepDict: Record<string, Step>,
 ): Step | undefined {
   const activeStep = stepPropsArray.find((stepProps) =>
-    isExecutable(stepProps.step.status),
+    stepProps.step.status && isExecutable(stepProps.step.status as Status),
   )?.step
 
   if (!activeStep) return undefined
@@ -64,7 +64,7 @@ export function getFirstActiveSubStepInfo(
 
   return childSteps
     .sort((a, b) => customCompare(a.position, b.position))
-    .find((step) => isExecutable(step.status))
+    .find((step) => step.status && isExecutable(step.status as Status))
 }
 
 export function addTime(tB: string, tA: string): string {
@@ -114,9 +114,10 @@ export function fillConnectedChildSteps(
 
 export function flowBFS(
   stepDict: Record<string, Step>,
-  flow: Flow,
+  flow: Flow | LegacyFlow,
 ): [ComponentListData[], number, number, string] {
-  const rootStep = stepDict[flow.root_step_id] || defaultStep
+  const legacyFlow = flow as LegacyFlow;
+  const rootStep = stepDict[legacyFlow.root_step_id] || defaultStep
   const traversedArray = [rootStep.id]
   const componentList: ComponentListData[] = []
   const connectedStepList = [rootStep.id]
@@ -188,7 +189,7 @@ export function flowBFS(
               step: blockingStep,
               stepNumber,
               isRootStep: false,
-              isLastStep: blockingStepId === flow.last_step_id,
+              isLastStep: blockingStepId === legacyFlow.last_step_id,
               isConnectedStep: true,
             },
           })

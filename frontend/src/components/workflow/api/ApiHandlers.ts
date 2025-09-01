@@ -8,7 +8,7 @@ interface ApiResponse<T> {
 }
 
 // Base URL for workflow service
-const WORKFLOW_BASE_URL = 'https://53b79c6d27eb.ngrok-free.app/v1';
+const WORKFLOW_BASE_URL = 'https://46755926dddd.ngrok-free.app/v1';
 
 // Generic API request handler with ngrok headers
 async function apiRequest<T>(

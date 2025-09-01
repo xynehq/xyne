@@ -21,7 +21,7 @@ import {
   OnEdgesDelete,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Flow, TemplateFlow, Step, UserDetail, Tool } from './Types';
+import { Flow, TemplateFlow, Step, UserDetail, Tool, StepExecution } from './Types';
 import ActionBar from './ActionBar';
 import {
   DelayIcon,
@@ -625,12 +625,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setNodes(currentNodes => 
           currentNodes.map(node => {
             // Try to match by step name first, then fall back to id
-            const stepExeArray = workflowData.step_exe as any[];
+            const stepExeArray = workflowData.step_exe as StepExecution[];
             const matchingStep = stepExeArray?.find((stepItem) => {
-              const step = stepItem as any;
-              // Match by step name (more reliable for template vs running workflow)
-              if (node.data?.step?.name && (step as any).name) {
-                const nameMatch = node.data.step.name === (step as any).name;
+              const step = stepItem as StepExecution;
+              // Match by step name (more reliable for template vs running workflow)  
+              const nodeStep = node.data?.step as Step;
+              if (nodeStep?.name && step.name) {
+                const nameMatch = nodeStep.name === step.name;
                 return nameMatch;
               }
               // Fall back to ID matching
