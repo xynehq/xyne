@@ -234,24 +234,6 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
 
-          <div
-            onClick={toggleTheme}
-            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {isDarkMode ? (
-                  <Sun size={18} stroke="#F1F3F4" />
-                ) : (
-                  <Moon size={18} stroke="#384049" />
-                )}
-              </TooltipTrigger>
-              <Tip
-                side="right"
-                info={isDarkMode ? "Light Mode" : "Dark Mode"}
-              />
-            </Tooltip>
-          </div>
 
           <Link
             to="/dashboard"
@@ -273,7 +255,25 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
         </div>
-        <div className="mt-auto mb-4 flex justify-center">
+        <div className="mt-auto mb-4 flex flex-col items-center">
+          <div
+            onClick={toggleTheme}
+            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {isDarkMode ? (
+                  <Sun size={18} stroke="#F1F3F4" />
+                ) : (
+                  <Moon size={18} stroke="#384049" />
+                )}
+              </TooltipTrigger>
+              <Tip
+                side="right"
+                info={isDarkMode ? "Light Mode" : "Dark Mode"}
+              />
+            </Tooltip>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <img src={Logo} alt="Logo" />
