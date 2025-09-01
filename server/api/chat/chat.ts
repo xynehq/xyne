@@ -19,6 +19,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   extractEmailsFromContext,
   generateFollowUpQuestions,
+  webSearchQuestion,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
 import { getDateForAI } from "@/utils/index"
@@ -35,6 +36,7 @@ import {
   type QueryRouterResponse,
   type TemporalClassifier,
   type UserQuery,
+  type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
 import {
@@ -137,6 +139,7 @@ import {
   SlackEntity,
   SystemEntity,
   userSchema,
+  WebSearchEntity,
   type Entity,
   type VespaChatMessage,
   type VespaEvent,
@@ -217,6 +220,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
+import type { GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -3859,6 +3863,78 @@ function buildTopicConversationThread(
   return conversationThread
 }
 
+function processWebSearchCitations(
+  answer: string,
+  allSources: any[],
+  finalGroundingSupports: any[],
+  citations: Citation[],
+  citationMap: Record<number, number>,
+  sourceIndex: number,
+): {
+  updatedAnswer: string
+  newCitations: Citation[]
+  newCitationMap: Record<number, number>
+  updatedSourceIndex: number
+} | null {
+  if (finalGroundingSupports.length > 0 && allSources.length > 0) {
+    let answerWithCitations = answer
+    let newCitations: Citation[] = []
+    let newCitationMap: Record<number, number> = {}
+    let urlToIndexMap: Map<string, number> = new Map()
+
+    for (const support of finalGroundingSupports) {
+      const { startIndex, endIndex } = support.segment
+      const groundingChunkIndices = support.groundingChunkIndices || []
+
+      let citationText = ""
+      for (const chunkIndex of groundingChunkIndices) {
+        if (allSources[chunkIndex]) {
+          const source = allSources[chunkIndex]
+
+          let citationIndex: number
+          if (urlToIndexMap.has(source.uri)) {
+            // Reuse existing citation index
+            citationIndex = urlToIndexMap.get(source.uri)!
+          } else {
+            citationIndex = sourceIndex
+            const webSearchCitation: Citation = {
+              docId: `websearch_${sourceIndex}`,
+              title: source.title,
+              url: source.uri,
+              app: Apps.WebSearch,
+              entity: WebSearchEntity.WebSearch,
+            }
+
+            newCitations.push(webSearchCitation)
+            newCitationMap[sourceIndex] =
+              citations.length + newCitations.length - 1
+            urlToIndexMap.set(source.uri, sourceIndex)
+            sourceIndex++
+          }
+
+          citationText += ` [${citationIndex}]`
+        }
+      }
+
+      if (citationText && endIndex <= answerWithCitations.length) {
+        answerWithCitations =
+          answerWithCitations.slice(0, endIndex) +
+          citationText +
+          answerWithCitations.slice(endIndex)
+      }
+    }
+
+    return {
+      updatedAnswer: answerWithCitations,
+      newCitations,
+      newCitationMap,
+      updatedSourceIndex: sourceIndex,
+    }
+  }
+
+  return null
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -3888,6 +3964,7 @@ export const MessageApi = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
+      enableWebSearch,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic) {
@@ -4417,21 +4494,39 @@ export const MessageApi = async (c: Context) => {
               topicConversationThread,
             )
 
-            const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+            const webSearchEnabled = enableWebSearch ?? false
+            let searchOrAnswerIterator
+            if (webSearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Using web search for the question",
+              )
+
+              searchOrAnswerIterator = webSearchQuestion(message, ctx, {
+                modelId: Models.Gemini_2_5_Flash,
                 stream: true,
-                json: true,
+                json: false,
                 agentPrompt: agentPromptValue,
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: llmFormattedMessages,
-                // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
-                // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
-                // For this non-agent RAG path, we don't pass an agent prompt.
+                webSearch: true,
               })
+            } else {
+              searchOrAnswerIterator =
+                generateSearchQueryOrAnswerFromConversation(message, ctx, {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  agentPrompt: agentPromptValue,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: llmFormattedMessages,
+                })
+            }
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -4439,7 +4534,7 @@ export const MessageApi = async (c: Context) => {
             // leads to [NaN] in the answer
             let currentAnswer = ""
             let answer = ""
-            let citations = []
+            let citations: Citation[] = []
             let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
@@ -4468,92 +4563,217 @@ export const MessageApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
-            for await (const chunk of searchOrAnswerIterator) {
-              if (stream.closed) {
-                loggerWithChild({ email: email }).info(
-                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                )
-                wasStreamClosedPrematurely = true
-                break
-              }
-              if (chunk.text) {
-                if (reasoning) {
-                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                    thinking += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: chunk.text,
-                    })
-                  } else {
-                    // first time
-                    if (!chunk.text.includes(StartThinkingToken)) {
-                      let token = chunk.text
-                      if (chunk.text.includes(EndThinkingToken)) {
-                        token = chunk.text.split(EndThinkingToken)[0]
-                        thinking += token
-                      } else {
-                        thinking += token
-                      }
+
+            if (webSearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Processing web search response",
+              )
+
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              let sourceIndex = 0
+              let allSources: WebSearchSource[] = []
+              let finalGroundingSupports: GroundingSupport[] = []
+
+              for await (const chunk of searchOrAnswerIterator) {
+                if (stream.closed) {
+                  loggerWithChild({ email: email }).info(
+                    "[MessageApi] Stream closed during web search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+
+                if (chunk.text) {
+                  if (reasoning) {
+                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                      thinking += chunk.text
                       stream.writeSSE({
                         event: ChatSSEvents.Reasoning,
-                        data: token,
+                        data: chunk.text,
                       })
-                    }
-                  }
-                }
-                if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                  reasoning = false
-                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                }
-                if (!reasoning) {
-                  buffer += chunk.text
-                  try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
-                    if (parsed.answer && currentAnswer !== parsed.answer) {
-                      if (currentAnswer === "") {
-                        loggerWithChild({ email: email }).info(
-                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                        )
+                    } else {
+                      // first time
+                      if (!chunk.text.includes(StartThinkingToken)) {
+                        let token = chunk.text
+                        if (chunk.text.includes(EndThinkingToken)) {
+                          token = chunk.text.split(EndThinkingToken)[0]
+                          thinking += token
+                        } else {
+                          thinking += token
+                        }
                         stream.writeSSE({
-                          event: ChatSSEvents.Start,
-                          data: "",
-                        })
-                        // First valid answer - send the whole thing
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: parsed.answer,
-                        })
-                      } else {
-                        // Subsequent chunks - send only the new part
-                        const newText = parsed.answer.slice(
-                          currentAnswer.length,
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: newText,
+                          event: ChatSSEvents.Reasoning,
+                          data: token,
                         })
                       }
-                      currentAnswer = parsed.answer
                     }
-                  } catch (err) {
-                    const errMessage = (err as Error).message
-                    loggerWithChild({ email: email }).error(
-                      err,
-                      `Error while parsing LLM output ${errMessage}`,
-                    )
-                    continue
+                  }
+                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                    reasoning = false
+                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                  }
+                  if (!reasoning) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
                   }
                 }
+
+                if (chunk.sources && chunk.sources.length > 0) {
+                  chunk.sources.forEach((source) => {
+                    if (
+                      !allSources.some(
+                        (existing) => existing.uri === source.uri,
+                      )
+                    ) {
+                      allSources.push(source)
+                    }
+                  })
+                }
+
+                if (
+                  chunk.groundingSupports &&
+                  chunk.groundingSupports.length > 0
+                ) {
+                  finalGroundingSupports = chunk.groundingSupports
+                }
+
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
               }
-              if (chunk.cost) {
-                costArr.push(chunk.cost)
+
+              // Web search citations from Gemini are provided only in the final streamed chunk,
+              // so processing them after streaming completes
+              const citationResult = processWebSearchCitations(
+                answer,
+                allSources,
+                finalGroundingSupports,
+                citations,
+                citationMap,
+                sourceIndex,
+              )
+
+              if (citationResult) {
+                answer = citationResult.updatedAnswer
+                sourceIndex = citationResult.updatedSourceIndex
+
+                if (citationResult.newCitations.length > 0) {
+                  citations.push(...citationResult.newCitations)
+                  Object.assign(citationMap, citationResult.newCitationMap)
+
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap: citationMap,
+                    }),
+                  })
+                }
               }
-              // Track token usage from metadata
-              if (chunk.metadata?.usage) {
-                tokenArr.push({
-                  inputTokens: chunk.metadata.usage.inputTokens || 0,
-                  outputTokens: chunk.metadata.usage.outputTokens || 0,
-                })
+
+              parsed.answer = answer
+            } else {
+              // Original conversation search logic
+              for await (const chunk of searchOrAnswerIterator) {
+                if (stream.closed) {
+                  loggerWithChild({ email: email }).info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  if (reasoning) {
+                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                      thinking += chunk.text
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: chunk.text,
+                      })
+                    } else {
+                      // first time
+                      if (!chunk.text.includes(StartThinkingToken)) {
+                        let token = chunk.text
+                        if (chunk.text.includes(EndThinkingToken)) {
+                          token = chunk.text.split(EndThinkingToken)[0]
+                          thinking += token
+                        } else {
+                          thinking += token
+                        }
+                        stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: token,
+                        })
+                      }
+                    }
+                  }
+                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                    reasoning = false
+                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                  }
+                  if (!reasoning) {
+                    buffer += chunk.text
+                    try {
+                      parsed = jsonParseLLMOutput(buffer) || {}
+                      if (parsed.answer && currentAnswer !== parsed.answer) {
+                        if (currentAnswer === "") {
+                          loggerWithChild({ email: email }).info(
+                            "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                          )
+                          stream.writeSSE({
+                            event: ChatSSEvents.Start,
+                            data: "",
+                          })
+                          // First valid answer - send the whole thing
+                          stream.writeSSE({
+                            event: ChatSSEvents.ResponseUpdate,
+                            data: parsed.answer,
+                          })
+                        } else {
+                          // Subsequent chunks - send only the new part
+                          const newText = parsed.answer.slice(
+                            currentAnswer.length,
+                          )
+                          stream.writeSSE({
+                            event: ChatSSEvents.ResponseUpdate,
+                            data: newText,
+                          })
+                        }
+                        currentAnswer = parsed.answer
+                      }
+                    } catch (err) {
+                      const errMessage = (err as Error).message
+                      loggerWithChild({ email: email }).error(
+                        err,
+                        `Error while parsing LLM output ${errMessage}`,
+                      )
+                      continue
+                    }
+                  }
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
               }
             }
 

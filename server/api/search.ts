@@ -166,6 +166,13 @@ export const messageSchema = z.object({
       return val.toLowerCase() === "true"
     }),
   agentId: z.string().optional(),
+  enableWebSearch: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
   toolsList: z.preprocess(
     (val) => {
       if (typeof val === "string") {
