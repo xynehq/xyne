@@ -11,12 +11,14 @@ export interface Citation {
   title: string
   itemId?: string
   clId?: string
+  chunkIndex?: number
 }
 
 export const createCitationLink =
   (
     citations: Citation[] = [],
-    onCitationClick?: (citation: Citation) => void,
+    onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
+    showTooltip?: boolean,
   ) =>
   ({
     href,
@@ -53,7 +55,11 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    onCitationClick(citation)
+                    if(citation.chunkIndex) {
+                      onCitationClick(citation, citation.chunkIndex)
+                    } else {
+                      onCitationClick(citation)
+                    }
                   }
                   setIsTooltipOpen(false)
                 }}
@@ -61,6 +67,7 @@ export const createCitationLink =
                 {children}
               </span>
             </TooltipTrigger>
+            {showTooltip && (
             <TooltipContent
               side="top"
               align="center"
@@ -121,6 +128,7 @@ export const createCitationLink =
                 </div>
               </div>
             </TooltipContent>
+            )}
           </Tooltip>
         </TooltipProvider>
       )

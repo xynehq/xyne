@@ -151,6 +151,7 @@ interface ChatBoxProps {
   ) => void
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
+  hideButtons?: boolean // Add prop to hide mark step as done section
 }
 
 const availableSources: SourceItem[] = [
@@ -280,6 +281,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
     setIsAgenticMode,
     isAgenticMode = false,
     overrideIsRagOn,
+    hideButtons = false, // Destructure new prop with default value
   } = props
   // Interface for fetched tools
   interface FetchedTool {
@@ -442,8 +444,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploadingFiles, setIsUploadingFiles] = useState(false)
   const showAdvancedOptions =
-    overrideIsRagOn ??
-    (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
+    !hideButtons &&
+    (overrideIsRagOn ??
+      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
   // localStorage keys for tool selection persistence
   const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -2208,17 +2211,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) =
               let shouldTriggerBox = false
               let newActiveMentionIndex = -1
 
-              // Check if the character right before the cursor is an '@' and if it's validly placed
-              const atCharIndex = cursorPosition - 1
-              if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
-                const isFirstCharacter = atCharIndex === 0
-                const isPrecededBySpace =
-                  atCharIndex > 0 &&
-                  (newValue[atCharIndex - 1] === " " ||
-                    newValue[atCharIndex - 1] === "\u00A0")
-                if (isFirstCharacter || isPrecededBySpace) {
-                  shouldTriggerBox = true
-                  newActiveMentionIndex = atCharIndex
+              // Disable @ mention functionality when autoAddDocumentPill is provided
+              if (!hideButtons) {
+                const atCharIndex = cursorPosition - 1
+                if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
+                  const isFirstCharacter = atCharIndex === 0
+                  const isPrecededBySpace =
+                    atCharIndex > 0 &&
+                    (newValue[atCharIndex - 1] === " " ||
+                      newValue[atCharIndex - 1] === "\u00A0")
+                  if (isFirstCharacter || isPrecededBySpace) {
+                    shouldTriggerBox = true
+                    newActiveMentionIndex = atCharIndex
+                  }
                 }
               }
 

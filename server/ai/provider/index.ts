@@ -97,6 +97,8 @@ import { VertexAiProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
+  agentBaselineFileContextPromptJson,
+  agentBaselineFilesContextPromptJson,
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
@@ -1076,6 +1078,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1089,10 +1092,24 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    params.systemPrompt = baselineFilesContextPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    if(isMsgWithSources) {
+      params.systemPrompt = agentBaselineFileContextPromptJson(
+        userCtx,
+        retrievedCtx,
+      )
+    }
+    else if(!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {

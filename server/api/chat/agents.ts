@@ -408,14 +408,17 @@ async function* getToolContinuationIterator(
         }) as any,
     ),
   )
-  const finalImageFileNames = imageFileNames || []
+  const finalImageFileNames: string[] = []
 
   if (attachmentFileIds?.length) {
     finalImageFileNames.push(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-
+  else if(imageFileNames?.length && imageFileNames.length > 0) {
+    finalImageFileNames.push(...imageFileNames)
+  }
+  
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -3031,11 +3034,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           }
         }
         if (attachmentFileIds?.length) {
-          finalImageFileNames.push(
+          finalImageFileNames = [
             ...attachmentFileIds.map(
               (fileid, index) => `${index}_${fileid}_${0}`,
             ),
-          )
+          ]
         }
 
         const ragOffIterator = nonRagIterator(

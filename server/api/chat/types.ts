@@ -71,6 +71,7 @@ export const MinimalCitationSchema = z.object({
   threadId: z.string().optional(),
   itemId: z.string().optional(),
   clId: z.string().optional(),
+  chunkIndex: z.number().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

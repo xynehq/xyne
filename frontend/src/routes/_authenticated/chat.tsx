@@ -316,7 +316,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
   }
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState"
+export const REASONING_STATE_KEY = "isReasoningGlobalState"
 const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
@@ -1417,7 +1417,7 @@ interface ImageCitationComponentProps {
   className?: string
 }
 
-const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   citationKey,
   imageCitations,
   className = "",
@@ -2212,7 +2212,7 @@ const VirtualizedMessages = React.forwardRef<HTMLDivElement, VirtualizedMessages
           ;(ref as any).current = node
         }
       }}
-      className="h-full w-full overflow-auto flex flex-col items-center"
+      className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
       onScroll={handleScroll}
       style={{
         height: "100%",
