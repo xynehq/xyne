@@ -90,7 +90,22 @@ export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
-  "service-key": z.any(),
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        JSON.parse(content) // Just validate it's valid JSON
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid JSON"),
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
@@ -101,8 +116,23 @@ export type ServiceAccountConnection = z.infer<
 >
 
 export const updateServiceConnectionSchema = z.object({
-  "service-key": z.any(),
-  connectorId: z.string(),
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        JSON.parse(content) // Just validate it's valid JSON
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid JSON"),
+  connectorId: z.string().min(1, "Connector ID is required"),
 })
 
 export type UpdateServiceAccountConnection = z.infer<
@@ -116,11 +146,17 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export enum MCPConnectorMode {
+  SSE = "sse",
+  StreamableHTTP = "streamable-http",
+}
+
 export const addApiKeyMCPConnectorSchema = z.object({
-  apiKey: z.string(),
-  url: z.string(),
+  url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
   name: z.string(),
-})
+  mode: z.nativeEnum(MCPConnectorMode),
+  headers: z.record(z.string()),
+});
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
@@ -424,6 +460,8 @@ export enum Platform {
   Slack = "slack",
 }
 
+
+
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
@@ -432,7 +470,10 @@ export const AnswerWithCitationsSchema = z.object({
 export const MCPClientConfig = z.object({
   url: z.string(),
   version: z.string(),
+  mode: z.nativeEnum(MCPConnectorMode).optional(),
 })
+
+export type MCPClientConfig = z.infer<typeof MCPClientConfig>
 
 export const MCPClientStdioConfig = z.object({
   command: z.string(),
