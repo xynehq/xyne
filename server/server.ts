@@ -909,7 +909,7 @@ export const AppRoutes = app
   )
   .post(
     "/apikey/mcp/create",
-    zValidator("form", addApiKeyMCPConnectorSchema),
+    zValidator("json", addApiKeyMCPConnectorSchema),
     AddApiKeyMCPConnector,
   )
   .post(
