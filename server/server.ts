@@ -728,6 +728,12 @@ export const AppRoutes = app
     zValidator("query", agentChatMessageSchema),
     AgentMessageApi,
   )
+  .post(
+    "/agent/chat/stop",
+    ApiKeyMiddleware,
+    zValidator("json", chatStopSchema),
+    StopStreamingApi,
+  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
