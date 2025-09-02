@@ -4694,43 +4694,13 @@ export const MessageApi = async (c: Context) => {
                   wasStreamClosedPrematurely = true
                   break
                 }
-
+                // TODO: Handle websearch reasoning
                 if (chunk.text) {
-                  if (reasoning) {
-                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                      thinking += chunk.text
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: chunk.text,
-                      })
-                    } else {
-                      // first time
-                      if (!chunk.text.includes(StartThinkingToken)) {
-                        let token = chunk.text
-                        if (chunk.text.includes(EndThinkingToken)) {
-                          token = chunk.text.split(EndThinkingToken)[0]
-                          thinking += token
-                        } else {
-                          thinking += token
-                        }
-                        stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: token,
-                        })
-                      }
-                    }
-                  }
-                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                    reasoning = false
-                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                  }
-                  if (!reasoning) {
-                    answer += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: chunk.text,
-                    })
-                  }
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
                 }
 
                 if (chunk.sources && chunk.sources.length > 0) {
