@@ -6501,8 +6501,20 @@ export const MessageRetryApi = async (c: Context) => {
 
 // New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey) ?? {}
-  let email = sub || ""
+  // const { sub } = c.get(JwtPayloadKey) ?? {}
+  let email = ""
+
+  let jwtPayload
+  try {
+    jwtPayload = c.get(JwtPayloadKey)
+  } catch (e) {}
+
+  if (jwtPayload) {
+    email = jwtPayload?.sub
+  } else {
+    email = c.get("userEmail") ?? ""
+  }
+
   try {
     // @ts-ignore - Assuming validation middleware handles this
     const { chatId } = c.req.valid("json")
