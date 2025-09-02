@@ -157,6 +157,8 @@ import {
   listAgentsSchema,
   updateAgentSchema,
   GetAgentApi,
+  executeAgentSchema,
+  ExecuteAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import metricRegister from "@/metrics/sharedRegistry"
@@ -853,6 +855,7 @@ export const AppRoutes = app
   .get("/tuning/ws/:jobId", TuningWsRoute)
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .post("/agent/execute", zValidator("json", executeAgentSchema), ExecuteAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/agent/:agentExternalId", GetAgentApi)

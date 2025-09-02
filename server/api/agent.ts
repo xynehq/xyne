@@ -12,8 +12,10 @@ import {
   getAgentsMadeByMe,
   getAgentsSharedToMe,
 } from "@/db/agent"
-
+import { executeAgent } from '@/ai/provider'
+import { Models } from '@/ai/types'
 import { fetchedDataSourceSchema } from "@/db/schema/agents"
+import { streamSSE, type SSEStreamingApi } from "hono/streaming"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
@@ -59,6 +61,17 @@ export const createAgentSchema = z.object({
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
+})
+
+export const executeAgentSchema = z.object({
+    id: z.string().min(1, "Agent ID is required"),
+    systemPrompt: z.string().min(1, "System prompt is required"),
+    userQuery: z.string().min(1, "User query is required"),
+    modelId: z.nativeEnum(Models).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    maxTokens: z.number().min(1).max(8192).optional(),
+    reasoning: z.boolean().optional(),
+    stream: z.boolean().optional().default(true)
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
 
@@ -684,3 +697,112 @@ export const GetAgentIntegrationItemsApi = async (c: Context) => {
     )
   }
 }
+export const ExecuteAgentApi = async (c: Context) => {
+    try {
+      const body = await c.req.json()
+      const validatedBody = executeAgentSchema.parse(body)
+
+      const {
+        id,
+        systemPrompt,
+        userQuery,
+        modelId = Models.Gpt_4o_mini,
+        temperature = 0.7,
+        maxTokens = 2048,
+        reasoning = false,
+        stream = true
+      } = validatedBody
+
+      // Execute the agent
+      const response = executeAgent(
+        id,
+        systemPrompt,
+        userQuery,
+        {
+          modelId,
+          temperature,
+          max_new_tokens: maxTokens,
+          reasoning,
+          stream
+        }
+      )
+
+      if (stream) {
+        // Streaming response using Hono's streamSSE
+        return streamSSE(c, async (stream: SSEStreamingApi) => {
+          let fullResponse = ""
+          let totalCost = 0
+
+          try {
+            for await (const chunk of response) {
+              if (chunk.text) {
+                fullResponse += chunk.text
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "text",
+                    content: chunk.text,
+                    fullResponse
+                  })
+                })
+              }
+              if (chunk.cost) {
+                totalCost += chunk.cost
+                await stream.writeSSE({
+                  data: JSON.stringify({
+                    type: "cost",
+                    cost: chunk.cost,
+                    totalCost
+                  })
+                })
+              }
+            }
+
+            // Send final completion message
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "complete",
+                fullResponse,
+                totalCost,
+                agentId: id
+              })
+            })
+
+          } catch (streamError) {
+            const errorMessage = streamError instanceof Error ? streamError.message : 'Unknown error'
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "error",
+                error: errorMessage
+              })
+            })
+          }
+        })
+      } else {
+        // Non-streaming response
+        let fullResponse = ""
+        let totalCost = 0
+
+        for await (const chunk of response) {
+          if (chunk.text) fullResponse += chunk.text
+          if (chunk.cost) totalCost += chunk.cost
+        }
+
+        return c.json({
+          success: true,
+          response: fullResponse,
+          cost: totalCost,
+          agentId: id,
+          modelUsed: modelId
+        })
+      }
+
+    } catch (error) {
+      Logger.error('ExecuteAgent API Error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      return c.json({
+        success: false,
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      }, 500)
+    }
+  }

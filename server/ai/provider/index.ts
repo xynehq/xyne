@@ -414,6 +414,63 @@ export const askQuestion = (
   }
 }
 
+export const executeAgent = (
+    id: string,
+    systemPrompt: string,
+    userQuery: string,
+    params: Partial<ModelParams> = {}
+  ): AsyncIterableIterator<ConverseResponse> => {
+    try {
+      // Validate required parameters
+      if (!id?.trim()) {
+        throw new Error("Agent ID is required and cannot be empty")
+      }
+      if (!systemPrompt?.trim()) {
+        throw new Error("System prompt is required and cannot be empty")
+      }
+      if (!userQuery?.trim()) {
+        throw new Error("User query is required and cannot be empty")
+      }
+
+      // Build complete ModelParams with defaults
+      const modelParams: ModelParams = {
+        modelId: params.modelId || defaultBestModel,
+        stream: params.stream ?? true,
+        temperature: params.temperature ?? 0.7,
+        systemPrompt: systemPrompt.trim(),
+        reasoning: params.reasoning ?? false,
+        json: params.json ?? false,
+        ...params
+      }
+
+      // Log agent execution for debugging/monitoring
+      Logger.info(`Executing agent: ${id}`, {
+        modelId: modelParams.modelId,
+        systemPromptLength: systemPrompt.length,
+        userQueryLength: userQuery.length,
+        temperature: modelParams.temperature,
+        reasoning: modelParams.reasoning
+      })
+
+      const messages: Message[] = [
+        {
+          role: "user",
+          content: [{ text: userQuery }]
+        }
+      ]
+
+      // Execute via provider
+      return getProviderByModel(modelParams.modelId).converseStream(
+        messages,
+        modelParams
+      )
+
+    } catch (error) {
+      Logger.error(error, `Error executing agent: ${id}`)
+      throw error
+    }
+}
+
 export const analyzeQuery = async (
   userQuery: string,
   context: string,
