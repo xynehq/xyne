@@ -1453,7 +1453,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           const runCfg: JAFRunConfig<JAFAdapterCtx> = {
             agentRegistry,
             modelProvider,
-            maxTurns: 10,
+            maxTurns: 2, // TEMPORARY: Force MaxTurnsExceeded for testing
             modelOverride: (modelId || defaultBestModel) as unknown as string,
           }
 
@@ -1736,6 +1736,160 @@ export const MessageWithToolsApi = async (c: Context) => {
                         errMsg = `Agent not found: ${err.agentName}`
                         break
                       case "MaxTurnsExceeded":
+                        // Execute fallback tool directly using messages from runState
+                        try {
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                              step: {
+                                type: AgentReasoningStepType.LogMessage,
+                                message: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                                status: "in_progress",
+                                stepSummary: "Activating fallback search",
+                              },
+                            }),
+                          })
+
+                          // Extract all context from runState.messages array
+                          const allMessages = runState.messages || []
+                          const agentScratchpad = allMessages
+                            .map((msg, index) => `${msg.role}: ${msg.content}`)
+                            .join('\n')
+                          console.log("Agent scratchpad:", agentScratchpad)
+                          console.log('all messages:', allMessages)
+
+                          // Build tool log from any tool executions in the conversation
+                          const toolLog = allMessages
+                            .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
+                            .map((msg, index) => `Tool Execution ${index + 1}: ${msg.content}`)
+                            .join('\n')
+                          console.log("Tool log:", toolLog)
+                          // Prepare fallback tool parameters with context from runState.messages
+                          const fallbackParams = {
+                            originalQuery: message,
+                            agentScratchpad: agentScratchpad,
+                            toolLog: toolLog,
+                            gatheredFragments: gatheredFragments,
+                          }
+
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Executing fallback tool with context from ${allMessages.length} messages...`,
+                              step: {
+                                type: AgentReasoningStepType.ToolExecuting,
+                                toolName: "fall_back",
+                                status: "in_progress",
+                                stepSummary: "Executing fallback tool",
+                              },
+                            }),
+                          })
+
+                          // Execute fallback tool directly
+                          const fallbackResponse = await agentTools["fall_back"].execute(
+                            fallbackParams,
+                            streamSpan.startSpan("fallback_search_execution"),
+                            email,
+                            ctx,
+                            agentPromptForLLM,
+                            message,
+                          )
+
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Fallback tool execution completed`,
+                              step: {
+                                type: AgentReasoningStepType.ToolResult,
+                                toolName: "fall_back",
+                                status: "completed",
+                                resultSummary: fallbackResponse.result || "Fallback response generated",
+                                itemsFound: fallbackResponse.contexts?.length || 0,
+                                stepSummary: `Generated fallback response`,
+                              },
+                            }),
+                          })
+
+                          // Stream the fallback response if available
+                          if (fallbackResponse.fallbackReasoning || fallbackResponse.result) {
+                            const fallbackAnswer = fallbackResponse.fallbackReasoning || fallbackResponse.result || ""
+                            
+                            await stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: fallbackAnswer,
+                            })
+
+                            // Handle any contexts returned by fallback tool
+                            if (fallbackResponse.contexts && Array.isArray(fallbackResponse.contexts)) {
+                              fallbackResponse.contexts.forEach((context: any, index: number) => {
+                                citations.push(context)
+                                citationMap[citations.length] = citations.length - 1
+                              })
+                              
+                              if (citations.length > 0) {
+                                await stream.writeSSE({
+                                  event: ChatSSEvents.CitationsUpdate,
+                                  data: JSON.stringify({
+                                    contextChunks: citations,
+                                    citationMap,
+                                  }),
+                                })
+                              }
+                            }
+
+                            if (fallbackAnswer.trim()) {
+                              // Insert successful fallback message
+                              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                              const totalTokens = tokenArr.reduce(
+                                (sum, t) => sum + t.inputTokens + t.outputTokens,
+                                0,
+                              )
+                              const msg = await insertMessage(db, {
+                                chatId: chat.id,
+                                userId: user.id,
+                                workspaceExternalId: workspace.externalId,
+                                chatExternalId: chat.externalId,
+                                messageRole: MessageRole.Assistant,
+                                email: user.email,
+                                sources: citations,
+                                imageCitations: imageCitations,
+                                message: processMessage(fallbackAnswer, citationMap),
+                                thinking: "",
+                                modelId: modelId || defaultBestModel,
+                                cost: totalCost.toString(),
+                                tokensUsed: totalTokens,
+                              })
+                              assistantMessageId = msg.externalId
+                              await stream.writeSSE({
+                                event: ChatSSEvents.ResponseMetadata,
+                                data: JSON.stringify({
+                                  chatId: chat.externalId,
+                                  messageId: assistantMessageId,
+                                }),
+                              })
+                              await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+                              return // Successfully handled with fallback response
+                            }
+                          }
+                        } catch (fallbackError) {
+                          Logger.error(fallbackError, "Error during MaxTurnsExceeded fallback tool execution")
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
+                              step: {
+                                type: AgentReasoningStepType.LogMessage,
+                                message: `Fallback search failed: ${getErrorMessage(fallbackError)}`,
+                                status: "error",
+                                stepSummary: "Fallback search failed",
+                              },
+                            }),
+                          })
+                          // Fall through to default error handling if fallback fails
+                        }
+                        
+                        // Default error handling if fallback fails or produces no response
                         errMsg = `Max turns exceeded: ${err.turns}`
                         break
                       default:
