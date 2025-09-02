@@ -33,6 +33,7 @@ export {
   SystemEntity,
   dataSourceFileSchema,
   DataSourceEntity,
+  WebSearchEntity,
 } from "search/types"
 export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
 

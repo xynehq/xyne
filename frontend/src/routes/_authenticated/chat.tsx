@@ -715,6 +715,7 @@ export const ChatPage = ({
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
+        chatParams.enableWebSearch,
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -744,9 +745,10 @@ export const ChatPage = ({
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
-    selectedSources: string[] = [],
+    selectedSources?: string[],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
+    enableWebSearch?: boolean,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -775,12 +777,13 @@ export const ChatPage = ({
     try {
       await startStream(
         messageToSend,
-        selectedSources,
+        selectedSources || [],
         isReasoningActive,
         isAgenticMode,
         agentIdToUse,
         toolsList,
         metadata,
+        enableWebSearch,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache
@@ -2848,6 +2851,11 @@ const chatParams = z.object({
   shareToken: z.string().optional(), // Added shareToken for shared chats
   // @ts-ignore
   metadata: z.array(attachmentMetadataSchema).optional(),
+  enableWebSearch: z
+    .string()
+    .transform((val) => val === "false")
+    .optional()
+    .default("false"),
 })
 
 type XyneChat = z.infer<typeof chatParams>

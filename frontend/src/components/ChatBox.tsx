@@ -138,6 +138,7 @@ interface ChatBoxProps {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
+    enableWebSearch?: boolean,
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -445,9 +446,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+    const [enableWebSearch, setEnableWebSearch] = useState(() => {
+      const saved = localStorage.getItem("enableWebSearch")
+      return saved !== null ? JSON.parse(saved) : false
+    })
     const showAdvancedOptions =
       overrideIsRagOn ??
       (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
+
+    // Persist enableWebSearch state to localStorage when it changes
+    useEffect(() => {
+      localStorage.setItem("enableWebSearch", JSON.stringify(enableWebSearch))
+    }, [enableWebSearch])
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -1715,12 +1725,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       })
 
       htmlMessage = tempDiv.innerHTML
+
       handleSend(
         htmlMessage,
         attachmentsMetadata,
         activeSourceIds.length > 0 ? activeSourceIds : undefined,
         persistedAgentId,
         toolsListToSend,
+        enableWebSearch,
       )
 
       // Clear the input and attached files after sending
@@ -1748,6 +1760,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       setQuery,
       setSelectedFiles,
       cleanupPreviewUrls,
+      enableWebSearch,
     ])
 
     const handleSourceSelectionChange = (
@@ -2525,10 +2538,28 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             />
             {showAdvancedOptions && (
               <>
-                <Globe
-                  size={16}
-                  className="text-[#464D53] dark:text-gray-400 cursor-pointer"
-                />
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Globe
+                        size={16}
+                        className={`cursor-pointer transition-colors ${
+                          enableWebSearch
+                            ? "text-blue-600 dark:text-blue-400"
+                            : "text-[#464D53] dark:text-gray-400"
+                        }`}
+                        onClick={() => setEnableWebSearch(!enableWebSearch)}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {enableWebSearch
+                          ? "Disable web search"
+                          : "Enable web search"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <AtSign
                   size={16}
                   className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}

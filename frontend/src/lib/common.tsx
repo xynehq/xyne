@@ -7,6 +7,7 @@ import {
   PlugZap,
   Github,
   BookOpen,
+  Globe,
 } from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, BookOpen
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
@@ -31,6 +32,7 @@ import {
   ConnectorType,
   SystemEntity,
   DataSourceEntity,
+  WebSearchEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -139,6 +141,8 @@ export const getIcon = (
     return <Github size={size?.w || 12} className={classNameVal} />
   } else if (entity === SystemEntity.SystemInfo) {
     return <PlugZap size={size?.w || 12} className={classNameVal} /> // Fallback for other MCPs
+  } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
+    return <Globe size={size?.w || 12} className={classNameVal} />
   } else if (
     app === Apps.DataSource &&
     entity === DataSourceEntity.DataSourceFile

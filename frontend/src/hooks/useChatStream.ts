@@ -235,6 +235,7 @@ export const startStream = async (
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
   metadata?: AttachmentMetadata[],
+  enableWebSearch: boolean = false,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -278,6 +279,8 @@ export const startStream = async (
   if (isReasoningActive) {
     url.searchParams.append("isReasoningEnabled", "true")
   }
+
+  url.searchParams.append("enableWebSearch", enableWebSearch.toString())
 
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
@@ -621,6 +624,7 @@ export const useChatStream = (
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
+      enableWebSearch: boolean = false,
     ) => {
       const streamKey = currentStreamKey
 
@@ -636,6 +640,7 @@ export const useChatStream = (
         agentIdFromChatParams,
         toolsList,
         metadata,
+        enableWebSearch,
       )
 
       setStreamInfo(getStreamState(streamKey))

@@ -29,6 +29,7 @@
     "@anthropic-ai/vertex-sdk": "^0.13.1",
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
+    "@google-cloud/vertexai": "^1.10.0",
     "@google/genai": "^1.9.0",
     "@hono/event-emitter": "^2.0.0",
     "@hono/oauth-providers": "^0.6.2",

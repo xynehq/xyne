@@ -59,6 +59,7 @@ export enum Apps {
   Xyne = "xyne",
   DataSource = "data-source",
   KnowledgeBase = "KnowledgeBase",
+  WebSearch = "web-search",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -88,6 +89,9 @@ export const isValidEntity = (entity: string): boolean => {
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity) ||
         Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(WebSearchEntity)
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
     : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
@@ -202,8 +206,14 @@ export enum SystemEntity {
 export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
+
+export enum WebSearchEntity {
+  WebSearch = "websearch",
+}
+
 export const SystemEntitySchema = z.nativeEnum(SystemEntity)
 export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
+export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -214,6 +224,7 @@ export const entitySchema = z.union([
   MailAttachmentEntitySchema,
   ChatEntitySchema,
   DataSourceEntitySchema,
+  WebSearchEntitySchema,
 ])
 
 export type Entity =
@@ -226,6 +237,7 @@ export type Entity =
   | MailAttachmentEntity
   | SlackEntity
   | DataSourceEntity
+  | WebSearchEntity
 
 export type WorkspaceEntity = DriveEntity
 

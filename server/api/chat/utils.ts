@@ -997,3 +997,49 @@ export function formatChainBreaksForPrompt(
   }
   return formatted
 }
+
+export function findOptimalCitationInsertionPoint(
+  text: string,
+  targetIndex: number,
+): number {
+  if (targetIndex >= text.length) {
+    return text.length
+  }
+
+  if (targetIndex <= 0) {
+    return 0
+  }
+
+  const charAtTarget = text[targetIndex]
+  const charBeforeTarget = text[targetIndex - 1]
+
+  // Word boundaries: space, punctuation, or start/end of text
+  const isWordBoundary = (char: string) => /[\s\.,;:!?\-\(\)\[\]{}"]/.test(char)
+
+  if (isWordBoundary(charBeforeTarget) || isWordBoundary(charAtTarget)) {
+    return targetIndex
+  }
+
+  let leftBoundary = targetIndex
+  let rightBoundary = targetIndex
+
+  // Search backwards for a word boundary
+  while (leftBoundary > 0 && !isWordBoundary(text[leftBoundary - 1])) {
+    leftBoundary--
+  }
+
+  // Search forwards for a word boundary
+  while (rightBoundary < text.length && !isWordBoundary(text[rightBoundary])) {
+    rightBoundary++
+  }
+
+  const leftDistance = targetIndex - leftBoundary
+  const rightDistance = rightBoundary - targetIndex
+
+  // Prefer the closer boundary, but lean towards right boundary (end of word) for better readability
+  if (leftDistance <= rightDistance || rightBoundary >= text.length) {
+    return leftBoundary
+  } else {
+    return rightBoundary
+  }
+}

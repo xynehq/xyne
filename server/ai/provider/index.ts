@@ -95,7 +95,7 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
-import { VertexAiProvider } from "@/ai/provider/vertex_ai"
+import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -280,10 +280,21 @@ const initializeProviders = (): void => {
   }
 
   if (VertexProjectId && VertexRegion) {
+    const vertexProviderType = process.env[
+      "VERTEX_PROVIDER"
+    ] as keyof typeof VertexProvider
+    const provider =
+      vertexProviderType && VertexProvider[vertexProviderType]
+        ? VertexProvider[vertexProviderType]
+        : VertexProvider.ANTHROPIC
+
     vertexProvider = new VertexAiProvider({
       projectId: VertexProjectId,
       region: VertexRegion,
+      provider: provider,
     })
+
+    Logger.info(`Initialized VertexAI provider with ${provider} backend`)
   }
 
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
@@ -1784,5 +1795,51 @@ export const generateFollowUpQuestions = async (
   } catch (error) {
     Logger.error(error, "Error generating follow-up questions")
     return { followUpQuestions: [] }
+  }
+}
+
+export const webSearchQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    const webSearchSystemPrompt =
+      "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? webSearchSystemPrompt + "\n\n" + parseAgentPrompt(params.agentPrompt)
+        : webSearchSystemPrompt
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    if (!config.VertexProjectId || !config.VertexRegion) {
+      Logger.warn(
+        "VertexProjectId/VertexRegion not configured, moving with default provider.",
+      )
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+    const vertexGoogleProvider = new VertexAiProvider({
+      projectId: config.VertexProjectId!,
+      region: config.VertexRegion!,
+      provider: VertexProvider.GOOGLE,
+    })
+
+    return vertexGoogleProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
   }
 }

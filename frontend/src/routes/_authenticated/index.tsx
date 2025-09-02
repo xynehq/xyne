@@ -225,6 +225,7 @@ const Index = () => {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
+    enableWebSearch?: boolean,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -235,6 +236,7 @@ const Index = () => {
         toolsList?: ToolsListItem[]
         agentic?: boolean
         metadata?: AttachmentMetadata[]
+        enableWebSearch?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -260,6 +262,10 @@ const Index = () => {
       // Use toolsList as array instead of JSON string
       if (toolsList && toolsList.length > 0) {
         searchParams.toolsList = toolsList
+      }
+
+      if (enableWebSearch) {
+        searchParams.enableWebSearch = enableWebSearch
       }
 
       navigate({
