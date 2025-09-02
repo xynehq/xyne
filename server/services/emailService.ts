@@ -12,7 +12,7 @@ interface EmailOptions {
 
 class SimpleEmailService {
   private sesClient: SESClient | null = null
-  private fromEmail: string = "noreply@xyne.com"
+  private fromEmail: string = process.env.SES_FROM_EMAIL || "noreply@xyne.com"
 
   constructor() {
     Logger.info("📧 Initializing Email Service...")

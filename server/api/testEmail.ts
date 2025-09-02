@@ -5,7 +5,7 @@ import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Server)
 
-export const TestEmailApi = async (c: Context) => {
+export const sendMailHelper = async (c: Context) => {
   try {
     Logger.info("Testing email sending...")
 
@@ -16,13 +16,16 @@ export const TestEmailApi = async (c: Context) => {
           sesFromEmail: process.env.SES_FROM_EMAIL ?? "unset",
         })
       }
-    const { email, name } = await c.req.json()
+    const { email, body, subject } = await c.req.json()
 
     if (!email) {
       return c.json({ error: "Email is required" }, 400)
     }
-
-    const success = await emailService.sendWelcomeEmail(email, name || "User")
+    const success = await emailService.sendEmail({
+      to: email,
+      subject: subject || "Test Email from Xyne",
+      body: body || "This is a test email.",
+    })
 
     if (success) {
       return c.json({ message: "Test email sent successfully" })

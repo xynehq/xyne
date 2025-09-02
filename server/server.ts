@@ -218,7 +218,7 @@ import {
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
-import { TestEmailApi } from "@/api/testEmail"
+import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
@@ -872,7 +872,7 @@ export const AppRoutes = app
     GenerateApiKey,
   )
   //send Email Route
-  .post("/test-email", TestEmailApi)
+  .post("/email/send", sendMailHelper)
 
   // Collection Routes
   .post("/cl", CreateCollectionApi)
