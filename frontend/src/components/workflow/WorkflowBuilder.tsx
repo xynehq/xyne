@@ -169,13 +169,19 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected }) => {
 };
 
 // Header component
-const Header = () => {
+const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
   return (
     <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 bg-white min-h-[80px] gap-3">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 w-full">
         <div className="text-slate-500 text-sm font-normal leading-5">
-          Workflow <span className='text-[#3B4145] text-sm font-medium leading-5'>/ Untitled Workflow</span>
+          <span 
+            className="cursor-pointer hover:text-slate-700"
+            onClick={onBackToWorkflows}
+          >
+            Workflow
+          </span>
+          <span className='text-[#3B4145] text-sm font-medium leading-5'> / Untitled Workflow</span>
         </div>
       </div>
       
@@ -351,11 +357,13 @@ interface WorkflowBuilderProps {
   activeStepId?: string;
   onStepClick?: (step: Step) => void;
   user?: UserDetail;
+  onBackToWorkflows?: () => void;
 }
 
 // Internal component that uses ReactFlow hooks
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({ 
-  onStepClick, 
+  onStepClick,
+  onBackToWorkflows,
 }) => {
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
   const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
@@ -782,7 +790,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   return (
     <div className="w-full h-full flex flex-col bg-white relative">
       {/* Header */}
-      <Header />
+      <Header onBackToWorkflows={onBackToWorkflows} />
       
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
