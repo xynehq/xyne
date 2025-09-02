@@ -19,6 +19,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   extractEmailsFromContext,
   generateFollowUpQuestions,
+  webSearchQuestion,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
 import { getDateForAI } from "@/utils/index"
@@ -36,6 +37,7 @@ import {
   type QueryRouterResponse,
   type TemporalClassifier,
   type UserQuery,
+  type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
 import {
@@ -138,6 +140,7 @@ import {
   SlackEntity,
   SystemEntity,
   userSchema,
+  WebSearchEntity,
   type Entity,
   type VespaChatMessage,
   type VespaEvent,
@@ -199,6 +202,7 @@ import {
   getChannelIdsFromAgentPrompt,
   parseAppSelections,
   isAppSelectionMap,
+  findOptimalCitationInsertionPoint,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -222,6 +226,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
+import type { GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -2902,10 +2907,10 @@ async function* processResultsForMetadata(
   }
 
   return yield* processIterator(
-      iterator,
-      items,
-      0,
-      config.isReasoning && userRequestsReasoning,
+    iterator,
+    items,
+    0,
+    config.isReasoning && userRequestsReasoning,
   )
 }
 
@@ -3408,7 +3413,6 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
     )
     return
-    
   } else if (
     isFilteredItemSearch &&
     isValidAppOrEntity &&
@@ -3902,6 +3906,87 @@ function buildTopicConversationThread(
   return conversationThread
 }
 
+function processWebSearchCitations(
+  answer: string,
+  allSources: WebSearchSource[],
+  finalGroundingSupports: GroundingSupport[],
+  citations: Citation[],
+  citationMap: Record<number, number>,
+  sourceIndex: number,
+): {
+  updatedAnswer: string
+  newCitations: Citation[]
+  newCitationMap: Record<number, number>
+  updatedSourceIndex: number
+} | null {
+  if (finalGroundingSupports.length > 0 && allSources.length > 0) {
+    let answerWithCitations = answer
+    let newCitations: Citation[] = []
+    let newCitationMap: Record<number, number> = {}
+    let urlToIndexMap: Map<string, number> = new Map()
+
+    for (const support of finalGroundingSupports) {
+      const segment = support.segment
+      const groundingChunkIndices = support.groundingChunkIndices || []
+
+      let citationText = ""
+      for (const chunkIndex of groundingChunkIndices) {
+        if (allSources[chunkIndex]) {
+          const source = allSources[chunkIndex]
+
+          let citationIndex: number
+          if (urlToIndexMap.has(source.uri)) {
+            // Reuse existing citation index
+            citationIndex = urlToIndexMap.get(source.uri)!
+          } else {
+            citationIndex = sourceIndex
+            const webSearchCitation: Citation = {
+              docId: `websearch_${sourceIndex}`,
+              title: source.title,
+              url: source.uri,
+              app: Apps.WebSearch,
+              entity: WebSearchEntity.WebSearch,
+            }
+
+            newCitations.push(webSearchCitation)
+            newCitationMap[sourceIndex] =
+              citations.length + newCitations.length - 1
+            urlToIndexMap.set(source.uri, sourceIndex)
+            sourceIndex++
+          }
+
+          citationText += ` [${citationIndex}]`
+        }
+      }
+
+      if (
+        citationText &&
+        segment?.endIndex !== undefined &&
+        segment.endIndex <= answerWithCitations.length
+      ) {
+        // Find optimal insertion point that respects word boundaries
+        const optimalIndex = findOptimalCitationInsertionPoint(
+          answerWithCitations,
+          segment.endIndex,
+        )
+        answerWithCitations =
+          answerWithCitations.slice(0, optimalIndex) +
+          citationText +
+          answerWithCitations.slice(optimalIndex)
+      }
+    }
+
+    return {
+      updatedAnswer: answerWithCitations,
+      newCitations,
+      newCitationMap,
+      updatedSourceIndex: sourceIndex,
+    }
+  }
+
+  return null
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -3931,9 +4016,10 @@ export const MessageApi = async (c: Context) => {
       modelId,
       isReasoningEnabled,
       agentId,
+      enableWebSearch,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
-    if (isAgentic) {
+    if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -3953,7 +4039,7 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
-      if (!isAgentic && agentDetails) {
+      if (!isAgentic && !enableWebSearch && agentDetails) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
@@ -4459,61 +4545,95 @@ export const MessageApi = async (c: Context) => {
             const llmFormattedMessages: Message[] = formatMessagesForLLM(
               topicConversationThread,
             )
-
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
                 filteredMessages[filteredMessages.length - 2]
-              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+              if (
+                previousUserMessage?.queryRouterClassification &&
+                previousUserMessage.messageRole === "user"
+              ) {
                 try {
                   const parsedClassification =
-                    typeof previousUserMessage.queryRouterClassification === "string"
-                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                    typeof previousUserMessage.queryRouterClassification ===
+                    "string"
+                      ? JSON.parse(
+                          previousUserMessage.queryRouterClassification,
+                        )
                       : previousUserMessage.queryRouterClassification
-                  previousClassification = parsedClassification as QueryRouterLLMResponse
-                  Logger.info(`Found previous classification: ${JSON.stringify(previousClassification)}`)
+                  previousClassification =
+                    parsedClassification as QueryRouterLLMResponse
+                  Logger.info(
+                    `Found previous classification: ${JSON.stringify(previousClassification)}`,
+                  )
                 } catch (error) {
-                  Logger.error(`Error parsing previous classification: ${error}`)
+                  Logger.error(
+                    `Error parsing previous classification: ${error}`,
+                  )
                 }
               }
             }
 
             // Get chain break classifications for context
-            const chainBreakClassifications = getRecentChainBreakClassifications(messages)
-            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
-            
+            const chainBreakClassifications =
+              getRecentChainBreakClassifications(messages)
+            const formattedChainBreaks = formatChainBreaksForPrompt(
+              chainBreakClassifications,
+            )
+
             loggerWithChild({ email: email }).info(
-              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? 'YES' : 'NO'}`
-            );
-            
+              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? "YES" : "NO"}`,
+            )
+
             loggerWithChild({ email: email }).info(
               `Found ${chainBreakClassifications.length} chain break classifications for context`,
             )
 
-            const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(
-                message,
-                ctx,
-                {
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                  stream: true,
-                  json: true,
-                  agentPrompt: agentPromptValue,
-                  reasoning:
-                    userRequestsReasoning &&
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                      .reasoning,
-                  messages: llmFormattedMessages,
-                  // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
-                  // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
-                  // For this non-agent RAG path, we don't pass an agent prompt.
-                },
-                undefined,
-                previousClassification,
-                formattedChainBreaks,
+            const webSearchEnabled = enableWebSearch ?? false
+            let searchOrAnswerIterator
+            if (webSearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Using web search for the question",
               )
+
+              searchOrAnswerIterator = webSearchQuestion(message, ctx, {
+                modelId: Models.Gemini_2_5_Flash,
+                stream: true,
+                json: false,
+                agentPrompt: agentPromptValue,
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: llmFormattedMessages,
+                webSearch: true,
+              })
+            } else {
+              searchOrAnswerIterator =
+                generateSearchQueryOrAnswerFromConversation(
+                  message,
+                  ctx,
+                  {
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .modelId,
+                    stream: true,
+                    json: true,
+                    agentPrompt: agentPromptValue,
+                    reasoning:
+                      userRequestsReasoning &&
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .reasoning,
+                    messages: llmFormattedMessages,
+                    // agentPrompt: agentPrompt, // agentPrompt here is the original from request, might be empty string
+                    // AgentMessageApi/CombinedAgentSlackApi handle fetching full agent details
+                    // For this non-agent RAG path, we don't pass an agent prompt.
+                  },
+                  undefined,
+                  previousClassification,
+                  formattedChainBreaks,
+                )
+            }
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -4521,7 +4641,7 @@ export const MessageApi = async (c: Context) => {
             // leads to [NaN] in the answer
             let currentAnswer = ""
             let answer = ""
-            let citations = []
+            let citations: Citation[] = []
             let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
             let queryFilters = {
@@ -4551,92 +4671,186 @@ export const MessageApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
-            for await (const chunk of searchOrAnswerIterator) {
-              if (stream.closed) {
-                loggerWithChild({ email: email }).info(
-                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                )
-                wasStreamClosedPrematurely = true
-                break
+
+            if (webSearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Processing web search response",
+              )
+
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              let sourceIndex = 0
+              let allSources: WebSearchSource[] = []
+              let finalGroundingSupports: GroundingSupport[] = []
+
+              for await (const chunk of searchOrAnswerIterator) {
+                if (stream.closed) {
+                  loggerWithChild({ email: email }).info(
+                    "[MessageApi] Stream closed during web search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                // TODO: Handle websearch reasoning
+                if (chunk.text) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
+
+                if (chunk.sources && chunk.sources.length > 0) {
+                  chunk.sources.forEach((source) => {
+                    if (
+                      !allSources.some(
+                        (existing) => existing.uri === source.uri,
+                      )
+                    ) {
+                      allSources.push(source)
+                    }
+                  })
+                }
+
+                if (
+                  chunk.groundingSupports &&
+                  chunk.groundingSupports.length > 0
+                ) {
+                  finalGroundingSupports = chunk.groundingSupports
+                }
+
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
               }
-              if (chunk.text) {
-                if (reasoning) {
-                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                    thinking += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: chunk.text,
-                    })
-                  } else {
-                    // first time
-                    if (!chunk.text.includes(StartThinkingToken)) {
-                      let token = chunk.text
-                      if (chunk.text.includes(EndThinkingToken)) {
-                        token = chunk.text.split(EndThinkingToken)[0]
-                        thinking += token
-                      } else {
-                        thinking += token
-                      }
+
+              // Web search citations from Gemini are provided only in the final streamed chunk,
+              // so processing them after streaming completes
+              const citationResult = processWebSearchCitations(
+                answer,
+                allSources,
+                finalGroundingSupports,
+                citations,
+                citationMap,
+                sourceIndex,
+              )
+
+              if (citationResult) {
+                answer = citationResult.updatedAnswer
+                sourceIndex = citationResult.updatedSourceIndex
+
+                if (citationResult.newCitations.length > 0) {
+                  citations.push(...citationResult.newCitations)
+                  Object.assign(citationMap, citationResult.newCitationMap)
+
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap: citationMap,
+                    }),
+                  })
+                }
+              }
+
+              parsed.answer = answer
+            } else {
+              for await (const chunk of searchOrAnswerIterator) {
+                if (stream.closed) {
+                  loggerWithChild({ email: email }).info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  if (reasoning) {
+                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                      thinking += chunk.text
                       stream.writeSSE({
                         event: ChatSSEvents.Reasoning,
-                        data: token,
+                        data: chunk.text,
                       })
-                    }
-                  }
-                }
-                if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                  reasoning = false
-                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                }
-                if (!reasoning) {
-                  buffer += chunk.text
-                  try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
-                    if (parsed.answer && currentAnswer !== parsed.answer) {
-                      if (currentAnswer === "") {
-                        loggerWithChild({ email: email }).info(
-                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                        )
+                    } else {
+                      // first time
+                      if (!chunk.text.includes(StartThinkingToken)) {
+                        let token = chunk.text
+                        if (chunk.text.includes(EndThinkingToken)) {
+                          token = chunk.text.split(EndThinkingToken)[0]
+                          thinking += token
+                        } else {
+                          thinking += token
+                        }
                         stream.writeSSE({
-                          event: ChatSSEvents.Start,
-                          data: "",
-                        })
-                        // First valid answer - send the whole thing
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: parsed.answer,
-                        })
-                      } else {
-                        // Subsequent chunks - send only the new part
-                        const newText = parsed.answer.slice(
-                          currentAnswer.length,
-                        )
-                        stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: newText,
+                          event: ChatSSEvents.Reasoning,
+                          data: token,
                         })
                       }
-                      currentAnswer = parsed.answer
                     }
-                  } catch (err) {
-                    const errMessage = (err as Error).message
-                    loggerWithChild({ email: email }).error(
-                      err,
-                      `Error while parsing LLM output ${errMessage}`,
-                    )
-                    continue
+                  }
+                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                    reasoning = false
+                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                  }
+                  if (!reasoning) {
+                    buffer += chunk.text
+                    try {
+                      parsed = jsonParseLLMOutput(buffer) || {}
+                      if (parsed.answer && currentAnswer !== parsed.answer) {
+                        if (currentAnswer === "") {
+                          loggerWithChild({ email: email }).info(
+                            "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                          )
+                          stream.writeSSE({
+                            event: ChatSSEvents.Start,
+                            data: "",
+                          })
+                          // First valid answer - send the whole thing
+                          stream.writeSSE({
+                            event: ChatSSEvents.ResponseUpdate,
+                            data: parsed.answer,
+                          })
+                        } else {
+                          // Subsequent chunks - send only the new part
+                          const newText = parsed.answer.slice(
+                            currentAnswer.length,
+                          )
+                          stream.writeSSE({
+                            event: ChatSSEvents.ResponseUpdate,
+                            data: newText,
+                          })
+                        }
+                        currentAnswer = parsed.answer
+                      }
+                    } catch (err) {
+                      const errMessage = (err as Error).message
+                      loggerWithChild({ email: email }).error(
+                        err,
+                        `Error while parsing LLM output ${errMessage}`,
+                      )
+                      continue
+                    }
                   }
                 }
-              }
-              if (chunk.cost) {
-                costArr.push(chunk.cost)
-              }
-              // Track token usage from metadata
-              if (chunk.metadata?.usage) {
-                tokenArr.push({
-                  inputTokens: chunk.metadata.usage.inputTokens || 0,
-                  outputTokens: chunk.metadata.usage.outputTokens || 0,
-                })
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                // Track token usage from metadata
+                if (chunk.metadata?.usage) {
+                  tokenArr.push({
+                    inputTokens: chunk.metadata.usage.inputTokens || 0,
+                    outputTokens: chunk.metadata.usage.outputTokens || 0,
+                  })
+                }
               }
             }
 
@@ -4668,7 +4882,7 @@ export const MessageApi = async (c: Context) => {
                 startTime,
                 count,
                 offset: offset || 0,
-                intent: intent || {}
+                intent: intent || {},
               },
             } as QueryRouterLLMResponse
 
@@ -4716,10 +4930,11 @@ export const MessageApi = async (c: Context) => {
                 // - Preserved app/entity from previous query
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
-                
+
                 // Only check for fileIds if we need file context
                 const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
-                const parsedMessage = selectMessageSchema.safeParse(lastUserMessage)
+                const parsedMessage =
+                  selectMessageSchema.safeParse(lastUserMessage)
 
                 if (parsedMessage.error) {
                   loggerWithChild({ email: email }).error(
@@ -5289,7 +5504,7 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If retrying an assistant message, get attachments from the previous user message
     if (!isUserMessage && conversation && conversation.length > 0) {
-      const prevUserMessage = conversation[conversation.length - 1] 
+      const prevUserMessage = conversation[conversation.length - 1]
       if (prevUserMessage.messageRole === "user") {
         attachmentMetadata = await getAttachmentsByMessageId(
           db,
@@ -5694,27 +5909,41 @@ export const MessageRetryApi = async (c: Context) => {
             let previousClassification: QueryRouterLLMResponse | null = null
             if (conversation.length > 0) {
               const previousUserMessage = conversation[conversation.length - 1] // In retry context, previous user message is at -1
-              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+              if (
+                previousUserMessage?.queryRouterClassification &&
+                previousUserMessage.messageRole === "user"
+              ) {
                 try {
                   const parsedClassification =
-                    typeof previousUserMessage.queryRouterClassification === "string"
-                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                    typeof previousUserMessage.queryRouterClassification ===
+                    "string"
+                      ? JSON.parse(
+                          previousUserMessage.queryRouterClassification,
+                        )
                       : previousUserMessage.queryRouterClassification
-                  previousClassification = parsedClassification as QueryRouterLLMResponse
-                  Logger.info(`Found previous classification in retry: ${JSON.stringify(previousClassification)}`)
+                  previousClassification =
+                    parsedClassification as QueryRouterLLMResponse
+                  Logger.info(
+                    `Found previous classification in retry: ${JSON.stringify(previousClassification)}`,
+                  )
                 } catch (error) {
-                  Logger.error(`Error parsing previous classification in retry: ${error}`)
+                  Logger.error(
+                    `Error parsing previous classification in retry: ${error}`,
+                  )
                 }
               }
             }
 
             // Add chain break analysis for retry context
-            const messagesForChainBreak = isUserMessage 
-            ? [...conversation, originalMessage]  // Include the user message being retried
-            : conversation  // For assistant retry, conversation already has the right scope
-          
-            const chainBreakClassifications = getRecentChainBreakClassifications(messagesForChainBreak)
-            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+            const messagesForChainBreak = isUserMessage
+              ? [...conversation, originalMessage] // Include the user message being retried
+              : conversation // For assistant retry, conversation already has the right scope
+
+            const chainBreakClassifications =
+              getRecentChainBreakClassifications(messagesForChainBreak)
+            const formattedChainBreaks = formatChainBreaksForPrompt(
+              chainBreakClassifications,
+            )
 
             const searchSpan = streamSpan.startSpan("conversation_search")
             const searchOrAnswerIterator =
@@ -5891,8 +6120,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0, 
-                  intent: parsed.filters.intent || {}
+                  offset: parsed.filters.offset || 0,
+                  intent: parsed.filters.intent || {},
                 },
               } as QueryRouterLLMResponse
 
