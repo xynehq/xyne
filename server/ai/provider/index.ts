@@ -1803,16 +1803,14 @@ export const webSearchQuestion = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-
+    const webSearchSystemPrompt =
+      "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
     params.webSearch = true
-    if (!isAgentPromptEmpty(params.agentPrompt)) {
-      params.systemPrompt = agentSearchQueryPrompt(
-        userCtx,
-        parseAgentPrompt(params.agentPrompt),
-      )
-    } else if (!params.systemPrompt) {
-      params.systemPrompt =
-        "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
+    
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? webSearchSystemPrompt + "\n\n" + parseAgentPrompt(params.agentPrompt)
+        : webSearchSystemPrompt
     }
 
     const baseMessage: Message = {

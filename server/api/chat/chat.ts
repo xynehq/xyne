@@ -4019,7 +4019,7 @@ export const MessageApi = async (c: Context) => {
       enableWebSearch,
     }: MessageReqType = body
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
-    if (isAgentic) {
+    if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4039,7 +4039,7 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
-      if (!isAgentic && agentDetails) {
+      if (!isAgentic && !enableWebSearch && agentDetails) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
