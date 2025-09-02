@@ -708,3 +708,38 @@ export const generateFolderVespaDocId = (): string => {
 export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
 }
+
+
+export const getRecordBypath = async(
+  path:string,
+  trx:TxnOrClient
+) => {
+  let directoryPath:string
+  let currItem:string
+    
+      const lastSlashIndex = path.lastIndexOf('/');
+      if (lastSlashIndex === -1) {
+          // No slash found, entire path is filename
+          directoryPath = "/";
+          currItem = path;
+      } else {
+          directoryPath = path.substring(0, lastSlashIndex + 1); // Include the trailing slash
+          currItem = path.substring(lastSlashIndex + 1);
+      } 
+
+    
+    const whereConditions = [
+      eq(collectionItems.path, directoryPath),
+      isNull(collectionItems.deletedAt)
+    ];
+    
+    if (currItem !== "") {
+      whereConditions.push(eq(collectionItems.name, currItem));
+    }
+    const result = await trx
+                    .select({docId:collectionItems.vespaDocId})
+                    .from(collectionItems)
+                    .where(and(...whereConditions))
+    
+    return result
+}
