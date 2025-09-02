@@ -886,9 +886,9 @@ function isValidAppSelection(value: any): value is AppSelection {
 }
 
 export interface ChainBreakClassification {
-  messageIndex: number;
-  classification: QueryRouterLLMResponse;
-  query: string;
+  messageIndex: number
+  classification: QueryRouterLLMResponse
+  query: string
 }
 
 function parseQueryRouterClassification(
@@ -901,7 +901,11 @@ function parseQueryRouterClassification(
       typeof queryRouterClassification === "string"
         ? JSON.parse(queryRouterClassification)
         : queryRouterClassification
-    if (Array.isArray(parsed) || typeof parsed !== "object" || parsed === null) {
+    if (
+      Array.isArray(parsed) ||
+      typeof parsed !== "object" ||
+      parsed === null
+    ) {
       return null
     }
     return parsed as QueryRouterLLMResponse
@@ -914,52 +918,73 @@ function parseQueryRouterClassification(
   }
 }
 
-export function getRecentChainBreakClassifications(messages: SelectMessage[]): ChainBreakClassification[] {
-  const chainBreaks = extractChainBreakClassifications(messages);
-  const recentChainBreaks = chainBreaks.slice(0, 2);   // limit to the last 2 chain breaks
-  getLoggerWithChild(Subsystem.Chat)().info(`[ChainBreak] Found ${recentChainBreaks.length} recent chain breaks`);
-  return recentChainBreaks;
+export function getRecentChainBreakClassifications(
+  messages: SelectMessage[],
+): ChainBreakClassification[] {
+  const chainBreaks = extractChainBreakClassifications(messages)
+  const recentChainBreaks = chainBreaks.slice(0, 2) // limit to the last 2 chain breaks
+  getLoggerWithChild(Subsystem.Chat)().info(
+    `[ChainBreak] Found ${recentChainBreaks.length} recent chain breaks`,
+  )
+  return recentChainBreaks
 }
 
-export function extractChainBreakClassifications(messages: SelectMessage[]): ChainBreakClassification[] {
-  const chainBreaks: ChainBreakClassification[] = [];
+export function extractChainBreakClassifications(
+  messages: SelectMessage[],
+): ChainBreakClassification[] {
+  const chainBreaks: ChainBreakClassification[] = []
 
   messages.forEach((message, index) => {
     // Only process user messages with classifications
-    if (message.messageRole === 'user' && message.queryRouterClassification) {
-      const currentClassification = parseQueryRouterClassification(message.queryRouterClassification, index);
-      if (!currentClassification) return;
+    if (message.messageRole === "user" && message.queryRouterClassification) {
+      const currentClassification = parseQueryRouterClassification(
+        message.queryRouterClassification,
+        index,
+      )
+      if (!currentClassification) return
 
       // Skip if this is the first user message (no previous user message available)
-      if (index < 2) return;
+      if (index < 2) return
 
       // Get the previous user message
-      const previousUserMessage = messages[index - 2];
-      if (!previousUserMessage || previousUserMessage.messageRole !== 'user' || !previousUserMessage.queryRouterClassification) return;
+      const previousUserMessage = messages[index - 2]
+      if (
+        !previousUserMessage ||
+        previousUserMessage.messageRole !== "user" ||
+        !previousUserMessage.queryRouterClassification
+      )
+        return
 
-      const prevClassification = parseQueryRouterClassification(previousUserMessage.queryRouterClassification, index - 2);
-      if (!prevClassification) return;
+      const prevClassification = parseQueryRouterClassification(
+        previousUserMessage.queryRouterClassification,
+        index - 2,
+      )
+      if (!prevClassification) return
 
       // If the current message is NOT a follow-up, store the previous user message's classification as a chain break
       if (currentClassification.isFollowUp === false) {
         chainBreaks.push({
           messageIndex: index - 2,
           classification: prevClassification,
-          query: previousUserMessage.message || ''
-        });
-        getLoggerWithChild(Subsystem.Chat)().info(`[ChainBreak] Chain break detected: "${previousUserMessage.message}" → "${message.message}"`);
+          query: previousUserMessage.message || "",
+        })
+        getLoggerWithChild(Subsystem.Chat)().info(
+          `[ChainBreak] Chain break detected: "${previousUserMessage.message}" → "${message.message}"`,
+        )
       }
     }
-  });
+  })
 
-  return chainBreaks.reverse();
+  return chainBreaks.reverse()
 }
 
-export function formatChainBreaksForPrompt(chainBreaks: ChainBreakClassification[]) {  
+export function formatChainBreaksForPrompt(
+  chainBreaks: ChainBreakClassification[],
+) {
   if (chainBreaks.length === 0) {
-    return null;
+    return null
   }
-  
+
   const formatted = {
     availableChainBreaks: chainBreaks.map((chainBreak, index) => ({
       chainIndex: index + 1,
@@ -967,7 +992,54 @@ export function formatChainBreaksForPrompt(chainBreaks: ChainBreakClassification
       originalQuery: chainBreak.query,
       classification: chainBreak.classification,
     })),
-    usage: 'These are previous conversation chains that were broken. The current query might relate to one of these earlier topics.'
-  };  
-  return formatted;
+    usage:
+      "These are previous conversation chains that were broken. The current query might relate to one of these earlier topics.",
+  }
+  return formatted
+}
+
+export function findOptimalCitationInsertionPoint(
+  text: string,
+  targetIndex: number,
+): number {
+  if (targetIndex >= text.length) {
+    return text.length
+  }
+
+  if (targetIndex <= 0) {
+    return 0
+  }
+
+  const charAtTarget = text[targetIndex]
+  const charBeforeTarget = text[targetIndex - 1]
+
+  // Word boundaries: space, punctuation, or start/end of text
+  const isWordBoundary = (char: string) => /[\s\.,;:!?\-\(\)\[\]{}"]/.test(char)
+
+  if (isWordBoundary(charBeforeTarget) || isWordBoundary(charAtTarget)) {
+    return targetIndex
+  }
+
+  let leftBoundary = targetIndex
+  let rightBoundary = targetIndex
+
+  // Search backwards for a word boundary
+  while (leftBoundary > 0 && !isWordBoundary(text[leftBoundary - 1])) {
+    leftBoundary--
+  }
+
+  // Search forwards for a word boundary
+  while (rightBoundary < text.length && !isWordBoundary(text[rightBoundary])) {
+    rightBoundary++
+  }
+
+  const leftDistance = targetIndex - leftBoundary
+  const rightDistance = rightBoundary - targetIndex
+
+  // Prefer the closer boundary, but lean towards right boundary (end of word) for better readability
+  if (leftDistance <= rightDistance || rightBoundary >= text.length) {
+    return leftBoundary
+  } else {
+    return rightBoundary
+  }
 }

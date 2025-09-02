@@ -80,6 +80,7 @@ export interface ModelParams {
   prompt?: string
   agentPrompt?: string
   imageFileNames?: string[]
+  webSearch?: boolean
 }
 
 export interface ConverseResponse {
@@ -87,6 +88,23 @@ export interface ConverseResponse {
   metadata?: any
   cost?: number
   reasoning?: boolean
+  sources?: WebSearchSource[]
+  groundingSupports?: GroundingSupport[]
+}
+
+export interface WebSearchSource {
+  uri: string
+  title: string
+  searchQuery?: string
+}
+
+export interface GroundingSupport {
+  segment: {
+    startIndex: number
+    endIndex: number
+    text: string
+  }
+  groundingChunkIndices: number[]
 }
 
 export interface LLMProvider {
