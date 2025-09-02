@@ -202,6 +202,7 @@ import {
   getChannelIdsFromAgentPrompt,
   parseAppSelections,
   isAppSelectionMap,
+  findOptimalCitationInsertionPoint,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -3963,10 +3964,15 @@ function processWebSearchCitations(
         segment?.endIndex !== undefined &&
         segment.endIndex <= answerWithCitations.length
       ) {
+        // Find optimal insertion point that respects word boundaries
+        const optimalIndex = findOptimalCitationInsertionPoint(
+          answerWithCitations,
+          segment.endIndex,
+        )
         answerWithCitations =
-          answerWithCitations.slice(0, segment.endIndex) +
+          answerWithCitations.slice(0, optimalIndex) +
           citationText +
-          answerWithCitations.slice(segment.endIndex)
+          answerWithCitations.slice(optimalIndex)
       }
     }
 
