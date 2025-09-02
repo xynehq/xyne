@@ -2759,6 +2759,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let email = ""
   let workspaceId = ""
   let via_apiKey = false
+  let body
 
   try {
     let jwtPayload
@@ -2768,17 +2769,19 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     if (jwtPayload) {
       email = jwtPayload?.sub
       workspaceId = jwtPayload?.workspaceId
+      // @ts-ignore
+      body = c.req.valid("query")
     } else {
       email = c.get("userEmail") ?? ""
       workspaceId = c.get("workspaceId") ?? ""
       via_apiKey = true
+      // @ts-ignore
+      body = c.req.valid("json")
     }
     loggerWithChild({ email: email }).info("AgentMessageApiRagOff..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    // @ts-ignore
-    const body = c.req.valid("query")
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
@@ -3456,6 +3459,7 @@ export const AgentMessageApi = async (c: Context) => {
   let email = ""
   let workspaceId = ""
   let via_apiKey = false
+  let body
 
   try {
     let jwtPayload
@@ -3466,17 +3470,19 @@ export const AgentMessageApi = async (c: Context) => {
     if (jwtPayload) {
       email = jwtPayload?.sub
       workspaceId = jwtPayload?.workspaceId
+      // @ts-ignore
+      body = c.req.valid("query")
     } else {
       // fallback if JwtPayloadKey is not available
       email = c.get("userEmail") ?? ""
       workspaceId = c.get("workspaceId") ?? ""
       via_apiKey = true
+      // @ts-ignore
+      body = c.req.valid("json")
     }
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    // @ts-ignore
-    const body = c.req.valid("query")
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
