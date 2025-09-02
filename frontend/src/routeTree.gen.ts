@@ -33,7 +33,35 @@ import { Route as AuthenticatedAdminIntegrationsSlackRouteImport } from './route
 import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/_authenticated/admin/integrations/mcp'
 import { Route as AuthenticatedAdminIntegrationsGoogleRouteImport } from './routes/_authenticated/admin/integrations/google'
 
-const AuthRoute = AuthRouteImport.update({
+import { Route as rootRoute } from './routes/__root'
+import { Route as AuthImport } from './routes/auth'
+import { Route as AuthenticatedImport } from './routes/_authenticated'
+import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
+import { Route as OauthSuccessImport } from './routes/oauth/success'
+import { Route as AuthenticatedWorkflowImport } from './routes/_authenticated/workflow'
+import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
+import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
+import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
+import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
+import { Route as AuthenticatedAgentImport } from './routes/_authenticated/agent'
+import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
+import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
+import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
+import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
+import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
+import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
+import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
+import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
+import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
+import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
+import { Route as AuthenticatedAdminIntegrationsMcpImport } from './routes/_authenticated/admin/integrations/mcp'
+import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
+
+// Create/Update Routes
+
+const AuthRoute = AuthImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
@@ -52,7 +80,14 @@ const OauthSuccessRoute = OauthSuccessRouteImport.update({
   path: '/oauth/success',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedTuningRoute = AuthenticatedTuningRouteImport.update({
+
+const AuthenticatedWorkflowRoute = AuthenticatedWorkflowImport.update({
+  id: '/workflow',
+  path: '/workflow',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
+const AuthenticatedTuningRoute = AuthenticatedTuningImport.update({
   id: '/tuning',
   path: '/tuning',
   getParentRoute: () => AuthenticatedRoute,
@@ -160,6 +195,249 @@ const AuthenticatedAdminIntegrationsGoogleRoute =
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
+// Populate the FileRoutesByPath interface
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthenticatedImport
+      parentRoute: typeof rootRoute
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthImport
+      parentRoute: typeof rootRoute
+    }
+    '/_authenticated/agent': {
+      id: '/_authenticated/agent'
+      path: '/agent'
+      fullPath: '/agent'
+      preLoaderRoute: typeof AuthenticatedAgentImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/api-key': {
+      id: '/_authenticated/api-key'
+      path: '/api-key'
+      fullPath: '/api-key'
+      preLoaderRoute: typeof AuthenticatedApiKeyImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/chat': {
+      id: '/_authenticated/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AuthenticatedChatImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/knowledgeManagement': {
+      id: '/_authenticated/knowledgeManagement'
+      path: '/knowledgeManagement'
+      fullPath: '/knowledgeManagement'
+      preLoaderRoute: typeof AuthenticatedKnowledgeManagementImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/search': {
+      id: '/_authenticated/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof AuthenticatedSearchImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/tuning': {
+      id: '/_authenticated/tuning'
+      path: '/tuning'
+      fullPath: '/tuning'
+      preLoaderRoute: typeof AuthenticatedTuningImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/workflow': {
+      id: '/_authenticated/workflow'
+      path: '/workflow'
+      fullPath: '/workflow'
+      preLoaderRoute: typeof AuthenticatedWorkflowImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/oauth/success': {
+      id: '/oauth/success'
+      path: '/oauth/success'
+      fullPath: '/oauth/success'
+      preLoaderRoute: typeof OauthSuccessImport
+      parentRoute: typeof rootRoute
+    }
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/chat/$chatId': {
+      id: '/_authenticated/chat/$chatId'
+      path: '/$chatId'
+      fullPath: '/chat/$chatId'
+      preLoaderRoute: typeof AuthenticatedChatChatIdImport
+      parentRoute: typeof AuthenticatedChatImport
+    }
+    '/_authenticated/dataSource/$docId': {
+      id: '/_authenticated/dataSource/$docId'
+      path: '/dataSource/$docId'
+      fullPath: '/dataSource/$docId'
+      preLoaderRoute: typeof AuthenticatedDataSourceDocIdImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/fileupload': {
+      id: '/_authenticated/integrations/fileupload'
+      path: '/integrations/fileupload'
+      fullPath: '/integrations/fileupload'
+      preLoaderRoute: typeof AuthenticatedIntegrationsFileuploadImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/google': {
+      id: '/_authenticated/integrations/google'
+      path: '/integrations/google'
+      fullPath: '/integrations/google'
+      preLoaderRoute: typeof AuthenticatedIntegrationsGoogleImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/mcp': {
+      id: '/_authenticated/integrations/mcp'
+      path: '/integrations/mcp'
+      fullPath: '/integrations/mcp'
+      preLoaderRoute: typeof AuthenticatedIntegrationsMcpImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/slack': {
+      id: '/_authenticated/integrations/slack'
+      path: '/integrations/slack'
+      fullPath: '/integrations/slack'
+      preLoaderRoute: typeof AuthenticatedIntegrationsSlackImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/': {
+      id: '/_authenticated/integrations/'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AuthenticatedIntegrationsIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/google': {
+      id: '/_authenticated/admin/integrations/google'
+      path: '/admin/integrations/google'
+      fullPath: '/admin/integrations/google'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsGoogleImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/mcp': {
+      id: '/_authenticated/admin/integrations/mcp'
+      path: '/admin/integrations/mcp'
+      fullPath: '/admin/integrations/mcp'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsMcpImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/slack': {
+      id: '/_authenticated/admin/integrations/slack'
+      path: '/admin/integrations/slack'
+      fullPath: '/admin/integrations/slack'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsSlackImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/trace/$chatId/$msgId': {
+      id: '/_authenticated/trace/$chatId/$msgId'
+      path: '/trace/$chatId/$msgId'
+      fullPath: '/trace/$chatId/$msgId'
+      preLoaderRoute: typeof AuthenticatedTraceChatIdMsgIdImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/': {
+      id: '/_authenticated/admin/integrations/'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+  }
+}
+
+// Create and export the route tree
+
+interface AuthenticatedChatRouteChildren {
+  AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
+}
+
+const AuthenticatedChatRouteChildren: AuthenticatedChatRouteChildren = {
+  AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
+}
+
+const AuthenticatedChatRouteWithChildren =
+  AuthenticatedChatRoute._addFileChildren(AuthenticatedChatRouteChildren)
+
+interface AuthenticatedRouteChildren {
+  AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
+  AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
+  AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
+  AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
+  AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
+  AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
+  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
+  AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
+  AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
+  AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
+  AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
+  AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
+  AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
+  AuthenticatedAdminIntegrationsMcpRoute: typeof AuthenticatedAdminIntegrationsMcpRoute
+  AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
+  AuthenticatedTraceChatIdMsgIdRoute: typeof AuthenticatedTraceChatIdMsgIdRoute
+  AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAgentRoute: AuthenticatedAgentRoute,
+  AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
+  AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
+  AuthenticatedSearchRoute: AuthenticatedSearchRoute,
+  AuthenticatedTuningRoute: AuthenticatedTuningRoute,
+  AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
+  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
+  AuthenticatedIntegrationsFileuploadRoute:
+    AuthenticatedIntegrationsFileuploadRoute,
+  AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
+  AuthenticatedIntegrationsMcpRoute: AuthenticatedIntegrationsMcpRoute,
+  AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
+  AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
+  AuthenticatedAdminIntegrationsGoogleRoute:
+    AuthenticatedAdminIntegrationsGoogleRoute,
+  AuthenticatedAdminIntegrationsMcpRoute:
+    AuthenticatedAdminIntegrationsMcpRoute,
+  AuthenticatedAdminIntegrationsSlackRoute:
+    AuthenticatedAdminIntegrationsSlackRoute,
+  AuthenticatedTraceChatIdMsgIdRoute: AuthenticatedTraceChatIdMsgIdRoute,
+  AuthenticatedAdminIntegrationsIndexRoute:
+    AuthenticatedAdminIntegrationsIndexRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/agent': typeof AuthenticatedAgentRoute
@@ -169,6 +447,7 @@ export interface FileRoutesByFullPath {
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -193,6 +472,7 @@ export interface FileRoutesByTo {
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -219,6 +499,7 @@ export interface FileRoutesById {
   '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tuning': typeof AuthenticatedTuningRoute
+  '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -245,6 +526,7 @@ export interface FileRouteTypes {
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -269,6 +551,7 @@ export interface FileRouteTypes {
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -294,6 +577,7 @@ export interface FileRouteTypes {
     | '/_authenticated/knowledgeManagement'
     | '/_authenticated/search'
     | '/_authenticated/tuning'
+    | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
@@ -554,3 +838,136 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+/* ROUTE_MANIFEST_START
+{
+  "routes": {
+    "__root__": {
+      "filePath": "__root.tsx",
+      "children": [
+        "/_authenticated",
+        "/auth",
+        "/oauth/success"
+      ]
+    },
+    "/_authenticated": {
+      "filePath": "_authenticated.tsx",
+      "children": [
+        "/_authenticated/agent",
+        "/_authenticated/api-key",
+        "/_authenticated/chat",
+        "/_authenticated/dashboard",
+        "/_authenticated/knowledgeManagement",
+        "/_authenticated/search",
+        "/_authenticated/tuning",
+        "/_authenticated/workflow",
+        "/_authenticated/",
+        "/_authenticated/dataSource/$docId",
+        "/_authenticated/integrations/fileupload",
+        "/_authenticated/integrations/google",
+        "/_authenticated/integrations/mcp",
+        "/_authenticated/integrations/slack",
+        "/_authenticated/integrations/",
+        "/_authenticated/admin/integrations/google",
+        "/_authenticated/admin/integrations/mcp",
+        "/_authenticated/admin/integrations/slack",
+        "/_authenticated/trace/$chatId/$msgId",
+        "/_authenticated/admin/integrations/"
+      ]
+    },
+    "/auth": {
+      "filePath": "auth.tsx"
+    },
+    "/_authenticated/agent": {
+      "filePath": "_authenticated/agent.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/api-key": {
+      "filePath": "_authenticated/api-key.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/chat": {
+      "filePath": "_authenticated/chat.tsx",
+      "parent": "/_authenticated",
+      "children": [
+        "/_authenticated/chat/$chatId"
+      ]
+    },
+    "/_authenticated/dashboard": {
+      "filePath": "_authenticated/dashboard.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/knowledgeManagement": {
+      "filePath": "_authenticated/knowledgeManagement.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/search": {
+      "filePath": "_authenticated/search.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/tuning": {
+      "filePath": "_authenticated/tuning.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/workflow": {
+      "filePath": "_authenticated/workflow.tsx",
+      "parent": "/_authenticated"
+    },
+    "/oauth/success": {
+      "filePath": "oauth/success.tsx"
+    },
+    "/_authenticated/": {
+      "filePath": "_authenticated/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/chat/$chatId": {
+      "filePath": "_authenticated/chat.$chatId.tsx",
+      "parent": "/_authenticated/chat"
+    },
+    "/_authenticated/dataSource/$docId": {
+      "filePath": "_authenticated/dataSource.$docId.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/fileupload": {
+      "filePath": "_authenticated/integrations/fileupload.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/google": {
+      "filePath": "_authenticated/integrations/google.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/mcp": {
+      "filePath": "_authenticated/integrations/mcp.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/slack": {
+      "filePath": "_authenticated/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/": {
+      "filePath": "_authenticated/integrations/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/google": {
+      "filePath": "_authenticated/admin/integrations/google.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/mcp": {
+      "filePath": "_authenticated/admin/integrations/mcp.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/slack": {
+      "filePath": "_authenticated/admin/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/trace/$chatId/$msgId": {
+      "filePath": "_authenticated/trace.$chatId.$msgId.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/": {
+      "filePath": "_authenticated/admin/integrations/index.tsx",
+      "parent": "/_authenticated"
+    }
+  }
+}
+ROUTE_MANIFEST_END */
