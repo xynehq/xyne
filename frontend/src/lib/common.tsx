@@ -124,18 +124,15 @@ export const getIcon = (
     return <CalendarDays size={12} className={classNameVal} />
   } else if (app === Apps.DataSource && entity === "file") {
     return <FileText size={size?.w || 12} className={classNameVal} />
-  } else if (app === Apps.KnowledgeBase && 
-    entity === SystemEntity.SystemInfo
-  ) {
+  } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
     return (
-      <BookOpen 
-        size={size?.w || 12} 
+      <BookOpen
+        size={size?.w || 12}
         className={`${classNameVal} dark:stroke-[#F1F3F4]`}
         stroke="#384049"
       />
     )
-  }
-  else if (
+  } else if (
     (app === Apps.Github && entity === ConnectorType.MCP) ||
     entity === SystemEntity.SystemInfo
   ) {

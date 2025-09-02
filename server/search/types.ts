@@ -169,10 +169,10 @@ export enum MailAttachmentEntity {
   NotValid = "notvalid",
 }
 export enum KnowledgeBaseEntity {
-  File = "file",                    // Files within collections
-  Folder = 'folder',               // Folders within collections  
-  Collection = 'collection',       // Collections (main containers)
-  KnowledgeBase = 'knowledgebase', // Legacy alias for collection
+  File = "file", // Files within collections
+  Folder = "folder", // Folders within collections
+  Collection = "collection", // Collections (main containers)
+  KnowledgeBase = "knowledgebase", // Legacy alias for collection
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>

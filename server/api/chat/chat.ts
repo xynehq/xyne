@@ -2902,10 +2902,10 @@ async function* processResultsForMetadata(
   }
 
   return yield* processIterator(
-      iterator,
-      items,
-      0,
-      config.isReasoning && userRequestsReasoning,
+    iterator,
+    items,
+    0,
+    config.isReasoning && userRequestsReasoning,
   )
 }
 
@@ -3408,7 +3408,6 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
     )
     return
-    
   } else if (
     isFilteredItemSearch &&
     isValidAppOrEntity &&
@@ -4465,28 +4464,42 @@ export const MessageApi = async (c: Context) => {
             if (filteredMessages.length >= 1) {
               const previousUserMessage =
                 filteredMessages[filteredMessages.length - 2]
-              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+              if (
+                previousUserMessage?.queryRouterClassification &&
+                previousUserMessage.messageRole === "user"
+              ) {
                 try {
                   const parsedClassification =
-                    typeof previousUserMessage.queryRouterClassification === "string"
-                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                    typeof previousUserMessage.queryRouterClassification ===
+                    "string"
+                      ? JSON.parse(
+                          previousUserMessage.queryRouterClassification,
+                        )
                       : previousUserMessage.queryRouterClassification
-                  previousClassification = parsedClassification as QueryRouterLLMResponse
-                  Logger.info(`Found previous classification: ${JSON.stringify(previousClassification)}`)
+                  previousClassification =
+                    parsedClassification as QueryRouterLLMResponse
+                  Logger.info(
+                    `Found previous classification: ${JSON.stringify(previousClassification)}`,
+                  )
                 } catch (error) {
-                  Logger.error(`Error parsing previous classification: ${error}`)
+                  Logger.error(
+                    `Error parsing previous classification: ${error}`,
+                  )
                 }
               }
             }
 
             // Get chain break classifications for context
-            const chainBreakClassifications = getRecentChainBreakClassifications(messages)
-            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
-            
+            const chainBreakClassifications =
+              getRecentChainBreakClassifications(messages)
+            const formattedChainBreaks = formatChainBreaksForPrompt(
+              chainBreakClassifications,
+            )
+
             loggerWithChild({ email: email }).info(
-              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? 'YES' : 'NO'}`
-            );
-            
+              `Chain break analysis complete: Found ${chainBreakClassifications.length} chain break classifications, Formatted: ${formattedChainBreaks ? "YES" : "NO"}`,
+            )
+
             loggerWithChild({ email: email }).info(
               `Found ${chainBreakClassifications.length} chain break classifications for context`,
             )
@@ -4668,7 +4681,7 @@ export const MessageApi = async (c: Context) => {
                 startTime,
                 count,
                 offset: offset || 0,
-                intent: intent || {}
+                intent: intent || {},
               },
             } as QueryRouterLLMResponse
 
@@ -4716,10 +4729,11 @@ export const MessageApi = async (c: Context) => {
                 // - Preserved app/entity from previous query
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
-                
+
                 // Only check for fileIds if we need file context
                 const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
-                const parsedMessage = selectMessageSchema.safeParse(lastUserMessage)
+                const parsedMessage =
+                  selectMessageSchema.safeParse(lastUserMessage)
 
                 if (parsedMessage.error) {
                   loggerWithChild({ email: email }).error(
@@ -5289,7 +5303,7 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If retrying an assistant message, get attachments from the previous user message
     if (!isUserMessage && conversation && conversation.length > 0) {
-      const prevUserMessage = conversation[conversation.length - 1] 
+      const prevUserMessage = conversation[conversation.length - 1]
       if (prevUserMessage.messageRole === "user") {
         attachmentMetadata = await getAttachmentsByMessageId(
           db,
@@ -5694,27 +5708,41 @@ export const MessageRetryApi = async (c: Context) => {
             let previousClassification: QueryRouterLLMResponse | null = null
             if (conversation.length > 0) {
               const previousUserMessage = conversation[conversation.length - 1] // In retry context, previous user message is at -1
-              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
+              if (
+                previousUserMessage?.queryRouterClassification &&
+                previousUserMessage.messageRole === "user"
+              ) {
                 try {
                   const parsedClassification =
-                    typeof previousUserMessage.queryRouterClassification === "string"
-                      ? JSON.parse(previousUserMessage.queryRouterClassification)
+                    typeof previousUserMessage.queryRouterClassification ===
+                    "string"
+                      ? JSON.parse(
+                          previousUserMessage.queryRouterClassification,
+                        )
                       : previousUserMessage.queryRouterClassification
-                  previousClassification = parsedClassification as QueryRouterLLMResponse
-                  Logger.info(`Found previous classification in retry: ${JSON.stringify(previousClassification)}`)
+                  previousClassification =
+                    parsedClassification as QueryRouterLLMResponse
+                  Logger.info(
+                    `Found previous classification in retry: ${JSON.stringify(previousClassification)}`,
+                  )
                 } catch (error) {
-                  Logger.error(`Error parsing previous classification in retry: ${error}`)
+                  Logger.error(
+                    `Error parsing previous classification in retry: ${error}`,
+                  )
                 }
               }
             }
 
             // Add chain break analysis for retry context
-            const messagesForChainBreak = isUserMessage 
-            ? [...conversation, originalMessage]  // Include the user message being retried
-            : conversation  // For assistant retry, conversation already has the right scope
-          
-            const chainBreakClassifications = getRecentChainBreakClassifications(messagesForChainBreak)
-            const formattedChainBreaks = formatChainBreaksForPrompt(chainBreakClassifications)
+            const messagesForChainBreak = isUserMessage
+              ? [...conversation, originalMessage] // Include the user message being retried
+              : conversation // For assistant retry, conversation already has the right scope
+
+            const chainBreakClassifications =
+              getRecentChainBreakClassifications(messagesForChainBreak)
+            const formattedChainBreaks = formatChainBreaksForPrompt(
+              chainBreakClassifications,
+            )
 
             const searchSpan = streamSpan.startSpan("conversation_search")
             const searchOrAnswerIterator =
@@ -5891,8 +5919,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0, 
-                  intent: parsed.filters.intent || {}
+                  offset: parsed.filters.offset || 0,
+                  intent: parsed.filters.intent || {},
                 },
               } as QueryRouterLLMResponse
 
