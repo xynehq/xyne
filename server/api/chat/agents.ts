@@ -193,6 +193,7 @@ import {
 } from "./chat"
 import { agentTools } from "./tools"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
+import { getRecordBypath } from "@/db/knowledgeBase";
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -3504,6 +3505,7 @@ export const AgentMessageApi = async (c: Context) => {
       isReasoningEnabled,
       agentId,
       streamOff,
+      path
     }: MessageReqType = body
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -3543,10 +3545,13 @@ export const AgentMessageApi = async (c: Context) => {
     // Truncate table chats,connectors,nessages;
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
-
+    let ids
+    if(path){
+      ids = await getRecordBypath(path,db) 
+    }
     const isMsgWithContext = isMessageWithContext(message)
-    const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message, email)
+    const extractedInfo = (isMsgWithContext || path)
+      ? await extractFileIdsFromMessage(message, email,ids)
       : {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
