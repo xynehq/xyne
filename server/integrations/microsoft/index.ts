@@ -548,11 +548,9 @@ export async function countOneDriveFiles(
   }
 
   try {
-    // Use the recursive function to get all files
-    const allFiles = await getAllOneDriveFiles(client, queryParams, email)
+    const allItems = await getAllOneDriveFiles(client, queryParams, email)
 
-    // Count only actual files (not folders)
-    const fileCount = allFiles.filter((item) => item.file).length
+    const fileCount = allItems.filter((item) => item.file).length
 
     loggerWithChild({ email: email || " " }).info(
       `Counted ${fileCount} OneDrive files`,
@@ -681,44 +679,63 @@ const insertFilesForUser = async (
 
     for (const file of allFiles) {
       try {
-        // Skip folders for now
-        if (file.folder) {
+        if (file.id === "") {
           continue
         }
+        const permissions: string[] = await getFilePermissions(client, file.id)
 
-        // Process only files with content
-        if (file.file && file.size > 0) {
-          const fileToBeIngested = {
-            title: file.name ?? "",
-            url: file.webUrl ?? "",
-            app: Apps.MicrosoftDrive,
-            docId: file.id ?? "",
-            parentId: file.parentFolderId ?? null, // Now includes parent folder ID from traversal
-            owner: userEmail,
-            photoLink: "",
-            ownerEmail: userEmail,
-            entity: DriveEntity.Misc,
-            chunks: await processFileContent(client, file, userEmail), // For now, we'll index metadata only
-            permissions: [userEmail], // Basic permission - could be enhanced
-            mimeType: file.file?.mimeType ?? "application/octet-stream",
-            metadata: JSON.stringify({
-              size: file.size,
-              downloadUrl: file["@microsoft.graph.downloadUrl"],
-              folderPath: file.parentFolderPath ?? "/", // Include the full folder path
-              parentFolderId: file.parentFolderId ?? null, // Include parent folder ID in metadata
-            }),
-            createdAt: new Date(file.createdDateTime).getTime(),
-            updatedAt: new Date(file.lastModifiedDateTime).getTime(),
-          }
-
-          await insertWithRetry(fileToBeIngested, fileSchema)
-          tracker.updateUserStats(userEmail, StatType.Drive, 1)
-          processedFiles++
-
-          loggerWithChild({ email: userEmail }).info(
-            `Processed OneDrive file: ${file.name}`,
-          )
+        const fileToBeIngested = {
+          title: file.name ?? "",
+          url: file.webUrl ?? "",
+          app: Apps.MicrosoftDrive,
+          docId: file.id,
+          parentId: file.parentReference?.id ?? null,
+          owner: file.createdBy?.user?.displayName ?? userEmail,
+          photoLink: "",
+          ownerEmail: userEmail,
+          entity: DriveEntity.Misc,
+          chunks: await processFileContent(client, file, userEmail),
+          permissions,
+          mimeType: file.file?.mimeType ?? "application/octet-stream",
+          metadata: JSON.stringify({
+            size: file.size,
+            downloadUrl: file["@microsoft.graph.downloadUrl"],
+            parentFolderType: file.parentReference?.driveType ?? "personal",
+            parentId: file.parentReference?.driveId ?? "",
+            parentPath: file.parentReference?.path ?? "/",
+            siteId: file.parentReference?.siteId ?? "",
+            eTag: file.eTag ?? "",
+          }),
+          createdAt: new Date(file.createdDateTime).getTime(),
+          updatedAt: new Date(file.lastModifiedDateTime).getTime(),
         }
+
+        //             try {
+        //   const responsesDir = path.join(__dirname, "responses")
+        //   if (!fs.existsSync(responsesDir)) {
+        //     fs.mkdirSync(responsesDir, { recursive: true })
+        //   }
+        //   const filename = `one-drive.json`
+        //   fs.appendFileSync(
+        //     path.join(responsesDir, filename),
+        //     JSON.stringify(fileToBeIngested, null, 2)
+        //   )
+        //   loggerWithChild({ email: userEmail }).info(
+        //     `Saved calendar events response to ${filename}`
+        //   )
+        // } catch (saveError) {
+        //   loggerWithChild({ email: userEmail }).warn(
+        //     `Could not save calendar events response: ${saveError}`
+        //   )
+        // }
+
+        await insertWithRetry(fileToBeIngested, fileSchema)
+        tracker.updateUserStats(userEmail, StatType.Drive, 1)
+        processedFiles++
+
+        loggerWithChild({ email: userEmail }).info(
+          `Processed OneDrive file: ${file.name}`,
+        )
       } catch (error) {
         loggerWithChild({ email: userEmail }).error(
           error,
@@ -739,69 +756,146 @@ const insertFilesForUser = async (
   }
 }
 
-// Recursive function to get all OneDrive files with pagination support
-const getAllOneDriveFiles = async (
+async function getFilePermissions(
   client: MicrosoftGraphClient,
-  queryParams: any,
-  userEmail?: string,
-  folderId: string = "root",
-  folderPath: string = "/",
-  parentFolderId?: string,
-): Promise<any[]> => {
-  const logger = userEmail ? loggerWithChild({ email: userEmail }) : Logger
-
+  fileId: string,
+): Promise<string[]> {
   try {
-    // Fix the typo: "chidren" should be "children"
-    const baseUrl =
-      folderId === "root"
-        ? `/me/drive/root/children`
-        : `/me/drive/items/${folderId}/children`
+    const response = await makeGraphApiCall(
+      client,
+      `/me/drive/items/${fileId}/permissions`,
+    )
 
-    const url = `${baseUrl}?${new URLSearchParams(queryParams).toString()}`
+    const emails = new Set<string>()
 
-    logger.info(`Fetching files from folder: ${folderPath} (ID: ${folderId})`)
-
-    // Get all items in current folder with pagination
-    const items = await makePagedGraphApiCall(client, url)
-
-    let allFiles: any[] = []
-
-    for (const item of items) {
-      if (item.folder) {
-        // If it's a folder, recursively get files from it
-        logger.info(`Recursively processing folder: ${item.name}`)
-        try {
-          const subFolderFiles = await getAllOneDriveFiles(
-            client,
-            queryParams,
-            userEmail,
-            item.id,
-            `${folderPath}${item.name}/`,
-            item.id, // Pass the current folder ID as parent for its children
-          )
-          allFiles.push(...subFolderFiles)
-        } catch (error) {
-          logger.warn(
-            `Failed to process subfolder ${item.name}: ${(error as Error).message}`,
-          )
-          // Continue processing other folders even if one fails
+    if (response.value && Array.isArray(response.value)) {
+      for (const permission of response.value) {
+        // Skip link-only permissions (no user identities)
+        if (
+          permission.link &&
+          !permission.grantedToV2 &&
+          !permission.grantedToIdentitiesV2
+        ) {
+          continue
         }
-      } else if (item.file) {
-        // If it's a file, add it to our collection with parent information
-        allFiles.push({
-          ...item,
-          folderPath: folderPath,
-          parentFolderId: folderId === "root" ? null : folderId, // Track the immediate parent folder ID
-          parentFolderPath: folderPath, // Track the full parent folder path
-        })
+
+        // grantedToV2 (modern single user)
+        if (permission.grantedToV2?.siteUser?.email) {
+          emails.add(permission.grantedToV2.siteUser.email)
+        } else if (permission.grantedToV2?.user?.email) {
+          emails.add(permission.grantedToV2.user.email)
+        } else if (permission.grantedToV2?.user?.userPrincipalName) {
+          emails.add(permission.grantedToV2.user.userPrincipalName)
+        }
+
+        // grantedToIdentitiesV2 (modern multiple users)
+        if (Array.isArray(permission.grantedToIdentitiesV2)) {
+          for (const identity of permission.grantedToIdentitiesV2) {
+            if (identity.siteUser?.email) {
+              emails.add(identity.siteUser.email)
+            } else if (identity.user?.email) {
+              emails.add(identity.user.email)
+            } else if (identity.user?.userPrincipalName) {
+              emails.add(identity.user.userPrincipalName)
+            }
+          }
+        }
+
+        // grantedTo (legacy single user)
+        if (permission.grantedTo?.user?.email) {
+          emails.add(permission.grantedTo.user.email)
+        } else if (permission.grantedTo?.user?.userPrincipalName) {
+          emails.add(permission.grantedTo.user.userPrincipalName)
+        }
+
+        // grantedToIdentities (legacy multiple users)
+        if (Array.isArray(permission.grantedToIdentities)) {
+          for (const identity of permission.grantedToIdentities) {
+            if (identity.user?.email) {
+              emails.add(identity.user.email)
+            } else if (identity.user?.userPrincipalName) {
+              emails.add(identity.user.userPrincipalName)
+            }
+          }
+        }
       }
     }
 
-    logger.info(`Retrieved ${allFiles.length} files from ${folderPath}`)
-    return allFiles
+    return [...emails] // convert Set to array
+  } catch (error) {
+    Logger.warn(
+      `Failed to get permissions for file ${fileId}: ${(error as Error).message}`,
+    )
+    return []
+  }
+}
+
+// Get all OneDrive files and folders using delta API
+async function getAllOneDriveFiles(
+  client: MicrosoftGraphClient,
+  queryParams: any,
+  userEmail?: string,
+): Promise<any[]> {
+  const logger = userEmail ? loggerWithChild({ email: userEmail }) : Logger
+  let allItems: any[] = []
+
+  try {
+    // Build the delta endpoint with query parameters for initial sync
+    // Select only the fields we need for Vespa insertion based on the actual API response structure
+    const deltaParams = new URLSearchParams({
+      $select:
+        queryParams.$select ||
+        "id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,parentReference,createdBy,lastModifiedBy,@microsoft.graph.downloadUrl",
+      $top: (queryParams.$top || 1000).toString(),
+    })
+
+    // Add filter if provided
+    if (queryParams.$filter) {
+      deltaParams.set("$filter", queryParams.$filter)
+    }
+
+    let endpoint = `/me/drive/root/delta?${deltaParams.toString()}`
+
+    logger.info(`Performing initial OneDrive sync using delta API`)
+
+    // Process delta responses with pagination
+    while (endpoint) {
+      logger.info(
+        `Fetching OneDrive items from: ${endpoint.substring(0, 100)}...`,
+      )
+
+      const response = await makeGraphApiCall(client, endpoint)
+
+      if (response.value && Array.isArray(response.value)) {
+        for (const item of response.value) {
+          // Skip removed items (shouldn't happen in initial sync, but just in case)
+          if (item["@removed"]) {
+            logger.debug(`Skipping removed item: ${item.id}`)
+            continue
+          }
+
+          allItems.push(item)
+        }
+      }
+
+      // Check for pagination
+      if (response["@odata.nextLink"]) {
+        endpoint = response["@odata.nextLink"]
+        logger.info(`Continuing with next page of OneDrive items`)
+      } else {
+        logger.info(`OneDrive initial sync complete`)
+        endpoint = ""
+      }
+    }
+
+    logger.info(
+      `Retrieved ${allItems.length} OneDrive items (files and folders)`,
+    )
+    return allItems
   } catch (error) {
     logger.error(
-      `Error getting files from folder ${folderPath}: ${(error as Error).message}`,
+      error,
+      `Error getting OneDrive files using delta API: ${(error as Error).message}`,
     )
     throw error
   }
