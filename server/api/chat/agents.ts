@@ -684,6 +684,12 @@ export const MessageWithToolsApi = async (c: Context) => {
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    loggerWithChild({ email: email }).info(
+      `Extracted ${fileIds  } extractedInfo`,
+    )
+    loggerWithChild({ email: email }).info(
+      `Total attachment files received: ${attachmentFileIds.length}`,
+    )
     const hasReferencedContext = fileIds && fileIds.length > 0
 
     if (!message) {
@@ -1251,6 +1257,130 @@ export const MessageWithToolsApi = async (c: Context) => {
           const citationMap: Record<number, number> = {}
           const citationValues: Record<number, string> = {}
           const gatheredFragments: MinimalAgentFragment[] = []
+          let planningContext = ""
+
+          // Handle fileIds data for MessageWithToolsApi flow
+          if (fileIds && fileIds.length > 0) {
+            const contextFetchSpan = streamSpan.startSpan("fetch_context_from_file_ids")
+            try {
+              const results = await GetDocumentsByDocIds(
+                fileIds,
+                contextFetchSpan,
+              )
+              if (
+                results?.root?.children &&
+                results.root.children.length > 0
+              ) {
+                const contextPromises = results?.root?.children?.map(
+                  async (v, i) => {
+                    let content = answerContextMap(
+                      v as z.infer<typeof VespaSearchResultsSchema>,
+                      0,
+                      true,
+                    )
+                    if (
+                      v.fields &&
+                      "sddocname" in v.fields &&
+                      v.fields.sddocname === chatContainerSchema &&
+                      (v.fields as any).creator
+                    ) {
+                      const creator = await getDocumentOrNull(
+                        chatUserSchema,
+                        (v.fields as any).creator,
+                      )
+                      if (creator) {
+                        content += `\nCreator: ${(creator.fields as any).name}`
+                      }
+                    }
+                    return `Index ${i + 1} \n ${content}`
+                  },
+                )
+                const resolvedContexts = contextPromises
+                  ? await Promise.all(contextPromises)
+                  : []
+
+                const chatContexts: VespaSearchResult[] = []
+                const threadContexts: VespaSearchResult[] = []
+                if (results?.root?.children) {
+                  for (const v of results.root.children) {
+                    if (
+                      v.fields &&
+                      "sddocname" in v.fields &&
+                      v.fields.sddocname === chatContainerSchema
+                    ) {
+                      const channelId = (v.fields as any).docId
+
+                      if (channelId) {
+                        const searchResults = await searchSlackInVespa(
+                          message,
+                          email,
+                          {
+                            limit: 10,
+                            channelIds: [channelId],
+                          },
+                        )
+                        if (searchResults.root.children) {
+                          chatContexts.push(...searchResults.root.children)
+                          const threadMessages = await getThreadContext(
+                            searchResults,
+                            email,
+                            contextFetchSpan,
+                          )
+                          if (
+                            threadMessages &&
+                            threadMessages.root.children
+                          ) {
+                            threadContexts.push(
+                              ...threadMessages.root.children,
+                            )
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                planningContext = cleanContext(resolvedContexts?.join("\n"))
+                if (chatContexts.length > 0) {
+                  planningContext += "\n" + buildContext(chatContexts, 10)
+                }
+                if (threadContexts.length > 0) {
+                  planningContext += "\n" + buildContext(threadContexts, 10)
+                }
+
+                gatheredFragments.push(
+                  ...results.root.children.map(
+                    (child: VespaSearchResult, idx) =>
+                      vespaResultToMinimalAgentFragment(child, idx),
+                  )
+                )
+                if (chatContexts.length > 0) {
+                  gatheredFragments.push(
+                    ...chatContexts.map((child, idx) =>
+                      vespaResultToMinimalAgentFragment(child, idx),
+                    ),
+                  )
+                }
+                if (threadContexts.length > 0) {
+                  gatheredFragments.push(
+                    ...threadContexts.map((child, idx) =>
+                      vespaResultToMinimalAgentFragment(child, idx),
+                    ),
+                  )
+                }
+
+                loggerWithChild({ email: sub }).info(
+                  `Added ${gatheredFragments.length} fragments from fileIds to gatheredFragments`,
+                )
+              }
+            } catch (error) {
+              loggerWithChild({ email: sub }).error(
+                error,
+                "Error fetching documents by docIds",
+              )
+            } finally {
+              contextFetchSpan.end()
+            }
+          }
 
           // Compose JAF tools: internal + MCP
           const baseCtx: JAFAdapterCtx = {
