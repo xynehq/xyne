@@ -32,13 +32,9 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   // Legacy aliases for backward compatibility
-  } from "@/db/knowledgeBase"
+} from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { 
-  Collection, 
-  CollectionItem, 
-  File as DbFile, 
-} from "@/db/schema"
+import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
