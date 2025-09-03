@@ -35,7 +35,8 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
             citation.itemId &&
             citation.clId
           ) {
-            const response = await api.cl[citation.clId].files[citation.itemId].content.$get()
+            const response =
+              await api.cl[citation.clId].files[citation.itemId].content.$get()
 
             if (!response.ok) {
               throw new Error(
@@ -232,9 +233,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
           )}
 
           {!loading && !error && documentContent && (
-            <div className="h-full overflow-auto">
-              {renderViewer()}
-            </div>
+            <div className="h-full overflow-auto">{renderViewer()}</div>
           )}
         </div>
       </div>

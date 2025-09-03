@@ -21,13 +21,11 @@ export interface ProcessingResult {
 
 export class FileProcessorService {
   static async processFile(
-    buffer: Buffer, 
-    mimeType: string, 
+    buffer: Buffer,
+    mimeType: string,
     fileName: string,
     vespaDocId: string,
     storagePath?: string,
-    extractImages: boolean = false,
-    describeImages: boolean = false,
   ): Promise<ProcessingResult> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
@@ -86,14 +84,11 @@ export class FileProcessorService {
           const worksheet = workbook.Sheets[sheetName]
           if (!worksheet) continue
 
-          const sheetData: string[][] = XLSX.utils.sheet_to_json(
-            worksheet,
-            {
-              header: 1,
-              defval: "",
-              raw: false,
-            },
-          )
+          const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: "",
+            raw: false,
+          })
 
           const validRows = sheetData.filter((row) =>
             row.some((cell) => cell && cell.toString().trim().length > 0),
@@ -119,14 +114,14 @@ export class FileProcessorService {
         chunks_pos = allChunks.map((_, idx) => idx)
       } else if (isTextFile(baseMimeType)) {
         // Process text file
-        const content = buffer.toString('utf-8')
+        const content = buffer.toString("utf-8")
         const processedChunks = chunkDocument(content.trim())
         chunks = processedChunks.map((v) => v.chunk)
         chunks_pos = chunks.map((_, idx) => idx)
       } else {
         // For unsupported types, try to extract text content
         try {
-          const content = buffer.toString('utf-8')
+          const content = buffer.toString("utf-8")
           if (content.trim()) {
             const processedChunks = chunkDocument(content.trim())
             chunks = processedChunks.map((v) => v.chunk)

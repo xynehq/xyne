@@ -167,11 +167,11 @@ export enum MCPConnectorMode {
 }
 
 export const addApiKeyMCPConnectorSchema = z.object({
-  url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
+  url: z.string().url({ message: "must be a valid HTTP(S) URL" }),
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
   headers: z.record(z.string()),
-});
+})
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
@@ -447,6 +447,7 @@ export enum Subsystem {
   AI = "AI",
   Tuning = "Tuning",
   AgentApi = "AgentApi",
+  WorkflowApi = "WorkflowApi",
   Metric = "Metric",
   Slack = "Slack",
 }
@@ -474,8 +475,6 @@ export enum Platform {
   Mobile = "mobile",
   Slack = "slack",
 }
-
-
 
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
