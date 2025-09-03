@@ -5,6 +5,7 @@ import React, {
     useCallback,
     Fragment,
   } from "react"
+  import DOMPurify from "dompurify"
   import { useQueryClient } from "@tanstack/react-query"
   import { useTheme } from "@/components/ThemeContext"
   import { useToast } from "@/hooks/use-toast"
@@ -230,7 +231,9 @@ import React, {
           {isUser ? (
             <div
               className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
-              dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
+              dangerouslySetInnerHTML={{
+                __html: jsonToHtmlMessage(DOMPurify.sanitize(message)),
+              }}
             />
           ) : (
             <div className="flex flex-col mt-[40px] w-full max-w-full min-w-0 mb-[35px]">
