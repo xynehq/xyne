@@ -193,7 +193,7 @@ import {
 } from "./chat"
 import { agentTools } from "./tools"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
-import { getRecordBypath } from "@/db/knowledgeBase";
+import { getRecordBypath } from "@/db/knowledgeBase"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -2803,6 +2803,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       isReasoningEnabled,
       agentId,
       streamOff,
+      path,
     }: MessageReqType = body
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2836,14 +2837,18 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
-
+    let ids
+    if (path) {
+      ids = await getRecordBypath(path, db)
+    }
     const isMsgWithContext = isMessageWithContext(message)
-    const extractedInfo = isMsgWithContext
-      ? await extractFileIdsFromMessage(message, email)
-      : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-        }
+    const extractedInfo =
+      isMsgWithContext || path
+        ? await extractFileIdsFromMessage(message, email, path)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -3505,7 +3510,7 @@ export const AgentMessageApi = async (c: Context) => {
       isReasoningEnabled,
       agentId,
       streamOff,
-      path
+      path,
     }: MessageReqType = body
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -3546,16 +3551,17 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
-    if(path){
-      ids = await getRecordBypath(path,db) 
+    if (path) {
+      ids = await getRecordBypath(path, db)
     }
     const isMsgWithContext = isMessageWithContext(message)
-    const extractedInfo = (isMsgWithContext || path)
-      ? await extractFileIdsFromMessage(message, email,ids)
-      : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-        }
+    const extractedInfo =
+      isMsgWithContext || path
+        ? await extractFileIdsFromMessage(message, email, ids)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
     const fileIds = extractedInfo?.fileIds
     const agentDocs = agentForDb?.docIds || []
 
@@ -4020,71 +4026,90 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                 })
 
-            Logger.info(
-              "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
-            )
-            // Limit messages to last 5 for the first LLM call if it's a new chat
-            const limitedMessages = messagesWithNoErrResponse.slice(-8)
-            
-            // Extract previous classification for pagination and follow-up queries
-            let previousClassification: QueryRouterLLMResponse | null = null
-            if (messages.length >= 2) {
-              const previousUserMessage = messages[messages.length - 2]
-              if (previousUserMessage?.queryRouterClassification && previousUserMessage.messageRole === "user") {
-                try {
-                  const parsedClassification =
-                    typeof previousUserMessage.queryRouterClassification === "string"
-                      ? JSON.parse(previousUserMessage.queryRouterClassification)
-                      : previousUserMessage.queryRouterClassification
-                  previousClassification = parsedClassification as QueryRouterLLMResponse
-                  Logger.info(`Found previous classification in agents: ${JSON.stringify(previousClassification)}`)
-                } catch (error) {
-                  Logger.error(`Error parsing previous classification in agents: ${error}`)
+              Logger.info(
+                "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+              )
+              // Limit messages to last 5 for the first LLM call if it's a new chat
+              const limitedMessages = messagesWithNoErrResponse.slice(-8)
+
+              // Extract previous classification for pagination and follow-up queries
+              let previousClassification: QueryRouterLLMResponse | null = null
+              if (messages.length >= 2) {
+                const previousUserMessage = messages[messages.length - 2]
+                if (
+                  previousUserMessage?.queryRouterClassification &&
+                  previousUserMessage.messageRole === "user"
+                ) {
+                  try {
+                    const parsedClassification =
+                      typeof previousUserMessage.queryRouterClassification ===
+                      "string"
+                        ? JSON.parse(
+                            previousUserMessage.queryRouterClassification,
+                          )
+                        : previousUserMessage.queryRouterClassification
+                    previousClassification =
+                      parsedClassification as QueryRouterLLMResponse
+                    Logger.info(
+                      `Found previous classification in agents: ${JSON.stringify(previousClassification)}`,
+                    )
+                  } catch (error) {
+                    Logger.error(
+                      `Error parsing previous classification in agents: ${error}`,
+                    )
+                  }
                 }
               }
-            }
-            
-            const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: limitedMessages,
-                agentPrompt: agentPromptForLLM,
-              }, undefined, previousClassification)
 
-            // TODO: for now if the answer is from the conversation itself we don't
-            // add any citations for it, we can refer to the original message for citations
-            // one more bug is now llm automatically copies the citation text sometimes without any reference
-            // leads to [NaN] in the answer
-            let currentAnswer = ""
-            let answer = ""
-            let citations = []
-            let imageCitations: any = []
-            let citationMap: Record<number, number> = {}
-            let queryFilters = {
-              apps: [],
-              entities: [],
-              startTime: "",
-              endTime: "",
-              count: 0,
-              sortDirection: "",
-              intent: {},
-              offset: 0,
-            }
-            let parsed = {
-              answer: "",
-              queryRewrite: "",
-              temporalDirection: null,
-              filter_query: "",
-              type: "",
-              intent: {},
-              filters: queryFilters,
-            }
+              const searchOrAnswerIterator =
+                generateSearchQueryOrAnswerFromConversation(
+                  message,
+                  ctx,
+                  {
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .modelId,
+                    stream: true,
+                    json: true,
+                    reasoning:
+                      userRequestsReasoning &&
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .reasoning,
+                    messages: limitedMessages,
+                    agentPrompt: agentPromptForLLM,
+                  },
+                  undefined,
+                  previousClassification,
+                )
+
+              // TODO: for now if the answer is from the conversation itself we don't
+              // add any citations for it, we can refer to the original message for citations
+              // one more bug is now llm automatically copies the citation text sometimes without any reference
+              // leads to [NaN] in the answer
+              let currentAnswer = ""
+              let answer = ""
+              let citations = []
+              let imageCitations: any = []
+              let citationMap: Record<number, number> = {}
+              let queryFilters = {
+                apps: [],
+                entities: [],
+                startTime: "",
+                endTime: "",
+                count: 0,
+                sortDirection: "",
+                intent: {},
+                offset: 0,
+              }
+              let parsed = {
+                answer: "",
+                queryRewrite: "",
+                temporalDirection: null,
+                filter_query: "",
+                type: "",
+                intent: {},
+                filters: queryFilters,
+              }
 
               let thinking = ""
               let reasoning =
