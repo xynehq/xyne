@@ -505,7 +505,7 @@ export const getFileIdFromLink = (link: string) => {
 export const extractFileIdsFromMessage = async (
   message: string,
   email?: string,
-  pathRefId?:any,
+  pathRefId?: any,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -515,7 +515,7 @@ export const extractFileIdsFromMessage = async (
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
-  if(pathRefId){
+  if (pathRefId) {
     collectionFolderIds.push(pathRefId)
   }
   const jsonMessage = JSON.parse(message) as UserQuery
