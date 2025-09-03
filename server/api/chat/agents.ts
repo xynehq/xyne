@@ -658,7 +658,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
-    const isMsgWithContext = isMessageWithContext(message) 
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -2803,7 +2803,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       isReasoningEnabled,
       agentId,
       streamOff,
-      path,
     }: MessageReqType = body
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2837,18 +2836,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
-    let ids
-    if (path) {
-      ids = await getRecordBypath(path, db)
-    }
-    const isMsgWithContext = isMessageWithContext(message) || (path && ids)
-    const extractedInfo =
-      isMsgWithContext || (path && ids)
-        ? await extractFileIdsFromMessage(message, email, path)
-        : {
-            totalValidFileIdsFromLinkCount: 0,
-            fileIds: [],
-          }
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message, email)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
