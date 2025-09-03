@@ -1663,7 +1663,7 @@ function RouteComponent() {
                   <Input
                     id="editCollectionName"
                     type="text"
-                    placeholder="Enter collection name"
+                    placeholder="Enter collection title"
                     value={collectionName}
                     onChange={(e) => setCollectionName(e.target.value)}
                     className="w-full text-xl placeholder:text-gray-400 placeholder:opacity-60 dark:placeholder:text-gray-500 dark:placeholder:opacity-50 !outline-none !focus:outline-none !focus:ring-0 !focus:shadow-none !bg-transparent !px-0 !shadow-none !ring-0 border-0 border-b border-gray-300 dark:border-gray-600 focus:border-b focus:border-gray-400 dark:focus:border-gray-500 !rounded-none"
@@ -1745,7 +1745,7 @@ function RouteComponent() {
                   <Input
                     id="collectionName"
                     type="text"
-                    placeholder="Frontend documentation"
+                    placeholder="Enter collection title"
                     value={collectionName}
                     onChange={(e) => setCollectionName(e.target.value)}
                     className="w-full text-xl placeholder:text-gray-400 placeholder:opacity-60 dark:placeholder:text-gray-500 dark:placeholder:opacity-50 !outline-none !focus:outline-none !focus:ring-0 !focus:shadow-none !bg-transparent !px-0 !shadow-none !ring-0 border-0 border-b border-gray-300 dark:border-gray-600 focus:border-b focus:border-gray-400 dark:focus:border-gray-500 !rounded-none"

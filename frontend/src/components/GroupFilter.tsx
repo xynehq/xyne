@@ -8,6 +8,7 @@ import {
   isMailAttachment,
   SlackEntity,
   SystemEntity,
+  WebSearchEntity,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
@@ -112,6 +113,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Data-Source"
   } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
     return "Knowledge-Base"
+  } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
+    return "Web Search"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

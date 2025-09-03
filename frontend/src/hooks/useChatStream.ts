@@ -171,15 +171,14 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
-
 // Helper function to append reasoning data to stream state
 const appendReasoningData = (streamState: StreamState, data: string) => {
   try {
     const stepData = JSON.parse(data)
-    
+
     // If this is a valid reasoning step, add it as a new line
     if (stepData.step || stepData.text) {
-      streamState.thinking += data + '\n'
+      streamState.thinking += data + "\n"
     } else {
       // Fallback to simple text accumulation
       streamState.thinking += data
@@ -221,7 +220,6 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
     make()
   })
-
 }
 
 // Start a new stream or continue existing one
@@ -239,6 +237,7 @@ export const startStream = async (
   metadata?: AttachmentMetadata[],
   preventNavigation?: boolean,
   setChatId?: (chatId: string) => void,
+  enableWebSearch: boolean = false,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -287,6 +286,7 @@ export const startStream = async (
   if (selectedSources && selectedSources.length > 0) {
     url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
   }
+  url.searchParams.append("enableWebSearch", enableWebSearch.toString())
 
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
@@ -640,6 +640,7 @@ export const useChatStream = (
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
+      enableWebSearch: boolean = false,
     ) => {
       const streamKey = currentStreamKey
 
@@ -657,6 +658,7 @@ export const useChatStream = (
         metadata,
         preventNavigation,
         setChatId,
+        enableWebSearch,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -885,7 +887,6 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        
         appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })

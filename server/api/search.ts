@@ -154,6 +154,27 @@ export const sharedAgentUsageSchema = z.object({
     .transform((val) => (val ? new Date(val) : undefined)),
 })
 
+export const agentChatMessageSchema = z.object({
+  message: z.string(),
+  chatId: z.string().optional(),
+  modelId: z.string().optional(),
+  isReasoningEnabled: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
+  agentId: z.string(),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
+})
+
 export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
@@ -166,6 +187,13 @@ export const messageSchema = z.object({
       return val.toLowerCase() === "true"
     }),
   agentId: z.string().optional(),
+  enableWebSearch: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
   toolsList: z.preprocess(
     (val) => {
       if (typeof val === "string") {
@@ -186,6 +214,13 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 

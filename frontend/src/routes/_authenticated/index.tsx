@@ -152,8 +152,8 @@ const Index = () => {
   const searchParams = useSearch({ from: "/_authenticated/" })
 
   useEffect(() => {
-    setPersistedAgentId(searchParams.agentId || null);
-  }, [searchParams.agentId]);
+    setPersistedAgentId(searchParams.agentId || null)
+  }, [searchParams.agentId])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -225,6 +225,7 @@ const Index = () => {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
+    enableWebSearch?: boolean,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
@@ -235,6 +236,7 @@ const Index = () => {
         toolsList?: ToolsListItem[]
         agentic?: boolean
         metadata?: AttachmentMetadata[]
+        enableWebSearch?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -247,8 +249,8 @@ const Index = () => {
       }
       // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
       if (agentId || persistedAgentId) {
-        searchParams.agentId = agentId || persistedAgentId as string
-      } 
+        searchParams.agentId = agentId || (persistedAgentId as string)
+      }
       if (isAgenticMode) {
         searchParams.agentic = true
       }
@@ -260,6 +262,10 @@ const Index = () => {
       // Use toolsList as array instead of JSON string
       if (toolsList && toolsList.length > 0) {
         searchParams.toolsList = toolsList
+      }
+
+      if (enableWebSearch) {
+        searchParams.enableWebSearch = enableWebSearch
       }
 
       navigate({

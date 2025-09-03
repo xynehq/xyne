@@ -843,8 +843,7 @@ export const HybridDefaultProfileForAgent = async (
       )`
   }
 
-  const buildCollectionFileYQL = async () => {    
-
+  const buildCollectionFileYQL = async () => {
     // Extract all IDs from the key-value pairs
     const collectionIds: string[] = []
     const collectionFolderIds: string[] = []
@@ -897,8 +896,9 @@ export const HybridDefaultProfileForAgent = async (
         conditions.push(fileCondition)
       }
     }
-    
-    const finalCondition = conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+
+    const finalCondition =
+      conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
     // Collection files use clId for collections and docId for folders/files
     return `
       (
@@ -2642,17 +2642,18 @@ export const getItems = async (
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
-  // TODO: Add support for grouping and aggregating results across apps,
-  // so that one app should not overwhelm the results
-  // const group = `| all(
-  //     group(app)
-  //     max(itemPerApp)
-  //     each(
-  //       output(summary())
-  //     )
-  //   `
-  // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schemasString} ${whereClause} ${orderByClause}`
+  // Construct YQL query with proper clause ordering and spacing
+  let yql = `select * from sources ${schema} ${whereClause}`
+
+  if (orderByClause) {
+    yql += ` ${orderByClause}`
+  }
+
+  yql += ` limit ${limit}`
+
+  if (offset > 0) {
+    yql += ` offset ${offset}`
+  }
 
   Logger.info(`[getItems] YQL Query: ${yql}`)
   Logger.info(
@@ -2670,8 +2671,6 @@ export const getItems = async (
   const searchPayload = {
     yql,
     "ranking.profile": "unranked",
-    hits: limit,
-    ...(offset ? { offset } : {}),
     timeout: "30s",
   }
 
