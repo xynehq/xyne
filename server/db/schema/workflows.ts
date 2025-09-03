@@ -302,6 +302,7 @@ export const createWorkflowToolSchema = z.object({
     "agent",
     "merged_node",
     "form",
+    "email",
   ]),
   value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
   config: z.record(z.any()).optional(),

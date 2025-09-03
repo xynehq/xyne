@@ -8,6 +8,7 @@ interface EmailOptions {
   to: string
   subject: string
   body: string
+  contentType?: "text" | "html"
 }
 
 class SimpleEmailService {
@@ -39,8 +40,8 @@ class SimpleEmailService {
     }
   }
 
-  async sendEmail({ to, subject, body }: EmailOptions): Promise<boolean> {
-    Logger.info(`📤 Attempting to send email to: ${to}`)
+  async sendEmail({ to, subject, body, contentType = "text" }: EmailOptions): Promise<boolean> {
+    Logger.info(`📤 Attempting to send email to: ${to} (${contentType})`)
 
     if (!this.sesClient) {
       Logger.info("⚠️  Email service not configured, skipping email")
@@ -48,12 +49,17 @@ class SimpleEmailService {
     }
 
     try {
+      // Build email body based on content type
+      const emailBody = contentType === "html" 
+        ? { Html: { Data: body } }
+        : { Text: { Data: body } }
+
       const command = new SendEmailCommand({
         Source: this.fromEmail,
         Destination: { ToAddresses: [to] },
         Message: {
           Subject: { Data: subject },
-          Body: { Text: { Data: body } },
+          Body: emailBody,
         },
       })
 
