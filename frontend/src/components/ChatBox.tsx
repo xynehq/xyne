@@ -637,26 +637,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return ext || "file"
     }
 
-    // Get appropriate icon for file type
-    const getFileIcon = (fileType: string | undefined) => {
-      switch (fileType) {
-        case "Image":
-          return <FileImage size={24} className="text-blue-500 dark:text-blue-400 flex-shrink-0" />
-        case "Document":
-          return <FileText size={24} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
-        case "Spreadsheet":
-          return <FileSpreadsheet size={24} className="text-green-600 dark:text-green-400 flex-shrink-0" />
-        case "Presentation":
-          return <Presentation size={24} className="text-orange-600 dark:text-orange-400 flex-shrink-0" />
-        case "PDF":
-          return <FileText size={24} className="text-red-600 dark:text-red-400 flex-shrink-0" />
-        case "Text":
-          return <FileText size={24} className="text-gray-600 dark:text-gray-400 flex-shrink-0" />
-        default:
-          return <File size={24} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />
-      }
-    }
-
     const removeFile = useCallback((id: string) => {
       setSelectedFiles((prev) => {
         const fileToRemove = prev.find((f) => f.id === id)

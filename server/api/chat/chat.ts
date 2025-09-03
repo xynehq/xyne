@@ -4030,12 +4030,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const ImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.isImage ? m.fileId : null,
-    ).filter((m: string | null) => m !== null)
-    const NonImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.isImage ? null : m.fileId,
-    ).filter((m: string | null) => m !== null)
+    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -5469,9 +5465,7 @@ export const MessageRetryApi = async (c: Context) => {
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      ImageAttachmentFileIds = attachmentMetadata.map(
-        (m: AttachmentMetadata) => m.isImage ? m.fileId : null,
-      ).filter((m: string | null) => m !== null)
+      ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
     }
 
     rootSpan.setAttribute("email", email)

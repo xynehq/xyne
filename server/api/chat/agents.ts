@@ -652,12 +652,8 @@ export const MessageWithToolsApi = async (c: Context) => {
       agentId,
     }: MessageReqType = body
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const NonImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => (m.isImage ? null : m.fileId),
-    ).filter((m: string | null) => m !== null)
-    const ImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => (m.isImage ? m.fileId : null),
-    ).filter((m: string | null) => m !== null)
+    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
@@ -3471,12 +3467,8 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const ImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => (m.isImage ? m.fileId : null),
-    ).filter((m: string | null) => m !== null)
-    const NonImageAttachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => (m.isImage ? null : m.fileId),
-    ).filter((m: string | null) => m !== null)
+    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     let attachmentStorageError: Error | null = null
     let {
       message,
