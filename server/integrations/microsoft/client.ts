@@ -4,29 +4,16 @@ import { retryWithBackoff } from "@/utils"
 import { Apps } from "@/shared/types"
 import { Readable } from "stream"
 
-// Custom authentication provider for Microsoft Graph
+// Simple authentication provider for Microsoft Graph
+// Token refresh is handled at the connector level in server/db/connector.ts
 class CustomAuthProvider implements AuthenticationProvider {
   private accessToken: string
-  private refreshToken: string
-  private clientId: string
-  private clientSecret: string
 
-  constructor(
-    accessToken: string,
-    refreshToken: string,
-    clientId: string,
-    clientSecret: string,
-  ) {
+  constructor(accessToken: string) {
     this.accessToken = accessToken
-    this.refreshToken = refreshToken
-    this.clientId = clientId
-    this.clientSecret = clientSecret
   }
 
   async getAccessToken(): Promise<string> {
-    // For now, return the current access token
-    // In a production environment, you'd want to check if it's expired
-    // and refresh it if necessary
     return this.accessToken
   }
 }
@@ -39,6 +26,9 @@ export interface MicrosoftGraphClient {
   clientId: string
   clientSecret: string
   betaClient: Client
+  authProvider: CustomAuthProvider
+  // Helper methods to get updated tokens after refresh
+  getCurrentTokens(): { accessToken: string; refreshToken: string; expiresAt?: Date }
 }
 
 // Create Microsoft Graph client similar to Google's pattern
@@ -47,13 +37,9 @@ export const createMicrosoftGraphClient = (
   refreshToken: string,
   clientId: string,
   clientSecret: string,
+  tokenExpiresAt?: Date,
 ): MicrosoftGraphClient => {
-  const authProvider = new CustomAuthProvider(
-    accessToken,
-    refreshToken,
-    clientId,
-    clientSecret,
-  )
+  const authProvider = new CustomAuthProvider(accessToken)
 
   const client = Client.initWithMiddleware({
     authProvider,
@@ -71,6 +57,14 @@ export const createMicrosoftGraphClient = (
     clientId,
     clientSecret,
     betaClient,
+    authProvider,
+    getCurrentTokens() {
+      return {
+        accessToken,
+        refreshToken,
+        expiresAt: tokenExpiresAt,
+      }
+    },
   }
 }
 
