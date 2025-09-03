@@ -135,6 +135,31 @@ if (!slackHost) {
   slackHost = host
 }
 
+// TODO: Implement multi-provider support.
+// Allow dynamic model selection based on current use case:
+// - Use OpenAI models for deep-research
+// - Use Vertex models for general chat and web-search
+if (process.env["VERTEX_PROJECT_ID"] && process.env["VERTEX_REGION"]) {
+  VertexAIModel = process.env["VERTEX_AI_MODEL"] as Models
+  VertexProjectId = process.env["VERTEX_PROJECT_ID"]
+  VertexRegion = process.env["VERTEX_REGION"]
+  defaultFastModel = process.env["VERTEX_FAST_MODEL"]
+    ? (process.env["VERTEX_FAST_MODEL"] as Models)
+    : (VertexAIModel as Models)
+  defaultBestModel = VertexAIModel as Models
+}
+
+if (process.env["OPENAI_API_KEY"]) {
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
+    }
+  }
+  OpenAIKey = process.env["OPENAI_API_KEY"]
+}
+
 export default {
   // default page size for regular search
   page: 8,

@@ -483,16 +483,8 @@ export class OpenAIProvider extends BaseProvider {
           if (completedResponse?.output) {
             completedResponse.output.forEach((item: any, index: number) => {
               if (item.type === "reasoning") {
-                console.log(
-                  `Reasoning item ${index}:`,
-                  JSON.stringify(item, null, 2),
-                )
                 if (item.content || item.text || item.reasoning) {
-                  console.log("Found reasoning content in output item:", {
-                    content: item.content,
-                    text: item.text,
-                    reasoning: item.reasoning,
-                  })
+              
                 }
               }
             })
