@@ -586,10 +586,9 @@ const constructCollectionFileContext = (
   let content = ""
   if (isMsgWithSources && fields.chunks_pos_summary) {
     // When user has selected one file to chat with, use original chunk positions
-    const chunksPos = fields.chunks_pos_summary
     content = chunks
-      .map((v, idx) => {
-        const originalIndex = chunksPos[idx] ?? idx
+      .map((v) => {
+        const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
         return `[${originalIndex}] ${v.chunk}`
       })
       .slice(0, maxSummaryChunks)

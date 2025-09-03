@@ -55,7 +55,7 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    if(citation.chunkIndex) {
+                    if (citation.chunkIndex !== undefined) {
                       onCitationClick(citation, citation.chunkIndex)
                     } else {
                       onCitationClick(citation)
