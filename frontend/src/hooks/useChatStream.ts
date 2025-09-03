@@ -227,7 +227,6 @@ export const startStream = async (
   streamKey: string,
   messageToSend: string,
   selectedSources: string[] = [],
-  isReasoningActive: boolean = true,
   isAgenticMode: boolean = false,
   queryClient?: any,
   router?: any,
@@ -235,7 +234,7 @@ export const startStream = async (
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
   metadata?: AttachmentMetadata[],
-  enableWebSearch: boolean = false,
+  selectedModel?: string,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -273,14 +272,22 @@ export const startStream = async (
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
   }
-  url.searchParams.append("modelId", "gpt-4o-mini")
-  url.searchParams.append("message", finalMessagePayload)
-
-  if (isReasoningActive) {
-    url.searchParams.append("isReasoningEnabled", "true")
+  // Parse selectedModel JSON configuration
+  let modelConfig = {
+    model: "gemini-2-5-pro", // default fallback
+    capabilities: []
   }
-
-  url.searchParams.append("enableWebSearch", enableWebSearch.toString())
+  
+  if (selectedModel) {
+    try {
+      modelConfig = JSON.parse(selectedModel)
+    } catch (e) {
+      console.warn("Failed to parse selectedModel JSON, using defaults:", e)
+    }
+  }
+  console.log("Selected model configuration:", modelConfig)
+  url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
+  url.searchParams.append("message", finalMessagePayload)
 
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
@@ -619,12 +626,11 @@ export const useChatStream = (
     async (
       messageToSend: string,
       selectedSources: string[] = [],
-      isReasoningActive: boolean = true,
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
-      enableWebSearch: boolean = false,
+      selectedModel?: string,
     ) => {
       const streamKey = currentStreamKey
 
@@ -632,7 +638,6 @@ export const useChatStream = (
         streamKey,
         messageToSend,
         selectedSources,
-        isReasoningActive,
         isAgenticMode,
         queryClient,
         router,
@@ -640,7 +645,7 @@ export const useChatStream = (
         agentIdFromChatParams,
         toolsList,
         metadata,
-        enableWebSearch,
+        selectedModel,
       )
 
       setStreamInfo(getStreamState(streamKey))

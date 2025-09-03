@@ -178,22 +178,8 @@ export const agentChatMessageSchema = z.object({
 export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
-  modelId: z.string().min(1),
-  isReasoningEnabled: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
+  selectedModelConfig: z.string().optional(), // JSON string containing model config
   agentId: z.string().optional(),
-  enableWebSearch: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
   toolsList: z.preprocess(
     (val) => {
       if (typeof val === "string") {

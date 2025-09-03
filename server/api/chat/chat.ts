@@ -40,6 +40,7 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
+import { getAvailableModels, getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
@@ -1881,6 +1882,7 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2119,7 +2121,7 @@ async function* generateAnswerFromGivenContext(
     initialContext,
     {
       stream: true,
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames,
@@ -2872,6 +2874,7 @@ async function* processResultsForMetadata(
   span?: Span,
   email?: string,
   agentContext?: string,
+  modelId?: string,
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -2891,7 +2894,7 @@ async function* processResultsForMetadata(
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
-    modelId: defaultBestModel,
+    modelId: (modelId as Models) || defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
     imageFileNames,
     agentPrompt: agentContext,
@@ -2927,6 +2930,7 @@ async function* generateMetadataQueryAnswer(
   span?: Span,
   agentPrompt?: string,
   maxIterations = 5,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3240,6 +3244,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3411,6 +3416,7 @@ async function* generateMetadataQueryAnswer(
       span,
       email,
       agentPrompt,
+      modelId,
     )
     return
   } else if (
@@ -3546,6 +3552,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3657,6 +3664,7 @@ export async function* UnderstandMessageAndAnswer(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   agentPrompt?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3701,6 +3709,8 @@ export async function* UnderstandMessageAndAnswer(
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
       agentPrompt,
+      5,
+      modelId,
     )
 
     let hasYieldedAnswer = false
@@ -3784,6 +3794,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3813,6 +3824,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
+    modelId,
   )
 }
 
@@ -4013,11 +4025,66 @@ export const MessageApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
-      enableWebSearch,
     }: MessageReqType = body
+    
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        console.log("Parsed model config:", config)
+        modelId = config.model
+        
+        // Check capabilities - handle both array and object formats
+        if (config.capabilities) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes('reasoning')
+            enableWebSearch = config.capabilities.includes('websearch')
+          } else if (typeof config.capabilities === 'object') {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}`
+        )
+      } catch (e) {
+        loggerWithChild({ email: email }).warn(
+          `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+        )
+        modelId = "gemini-2-5-pro" // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = "gemini-2-5-pro"
+      loggerWithChild({ email: email }).info("No model config provided, using default")
+    }
+    console.log("enableWebsearch:", enableWebSearch)
+    // Convert modelId from friendly label to actual model value
+    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId
+        loggerWithChild({ email: email }).info(
+          `Converted model label "${modelId}" to value "${actualModelId}"`
+        )
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `Could not convert model label "${modelId}" to value, will use as-is`
+        )
+        actualModelId = modelId // fallback to using the label as-is
+      }
+    }
+    console.log(`Actual model ID: ${actualModelId}`)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
@@ -4133,7 +4200,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
 
@@ -4186,7 +4253,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
 
@@ -4302,6 +4369,8 @@ export const MessageApi = async (c: Context) => {
               understandSpan,
               threadIds,
               attachmentFileIds,
+              agentPromptValue,
+              actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4451,8 +4520,7 @@ export const MessageApi = async (c: Context) => {
                 imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                modelId: actualModelId,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -4615,8 +4683,7 @@ export const MessageApi = async (c: Context) => {
                   ctx,
                   {
                     modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
+                      (actualModelId as Models) || config.defaultBestModel,
                     stream: true,
                     json: true,
                     agentPrompt: agentPromptValue,
@@ -4868,7 +4935,7 @@ export const MessageApi = async (c: Context) => {
               startTime,
               intent,
               offset,
-            } = parsed?.filters
+            } = parsed?.filters || {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -4956,6 +5023,10 @@ export const MessageApi = async (c: Context) => {
                     parsedMessage.data.fileIds as string[],
                     userRequestsReasoning,
                     understandSpan,
+                    undefined,
+                    undefined,
+                    agentPromptValue,
+                    actualModelId || config.defaultBestModel,
                   )
                 } else {
                   loggerWithChild({ email: email }).info(
@@ -4978,6 +5049,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning,
                   understandSpan,
                   agentPromptValue,
+                  actualModelId || config.defaultBestModel,
                 )
               }
 
@@ -5158,8 +5230,7 @@ export const MessageApi = async (c: Context) => {
                 imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -5623,6 +5694,8 @@ export const MessageRetryApi = async (c: Context) => {
               understandSpan,
               threadIds,
               attachmentFileIds,
+              undefined,
+              modelId,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -5761,9 +5834,7 @@ export const MessageRetryApi = async (c: Context) => {
                     imageCitations: imageCitations,
                     message: processMessage(answer, citationMap, email),
                     thinking,
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                        .modelId,
+                    modelId,
                     cost: totalCost.toString(),
                     tokensUsed:
                       totalTokens.inputTokens + totalTokens.outputTokens,
@@ -5952,7 +6023,7 @@ export const MessageRetryApi = async (c: Context) => {
                 ctx,
                 {
                   modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                    (modelId as Models) || config.defaultBestModel,
                   stream: true,
                   json: true,
                   reasoning:
@@ -6107,7 +6178,7 @@ export const MessageRetryApi = async (c: Context) => {
                 entities,
                 sortDirection,
                 startTime,
-              } = parsed?.filters
+              } = parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
@@ -6139,6 +6210,8 @@ export const MessageRetryApi = async (c: Context) => {
                 0.5,
                 userRequestsReasoning,
                 understandSpan,
+                undefined,
+                modelId,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
@@ -6846,6 +6919,41 @@ The follow-up questions should be specific to this conversation and help the use
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: "Could not generate follow-up questions",
+    })
+  }
+}
+
+export const GetAvailableModelsApi = async (c: Context) => {
+  try {
+    const availableModels = getAvailableModels({
+      AwsAccessKey: config.AwsAccessKey,
+      AwsSecretKey: config.AwsSecretKey,
+      OpenAIKey: config.OpenAIKey,
+      OllamaModel: config.OllamaModel,
+      TogetherAIModel: config.TogetherAIModel,
+      TogetherApiKey: config.TogetherApiKey,
+      FireworksAIModel: config.FireworksAIModel,
+      FireworksApiKey: config.FireworksApiKey,
+      GeminiAIModel: config.GeminiAIModel,
+      GeminiApiKey: config.GeminiApiKey,
+      VertexAIModel: config.VertexAIModel,
+      VertexProjectId: config.VertexProjectId,
+      VertexRegion: config.VertexRegion,
+    })
+    
+    // Filter out actualName and provider fields before sending to frontend
+    const filteredModels = availableModels.map(model => ({
+      labelName: model.labelName,
+      reasoning: model.reasoning,
+      websearch: model.websearch,
+      deepResearch: model.deepResearch,
+    }))
+    
+    return c.json({ models: filteredModels })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    throw new HTTPException(500, {
+      message: "Could not fetch available models",
     })
   }
 }

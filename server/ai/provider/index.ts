@@ -368,13 +368,30 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : VertexAIModel
+            : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
   }
+
+  // Special handling for Vertex AI models - create appropriate provider based on model type
+  if (providerType === AIProviders.VertexAI && VertexProjectId && VertexRegion) {
+    const isGeminiModel = modelId.toString().toLowerCase().includes('gemini')
+    const requiredProvider = isGeminiModel ? VertexProvider.GOOGLE : VertexProvider.ANTHROPIC
+    
+    // Create a new provider instance with the correct backend for this model
+    const vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+      provider: requiredProvider,
+    })
+    
+    Logger.info(`Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`)
+    return vertexProvider
+  }
+
   const provider = ProviderMap[providerType]
   if (!provider) {
     throw new Error("Invalid provider")

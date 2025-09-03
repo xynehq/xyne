@@ -1,9 +1,11 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import type { ConverseResponse, LLMProvider, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
+import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
 import config from "@/config"
 import path from "path"
 import fs from "fs"
+import { L } from "@/dist/assets/index-94hoLBJ4"
 
 const { defaultFastModel } = config
 abstract class Provider implements LLMProvider {
@@ -16,11 +18,18 @@ abstract class Provider implements LLMProvider {
   }
 
   getModelParams(params: ModelParams) {
+    // Look up the actual model name from MODEL_CONFIGURATIONS
+    // This resolves enum values like "vertex-claude-sonnet-4" to actual API model names like "claude-sonnet-4@20250514"
+    console.log("check model", params.modelId)
+    const modelConfig = MODEL_CONFIGURATIONS[params.modelId || defaultFastModel]
+    console.log("Selected model configuration:", modelConfig)
+    const actualModelId = modelConfig?.actualName || params.modelId || defaultFastModel
+    console.log("Using model:", actualModelId)
     return {
       maxTokens: params.max_new_tokens || 1024 * 8,
       topP: params.top_p || 0.9,
       temperature: params.temperature || 0.6,
-      modelId: params.modelId || defaultFastModel,
+      modelId: actualModelId || defaultFastModel,
       systemPrompt: params.systemPrompt || "You are a helpful assistant.",
       userCtx: params.userCtx,
       stream: params.stream,

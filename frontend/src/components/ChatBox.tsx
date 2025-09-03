@@ -11,7 +11,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
-  Globe,
   AtSign,
   Layers,
   Square,
@@ -28,6 +27,7 @@ import {
   X,
   File,
   Loader2,
+  Globe,
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import {
@@ -138,7 +138,7 @@ interface ChatBoxProps {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    enableWebSearch?: boolean,
+    selectedModel?: string,
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -146,10 +146,6 @@ interface ChatBoxProps {
   chatId?: string | null // Current chat ID
   agentIdFromChatData?: string | null // New prop for agentId from chat data
   allCitations: Map<string, Citation>
-  isReasoningActive: boolean
-  setIsReasoningActive: (
-    value: boolean | ((prevState: boolean) => boolean),
-  ) => void
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
 }
@@ -276,8 +272,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       handleStop,
       chatId,
       agentIdFromChatData, // Destructure new prop
-      isReasoningActive,
-      setIsReasoningActive,
       user, // Destructure user prop
       setIsAgenticMode,
       isAgenticMode = false,
@@ -446,22 +440,148 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
-    const [enableWebSearch, setEnableWebSearch] = useState(() => {
-      const saved = localStorage.getItem("enableWebSearch")
-      return saved !== null ? JSON.parse(saved) : false
+    
+    // Model selection state
+    const [availableModels, setAvailableModels] = useState<Array<{
+      labelName: string
+      reasoning: boolean
+      websearch: boolean
+      deepResearch: boolean
+    }>>([])
+    const [selectedModel, setSelectedModel] = useState<string>(() => {
+      // Initialize from localStorage if available
+      try {
+        return localStorage.getItem("selectedModel") || ""
+      } catch {
+        return ""
+      }
     })
+    const [isModelsLoading, setIsModelsLoading] = useState(false)
+    
+    // Model filtering state
+    const [modelFilters, setModelFilters] = useState({
+      reasoning: false,
+      websearch: false,
+      deepResearch: false,
+    })
+
+    // Selected model capabilities state
+    const [selectedCapabilities, setSelectedCapabilities] = useState(() => {
+      // Initialize from localStorage if available
+      try {
+        const saved = localStorage.getItem("selectedCapabilities")
+        if (saved) {
+          return JSON.parse(saved)
+        }
+      } catch (error) {
+        console.warn("Failed to load capabilities from localStorage:", error)
+      }
+      return {
+        reasoning: false,
+        websearch: false,
+        deepResearch: false,
+      }
+    })
+
+    // UI state for capability slider
+    const [showCapabilitySlider, setShowCapabilitySlider] = useState(false)
+
+    // Get the currently selected model's capabilities
+    const selectedModelData = useMemo(() => {
+      return availableModels.find(m => m.labelName === selectedModel)
+    }, [availableModels, selectedModel])
+
+    // Get available capabilities for the selected model
+    const availableCapabilities = useMemo(() => {
+      if (!selectedModelData) return []
+      
+      const capabilities = []
+      if (selectedModelData.reasoning) capabilities.push('reasoning')
+      if (selectedModelData.websearch) capabilities.push('websearch')
+      if (selectedModelData.deepResearch) capabilities.push('deepResearch')
+      
+      return capabilities
+    }, [selectedModelData])
+
+    // Auto-show capability slider when model is selected and has capabilities
+    useEffect(() => {
+      if (selectedModelData && availableCapabilities.length > 0) {
+        // Small delay to allow smooth transition when switching models
+        const timer = setTimeout(() => {
+          setShowCapabilitySlider(true)
+        }, 100)
+        return () => clearTimeout(timer)
+      } else {
+        setShowCapabilitySlider(false)
+      }
+    }, [selectedModelData, availableCapabilities])
+
+    // Filter models based on selected filters
+    const filteredModels = useMemo(() => {
+      if (!modelFilters.reasoning && !modelFilters.websearch && !modelFilters.deepResearch) {
+        return availableModels // Return all models if no filters are active
+      }
+      
+      return availableModels.filter(model => {
+        const matchesReasoning = !modelFilters.reasoning || model.reasoning
+        const matchesWebsearch = !modelFilters.websearch || model.websearch
+        const matchesDeepResearch = !modelFilters.deepResearch || model.deepResearch
+        
+        return matchesReasoning && matchesWebsearch && matchesDeepResearch
+      })
+    }, [availableModels, modelFilters])
+    
     const showAdvancedOptions =
       overrideIsRagOn ??
       (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
 
-    // Persist enableWebSearch state to localStorage when it changes
-    useEffect(() => {
-      localStorage.setItem("enableWebSearch", JSON.stringify(enableWebSearch))
-    }, [enableWebSearch])
-
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
     const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
+
+    // Effect to persist selected model to localStorage
+    useEffect(() => {
+      if (selectedModel) {
+        try {
+          localStorage.setItem("selectedModel", selectedModel)
+        } catch (error) {
+          console.warn("Failed to save selected model to localStorage:", error)
+        }
+      }
+    }, [selectedModel])
+
+    // Effect to persist selected capabilities to localStorage
+    useEffect(() => {
+      try {
+        localStorage.setItem("selectedCapabilities", JSON.stringify(selectedCapabilities))
+      } catch (error) {
+        console.warn("Failed to save capabilities to localStorage:", error)
+      }
+    }, [selectedCapabilities])
+
+    // Fetch available models on component mount
+    useEffect(() => {
+      const fetchAvailableModels = async () => {
+        try {
+          setIsModelsLoading(true)
+          const response = await api.chat.models.$get()
+          const data = await response.json()
+          console.log(data)
+          setAvailableModels(data.models)
+          
+          // Set first model as default if none selected
+          if (data.models.length > 0 && !selectedModel) {
+            setSelectedModel(data.models[0].labelName)
+          }
+        } catch (error) {
+          console.error("Failed to fetch available models:", error)
+        } finally {
+          setIsModelsLoading(false)
+        }
+      }
+
+      fetchAvailableModels()
+    }, [selectedModel])
 
     // File upload utility functions
     const showToast = createToastNotifier(toast)
@@ -1725,14 +1845,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       })
 
       htmlMessage = tempDiv.innerHTML
-
+      
+      // Prepare model configuration with capabilities
+      const modelConfig = {
+        model: selectedModel,
+        capabilities: selectedCapabilities
+      }
+      
       handleSend(
         htmlMessage,
         attachmentsMetadata,
         activeSourceIds.length > 0 ? activeSourceIds : undefined,
         persistedAgentId,
         toolsListToSend,
-        enableWebSearch,
+        JSON.stringify(modelConfig), // Send model config as JSON string
       )
 
       // Clear the input and attached files after sending
@@ -1754,13 +1880,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       allConnectors,
       selectedFiles,
       persistedAgentId,
+      selectedModel,
+      selectedCapabilities,
       handleSend,
       uploadFiles,
       user,
       setQuery,
       setSelectedFiles,
       cleanupPreviewUrls,
-      enableWebSearch,
     ])
 
     const handleSourceSelectionChange = (
@@ -1848,6 +1975,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         persistedAgentId,
         selectedSources,
         selectedFiles,
+        selectedModel,
+        selectedCapabilities,
         handleSendMessage,
       ],
     )
@@ -2538,28 +2667,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             />
             {showAdvancedOptions && (
               <>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Globe
-                        size={16}
-                        className={`cursor-pointer transition-colors ${
-                          enableWebSearch
-                            ? "text-blue-600 dark:text-blue-400"
-                            : "text-[#464D53] dark:text-gray-400"
-                        }`}
-                        onClick={() => setEnableWebSearch(!enableWebSearch)}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {enableWebSearch
-                          ? "Disable web search"
-                          : "Enable web search"}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
                 <AtSign
                   size={16}
                   className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
@@ -3220,29 +3327,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {/* Closing tag for the conditional render */}
-            <div className="flex items-center">
-              <button
-                onClick={() => setIsReasoningActive(!isReasoningActive)}
-                className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-                  isReasoningActive
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-[#464D53] dark:text-gray-400"
-                }`}
-              >
-                <Atom
-                  size={16}
-                  className={
-                    isReasoningActive
-                      ? "text-green-600 dark:text-green-400"
-                      : "dark:text-gray-400"
-                  }
-                />
-                <span className={isReasoningActive ? "" : "dark:text-gray-300"}>
-                  Reasoning
-                </span>
-              </button>
-            </div>
             {showAdvancedOptions && (
               <button
                 onClick={(e) => {
@@ -3263,6 +3347,212 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   Agent
                 </span>
               </button>
+            )}
+            {/* Model Selection with Capability Slider */}
+            {showAdvancedOptions && (
+              <div className="flex items-center mr-3">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-300 cursor-pointer mr-2"
+                      onClick={() => setShowCapabilitySlider(false)}
+                    >
+                      <span className="truncate max-w-[100px]">
+                        {isModelsLoading 
+                          ? "Loading..." 
+                          : selectedModelData?.labelName || "Select Model"
+                        }
+                      </span>
+                      <ChevronDown size={14} className="ml-1" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    className="w-64 max-h-96 p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+                    align="start"
+                  >
+                    {/* Model Filters */}
+                    <div className="px-3 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <span className="text-base font-medium text-gray-600 dark:text-gray-400">
+                          Filters
+                        </span>
+                        <div className="flex items-center gap-2">
+                        <TooltipProvider delayDuration={100}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => setModelFilters(prev => ({ ...prev, reasoning: !prev.reasoning }))}
+                                className={`p-2 rounded-full transition-all duration-200 ${
+                                  modelFilters.reasoning
+                                    ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400 shadow-md'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                } hover:scale-110`}
+                              >
+                                <Atom size={14} />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
+                              <p>Reasoning</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        <TooltipProvider delayDuration={100}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => setModelFilters(prev => ({ ...prev, websearch: !prev.websearch }))}
+                                className={`p-2 rounded-full transition-all duration-200 ${
+                                  modelFilters.websearch
+                                    ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400 shadow-md'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                } hover:scale-110`}
+                              >
+                                <Globe size={14} />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
+                              <p>Web Search</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        <TooltipProvider delayDuration={100}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => setModelFilters(prev => ({ ...prev, deepResearch: !prev.deepResearch }))}
+                                className={`p-2 rounded-full transition-all duration-200 ${
+                                  modelFilters.deepResearch
+                                    ? 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400 shadow-md'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                } hover:scale-110`}
+                              >
+                                <Search size={14} />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
+                              <p>Deep Research</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Models list with its own scroll */}
+                    <div className="max-h-72 overflow-y-auto pb-2">
+                      {filteredModels.length > 0 ? (
+                        filteredModels.map((model) => (
+                          <DropdownMenuItem
+                            key={model.labelName}
+                            onClick={() => {
+                              setSelectedModel(model.labelName)
+                              setShowCapabilitySlider(true)
+                              // Keep existing capabilities if the new model supports them
+                              setSelectedCapabilities((prev: typeof selectedCapabilities) => ({
+                                reasoning: prev.reasoning && model.reasoning,
+                                websearch: prev.websearch && model.websearch,
+                                deepResearch: prev.deepResearch && model.deepResearch,
+                              }))
+                            }}
+                            className="flex items-center justify-between px-3 py-1.5"
+                          >
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="font-medium truncate">{model.labelName}</span>
+                            </div>
+                            {selectedModel === model.labelName && (
+                              <Check size={14} className="text-green-500 flex-shrink-0 ml-2" />
+                            )}
+                          </DropdownMenuItem>
+                        ))
+                      ) : (
+                        <DropdownMenuItem disabled className="px-3 py-1.5">
+                          No models match selected filters
+                        </DropdownMenuItem>
+                      )}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Capability Slider */}
+                <div className={`flex items-center transition-all duration-500 ease-in-out overflow-hidden ${
+                  showCapabilitySlider && selectedModelData && availableCapabilities.length > 0
+                    ? 'max-w-[200px] opacity-100' 
+                    : 'max-w-0 opacity-0'
+                }`}>
+                  <div className="flex items-center gap-1 pl-2">
+                    <div className={`transition-all duration-300 ${
+                      availableCapabilities.includes('reasoning') 
+                        ? 'transform translate-x-0 opacity-100 scale-100' 
+                        : 'transform -translate-x-4 opacity-0 scale-75'
+                    }`}>
+                      {availableCapabilities.includes('reasoning') && (
+                        <button
+                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
+                            ...prev, 
+                            reasoning: !prev.reasoning 
+                          }))}
+                          className={`p-1.5 rounded-full transition-all duration-200 ${
+                            selectedCapabilities.reasoning
+                              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400 shadow-md'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          } hover:scale-110`}
+                          title="Reasoning"
+                        >
+                          <Atom size={14} />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className={`transition-all duration-300 delay-75 ${
+                      availableCapabilities.includes('websearch') 
+                        ? 'transform translate-x-0 opacity-100 scale-100' 
+                        : 'transform -translate-x-4 opacity-0 scale-75'
+                    }`}>
+                      {availableCapabilities.includes('websearch') && (
+                        <button
+                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
+                            ...prev, 
+                            websearch: !prev.websearch 
+                          }))}
+                          className={`p-1.5 rounded-full transition-all duration-200 ${
+                            selectedCapabilities.websearch
+                              ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400 shadow-md'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          } hover:scale-110`}
+                          title="Web Search"
+                        >
+                          <Globe size={14} />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className={`transition-all duration-300 delay-150 ${
+                      availableCapabilities.includes('deepResearch') 
+                        ? 'transform translate-x-0 opacity-100 scale-100' 
+                        : 'transform -translate-x-4 opacity-0 scale-75'
+                    }`}>
+                      {availableCapabilities.includes('deepResearch') && (
+                        <button
+                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
+                            ...prev, 
+                            deepResearch: !prev.deepResearch 
+                          }))}
+                          className={`p-1.5 rounded-full transition-all duration-200 ${
+                            selectedCapabilities.deepResearch
+                              ? 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400 shadow-md'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          } hover:scale-110`}
+                          title="Deep Research"
+                        >
+                          <Search size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
             {(isStreaming || retryIsStreaming) && chatId ? (
               <button
