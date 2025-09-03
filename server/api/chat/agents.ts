@@ -658,7 +658,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
-    const isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message) 
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -2841,9 +2841,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    const isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message) || (path && ids)
     const extractedInfo =
-      isMsgWithContext || path
+      isMsgWithContext || (path && ids)
         ? await extractFileIdsFromMessage(message, email, path)
         : {
             totalValidFileIdsFromLinkCount: 0,
@@ -3502,6 +3502,7 @@ export const AgentMessageApi = async (c: Context) => {
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
     )
+    console.log(body)
     let attachmentStorageError: Error | null = null
     let {
       message,
@@ -3554,9 +3555,9 @@ export const AgentMessageApi = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    const isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message) || (path && ids)
     const extractedInfo =
-      isMsgWithContext || path
+      isMsgWithContext || (path && ids)
         ? await extractFileIdsFromMessage(message, email, ids)
         : {
             totalValidFileIdsFromLinkCount: 0,

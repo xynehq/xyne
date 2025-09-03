@@ -612,6 +612,17 @@ export const getAllCollectionAndFolderItems = async (
           ),
         )
       if (folder) queue.push({ itemId: folder.id })
+    } else if (input.startsWith("clf-")) {
+      const fileid = await trx
+        .select({ id: collectionItems.id })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, input),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+      if (fileid.length) result.push(fileid[0].id)
     } else {
       // Assume it's a DB item id (UUID)
       queue.push({ itemId: input })
@@ -768,37 +779,31 @@ export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
 }
 
+export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+  let directoryPath: string
+  let currItem: string
+  const lastSlashIndex = path.lastIndexOf("/")
+  if (lastSlashIndex === -1) {
+    // No slash found, entire path is filename
+    directoryPath = "/"
+    currItem = path
+  } else {
+    directoryPath = path.substring(0, lastSlashIndex + 1) // Include the trailing slash
+    currItem = path.substring(lastSlashIndex + 1)
+  }
 
-export const getRecordBypath = async(
-  path:string,
-  trx:TxnOrClient
-) => {
-  let directoryPath:string
-  let currItem:string
-    
-      const lastSlashIndex = path.lastIndexOf('/');
-      if (lastSlashIndex === -1) {
-          // No slash found, entire path is filename
-          directoryPath = "/";
-          currItem = path;
-      } else {
-          directoryPath = path.substring(0, lastSlashIndex + 1); // Include the trailing slash
-          currItem = path.substring(lastSlashIndex + 1);
-      } 
+  const whereConditions = [
+    eq(collectionItems.path, directoryPath),
+    isNull(collectionItems.deletedAt),
+  ]
 
-    
-    const whereConditions = [
-      eq(collectionItems.path, directoryPath),
-      isNull(collectionItems.deletedAt)
-    ];
-    
-    if (currItem !== "") {
-      whereConditions.push(eq(collectionItems.name, currItem));
-    }
-    const result = await trx
-                    .select({docId:collectionItems.vespaDocId})
-                    .from(collectionItems)
-                    .where(and(...whereConditions))
-    
-    return result
+  if (currItem !== "") {
+    whereConditions.push(eq(collectionItems.name, currItem))
+  }
+  let result = await trx
+    .select({ docId: collectionItems.vespaDocId })
+    .from(collectionItems)
+    .where(and(...whereConditions))
+
+  return result.length > 0 ? result[0].docId : null
 }
