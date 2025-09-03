@@ -5,7 +5,6 @@ import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
 import config from "@/config"
 import path from "path"
 import fs from "fs"
-import { L } from "@/dist/assets/index-94hoLBJ4"
 
 const { defaultFastModel } = config
 abstract class Provider implements LLMProvider {
