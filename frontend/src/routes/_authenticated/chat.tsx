@@ -866,7 +866,11 @@ export const ChatPage = ({
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
     setRetryIsStreaming(true)
-    await retryMessage(messageId, false, isAgenticMode) // Default reasoning to false
+    
+    // Get current model configuration from ChatBox
+    const currentModelConfig = chatBoxRef.current?.getCurrentModelConfig() || null
+    
+    await retryMessage(messageId, isAgenticMode, undefined, currentModelConfig)
   }
 
   const bookmarkChatMutation = useMutation<

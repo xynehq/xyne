@@ -81,8 +81,6 @@ type CurrentResp = {
   thinking?: string
 }
 
-const REASONING_STATE_KEY = "isAgentReasoningGlobalState"
-
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
@@ -405,15 +403,6 @@ function AgentComponent() {
   const [confirmAction, setConfirmAction] = useState<
     (() => Promise<void>) | null
   >(null)
-
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : false
-  })
-
-  useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
-  }, [isReasoningActive])
 
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
@@ -1951,9 +1940,6 @@ function AgentComponent() {
       finalModelForChat === "Auto" ? "gpt-4o-mini" : finalModelForChat,
     )
     url.searchParams.append("message", encodeURIComponent(messageToSend))
-    if (isReasoningActive) {
-      url.searchParams.append("isReasoningEnabled", "true")
-    }
     url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
 
     if (metadata && metadata.length > 0) {
@@ -4255,8 +4241,6 @@ function AgentComponent() {
                 isAgenticMode={isAgenticMode}
                 isStreaming={isStreaming}
                 allCitations={allCitations}
-                isReasoningActive={isReasoningActive}
-                setIsReasoningActive={setIsReasoningActive}
                 overrideIsRagOn={testAgentIsRagOn}
               />
             </div>

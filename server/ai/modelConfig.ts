@@ -690,27 +690,21 @@ export const getActiveProvider = (): AIProviders | null => {
 // Function to convert friendly model label back to the correct provider-specific model enum
 export const getModelValueFromLabel = (label: string): Models | null => {
   const activeProvider = getActiveProvider()
-  
-  console.log(`[getModelValueFromLabel] Looking for label: "${label}"`)
-  console.log(`[getModelValueFromLabel] Active provider: ${activeProvider}`)
+
   
   if (!activeProvider) {
-    console.log(`[getModelValueFromLabel] No active provider found`)
     return null
   }
   
   // First, try to find the model by matching labelName in MODEL_CONFIGURATIONS
   const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(([modelKey, config]) => {
     const matches = config.labelName === label && config.provider === activeProvider
-    console.log(`[getModelValueFromLabel] Checking ${modelKey}: labelName="${config.labelName}", provider="${config.provider}", matches=${matches}`)
     return matches
   })
   
   if (modelEntry) {
-    console.log(`[getModelValueFromLabel] Found model: ${modelEntry[0]}`)
     return modelEntry[0] as Models
   } else {
-    console.log(`[getModelValueFromLabel] No matching model found for label "${label}" with provider ${activeProvider}`)
   }
   
   // Handle special cases for dynamic models (Ollama, Together AI, etc.)

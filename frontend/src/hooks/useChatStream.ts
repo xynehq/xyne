@@ -285,7 +285,6 @@ export const startStream = async (
       console.warn("Failed to parse selectedModel JSON, using defaults:", e)
     }
   }
-  console.log("Selected model configuration:", modelConfig)
   url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
   url.searchParams.append("message", finalMessagePayload)
 
@@ -668,9 +667,9 @@ export const useChatStream = (
   const retryMessage = useCallback(
     async (
       messageId: string,
-      isReasoningActive: boolean = false,
       isAgenticMode: boolean = false,
       attachmentFileIds?: string[],
+      selectedModelConfig?: string | null,
     ) => {
       if (!messageId) return
 
@@ -766,11 +765,11 @@ export const useChatStream = (
 
       const url = new URL(`/api/v1/message/retry`, window.location.origin)
       url.searchParams.append("messageId", encodeURIComponent(messageId))
-      if (isReasoningActive) {
-        url.searchParams.append("isReasoningEnabled", "true")
-      }
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
+      }
+      if (selectedModelConfig) {
+        url.searchParams.append("selectedModelConfig", selectedModelConfig)
       }
       if (attachmentFileIds) {
         url.searchParams.append(

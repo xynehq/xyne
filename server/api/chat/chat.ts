@@ -228,6 +228,7 @@ import {
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
 import type { GroundingSupport } from "@google/genai"
+import { composer } from "googleapis/build/src/apis/composer"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -4037,7 +4038,6 @@ export const MessageApi = async (c: Context) => {
     if (selectedModelConfig) {
       try {
         const config = JSON.parse(selectedModelConfig)
-        console.log("Parsed model config:", config)
         modelId = config.model
         
         // Check capabilities - handle both array and object formats
@@ -4067,7 +4067,6 @@ export const MessageApi = async (c: Context) => {
       modelId = "gemini-2-5-pro"
       loggerWithChild({ email: email }).info("No model config provided, using default")
     }
-    console.log("enableWebsearch:", enableWebSearch)
     // Convert modelId from friendly label to actual model value
     let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
     if (modelId) {
@@ -4084,7 +4083,6 @@ export const MessageApi = async (c: Context) => {
         actualModelId = modelId // fallback to using the label as-is
       }
     }
-    console.log(`Actual model ID: ${actualModelId}`)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
@@ -5506,7 +5504,30 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, selectedModelConfig }: MessageRetryReqType = body
+    // Parse the model configuration JSON
+    let extractedModelId: string | null = null
+    let isReasoningEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        // Decode the URL-encoded string first
+        const modelConfig = JSON.parse(selectedModelConfig)
+        extractedModelId = modelConfig.model || null
+        
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig in retry:', error)
+      }
+    }
+    
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
@@ -5588,8 +5609,8 @@ export const MessageRetryApi = async (c: Context) => {
       }
     }
 
-    // Use the same modelId
-    const modelId = originalMessage.modelId as Models
+    // Use the extracted modelId if provided, otherwise use the original message's modelId
+    const modelId = extractedModelId ? getModelValueFromLabel(extractedModelId) || originalMessage.modelId as Models : originalMessage.modelId as Models
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(

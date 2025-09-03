@@ -257,6 +257,7 @@ const setCaretPosition = (element: Node, position: number) => {
 
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
+  getCurrentModelConfig: () => string | null
 }
 
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
@@ -566,7 +567,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           setIsModelsLoading(true)
           const response = await api.chat.models.$get()
           const data = await response.json()
-          console.log(data)
           setAvailableModels(data.models)
           
           // Set first model as default if none selected
@@ -1966,6 +1966,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             // for agents, tools, connectors, etc.
             handleSendMessage()
           }, 0)
+        },
+        getCurrentModelConfig: () => {
+          const modelConfig = {
+            model: selectedModel,
+            capabilities: selectedCapabilities
+          }
+          return JSON.stringify(modelConfig)
         },
       }),
       [
