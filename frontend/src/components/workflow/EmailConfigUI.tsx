@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, X, Trash2, User } from 'lucide-react';
+import { ArrowLeft, X, Trash2 } from 'lucide-react';
 
 interface EmailConfigUIProps {
   isVisible: boolean;
@@ -15,23 +15,13 @@ export interface EmailConfig {
   emailAddresses: string[];
 }
 
-interface EmailRecipient {
-  id: string;
-  email: string;
-  name: string;
-}
-
 const EmailConfigUI: React.FC<EmailConfigUIProps> = ({ isVisible, onBack, onSave }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: 'noreply@xyne.com',
-    emailAddresses: ['arnabdebnath@juspay.in']
+    emailAddresses: []
   });
 
   const [newEmailAddress, setNewEmailAddress] = useState('');
-  const [recipients] = useState<EmailRecipient[]>([
-    { id: '1', email: 'arnabdebnath@juspay.in', name: 'Arnab Debnath' },
-    { id: '2', email: 'arnab.debnath@example.com', name: 'Arnab Debnath' }
-  ]);
 
   const handleAddEmail = () => {
     if (newEmailAddress && !emailConfig.emailAddresses.includes(newEmailAddress)) {
@@ -50,7 +40,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({ isVisible, onBack, onSave
     }));
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleAddEmail();
     }
@@ -155,7 +145,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({ isVisible, onBack, onSave
                 id="add-email"
                 value={newEmailAddress}
                 onChange={(e) => setNewEmailAddress(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 placeholder="type email address"
                 className="w-full pr-16"
               />
@@ -170,18 +160,25 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({ isVisible, onBack, onSave
             {emailConfig.emailAddresses.length > 0 && (
               <div className="space-y-2 mt-4">
                 {emailConfig.emailAddresses.map((email, index) => {
-                  const recipient = recipients.find(r => r.email === email);
+                  // Generate avatar color based on email
+                  const avatarColors = [
+                    'bg-yellow-400', 'bg-pink-500', 'bg-blue-500', 'bg-green-500', 
+                    'bg-purple-500', 'bg-red-500', 'bg-orange-500', 'bg-teal-500'
+                  ];
+                  const colorIndex = email.charCodeAt(0) % avatarColors.length;
+                  const avatarColor = avatarColors[colorIndex];
+                  
+                  // Get first letter of email for avatar
+                  const firstLetter = email.charAt(0).toUpperCase();
+                  
                   return (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                          <User className="w-4 h-4 text-gray-500" />
+                        <div className={`w-8 h-8 ${avatarColor} rounded-full flex items-center justify-center text-white font-medium text-sm`}>
+                          {firstLetter}
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-slate-900">
-                            {recipient?.name || 'Unknown User'}
-                          </div>
-                          <div className="text-xs text-slate-500">{email}</div>
+                        <div className="text-sm font-medium text-slate-900">
+                          {email}
                         </div>
                       </div>
                       <button
@@ -200,10 +197,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({ isVisible, onBack, onSave
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-4 border-t border-slate-200 bg-gray-50">
+      <div className="px-6 py-4 border-t border-slate-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <Button 
           onClick={handleSave}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          className="w-full bg-black hover:bg-gray-800 text-white"
         >
           Save Configuration
         </Button>

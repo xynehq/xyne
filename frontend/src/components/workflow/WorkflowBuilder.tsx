@@ -45,6 +45,7 @@ import { workflowTemplatesAPI, workflowsAPI } from './api/ApiHandlers';
 import WhatHappensNextUI from './WhatHappensNextUI';
 import AIAgentConfigUI, { AIAgentConfig } from './AIAgentConfigUI';
 import EmailConfigUI, { EmailConfig } from './EmailConfigUI';
+import OnFormSubmissionUI, { FormConfig } from './OnFormSubmissionUI';
 
 
 // Tool Card Component
@@ -94,13 +95,77 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 
   // Special rendering for AI Agent nodes
   if (step.type === 'ai_agent') {
+    const isConfigured = (step as any).config?.name && (step as any).config?.name.trim() !== '';
+    
+    if (!isConfigured) {
+      // Show only icon when not configured
+      return (
+        <>
+          <div 
+            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+            style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '12px',
+              border: '2px solid #181B1D',
+              background: '#FFF',
+              boxShadow: '0 0 0 2px #E2E2E2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {/* Blue bot icon with background */}
+            <div 
+              className="flex justify-center items-center flex-shrink-0"
+              style={{
+                display: 'flex',
+                width: '32px',
+                height: '32px',
+                padding: '6px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: '6px',
+                background: '#EBF4FF'
+              }}
+            >
+              <Bot width={20} height={20} color="#2563EB" />
+            </div>
+
+            {/* ReactFlow Handles - invisible but functional */}
+            <Handle
+              type="target"
+              position={Position.Top}
+              id="top"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+            
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="bottom"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            {/* Bottom center connection point - visual only */}
+            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // Show full content when configured
     return (
       <>
         <div 
           className="relative cursor-pointer hover:shadow-lg transition-shadow"
           style={{
             width: '320px',
-            height: '122px',
+            minHeight: '122px',
             borderRadius: '12px',
             border: '2px solid #181B1D',
             background: '#FFF',
@@ -127,7 +192,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             </div>
             
             <h3 
-              className="text-gray-800"
+              className="text-gray-800 truncate flex-1"
               style={{
                 fontFamily: 'Inter',
                 fontSize: '14px',
@@ -138,7 +203,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
                 color: '#3B4145'
               }}
             >
-              {step.name || 'Document Summariser'}
+              {(step as any).config?.name || 'AI Agent'}
             </h3>
           </div>
           
@@ -146,9 +211,9 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           <div className="w-full h-px bg-gray-200 mb-3"></div>
           
           {/* Description text */}
-          <div className="px-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left">
-              AI agent to analyze and summarize documents using {(step as any).config?.model || 'gpt-oss-120b'}.
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(step as any).config?.description || `AI agent to analyze and summarize documents using ${(step as any).config?.model || 'gpt-oss-120b'}.`}
             </p>
           </div>
 
@@ -187,7 +252,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
                 window.dispatchEvent(event);
               }}
             >
-              <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
               <div 
                 className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
                 style={{
@@ -209,13 +274,77 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 
   // Special rendering for Email nodes
   if (step.type === 'email') {
+    const isConfigured = (step as any).config?.emailAddresses && (step as any).config?.emailAddresses.length > 0;
+    
+    if (!isConfigured) {
+      // Show only icon when not configured
+      return (
+        <>
+          <div 
+            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+            style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '12px',
+              border: '2px solid #181B1D',
+              background: '#FFF',
+              boxShadow: '0 0 0 2px #E2E2E2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {/* Purple mail icon with background */}
+            <div 
+              className="flex justify-center items-center flex-shrink-0"
+              style={{
+                display: 'flex',
+                width: '32px',
+                height: '32px',
+                padding: '6px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: '6px',
+                background: '#F3E8FF'
+              }}
+            >
+              <Mail width={20} height={20} color="#7C3AED" />
+            </div>
+
+            {/* ReactFlow Handles - invisible but functional */}
+            <Handle
+              type="target"
+              position={Position.Top}
+              id="top"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+            
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="bottom"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            {/* Bottom center connection point - visual only */}
+            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // Show full content when configured
     return (
       <>
         <div 
           className="relative cursor-pointer hover:shadow-lg transition-shadow"
           style={{
             width: '320px',
-            height: '122px',
+            minHeight: '122px',
             borderRadius: '12px',
             border: '2px solid #181B1D',
             background: '#FFF',
@@ -242,7 +371,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             </div>
             
             <h3 
-              className="text-gray-800"
+              className="text-gray-800 truncate flex-1"
               style={{
                 fontFamily: 'Inter',
                 fontSize: '14px',
@@ -261,9 +390,9 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           <div className="w-full h-px bg-gray-200 mb-3"></div>
           
           {/* Description text */}
-          <div className="px-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left">
-              Send emails to {(step as any).config?.emailAddresses?.[0] || 'specified recipients'} via automated workflow.
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              Send emails to {(step as any).config?.emailAddresses?.join(', ') || 'specified recipients'} via automated workflow.
             </p>
           </div>
 
@@ -302,7 +431,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
                 window.dispatchEvent(event);
               }}
             >
-              <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
               <div 
                 className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
                 style={{
@@ -330,7 +459,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           className="relative cursor-pointer hover:shadow-lg transition-shadow"
           style={{
             width: '320px',
-            height: '122px',
+            minHeight: '122px',
             borderRadius: '12px',
             border: '2px solid #181B1D',
             background: '#FFF',
@@ -357,7 +486,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             </div>
             
             <h3 
-              className="text-gray-800"
+              className="text-gray-800 truncate flex-1"
               style={{
                 fontFamily: 'Inter',
                 fontSize: '14px',
@@ -368,7 +497,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
                 color: '#3B4145'
               }}
             >
-              Form Submission
+              {(step as any).config?.title || 'Form Submission'}
             </h3>
           </div>
           
@@ -376,9 +505,97 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           <div className="w-full h-px bg-gray-200 mb-3"></div>
           
           {/* Description text */}
-          <div className="px-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left">
-              Upload a file in formats such as PDF, DOCX, or JPG.
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                const config = (step as any).config;
+                
+                // If user has configured the form, show form details
+                if (config?.title || config?.description || (config?.fields && config.fields.length > 0)) {
+                  const fieldCount = config?.fields?.length || 0;
+                  const fields = config?.fields || [];
+                  
+                  // Build description based on what's configured
+                  let description = '';
+                  
+                  if (config.description) {
+                    description = config.description;
+                    
+                    // Add field information even with custom description
+                    if (fields.length > 0) {
+                      const fieldDescriptions = fields.map((field: any) => {
+                        if (field.type === 'file') {
+                          return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
+                        } else if (field.type === 'email') {
+                          return `Enter ${field.name || 'email address'}`;
+                        } else if (field.type === 'text') {
+                          return `Enter ${field.name || 'text'}`;
+                        } else if (field.type === 'textarea') {
+                          return `Enter ${field.name || 'detailed text'}`;
+                        } else if (field.type === 'number') {
+                          return `Enter ${field.name || 'number'}`;
+                        }
+                        return `${field.name || field.type}`;
+                      });
+                      
+                      description += `. ${fieldDescriptions.join(', ')}`;
+                    }
+                  } else if (config.title) {
+                    description = `Form "${config.title}" with ${fieldCount} field${fieldCount !== 1 ? 's' : ''}`;
+                    
+                    // Add field details
+                    if (fields.length > 0) {
+                      const fieldDescriptions = fields.map((field: any) => {
+                        if (field.type === 'file') {
+                          return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
+                        } else if (field.type === 'email') {
+                          return `Enter ${field.name || 'email address'}`;
+                        } else if (field.type === 'text') {
+                          return `Enter ${field.name || 'text'}`;
+                        } else if (field.type === 'textarea') {
+                          return `Enter ${field.name || 'detailed text'}`;
+                        } else if (field.type === 'number') {
+                          return `Enter ${field.name || 'number'}`;
+                        }
+                        return `${field.name || field.type}`;
+                      });
+                      
+                      if (fieldDescriptions.length === 1) {
+                        description = fieldDescriptions[0];
+                      } else {
+                        description += `. Fields: ${fieldDescriptions.join(', ')}`;
+                      }
+                    }
+                  } else if (fieldCount > 0) {
+                    // Show field details when only fields are configured
+                    const fieldDescriptions = fields.map((field: any) => {
+                      if (field.type === 'file') {
+                        return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
+                      } else if (field.type === 'email') {
+                        return `Enter ${field.name || 'email address'}`;
+                      } else if (field.type === 'text') {
+                        return `Enter ${field.name || 'text'}`;
+                      } else if (field.type === 'textarea') {
+                        return `Enter ${field.name || 'detailed text'}`;
+                      } else if (field.type === 'number') {
+                        return `Enter ${field.name || 'number'}`;
+                      }
+                      return `${field.name || field.type}`;
+                    });
+                    
+                    if (fieldDescriptions.length === 1) {
+                      description = fieldDescriptions[0];
+                    } else {
+                      description = `Form with ${fieldCount} fields: ${fieldDescriptions.join(', ')}`;
+                    }
+                  }
+                  
+                  return description || 'Custom form configuration';
+                }
+                
+                // Fallback content when no configuration
+                return 'Upload a file in formats such as PDF, DOCX, or JPG.';
+              })()}
             </p>
           </div>
 
@@ -417,7 +634,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
                 window.dispatchEvent(event);
               }}
             >
-              <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
               <div 
                 className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
                 style={{
@@ -441,18 +658,18 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
     const baseClasses = 'rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm';
     
     if (isCompleted) {
-      return `${baseClasses} border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-900 shadow-lg shadow-emerald-500/15`;
+      return `${baseClasses} border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 text-emerald-900 dark:text-emerald-300 shadow-lg shadow-emerald-500/15`;
     }
     
     if (isActive) {
-      return `${baseClasses} border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 text-blue-900 shadow-lg shadow-blue-500/15`;
+      return `${baseClasses} border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 text-blue-900 dark:text-blue-300 shadow-lg shadow-blue-500/15`;
     }
     
     if (selected) {
-      return `${baseClasses} border-purple-600 bg-gradient-to-br from-purple-50 to-purple-100 text-purple-900 shadow-xl shadow-purple-500/15`;
+      return `${baseClasses} border-purple-600 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 text-purple-900 dark:text-purple-300 shadow-xl shadow-purple-500/15`;
     }
     
-    return `${baseClasses} border-gray-200 bg-gradient-to-br from-white to-gray-50 text-gray-700 shadow-md shadow-black/8`;
+    return `${baseClasses} border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 shadow-md shadow-black/8 dark:shadow-black/20`;
   };
 
   return (
@@ -463,8 +680,8 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           position={Position.Top}
           id="top"
           isConnectable={isConnectable}
-          className={`w-3 h-3 border-2 border-white shadow-sm ${
-            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400'
+          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
+            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400 dark:bg-gray-500'
           }`}
         />
         
@@ -481,7 +698,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             {step.name || 'Unnamed Step'}
           </div>
           {isActive && !isCompleted && (
-            <div className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+            <div className="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded-full">
               Running
             </div>
           )}
@@ -513,8 +730,8 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           position={Position.Bottom}
           id="bottom"
           isConnectable={isConnectable}
-          className={`w-3 h-3 border-2 border-white shadow-sm ${
-            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400'
+          className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
+            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400 dark:bg-gray-500'
           }`}
         />
         
@@ -555,30 +772,30 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 // Header component
 const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
   return (
-    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 bg-white min-h-[80px] gap-3">
+    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 w-full">
-        <div className="text-slate-500 text-sm font-normal leading-5">
+        <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
           <span 
-            className="cursor-pointer hover:text-slate-700"
+            className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
             onClick={onBackToWorkflows}
           >
             Workflow
           </span>
-          <span className='text-[#3B4145] text-sm font-medium leading-5'> / Untitled Workflow</span>
+          <span className='text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5'> / Untitled Workflow</span>
         </div>
       </div>
       
       {/* Full-width divider */}
-      <div className="w-full h-px bg-slate-200 -mx-6 self-stretch" />
+      <div className="w-full h-px bg-slate-200 dark:bg-gray-700 -mx-6 self-stretch" />
       
       {/* Editor/Settings Toggle - positioned below divider */}
-      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-        <button className="my-1 mx-1 px-4 py-1.5 bg-white text-slate-800 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
+      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800">
+        <button className="my-1 mx-1 px-4 py-1.5 bg-white dark:bg-gray-700 text-slate-800 dark:text-gray-200 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
           <EditorIcon />
           Editor
         </button>
-        <button className="px-4 py-1.5 bg-transparent text-slate-500 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
+        <button className="px-4 py-1.5 bg-transparent text-slate-500 dark:text-gray-400 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
           <SettingsIcon />
           Settings
         </button>
@@ -600,7 +817,7 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
     {
       id: 'manual',
       name: 'Trigger Manually',
-      description: 'Runs the flow on clicking a button in n8n. Good for getting started quickly',
+      description: 'Runs the flow when triggered manually. Good for getting started quickly',
       icon: <ManualTriggerIcon width={20} height={20} />,
       enabled: false
     },
@@ -648,28 +865,28 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
   ];
 
   return (
-    <div className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+    <div className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
       isVisible ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0'
     }`}>
       {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-1.5">
-          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 tracking-wider uppercase">
             SELECT TRIGGERS
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
             >
-              <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
           )}
         </div>
-        <div className="text-sm text-slate-500 leading-5 font-normal">
+        <div className="text-sm text-slate-500 dark:text-gray-400 leading-5 font-normal">
           Trigger is an action that will initiate the workflow.
         </div>
       </div>
@@ -681,20 +898,20 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
           <div
             key={trigger.id}
             onClick={() => onTriggerClick?.(trigger.id)}
-            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-transparent hover:bg-slate-50 text-slate-700 min-h-[60px]"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-transparent hover:bg-slate-50 dark:hover:bg-gray-800 text-slate-700 dark:text-gray-300 min-h-[60px]"
           >
-            <div className="w-5 h-5 flex items-center justify-center text-slate-500 flex-shrink-0">
+            <div className="w-5 h-5 flex items-center justify-center text-slate-500 dark:text-gray-400 flex-shrink-0">
               {trigger.icon}
             </div>
             <div className="flex-1">
-              <div className="text-sm font-medium text-slate-700 leading-5">
+              <div className="text-sm font-medium text-slate-700 dark:text-gray-300 leading-5">
                 {trigger.name}
               </div>
-              <div className="text-xs text-slate-500 leading-4 mt-1">
+              <div className="text-xs text-slate-500 dark:text-gray-400 leading-4 mt-1">
                 {trigger.description}
               </div>
             </div>
-            <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="w-4 h-4 text-slate-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
           </div>
@@ -702,7 +919,7 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
 
         {/* Coming Soon Section */}
         <div className="mt-6 mb-4">
-          <div className="text-xs font-semibold text-slate-500 tracking-wider uppercase">
+          <div className="text-xs font-semibold text-slate-500 dark:text-gray-500 tracking-wider uppercase">
             COMING SOON
           </div>
         </div>
@@ -711,20 +928,20 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
         {triggers.filter(trigger => !trigger.enabled).map((trigger) => (
           <div
             key={trigger.id}
-            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-not-allowed transition-all duration-150 bg-transparent text-slate-400 min-h-[60px] opacity-60"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-not-allowed transition-all duration-150 bg-transparent text-slate-400 dark:text-gray-600 min-h-[60px] opacity-60"
           >
-            <div className="w-5 h-5 flex items-center justify-center text-slate-400 flex-shrink-0">
+            <div className="w-5 h-5 flex items-center justify-center text-slate-400 dark:text-gray-600 flex-shrink-0">
               {trigger.icon}
             </div>
             <div className="flex-1">
-              <div className="text-sm font-medium text-slate-400 leading-5">
+              <div className="text-sm font-medium text-slate-400 dark:text-gray-600 leading-5">
                 {trigger.name}
               </div>
-              <div className="text-xs text-slate-400 leading-4 mt-1">
+              <div className="text-xs text-slate-400 dark:text-gray-600 leading-4 mt-1">
                 {trigger.description}
               </div>
             </div>
-            <svg className="w-4 h-4 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="w-4 h-4 text-slate-300 dark:text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
           </div>
@@ -733,19 +950,19 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
 
       {/* Helpful Resources Section */}
       <div className="px-6 pt-5 pb-6">
-        <div className="text-xs font-semibold text-slate-500 tracking-wider uppercase mb-4">
+        <div className="text-xs font-semibold text-slate-500 dark:text-gray-500 tracking-wider uppercase mb-4">
           HELPFUL RESOURCES
         </div>
         
         {resources.map((resource) => (
           <div
             key={resource.id}
-            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 mb-2 min-h-[44px]"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-white dark:bg-gray-800 hover:bg-slate-50 dark:hover:bg-gray-700 border border-slate-200 dark:border-gray-700 hover:border-slate-300 dark:hover:border-gray-600 mb-2 min-h-[44px]"
           >
-            <div className="w-5 h-5 flex items-center justify-center text-slate-500 flex-shrink-0">
+            <div className="w-5 h-5 flex items-center justify-center text-slate-500 dark:text-gray-400 flex-shrink-0">
               {resource.icon}
             </div>
-            <div className="text-sm font-medium text-slate-700 leading-5">
+            <div className="text-sm font-medium text-slate-700 dark:text-gray-300 leading-5">
               {resource.name}
             </div>
           </div>
@@ -764,7 +981,7 @@ const EmptyCanvas: React.FC<{
       {/* Main CTA Button */}
       <button
         onClick={onAddFirstStep}
-        className="px-8 py-5 bg-white border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-xl text-slate-700 text-base font-medium cursor-pointer flex items-center gap-3 transition-all duration-200 min-w-[200px] justify-center hover:bg-slate-50 hover:-translate-y-px hover:shadow-md"
+        className="px-8 py-5 bg-white dark:bg-gray-800 border-2 border-dashed border-slate-300 dark:border-gray-600 hover:border-slate-400 dark:hover:border-gray-500 rounded-xl text-slate-700 dark:text-gray-300 text-base font-medium cursor-pointer flex items-center gap-3 transition-all duration-200 min-w-[200px] justify-center hover:bg-slate-50 dark:hover:bg-gray-700 hover:-translate-y-px hover:shadow-md"
       >
         <AddIcon />
         Add first step
@@ -772,17 +989,17 @@ const EmptyCanvas: React.FC<{
       
       {/* Divider */}
       <div className="flex items-center gap-4 w-full max-w-[300px]">
-        <div className="flex-1 h-px bg-slate-200" />
-        <div className="text-slate-500 text-sm font-medium uppercase tracking-wider">
+        <div className="flex-1 h-px bg-slate-200 dark:bg-gray-600" />
+        <div className="text-slate-500 dark:text-gray-400 text-sm font-medium uppercase tracking-wider">
           OR
         </div>
-        <div className="flex-1 h-px bg-slate-200" />
+        <div className="flex-1 h-px bg-slate-200 dark:bg-gray-600" />
       </div>
       
       {/* Secondary Button */}
       <button
         onClick={onStartWithTemplate}
-        className="px-6 py-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-slate-700 text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-50 hover:shadow-sm"
+        className="px-6 py-3 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 hover:border-slate-300 dark:hover:border-gray-600 rounded-lg text-slate-700 dark:text-gray-300 text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-50 dark:hover:bg-gray-700 hover:shadow-sm"
       >
         Start with a Template
       </button>
@@ -817,9 +1034,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showWhatHappensNextUI, setShowWhatHappensNextUI] = useState(false);
   const [showAIAgentConfigUI, setShowAIAgentConfigUI] = useState(false);
   const [showEmailConfigUI, setShowEmailConfigUI] = useState(false);
+  const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false);
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(null);
   const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(null);
   const [selectedEmailNodeId, setSelectedEmailNodeId] = useState<string | null>(null);
+  const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   // Template workflow state (for creating the initial workflow)
   const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(null);
@@ -920,9 +1139,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         break;
         
       case 'form_submission':
-        // Form submission nodes are just clickable for now
-        // Could add form configuration UI here in the future
-        console.log('Form submission node clicked:', step);
+        // Open Form Submission config view for editing
+        setSelectedFormNodeId(node.id);
+        setShowOnFormSubmissionUI(true);
+        setShowTriggersSidebar(false);
+        setShowWhatHappensNextUI(false);
+        setShowAIAgentConfigUI(false);
+        setShowEmailConfigUI(false);
         break;
         
       default:
@@ -969,9 +1192,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     
     setTimeout(() => {
       zoomTo(1);
-      fitView({ padding: 0.2 });
     }, 50);
-  }, [setNodes, fitView, zoomTo]);
+  }, [setNodes, zoomTo]);
 
   const startWithTemplate = useCallback(() => {
     if (!templateWorkflow) {
@@ -1321,58 +1543,57 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [templateWorkflow, setNodes, startPolling, setWorkflow]);
 
-  const createFormSubmissionNode = useCallback(() => {
-    // Create form submission node with default configuration
-    const formNode: Node = {
-      id: 'form-submission',
-      type: 'stepNode',
-      position: { x: 400, y: 200 },
-      data: { 
-        step: { 
-          id: 'form-submission', 
-          name: 'Form Submission', 
-          status: 'PENDING',
-          contents: [],
-          type: 'form_submission',
-          config: {
-            title: 'Upload Document',
-            description: 'Upload a file in formats such as PDF, DOCX, or JPG.',
-            fields: [
-              {
-                id: 'file-field-1',
-                name: 'Document Upload',
-                placeholder: 'Choose file to upload',
-                type: 'file'
-              }
-            ]
-          }
-        }, 
-        isActive: false, 
-        isCompleted: false,
-        hasNext: true // Flag to show + icon
-      },
-      draggable: true,
-      selectable: true,
-    };
-    
-    setNodes([formNode]);
-    setNodeCounter(2);
-    setShowEmptyCanvas(false);
-    setShowTriggersSidebar(false);
-    setZoomLevel(100);
-    
-    setTimeout(() => {
-      zoomTo(1);
-      fitView({ padding: 0.2 });
-    }, 50);
-  }, [setNodes, zoomTo, fitView]);
 
   const handleTriggerClick = useCallback((triggerId: string) => {
     if (triggerId === 'form') {
-      createFormSubmissionNode();
+      // Create form submission node immediately so user can see and drag it
+      const formNode: Node = {
+        id: 'form-submission',
+        type: 'stepNode',
+        position: { x: 400, y: 200 },
+        data: { 
+          step: { 
+            id: 'form-submission', 
+            name: 'Form Submission', 
+            status: 'PENDING',
+            contents: [],
+            type: 'form_submission',
+            config: {
+              title: '',
+              description: '',
+              fields: [
+                {
+                  id: crypto.randomUUID(),
+                  name: 'Field 1',
+                  placeholder: '',
+                  type: 'file'
+                }
+              ]
+            }
+          }, 
+          isActive: false, 
+          isCompleted: false,
+          hasNext: false // Will be set to true after configuration
+        },
+        draggable: true,
+        selectable: true,
+      };
+      
+      setNodes([formNode]);
+      setNodeCounter(2);
+      setShowEmptyCanvas(false);
+      setSelectedFormNodeId('form-submission');
+      setShowOnFormSubmissionUI(true);
+      setShowTriggersSidebar(false);
+      
+      // Reset zoom to 100% to match AI Agent/Email zoom level
+      setZoomLevel(100);
+      setTimeout(() => {
+        zoomTo(1);
+      }, 50);
     }
     // Handle other triggers here as needed
-  }, [createFormSubmissionNode]);
+  }, [setNodes, zoomTo]);
 
   const handleWhatHappensNextClose = useCallback(() => {
     setShowWhatHappensNextUI(false);
@@ -1386,7 +1607,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       
       // Get the position of the source node to position directly below it
       const sourceNode = nodes.find(n => n.id === selectedNodeForNext);
-      const xPosition = sourceNode ? sourceNode.position.x : 400;
+      // Center the AI Agent node (80px) relative to the source node (320px)
+      // Offset by (320 - 80) / 2 = 120px to center it
+      const xPosition = sourceNode ? sourceNode.position.x + 120 : 400;
       const yPosition = sourceNode ? sourceNode.position.y + 180 : 400;
       
       const agentNode: Node = {
@@ -1396,13 +1619,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         data: { 
           step: { 
             id: agentNodeId, 
-            name: 'Document Summariser', 
+            name: '', // Empty name so only icon shows initially
             status: 'PENDING',
             contents: [],
             type: 'ai_agent',
             config: {
+              name: '',
+              description: '',
               model: 'gpt-oss-120b',
-              description: 'AI Agent'
+              inputPrompt: '$json.input',
+              systemPrompt: '',
+              knowledgeBase: ''
             }
           }, 
           isActive: false, 
@@ -1459,7 +1686,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       
       // Get the position of the source node to position directly below it
       const sourceNode = nodes.find(n => n.id === selectedNodeForNext);
-      const xPosition = sourceNode ? sourceNode.position.x : 400;
+      // Center the Email icon node (80px) relative to the source node (320px)
+      // Offset by (320 - 80) / 2 = 120px to center it
+      const xPosition = sourceNode ? sourceNode.position.x + 120 : 400;
       const yPosition = sourceNode ? sourceNode.position.y + 180 : 600;
       
       const emailNode: Node = {
@@ -1469,13 +1698,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         data: { 
           step: { 
             id: emailNodeId, 
-            name: 'Email', 
+            name: '', // Empty name so only icon shows initially
             status: 'PENDING',
             contents: [],
             type: 'email',
             config: {
-              sendingFrom: 'noreply@xyne.com',
-              emailAddresses: ['arnabdebnath@juspay.in']
+              sendingFrom: '',
+              emailAddresses: []
             }
           }, 
           isActive: false, 
@@ -1536,17 +1765,34 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleAIAgentConfigSave = useCallback((agentConfig: AIAgentConfig) => {
     if (selectedAgentNodeId) {
+      // Format description with model information
+      const formattedDescription = agentConfig.description 
+        ? `${agentConfig.description} using ${agentConfig.model}`
+        : `AI agent to analyze and summarize documents using ${agentConfig.model}`;
+
+      // Find the source node that this AI Agent connects from
+      const sourceEdge = edges.find(edge => edge.target === selectedAgentNodeId);
+      const sourceNode = sourceEdge ? nodes.find(n => n.id === sourceEdge.source) : null;
+
       // Update the AI Agent node with the configuration and add hasNext flag
       setNodes((nds) => nds.map(node => 
         node.id === selectedAgentNodeId 
           ? { 
-              ...node, 
+              ...node,
+              // Reposition node to center below source node now that it's 320px wide
+              position: sourceNode ? {
+                x: sourceNode.position.x, // Align with source node (no offset for 320px node)
+                y: node.position.y // Keep same Y position
+              } : node.position,
               data: { 
                 ...node.data, 
                 step: {
                   ...(node.data.step || {}),
                   name: agentConfig.name,
-                  config: agentConfig
+                  config: {
+                    ...agentConfig,
+                    description: formattedDescription
+                  }
                 },
                 hasNext: true // Add the + icon after saving
               } 
@@ -1563,7 +1809,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     
     setShowAIAgentConfigUI(false);
     setSelectedAgentNodeId(null);
-  }, [selectedAgentNodeId, setNodes, zoomTo]);
+  }, [selectedAgentNodeId, edges, nodes, setNodes, zoomTo]);
 
   const handleEmailConfigBack = useCallback(() => {
     setShowEmailConfigUI(false);
@@ -1572,15 +1818,25 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleEmailConfigSave = useCallback((emailConfig: EmailConfig) => {
     if (selectedEmailNodeId) {
+      // Find the source node that this Email connects from
+      const sourceEdge = edges.find(edge => edge.target === selectedEmailNodeId);
+      const sourceNode = sourceEdge ? nodes.find(n => n.id === sourceEdge.source) : null;
+
       // Update the Email node with the configuration and add hasNext flag
       setNodes((nds) => nds.map(node => 
         node.id === selectedEmailNodeId 
           ? { 
-              ...node, 
+              ...node,
+              // Reposition node to center below source node now that it's 320px wide
+              position: sourceNode ? {
+                x: sourceNode.position.x, // Align with source node (no offset for 320px node)
+                y: node.position.y // Keep same Y position
+              } : node.position,
               data: { 
                 ...node.data, 
                 step: {
                   ...(node.data.step || {}),
+                  name: 'Email',
                   config: {
                     sendingFrom: emailConfig.sendingFrom,
                     emailAddresses: emailConfig.emailAddresses
@@ -1601,17 +1857,54 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
     setShowEmailConfigUI(false);
     setSelectedEmailNodeId(null);
-   }, [selectedEmailNodeId, setNodes, zoomTo]);
+   }, [selectedEmailNodeId, edges, nodes, setNodes, zoomTo]);
+
+  const handleOnFormSubmissionBack = useCallback(() => {
+    setShowOnFormSubmissionUI(false);
+    setSelectedFormNodeId(null);
+    // Go back to main workflow view
+  }, []);
+
+  const handleOnFormSubmissionSave = useCallback((formConfig: FormConfig) => {
+    // Always update the existing form submission node (since we create it immediately on trigger click)
+    if (selectedFormNodeId) {
+      setNodes((nds) => nds.map(node => 
+        node.id === selectedFormNodeId 
+          ? { 
+              ...node, 
+              data: { 
+                ...node.data, 
+                step: {
+                  ...(node.data.step || {}),
+                  name: formConfig.title || 'Form Submission',
+                  config: formConfig
+                },
+                hasNext: true // Enable + icon after configuration
+              } 
+            }
+          : node
+      ));
+    }
+    
+    setShowOnFormSubmissionUI(false);
+    setSelectedFormNodeId(null);
+    setZoomLevel(100);
+    
+    setTimeout(() => {
+      zoomTo(1);
+    }, 50);
+  }, [selectedFormNodeId, setNodes, zoomTo]);
+
 
   return (
-    <div className="w-full h-full flex flex-col bg-white relative">
+    <div className="w-full h-full flex flex-col bg-white dark:bg-gray-900 relative">
       {/* Header */}
       <Header onBackToWorkflows={onBackToWorkflows} />
       
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
         {/* Flow diagram area */}
-        <div className="flex-1 bg-slate-50 relative">
+        <div className="flex-1 bg-slate-50 dark:bg-gray-800 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -1630,19 +1923,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         deleteKeyCode="Delete"
         snapToGrid={true}
         snapGrid={[15, 15]}
+        proOptions={{ hideAttribution: true }}
       >
         {/* Selection Info Panel */}
         {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
           <Panel position="top-right">
-            <div className="bg-white p-3 rounded-lg shadow-md border border-slate-200 min-w-[200px]">
-              <div className="text-sm font-semibold mb-2">
+            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md border border-slate-200 dark:border-gray-700 min-w-[200px]">
+              <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
                 Selection Info
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 Nodes: {selectedNodes.length} | Edges: {selectedEdges.length}
               </div>
               {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                <div className="text-xs mt-1">
+                <div className="text-xs mt-1 text-gray-700 dark:text-gray-300">
                   <strong>Step:</strong> {(selectedNodes[0].data.step as Step).name || 'Unnamed'}
                 </div>
               ) : null}
@@ -1680,7 +1974,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           </div>
         
         {/* Right Triggers Sidebar */}
-        {!showWhatHappensNextUI && !showAIAgentConfigUI && !showEmailConfigUI && (
+        {!showWhatHappensNextUI && !showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
           <TriggersSidebar 
             isVisible={showTriggersSidebar}
             onTriggerClick={handleTriggerClick}
@@ -1689,7 +1983,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* What Happens Next Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && (
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
           <WhatHappensNextUI 
             isVisible={showWhatHappensNextUI}
             onClose={handleWhatHappensNextClose}
@@ -1698,7 +1992,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && (
           <AIAgentConfigUI 
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -1707,11 +2001,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && (
           <EmailConfigUI 
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
             onSave={handleEmailConfigSave}
+          />
+        )}
+        
+        {/* On Form Submission Config Sidebar */}
+        {showOnFormSubmissionUI && (
+          <OnFormSubmissionUI 
+            onBack={handleOnFormSubmissionBack}
+            onSave={handleOnFormSubmissionSave}
+            initialConfig={selectedFormNodeId 
+              ? (nodes.find(n => n.id === selectedFormNodeId)?.data?.step as any)?.config 
+              : undefined}
           />
         )}
       </div>

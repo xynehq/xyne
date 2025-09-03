@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button"
 import { X, Upload } from "lucide-react"
 import fileUpIcon from "@/assets/file-up.svg"
 import checkCircleIcon from "@/assets/check-circle.svg"
+import { workflowsAPI } from "./api/ApiHandlers"
 
 interface WorkflowExecutionModalProps {
   isOpen: boolean
   onClose: () => void
   workflowName: string
   workflowDescription: string
-  uploadApiUrl: string
 }
 
 const SUPPORTED_FILE_TYPES = {
@@ -38,8 +38,7 @@ export function WorkflowExecutionModal({
   isOpen,
   onClose,
   workflowName,
-  workflowDescription,
-  uploadApiUrl
+  workflowDescription
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [, setIsUploading] = useState(false)
@@ -47,7 +46,7 @@ export function WorkflowExecutionModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  const [stopPolling, setStopPolling] = useState<(() => void) | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const resetModalState = () => {
@@ -57,9 +56,9 @@ export function WorkflowExecutionModal({
     setUploadError(null)
     setIsProcessing(false)
     setIsCompleted(false)
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+    if (stopPolling) {
+      stopPolling()
+      setStopPolling(null)
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -104,28 +103,19 @@ export function WorkflowExecutionModal({
   const uploadFile = async (file: File) => {
     setIsUploading(true)
     try {
-      console.log('Uploading file to:', uploadApiUrl)
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch(uploadApiUrl, {
-        method: 'POST',
-        body: formData
-      })
+      const response = await workflowsAPI.uploadFile(file)
 
       console.log('Upload response status:', response.status)
-      console.log('Upload response ok:', response.ok)
 
-      if (response.ok) {
+      if (response.data && response.status === 200) {
         setIsUploaded(true)
         // Start polling for completion
         startPolling()
       } else {
         setIsUploaded(false)
         setIsProcessing(false)
-        const errorText = await response.text()
-        console.error('Upload failed with status:', response.status, 'Error:', errorText)
-        setUploadError(`Upload failed (${response.status}): ${errorText || 'Please try again.'}`)
+        console.error('Upload failed with status:', response.status, 'Error:', response.error)
+        setUploadError(response.error || 'Upload failed. Please try again.')
       }
     } catch (error) {
       console.error('Upload error:', error)
@@ -182,9 +172,9 @@ export function WorkflowExecutionModal({
     setIsProcessing(false)
     setIsCompleted(false)
     setUploadError(null)
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+    if (stopPolling) {
+      stopPolling()
+      setStopPolling(null)
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -192,31 +182,18 @@ export function WorkflowExecutionModal({
   }
 
   const startPolling = () => {
-    console.log('Starting polling for process completion...')
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('http://localhost:8000/status', {
-          method: 'GET',
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('Polling response:', data)
-          
-          if (data.status === 'completed' || data.message === 'process completed') {
-            console.log('Process completed!')
-            clearInterval(interval)
-            setPollingInterval(null)
-            setIsProcessing(false)
-            setIsCompleted(true)
-          }
-        }
-      } catch (error) {
+    const stopPollingFn = workflowsAPI.startPolling(
+      () => {
+        setStopPolling(null)
+        setIsProcessing(false)
+        setIsCompleted(true)
+      },
+      (error) => {
         console.error('Polling error:', error)
       }
-    }, 2000) // Poll every 2 seconds
+    )
     
-    setPollingInterval(interval)
+    setStopPolling(() => stopPollingFn)
   }
 
   return (

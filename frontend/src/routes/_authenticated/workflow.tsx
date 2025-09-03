@@ -49,7 +49,7 @@ function WorkflowComponent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: 2
+          userId: user?.id, // or omit and rely on session on the server
         })
       })
       if (response.ok) {

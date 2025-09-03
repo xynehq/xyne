@@ -97,19 +97,17 @@ export function fillConnectedChildSteps(
   childStepIds: string[],
   connectedStepList: string[],
   stepDict: Record<string, Step>,
+  visited: Set<string> = new Set(),
 ): void {
-  connectedStepList.push(...childStepIds)
-
-  childStepIds.forEach((childStepId) => {
-    const childStep = stepDict[childStepId]
-    if (childStep?.child_step_ids) {
-      fillConnectedChildSteps(
-        childStep.child_step_ids,
-        connectedStepList,
-        stepDict,
-      )
+  for (const childStepId of childStepIds) {
+    if (visited.has(childStepId)) continue;
+    visited.add(childStepId);
+    connectedStepList.push(childStepId);
+    const childStep = stepDict[childStepId];
+    if (childStep?.child_step_ids?.length) {
+      fillConnectedChildSteps(childStep.child_step_ids, connectedStepList, stepDict, visited);
     }
-  })
+  }
 }
 
 export function flowBFS(

@@ -18,10 +18,9 @@ interface WorkflowData {
 
 interface WorkflowCardProps {
   workflow: WorkflowData;
-  uploadApiUrl?: string;
 }
 
-export function WorkflowCard({ workflow, uploadApiUrl = 'http://localhost:8000/upload' }: WorkflowCardProps) {
+export function WorkflowCard({ workflow }: WorkflowCardProps) {
   const [showExecutionModal, setShowExecutionModal] = useState(false)
   
   const formatDate = (dateString: string) => {
@@ -73,7 +72,6 @@ export function WorkflowCard({ workflow, uploadApiUrl = 'http://localhost:8000/u
         onClose={() => setShowExecutionModal(false)}
         workflowName={workflow.name}
         workflowDescription={workflow.description}
-        uploadApiUrl={uploadApiUrl}
       />
     </div>
   )
