@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
-import { getUserByEmail } from "@/db/user"
+import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -60,6 +60,7 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
+  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -78,6 +79,7 @@ import {
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 import { clearUserSyncJob } from "@/db/syncJob"
+import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1768,6 +1770,45 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching all user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetWorkspaceApiKeys = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+    const apiKeys = await getWorkspaceApiKeys({
+      db,
+      userId: userAndWorkspace.user.externalId,
+      workspaceId: userAndWorkspace.workspace.externalId,
+    })
+    return c.json({
+      success: true,
+      data: apiKeys,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent API keys")
     return c.json(
       {
         success: false,
