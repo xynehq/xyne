@@ -170,29 +170,41 @@ export const getJoiningLink = (event: any) => {
   }
 }
 
-// Insert calendar events from Microsoft
+// Insert calendar events from Microsoft using calendarView/delta for proper delta token
 const insertCalendarEvents = async (
   client: MicrosoftGraphClient,
   userEmail: string,
   tracker: Tracker,
+  startDate?: string,
+  endDate?: string,
 ): Promise<{ events: any[]; calendarEventsToken: string }> => {
   let events: any[] = []
   let deltaToken: string = ""
 
   try {
-    let endpoint: string
+    // Set up date range for calendarView/delta
+    const now = new Date()
+    const syncStartDate = startDate
+      ? new Date(startDate)
+      : new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()) // 1 year back
+    const syncEndDate = endDate
+      ? new Date(endDate)
+      : new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()) // 1 year ahead
 
     loggerWithChild({ email: userEmail }).info(
-      "Performing initial calendar sync using /me/events",
+      `Performing initial calendar sync using /me/calendarView/delta from ${syncStartDate.toISOString()} to ${syncEndDate.toISOString()}`,
     )
-    endpoint =
-      "/me/events?$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999"
 
-    // Process events
-    while (endpoint) {
+    // Use calendarView/delta to get events with proper delta token
+    const endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled`
+
+    let nextLink: string | undefined = endpoint
+
+    // Process events with pagination
+    while (nextLink) {
       const response: any = await makeGraphApiCallWithHeaders(
         client,
-        endpoint,
+        nextLink,
         {
           Prefer: "odata.maxpagesize=999",
         },
@@ -201,31 +213,21 @@ const insertCalendarEvents = async (
       if (response.value) {
         // Process events from response
         for (const event of response.value) {
-          // Check if this is a removed event (for delta responses)
-          if (event["@removed"]) {
-            loggerWithChild({ email: userEmail }).info(
-              `Event removed: ${event.id}, reason: ${event["@removed"].reason}`,
-            )
-            // Handle removed events (could implement deletion logic here)
-            continue
-          }
-
-          // Add valid events to our collection
-          events.push(event)
+          if (event.type != "occurrence") events.push(event)
         }
       }
 
-      // Check for pagination
+      // Check for next page or delta link
       if (response["@odata.nextLink"]) {
         // More pages available, continue with next page
-        endpoint = response["@odata.nextLink"]
+        nextLink = response["@odata.nextLink"]
       } else if (response["@odata.deltaLink"]) {
-        // Delta sync complete, save delta token for next sync
+        // Got delta link - this is what we need for future incremental syncs
         deltaToken = response["@odata.deltaLink"]
-        endpoint = ""
+        nextLink = undefined
       } else {
-        // No more data
-        endpoint = ""
+        // No more data and no delta link
+        nextLink = undefined
       }
     }
   } catch (error: any) {
@@ -238,13 +240,9 @@ const insertCalendarEvents = async (
     throw error
   }
 
-  // Ensure we have a delta token for future syncs
-  if (!deltaToken) {
-    deltaToken = `microsoft-calendar-${new Date().toISOString()}`
-    loggerWithChild({ email: userEmail }).warn(
-      `No delta token returned from Microsoft Calendar API, using fallback: ${deltaToken}`,
-    )
-  }
+  loggerWithChild({ email: userEmail }).info(
+    `Initial calendar sync completed with delta token: ${deltaToken ? "received" : "not received"}`,
+  )
 
   const confirmedEvents = events.filter((e) => !e.isCancelled)
   const cancelledEvents = events.filter((e) => e.isCancelled)
@@ -309,7 +307,7 @@ const insertCalendarEvents = async (
     }
   }
 
-  // Handle cancelled events
+  // current microsoft graph api don't return the cancelled api
   for (const event of cancelledEvents) {
     try {
       const eventId = event.id ?? ""
@@ -961,7 +959,7 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
     )
     const driveDeltaToken = driveResponse["@odata.deltaLink"] || ""
 
-    const [_, outlookDeltaToken, { calendarEventsToken }] = await Promise.all([
+    const [_, outlookDeltaTokens, { calendarEventsToken }] = await Promise.all([
       insertFilesForUser(graphClient, userEmail, connector, tracker),
       handleOutlookIngestion(graphClient, userEmail, tracker),
       insertCalendarEvents(graphClient, userEmail, tracker),
@@ -1006,7 +1004,8 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
         connectorId: connector.id,
         authType: AuthType.OAuth,
         config: {
-          deltaToken: outlookDeltaToken,
+          deltaToken: JSON.stringify(outlookDeltaTokens), // Backward compatibility: store as JSON string
+          deltaTokens: outlookDeltaTokens, // New format: store as object
           type: "microsoftOutlookDeltaToken",
           lastSyncedAt: new Date().toISOString(),
         },

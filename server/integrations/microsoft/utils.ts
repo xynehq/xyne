@@ -206,3 +206,55 @@ export const createInitialDeltaConfig = () => {
     lastSyncedAt: new Date(),
   }
 }
+
+export interface OneDriveFile {
+  id: string
+  name: string
+  webUrl?: string
+  createdDateTime: string
+  lastModifiedDateTime: string
+  size?: number
+  file?: {
+    mimeType?: string
+  }
+  folder?: any
+  deleted?: {
+    state: string
+  }
+  createdBy?: {
+    user?: {
+      displayName?: string
+      email?: string
+    }
+  }
+  lastModifiedBy?: {
+    user?: {
+      displayName?: string
+      email?: string
+    }
+  }
+  parentReference?: {
+    id?: string
+    name?: string
+    path?: string
+  }
+}
+
+// Microsoft OneDrive MIME types mapping
+export const microsoftMimeTypeMap: Record<string, DriveEntity> = {
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    DriveEntity.WordDocument,
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    DriveEntity.ExcelSpreadsheet,
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    DriveEntity.PowerPointPresentation,
+  "application/pdf": DriveEntity.PDF,
+  "text/plain": DriveEntity.Text,
+  "image/jpeg": DriveEntity.Image,
+  "image/png": DriveEntity.Image,
+  "application/zip": DriveEntity.Zip,
+  "application/msword": DriveEntity.WordDocument,
+  "application/vnd.ms-excel": DriveEntity.ExcelSpreadsheet,
+  "application/vnd.ms-powerpoint": DriveEntity.PowerPointPresentation,
+  "text/csv": DriveEntity.CSV,
+}

@@ -11,7 +11,11 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { StatType, Tracker } from "@/integrations/tracker"
 import { chunkTextByParagraph } from "@/chunks"
-import { makeGraphApiCall, type MicrosoftGraphClient } from "../client"
+import {
+  makeBetaGraphApiCall,
+  makeGraphApiCall,
+  type MicrosoftGraphClient,
+} from "../client"
 import {
   getOutlookAttachmentChunks,
   getOutlookSpreadsheetSheets,
@@ -37,6 +41,132 @@ const htmlToText = require("html-to-text")
 
 export const getTextFromEventDescription = (description: string): string => {
   return htmlToText.convert(description, { wordwrap: 130 })
+}
+
+// System folders that should be excluded from sync (based on wellKnownName and displayName)
+const EXCLUDED_WELL_KNOWN_NAMES = [
+  "deleteditems",
+  "junkemail",
+  "outbox",
+  "archive",
+  "conversationhistory",
+  "clutter",
+  "recoverableitemsdeletions",
+  "recoverableitemspurges",
+  "recoverableitemsversions",
+  "syncissues",
+  "localfailures",
+  "serverfailures",
+  "conflicts",
+]
+
+const EXCLUDED_DISPLAY_NAMES = [
+  "Deleted Items",
+  "Junk Email",
+  "Outbox",
+  "Archive",
+  "Conversation History",
+  "Clutter",
+  "RecoverableItemsDeletions",
+  "RecoverableItemsPurges",
+  "RecoverableItemsVersions",
+  "SyncIssues",
+  "LocalFailures",
+  "ServerFailures",
+  "Conflicts",
+]
+
+// Function to discover all mail folders dynamically
+export const discoverMailFolders = async (
+  client: MicrosoftGraphClient,
+  userEmail: string,
+): Promise<Array<{ name: string; id: string; endpoint: string }>> => {
+  try {
+    Logger.child({ email: userEmail }).info("Discovering mail folders...")
+
+    // Get all mail folders (include wellKnownName for proper filtering)
+    const response = await makeBetaGraphApiCall(
+      client,
+      "/me/mailFolders?$select=id,displayName,parentFolderId,wellKnownName&$top=100",
+    )
+
+    const discoveredFolders: Array<{
+      name: string
+      id: string
+      endpoint: string
+    }> = []
+
+    if (response.value && Array.isArray(response.value)) {
+      for (const folder of response.value) {
+        const folderName = folder.displayName
+        const folderId = folder.id
+
+        // Skip excluded system folders (check both wellKnownName and displayName)
+        const wellKnownName = folder.wellKnownName?.toLowerCase()
+        const shouldExclude =
+          (wellKnownName &&
+            EXCLUDED_WELL_KNOWN_NAMES.includes(wellKnownName)) ||
+          EXCLUDED_DISPLAY_NAMES.includes(folderName)
+
+        if (shouldExclude) {
+          Logger.child({ email: userEmail }).debug(
+            `Skipping system folder: ${folderName} (wellKnownName: ${wellKnownName})`,
+          )
+          continue
+        }
+
+        // Test if the folder supports delta sync by making a test call
+        try {
+          const testEndpoint = `/me/mailFolders/${folderId}/messages/delta?$top=1`
+          await makeGraphApiCall(client, testEndpoint)
+
+          // If successful, add to sync list
+          discoveredFolders.push({
+            name: folderName,
+            id: folderId,
+            endpoint: `/me/mailFolders/${folderId}/messages/delta`,
+          })
+
+          Logger.child({ email: userEmail }).info(
+            `Added folder to sync: ${folderName} (${folderId})`,
+          )
+        } catch (error) {
+          Logger.child({ email: userEmail }).warn(
+            `Folder ${folderName} does not support delta sync, skipping: ${error}`,
+          )
+        }
+      }
+    }
+
+    Logger.child({ email: userEmail }).info(
+      `Discovered ${discoveredFolders.length} folders for sync: ${discoveredFolders.map((f) => f.name).join(", ")}`,
+    )
+
+    return discoveredFolders
+  } catch (error) {
+    Logger.child({ email: userEmail }).error(
+      error,
+      `Failed to discover mail folders: ${error}`,
+    )
+
+    // Fallback to default folders if discovery fails
+    Logger.child({ email: userEmail }).warn(
+      "Falling back to default folders (Inbox, SentItems, Drafts)",
+    )
+
+    return [
+      {
+        name: "Inbox",
+        id: "Inbox",
+        endpoint: "/me/mailFolders/Inbox/messages/delta",
+      },
+      {
+        name: "SentItems",
+        id: "SentItems",
+        endpoint: "/me/mailFolders/SentItems/messages/delta",
+      },
+    ]
+  }
 }
 
 // Function to parse and validate Outlook email data
@@ -268,28 +398,39 @@ export const parseMail = async (
   return { mailData: emailData }
 }
 
-// Outlook email ingestion implementation
+// Outlook email ingestion implementation for initial sync using dynamic multi-folder delta API
 export const handleOutlookIngestion = async (
   client: MicrosoftGraphClient,
   userEmail: string,
   tracker: Tracker,
   startDate?: string,
   endDate?: string,
-): Promise<string> => {
+): Promise<Record<string, string>> => {
   const batchSize = 100
   let totalMails = 0
-  let nextPageToken = ""
   const limit = pLimit(10) // Concurrency limit for processing messages
 
-  let deltaToken = ""
+  // Dynamically discover all mail folders to sync (including custom folders)
+  const foldersToSync = await discoverMailFolders(client, userEmail)
 
+  if (foldersToSync.length === 0) {
+    Logger.child({ email: userEmail }).warn(
+      "No folders discovered for sync, aborting ingestion",
+    )
+    return {}
+  }
+
+  // Base query parameters for folder-specific delta API
   const queryParams: any = {
     $top: batchSize,
     $select:
       "id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,hasAttachments,internetMessageId,conversationId",
   }
 
-  if (startDate || endDate) {
+  // For initial sync with date filters, add filter parameters
+  const useInitialSyncWithDateFilter = startDate || endDate
+
+  if (useInitialSyncWithDateFilter) {
     const filters: string[] = []
     if (startDate) {
       const startDateObj = new Date(startDate)
@@ -305,70 +446,117 @@ export const handleOutlookIngestion = async (
     }
   }
 
-  do {
-    const endpoint = nextPageToken
-      ? nextPageToken
-      : `/me/messages?${new URLSearchParams(queryParams).toString()}`
+  const folderDeltaTokens: Record<string, string> = {}
 
-    const response = await makeGraphApiCall(client, endpoint)
-
-    nextPageToken = response["@odata.nextLink"] ?? ""
-    deltaToken = response["@odata.deltaLink"] || deltaToken
-
-    if (response.value) {
-      let messageBatch = response.value.slice(0, batchSize)
-      let batchRequests = messageBatch.map((message: any) =>
-        limit(async () => {
-          try {
-            let mailExists = false
-            if (message.internetMessageId) {
-              // Check if mail exists using internetMessageId
-              const res = await ifMailDocumentsExist([
-                message.internetMessageId,
-              ])
-              if (
-                res[message.internetMessageId] &&
-                res[message.internetMessageId]?.exists
-              ) {
-                mailExists = true
-                Logger.info(
-                  `Skipping mail with internetMessageId: ${message.internetMessageId}`,
-                )
-                return
-              }
-            }
-
-            const { mailData } = await parseMail(
-              message,
-              client,
-              userEmail,
-              tracker,
-            )
-
-            await insert(mailData, mailSchema)
-            // metric has to be added for OutLook
-          } catch (error) {
-            Logger.child({ email: userEmail }).error(
-              error,
-              `Failed to process Outlook message ${message.id}: ${(error as Error).message}`,
-            )
-            // failing metric has to be added for OutLook
-          }
-        }),
+  // Process each folder for initial sync
+  for (const folder of foldersToSync) {
+    try {
+      Logger.child({ email: userEmail }).info(
+        `Processing ${folder.name} folder for initial sync`,
       )
 
-      // Process batch of messages in parallel
-      await Promise.allSettled(batchRequests)
-      totalMails += messageBatch.length
+      let nextPageToken = ""
+      let folderDeltaToken = ""
 
-      // Clean up explicitly
-      batchRequests = []
-      messageBatch = []
+      do {
+        let endpoint: string
+
+        if (nextPageToken) {
+          // Use the nextLink URL directly
+          endpoint = nextPageToken
+        } else {
+          // Initial sync - use folder-specific delta endpoint
+          endpoint = `${folder.endpoint}?${new URLSearchParams(queryParams).toString()}`
+        }
+
+        const response = await makeBetaGraphApiCall(client, endpoint)
+
+        nextPageToken = response["@odata.nextLink"] ?? ""
+        folderDeltaToken = response["@odata.deltaLink"] || folderDeltaToken
+
+        if (response.value) {
+          let messageBatch = response.value.slice(0, batchSize)
+          let batchRequests = messageBatch.map((message: any) =>
+            limit(async () => {
+              try {
+                // Handle deleted messages in delta response
+                if (message["@removed"]) {
+                  Logger.info(
+                    `Message ${message.id} was deleted from ${folder.name}, skipping processing`,
+                  )
+                  return
+                }
+
+                let mailExists = false
+                if (message.internetMessageId) {
+                  // Check if mail exists using internetMessageId
+                  const res = await ifMailDocumentsExist([
+                    message.internetMessageId,
+                  ])
+                  if (
+                    res[message.internetMessageId] &&
+                    res[message.internetMessageId]?.exists
+                  ) {
+                    mailExists = true
+                    Logger.info(
+                      `Skipping mail with internetMessageId: ${message.internetMessageId}`,
+                    )
+                    return
+                  }
+                }
+
+                const { mailData } = await parseMail(
+                  message,
+                  client,
+                  userEmail,
+                  tracker,
+                )
+                console.log(JSON.stringify(mailData))
+                await insert(mailData, mailSchema)
+                // metric has to be added for OutLook
+              } catch (error) {
+                Logger.child({ email: userEmail }).error(
+                  error,
+                  `Failed to process Outlook message ${message.id} from ${folder.name}: ${(error as Error).message}`,
+                )
+                // failing metric has to be added for OutLook
+              }
+            }),
+          )
+
+          // Process batch of messages in parallel
+          await Promise.allSettled(batchRequests)
+          totalMails += messageBatch.length
+
+          // Clean up explicitly
+          batchRequests = []
+          messageBatch = []
+        }
+      } while (nextPageToken)
+
+      // Store the delta token for this specific folder
+      if (folderDeltaToken) {
+        folderDeltaTokens[folder.id] = folderDeltaToken
+        Logger.child({ email: userEmail }).info(
+          `Stored delta token for folder ${folder.name} (${folder.id}): ${folderDeltaToken.substring(0, 50)}...`,
+        )
+      }
+
+      Logger.child({ email: userEmail }).info(
+        `Completed processing ${folder.name} folder`,
+      )
+    } catch (error) {
+      Logger.child({ email: userEmail }).error(
+        error,
+        `Error processing ${folder.name} folder: ${(error as Error).message}`,
+      )
+      // Continue with other folders even if one fails
     }
-  } while (nextPageToken)
+  }
 
   Logger.child({ email: userEmail }).info(
-    `Inserted ${totalMails} Outlook emails`,
+    `Processed ${totalMails} Outlook emails from ${foldersToSync.length} folders using ${useInitialSyncWithDateFilter ? "initial sync with date filter" : "multi-folder delta sync"}. Delta tokens collected for ${Object.keys(folderDeltaTokens).length} folders.`,
   )
-  return deltaToken || "outlook-delta-token"
+
+  return folderDeltaTokens
 }

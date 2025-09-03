@@ -38,6 +38,7 @@ export interface MicrosoftGraphClient {
   refreshToken: string
   clientId: string
   clientSecret: string
+  betaClient: Client
 }
 
 // Create Microsoft Graph client similar to Google's pattern
@@ -58,6 +59,10 @@ export const createMicrosoftGraphClient = (
     authProvider,
     defaultVersion: "v1.0",
   })
+  const betaClient = Client.initWithMiddleware({
+    authProvider,
+    defaultVersion: "beta",
+  })
 
   return {
     client,
@@ -65,6 +70,7 @@ export const createMicrosoftGraphClient = (
     refreshToken,
     clientId,
     clientSecret,
+    betaClient,
   }
 }
 
@@ -77,6 +83,20 @@ export const makeGraphApiCall = async (
   return retryWithBackoff(
     async () => {
       const result = await graphClient.client.api(endpoint).get(options)
+      return result
+    },
+    `Making Microsoft Graph API call to ${endpoint}`,
+    Apps.MicrosoftDrive,
+  )
+}
+export const makeBetaGraphApiCall = async (
+  graphClient: MicrosoftGraphClient,
+  endpoint: string,
+  options?: any,
+): Promise<any> => {
+  return retryWithBackoff(
+    async () => {
+      const result = await graphClient.betaClient.api(endpoint).get(options)
       return result
     },
     `Making Microsoft Graph API call to ${endpoint}`,
@@ -152,51 +172,48 @@ export async function downloadFileFromGraph(
       .api(`/me/drive/items/${fileId}/content`)
       .get()
 
-    return await streamToBuffer(response);
-
+    return await streamToBuffer(response)
   } catch (error) {
     throw new Error(`Failed to download file ${fileId}: ${error}`)
   }
 }
 
-
 async function streamToBuffer(stream: any): Promise<Buffer> {
   if (Buffer.isBuffer(stream)) {
-    return stream; // already a Buffer
+    return stream // already a Buffer
   }
 
   if (stream instanceof ArrayBuffer) {
-    return Buffer.from(stream);
+    return Buffer.from(stream)
   }
 
   if (typeof stream === "string") {
-    return Buffer.from(stream, "binary");
+    return Buffer.from(stream, "binary")
   }
 
   // Node.js Readable or Web ReadableStream
   if (stream instanceof Readable) {
-    const chunks: Buffer[] = [];
+    const chunks: Buffer[] = []
     for await (const chunk of stream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     }
-    return Buffer.concat(chunks);
+    return Buffer.concat(chunks)
   }
 
   if (typeof stream.getReader === "function") {
     // Web ReadableStream (Bun / Fetch)
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
+    const reader = stream.getReader()
+    const chunks: Uint8Array[] = []
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
     }
-    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)))
   }
 
-  throw new Error("Unsupported response type: " + stream?.constructor?.name);
+  throw new Error("Unsupported response type: " + stream?.constructor?.name)
 }
-
 
 // Export types for consistency with Google integration
 export type { Client as MicrosoftClient }

@@ -301,7 +301,7 @@ const CalendarEventsChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
-// Microsoft delta token schemas (mirroring Google structure)
+// Microsoft delta token schemas 
 const MicrosoftDriveDeltaTokenSchema = z.object({
   type: z.literal("microsoftDriveDeltaToken"),
   driveToken: z.string(),
@@ -311,7 +311,8 @@ const MicrosoftDriveDeltaTokenSchema = z.object({
 
 const MicrosoftOutlookDeltaTokenSchema = z.object({
   type: z.literal("microsoftOutlookDeltaToken"),
-  deltaToken: z.string(),
+  deltaToken: z.string().optional(), // Backward compatibility
+  deltaTokens: z.record(z.string()).optional(), // New multi-folder approach
   lastSyncedAt: z.coerce.date(),
 })
 

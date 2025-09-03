@@ -1,43 +1,91 @@
-import { db } from "@/db/client"
+import {
+  Subsystem,
+  SyncCron,
+  type OAuthCredentials,
+  type SyncConfig,
+} from "@/types"
+import PgBoss from "pg-boss"
 import { getOAuthConnectorWithCredentials } from "@/db/connector"
+import {
+  DeleteDocument,
+  getDocumentOrNull,
+  insertWithRetry,
+  UpdateDocumentPermissions,
+  UpdateEventCancelledInstances,
+  IfMailDocExist,
+  insert,
+} from "@/search/vespa"
+import { db } from "@/db/client"
+import { Apps, AuthType, SyncJobStatus, DriveEntity } from "@/shared/types"
+import {
+  MicrosoftPeopleEntity,
+  type VespaFileWithDrivePermission,
+} from "@/search/types"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, retryWithBackoff } from "@/utils"
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
-import type {
-  DriveItem,
-  Calendar,
-  Message,
-} from "@microsoft/microsoft-graph-types"
-import type { OAuthCredentials, SyncConfig } from "@/types"
-import type PgBoss from "pg-boss"
-import { Apps, AuthType, SyncJobStatus, DriveEntity } from "@/shared/types"
-import { SyncCron } from "@/types"
+import {
+  CalendarEntity,
+  eventSchema,
+  fileSchema,
+  mailSchema,
+  userSchema,
+  type VespaEvent,
+  type VespaFile,
+  type VespaMail,
+} from "@/search/types"
 import {
   createMicrosoftGraphClient,
+  downloadFileFromGraph,
   makeGraphApiCall,
+  makePagedGraphApiCall,
   type MicrosoftGraphClient,
 } from "./client"
 import {
-  insertWithRetry,
-  DeleteDocument,
-  getDocumentOrNull,
-  UpdateDocumentPermissions,
-} from "@/search/vespa"
-import { fileSchema } from "@/search/types"
-import type { VespaFileWithDrivePermission } from "@/search/types"
+  getUniqueEmails,
+  getTextFromEventDescription,
+  getAttendeesOfEvent,
+  getAttachments,
+  getEventStartTime,
+  getJoiningLink,
+  insertContact,
+  loggerWithChild,
+} from "./index"
+import { MAX_ONEDRIVE_FILE_SIZE, skipMailExistCheck } from "./config"
+import { microsoftMimeTypeMap, type OneDriveFile } from "./utils"
 import { chunkDocument } from "@/chunks"
-import { MAX_ONEDRIVE_FILE_SIZE } from "./config"
-import { downloadFileFromGraph } from "./client"
-import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
-import type { Document } from "@langchain/core/documents"
 import fs from "node:fs/promises"
 import path from "path"
 import os from "os"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import type { Document } from "@langchain/core/documents"
 
-const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
+const Logger = getLogger(Subsystem.Integrations).child({
+  module: "microsoft-sync",
+})
+
+// Microsoft-specific change token types
+type MicrosoftDriveChangeToken = {
+  type: "microsoftDriveDeltaToken"
+  driveToken: string
+  contactsToken: string
+  lastSyncedAt: Date
+}
+
+type MicrosoftOutlookChangeToken = {
+  type: "microsoftOutlookDeltaToken"
+  deltaToken?: string // Backward compatibility
+  deltaTokens?: Record<string, string> // New multi-folder approach
+  lastSyncedAt: Date
+}
+
+type MicrosoftCalendarChangeToken = {
+  type: "microsoftCalendarDeltaToken"
+  calendarDeltaToken: string
+  lastSyncedAt: Date
+}
 
 // TODO: change summary to json
 // and store all the structured details
@@ -48,67 +96,7 @@ type ChangeStats = {
   summary: string
 }
 
-// Microsoft OneDrive MIME types mapping
-export const microsoftMimeTypeMap: Record<string, DriveEntity> = {
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    DriveEntity.WordDocument,
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-    DriveEntity.ExcelSpreadsheet,
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-    DriveEntity.PowerPointPresentation,
-  "application/pdf": DriveEntity.PDF,
-  "text/plain": DriveEntity.Text,
-  "image/jpeg": DriveEntity.Image,
-  "image/png": DriveEntity.Image,
-  "application/zip": DriveEntity.Zip,
-  "application/msword": DriveEntity.WordDocument,
-  "application/vnd.ms-excel": DriveEntity.ExcelSpreadsheet,
-  "application/vnd.ms-powerpoint": DriveEntity.PowerPointPresentation,
-  "text/csv": DriveEntity.CSV,
-}
-
-// OneDrive file interface based on Microsoft Graph API
-interface OneDriveFile {
-  id: string
-  name: string
-  webUrl?: string
-  createdDateTime: string
-  lastModifiedDateTime: string
-  size?: number
-  file?: {
-    mimeType?: string
-  }
-  folder?: any
-  deleted?: {
-    state: string
-  }
-  createdBy?: {
-    user?: {
-      displayName?: string
-      email?: string
-    }
-  }
-  lastModifiedBy?: {
-    user?: {
-      displayName?: string
-      email?: string
-    }
-  }
-  parentReference?: {
-    id?: string
-    name?: string
-    path?: string
-  }
-}
-
-// Microsoft delta token type
-type MicrosoftDriveDeltaToken = {
-  type: "microsoftDriveDeltaToken"
-  driveToken: string
-  contactsToken: string
-  lastSyncedAt: Date
-}
-
+// Helper function to create new stats
 const newStats = (): ChangeStats => {
   return {
     added: 0,
@@ -118,6 +106,7 @@ const newStats = (): ChangeStats => {
   }
 }
 
+// Helper function to merge stats
 const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
   prev.added += current.added
   prev.updated += current.updated
@@ -408,14 +397,640 @@ export const handleOneDriveChange = async (
   return stats
 }
 
-// Main handler for Microsoft OAuth changes
+// Get document or spreadsheet (similar to Google implementation)
+export const getDocumentOrSpreadsheet = async (docId: string) => {
+  try {
+    const doc = await getDocumentOrNull(fileSchema, docId)
+    if (!doc) {
+      Logger.error(
+        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
+      )
+      const sheetsForSpreadSheet = await getDocumentOrNull(
+        fileSchema,
+        `${docId}_0`,
+      )
+      return sheetsForSpreadSheet
+    }
+    return doc
+  } catch (err) {
+    Logger.error(err, `Error getting document`)
+    throw err
+  }
+}
+
+// Discover current folders and detect changes
+const discoverFolderChanges = async (
+  client: MicrosoftGraphClient,
+  userEmail: string,
+  existingFolders: Record<string, string>,
+): Promise<{
+  currentFolders: Array<{ name: string; id: string; endpoint: string }>
+  newFolders: Array<{ name: string; id: string; endpoint: string }>
+  deletedFolderIds: string[]
+}> => {
+  try {
+    // Import the discoverMailFolders function from outlook/index.ts
+    const { discoverMailFolders } = await import("./outlook")
+    const currentFolders = await discoverMailFolders(client, userEmail)
+
+    const currentFolderIds = new Set(currentFolders.map((f) => f.id))
+    const existingFolderIds = new Set(Object.keys(existingFolders))
+
+    // Find new folders (in current but not in existing)
+    const newFolders = currentFolders.filter(
+      (f) => !existingFolderIds.has(f.id),
+    )
+
+    // Find deleted folders (in existing but not in current)
+    const deletedFolderIds = Array.from(existingFolderIds).filter(
+      (id) => !currentFolderIds.has(id),
+    )
+
+    loggerWithChild({ email: userEmail }).info(
+      `Folder changes detected: ${newFolders.length} new, ${deletedFolderIds.length} deleted`,
+    )
+
+    return { currentFolders, newFolders, deletedFolderIds }
+  } catch (error) {
+    Logger.error(error, `Error discovering folder changes: ${error}`)
+    return { currentFolders: [], newFolders: [], deletedFolderIds: [] }
+  }
+}
+
+// Handle Outlook changes using multi-folder delta tokens
+const handleOutlookChanges = async (
+  client: MicrosoftGraphClient,
+  config: MicrosoftOutlookChangeToken,
+  userEmail: string,
+): Promise<{
+  newDeltaTokens: Record<string, string>
+  stats: ChangeStats
+  changesExist: boolean
+}> => {
+  const stats = newStats()
+  let changesExist = false
+  let newDeltaTokens: Record<string, string> = {}
+
+  try {
+    // Handle backward compatibility
+    let currentDeltaTokens: Record<string, string> = {}
+
+    if (config.deltaTokens) {
+      // New format: use deltaTokens object
+      currentDeltaTokens = config.deltaTokens
+    } else if (config.deltaToken) {
+      // Backward compatibility: parse JSON string
+      try {
+        currentDeltaTokens = JSON.parse(config.deltaToken)
+      } catch {
+        // If parsing fails, treat as empty (will trigger folder discovery)
+        currentDeltaTokens = {}
+      }
+    }
+
+    // Discover folder changes
+    const { currentFolders, newFolders, deletedFolderIds } =
+      await discoverFolderChanges(client, userEmail, currentDeltaTokens)
+
+    // Handle deleted folders
+    if (deletedFolderIds.length > 0) {
+      stats.summary += `Detected ${deletedFolderIds.length} deleted folders: ${deletedFolderIds.join(", ")}\n`
+      changesExist = true
+
+      // Remove delta tokens for deleted folders
+      for (const folderId of deletedFolderIds) {
+        try {
+          loggerWithChild({ email: userEmail }).info(
+            `Removing delta token for deleted folder: ${folderId}`,
+          )
+
+          // Remove delta token for deleted folder
+          delete currentDeltaTokens[folderId]
+
+          stats.summary += `Removed delta token for deleted folder ${folderId}\n`
+        } catch (error) {
+          Logger.error(
+            error,
+            `Error removing delta token for deleted folder ${folderId}: ${error}`,
+          )
+          stats.summary += `Error removing delta token for deleted folder ${folderId}: ${error}\n`
+        }
+      }
+    }
+
+    // Handle new folders
+    if (newFolders.length > 0) {
+      stats.summary += `Detected ${newFolders.length} new folders: ${newFolders.map((f) => f.name).join(", ")}\n`
+      changesExist = true
+      // New folders will get delta tokens when we process them
+    }
+
+    // Process delta changes for each folder
+    for (const folder of currentFolders) {
+      try {
+        const deltaToken = currentDeltaTokens[folder.id]
+        let endpoint: string
+
+        if (deltaToken && deltaToken.startsWith("http")) {
+          // Use existing delta token URL
+          const url = new URL(deltaToken)
+          endpoint = url.pathname + url.search
+        } else {
+          // Start fresh delta sync for this folder
+          endpoint = `${folder.endpoint}?$top=100&$select=id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,hasAttachments,internetMessageId,conversationId`
+        }
+
+        const response = await makeGraphApiCall(client, endpoint)
+        const folderDeltaToken =
+          response["@odata.deltaLink"] || response["@odata.nextLink"]
+
+        if (folderDeltaToken) {
+          newDeltaTokens[folder.id] = folderDeltaToken
+        }
+
+        // Process messages in this folder
+        if (response.value && response.value.length > 0) {
+          let folderStats = newStats()
+
+          for (const message of response.value) {
+            try {
+              // Handle all messages in regular folders (new/updated)
+              // Deletions are handled separately by DeletedItems folder processing
+              const { parseMail } = await import("./outlook")
+              const { mailData } = await parseMail(message, client, userEmail)
+
+              // Check if message already exists
+              const existingMail = await getDocumentOrNull(
+                mailSchema,
+                mailData.docId,
+              )
+
+              await insertWithRetry(mailData, mailSchema)
+
+              if (existingMail) {
+                folderStats.updated += 1
+                folderStats.summary += `Updated message ${mailData.docId} in ${folder.name}\n`
+              } else {
+                folderStats.added += 1
+                folderStats.summary += `Added message ${mailData.docId} in ${folder.name}\n`
+              }
+            } catch (error) {
+              Logger.error(
+                error,
+                `Error processing message in folder ${folder.name}: ${error}`,
+              )
+            }
+          }
+
+          // Merge folder stats into overall stats
+          stats.added += folderStats.added
+          stats.updated += folderStats.updated
+          stats.removed += folderStats.removed
+          stats.summary += folderStats.summary
+
+          if (
+            folderStats.added > 0 ||
+            folderStats.updated > 0 ||
+            folderStats.removed > 0
+          ) {
+            changesExist = true
+          }
+        }
+
+        // Check if delta token changed (indicates changes occurred)
+        if (folderDeltaToken && folderDeltaToken !== deltaToken) {
+          changesExist = true
+        }
+      } catch (error) {
+        Logger.error(error, `Error processing folder ${folder.name}: ${error}`)
+        // Keep the existing delta token for this folder if processing failed
+        if (currentDeltaTokens[folder.id]) {
+          newDeltaTokens[folder.id] = currentDeltaTokens[folder.id]
+        }
+      }
+    }
+
+    // Process DeletedItems folder separately to handle deleted messages
+    try {
+      const deletedItemsFolderId = "deleteditems"
+      const deletedItemsDeltaToken = currentDeltaTokens[deletedItemsFolderId]
+      let deletedItemsEndpoint: string
+
+      if (deletedItemsDeltaToken && deletedItemsDeltaToken.startsWith("http")) {
+        // Use existing delta token URL
+        const url = new URL(deletedItemsDeltaToken)
+        deletedItemsEndpoint = url.pathname + url.search
+      } else {
+        // Start fresh delta sync for DeletedItems folder
+        deletedItemsEndpoint = `/me/mailFolders/deleteditems/messages/delta?$top=100&$select=id,subject,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,internetMessageId,conversationId`
+      }
+
+      const deletedItemsResponse = await makeGraphApiCall(
+        client,
+        deletedItemsEndpoint,
+      )
+      const deletedItemsFolderDeltaToken =
+        deletedItemsResponse["@odata.deltaLink"] ||
+        deletedItemsResponse["@odata.nextLink"]
+
+      if (deletedItemsFolderDeltaToken) {
+        newDeltaTokens[deletedItemsFolderId] = deletedItemsFolderDeltaToken
+      }
+
+      // Process messages in DeletedItems folder
+      if (deletedItemsResponse.value && deletedItemsResponse.value.length > 0) {
+        let deletedItemsStats = newStats()
+
+        for (const message of deletedItemsResponse.value) {
+          try {
+            // Any message in DeletedItems delta (whether @removed or newly moved) should be deleted from Vespa
+            const messageId = message.id
+            if (messageId) {
+              try {
+                await DeleteDocument(messageId, mailSchema)
+                deletedItemsStats.removed += 1
+
+                const action = message["@removed"]
+                  ? "permanently deleted"
+                  : "moved to DeletedItems"
+                deletedItemsStats.summary += `Deleted message ${messageId} (${action})\n`
+
+                // Also try to delete by internetMessageId if it exists and is different
+                if (
+                  message.internetMessageId &&
+                  message.internetMessageId !== messageId
+                ) {
+                  try {
+                    await DeleteDocument(message.internetMessageId, mailSchema)
+                  } catch (error) {
+                    // Ignore if document doesn't exist with internetMessageId
+                  }
+                }
+              } catch (error) {
+                Logger.warn(
+                  `Could not delete message ${messageId} from DeletedItems: ${error}`,
+                )
+              }
+            }
+          } catch (error) {
+            Logger.error(
+              error,
+              `Error processing message in DeletedItems folder: ${error}`,
+            )
+          }
+        }
+
+        // Merge DeletedItems stats into overall stats
+        stats.removed += deletedItemsStats.removed
+        stats.summary += deletedItemsStats.summary
+
+        if (deletedItemsStats.removed > 0) {
+          changesExist = true
+        }
+
+        loggerWithChild({ email: userEmail }).info(
+          `Processed ${deletedItemsStats.removed} deleted messages from DeletedItems folder`,
+        )
+      }
+
+      // Check if delta token changed (indicates changes occurred)
+      if (
+        deletedItemsFolderDeltaToken &&
+        deletedItemsFolderDeltaToken !== deletedItemsDeltaToken
+      ) {
+        changesExist = true
+      }
+    } catch (error) {
+      Logger.error(error, `Error processing DeletedItems folder: ${error}`)
+      // Keep the existing delta token for DeletedItems folder if processing failed
+      if (currentDeltaTokens["deleteditems"]) {
+        newDeltaTokens["deleteditems"] = currentDeltaTokens["deleteditems"]
+      }
+    }
+
+    return { newDeltaTokens, stats, changesExist }
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error handling Outlook changes using delta API, but continuing sync engine execution.`,
+    )
+    return { newDeltaTokens: {}, stats, changesExist: false }
+  }
+}
+
+// Handle Microsoft Calendar Events changes using calendarView/delta approach
+const handleMicrosoftCalendarEventsChanges = async (
+  client: MicrosoftGraphClient,
+  syncToken: string,
+  userEmail: string,
+) => {
+  let changesExist = false
+  const stats = newStats()
+  let newSyncToken = syncToken
+
+  try {
+    let endpoint: string
+
+    // Check if we have a proper delta token (URL) or need to create a new calendarView/delta request
+    if (syncToken && syncToken.startsWith("http")) {
+      // Check if the delta token might be expired by looking for date parameters
+      const url = new URL(syncToken)
+      const endDateParam = url.searchParams.get("endDateTime")
+
+      if (endDateParam) {
+        const endDate = new Date(endDateParam)
+        const now = new Date()
+        const daysUntilExpiry = Math.ceil(
+          (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+        )
+
+        // If less than 30 days until expiry, create a new date range
+        if (daysUntilExpiry < 30) {
+          loggerWithChild({ email: userEmail }).info(
+            `Delta token expires in ${daysUntilExpiry} days, creating new calendarView/delta request`,
+          )
+
+          const syncStartDate = new Date() // Start from now
+          const syncEndDate = new Date(
+            now.getFullYear() + 1,
+            now.getMonth(),
+            now.getDate(),
+          ) // 1 year ahead
+
+          endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
+        } else {
+          // Use existing delta token URL
+          endpoint = url.pathname + url.search
+        }
+      } else {
+        // Use existing delta token URL (no date range detected)
+        endpoint = url.pathname + url.search
+      }
+    } else if (
+      syncToken &&
+      syncToken.startsWith("microsoft-calendar-initial-")
+    ) {
+      // This is a placeholder token from initial sync, create new calendarView/delta request
+      const now = new Date()
+      const lastSyncDate = new Date(
+        syncToken.replace("microsoft-calendar-initial-", ""),
+      )
+      const syncEndDate = new Date(
+        now.getFullYear() + 1,
+        now.getMonth(),
+        now.getDate(),
+      ) // 1 year ahead
+
+      loggerWithChild({ email: userEmail }).info(
+        `Converting placeholder token to calendarView/delta from ${lastSyncDate.toISOString()} to ${syncEndDate.toISOString()}`,
+      )
+
+      endpoint = `/me/calendarView/delta?startDateTime=${lastSyncDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
+    } else {
+      // Fallback: create new calendarView/delta request for the next year
+      const now = new Date()
+      const syncStartDate = new Date() // Start from now
+      const syncEndDate = new Date(
+        now.getFullYear() + 1,
+        now.getMonth(),
+        now.getDate(),
+      ) // 1 year ahead
+
+      loggerWithChild({ email: userEmail }).info(
+        `Creating new calendarView/delta request from ${syncStartDate.toISOString()} to ${syncEndDate.toISOString()}`,
+      )
+
+      endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
+    }
+
+    const response = await makeGraphApiCall(client, endpoint)
+    newSyncToken =
+      response["@odata.deltaLink"] || response["@odata.nextLink"] || syncToken
+
+    if (newSyncToken === syncToken) {
+      return {
+        eventChanges: [],
+        stats,
+        newCalendarEventsSyncToken: newSyncToken,
+        changesExist,
+      }
+    }
+
+    if (response.value) {
+      for (const eventChange of response.value) {
+        const docId = eventChange.id
+
+        if (docId && eventChange["@removed"]) {
+          // Handle removed events
+          try {
+            const event = await getDocumentOrNull(eventSchema, docId)
+            if (event) {
+              const permissions = (event?.fields as VespaEvent)?.permissions
+              if (permissions?.length === 1) {
+                if (!(permissions[0] === userEmail)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(docId, eventSchema)
+                stats.removed += 1
+                stats.summary += `${docId} event removed\n`
+                changesExist = true
+              } else {
+                const newPermissions = permissions?.filter(
+                  (v) => v !== userEmail,
+                )
+                await UpdateDocumentPermissions(
+                  eventSchema,
+                  docId,
+                  newPermissions,
+                )
+                stats.updated += 1
+                stats.summary += `user lost permission to change event info: ${docId}\n`
+                changesExist = true
+              }
+            }
+          } catch (err: any) {
+            Logger.error(
+              err,
+              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
+            )
+          }
+        } else if (docId && eventChange.isCancelled) {
+          // Handle cancelled events
+          try {
+            const event = await getDocumentOrNull(eventSchema, docId)
+            if (event) {
+              const permissions = (event?.fields as VespaEvent)?.permissions
+              if (permissions?.length === 1) {
+                if (!(permissions[0] === userEmail)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(docId, eventSchema)
+                stats.removed += 1
+                stats.summary += `${docId} cancelled event removed\n`
+                changesExist = true
+              } else {
+                const newPermissions = permissions?.filter(
+                  (v) => v !== userEmail,
+                )
+                await UpdateDocumentPermissions(
+                  eventSchema,
+                  docId,
+                  newPermissions,
+                )
+                stats.updated += 1
+                stats.summary += `user lost permission to cancelled event: ${docId}\n`
+                changesExist = true
+              }
+            }
+          } catch (err: any) {
+            Logger.error(
+              err,
+              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
+            )
+          }
+        } else if (docId && !eventChange["@removed"]) {
+          // Handle added/updated events
+          let event = null
+          event = await getDocumentOrNull(eventSchema, docId)
+
+          await insertEventIntoVespa(eventChange, userEmail)
+
+          if (event) {
+            stats.updated += 1
+            stats.summary += `updated event ${docId}\n`
+            changesExist = true
+          } else {
+            stats.added += 1
+            stats.summary += `added new event ${docId}\n`
+            changesExist = true
+          }
+        }
+      }
+    }
+
+    return {
+      eventChanges: response.value || [],
+      stats,
+      newCalendarEventsSyncToken: newSyncToken,
+      changesExist,
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      `Error handling Calendar event changes, but continuing sync engine execution.`,
+    )
+    return {
+      eventChanges: [],
+      stats,
+      newCalendarEventsSyncToken: newSyncToken,
+      changesExist,
+    }
+  }
+}
+
+// Insert Microsoft event into Vespa
+const insertEventIntoVespa = async (event: any, userEmail: string) => {
+  try {
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
+
+    const eventToBeIngested = {
+      docId: event.id ?? "",
+      name: event.subject ?? "",
+      description: getTextFromEventDescription(event?.body?.content ?? ""),
+      url: event.webLink ?? "",
+      status: event.isCancelled ? "cancelled" : "confirmed",
+      location: event.location?.displayName ?? "",
+      createdAt: new Date(event.createdDateTime).getTime(),
+      updatedAt: new Date(event.lastModifiedDateTime).getTime(),
+      app: Apps.MicrosoftCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.organizer?.emailAddress?.address ?? "",
+        displayName: event.organizer?.emailAddress?.name ?? "",
+      },
+      organizer: {
+        email: event.organizer?.emailAddress?.address ?? "",
+        displayName: event.organizer?.emailAddress?.name ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: startTime,
+      endTime: new Date(event.end?.dateTime).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence ? [JSON.stringify(event.recurrence)] : [],
+      baseUrl,
+      joiningLink: joiningUrl,
+      permissions: getUniqueEmails([
+        event.organizer?.emailAddress?.address ?? "",
+        ...attendeesEmails,
+      ]),
+      cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
+    }
+
+    await insertWithRetry(eventToBeIngested, eventSchema)
+  } catch (e) {
+    Logger.error(
+      e,
+      `Error inserting Microsoft Calendar event with id ${event?.id} into Vespa`,
+    )
+  }
+}
+
+// Sync Microsoft contacts
+const syncMicrosoftContacts = async (
+  client: MicrosoftGraphClient,
+  contacts: any[],
+  email: string,
+  entity: MicrosoftPeopleEntity,
+): Promise<ChangeStats> => {
+  const stats = newStats()
+
+  for (const contact of contacts) {
+    try {
+      if (contact["@removed"]) {
+        // Handle deleted contacts
+        await DeleteDocument(contact.id, userSchema)
+        stats.removed += 1
+      } else {
+        // Handle added/updated contacts
+        await insertContact(contact, entity, email)
+        stats.added += 1
+        Logger.info(`Updated contact ${contact.id}`)
+      }
+    } catch (e) {
+      Logger.error(
+        e,
+        `Error in syncing contact, but continuing sync engine execution.`,
+      )
+    }
+  }
+
+  return stats
+}
+
+// Main Microsoft OAuth changes handler
 export const handleMicrosoftOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
   const data = job.data
-  Logger.info("handleMicrosoftOAuthChanges", { email: data.email ?? "" })
+  loggerWithChild({ email: data.email ?? "" }).info(
+    "handleMicrosoftOAuthChanges",
+  )
 
+  // Handle OneDrive sync jobs
   const syncJobs = await getAppSyncJobs(db, Apps.MicrosoftDrive, AuthType.OAuth)
   for (const syncJob of syncJobs) {
     let stats = newStats()
@@ -436,8 +1051,8 @@ export const handleMicrosoftOAuthChanges = async (
         process.env.MICROSOFT_CLIENT_SECRET!,
       )
 
-      let config: MicrosoftDriveDeltaToken =
-        syncJob.config as MicrosoftDriveDeltaToken
+      let config: MicrosoftDriveChangeToken =
+        syncJob.config as MicrosoftDriveChangeToken
 
       // Get OneDrive delta changes
       const deltaResult = await getOneDriveDelta(
@@ -480,7 +1095,7 @@ export const handleMicrosoftOAuthChanges = async (
 
       // Update sync job if changes were processed
       if (changesExist) {
-        const newConfig: MicrosoftDriveDeltaToken = {
+        const newConfig: MicrosoftDriveChangeToken = {
           type: "microsoftDriveDeltaToken",
           driveToken: nextDeltaToken!,
           contactsToken: config.contactsToken || "",
@@ -528,8 +1143,8 @@ export const handleMicrosoftOAuthChanges = async (
         `Could not successfully complete sync for Microsoft OneDrive, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage}: ${(error as Error).stack}`,
       )
 
-      const config: MicrosoftDriveDeltaToken =
-        syncJob.config as MicrosoftDriveDeltaToken
+      const config: MicrosoftDriveChangeToken =
+        syncJob.config as MicrosoftDriveChangeToken
       const newConfig = {
         ...config,
         lastSyncedAt: config.lastSyncedAt.toISOString(),
@@ -545,6 +1160,219 @@ export const handleMicrosoftOAuthChanges = async (
         summary: { description: stats.summary },
         errorMessage,
         app: Apps.MicrosoftDrive,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+    }
+  }
+
+  // Handle Outlook sync jobs
+  const outlookSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.MicrosoftOutlook,
+    AuthType.OAuth,
+  )
+  for (const syncJob of outlookSyncJobs) {
+    let stats = newStats()
+    try {
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const user = await getUserById(db, connector.userId)
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
+
+      let config: MicrosoftOutlookChangeToken =
+        syncJob.config as MicrosoftOutlookChangeToken
+
+      const graphClient = createMicrosoftGraphClient(
+        oauthTokens.access_token,
+        oauthTokens.refresh_token,
+        "", // clientId
+        "", // clientSecret
+      )
+
+      let {
+        newDeltaTokens,
+        stats: outlookStats,
+        changesExist,
+      } = await handleOutlookChanges(graphClient, config, user.email)
+
+      if (changesExist) {
+        // Update config with new delta tokens
+        const updatedConfig: MicrosoftOutlookChangeToken = {
+          type: "microsoftOutlookDeltaToken",
+          deltaTokens: newDeltaTokens,
+          // For backward compatibility, also store as JSON string
+          deltaToken: JSON.stringify(newDeltaTokens),
+          lastSyncedAt: new Date(),
+        }
+
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config: updatedConfig,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: outlookStats.added,
+            dataDeleted: outlookStats.removed,
+            dataUpdated: outlookStats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: outlookStats.summary },
+            errorMessage: "",
+            app: Apps.MicrosoftOutlook,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...updatedConfig,
+              lastSyncedAt: updatedConfig.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+
+        loggerWithChild({ email: data.email ?? "" }).info(
+          `Changes successfully synced for Microsoft Outlook: ${JSON.stringify(outlookStats)}`,
+        )
+      } else {
+        Logger.info(`No Outlook changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      loggerWithChild({ email: data.email ?? "" }).error(
+        error,
+        `Could not successfully complete sync for Microsoft Outlook, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+
+      const config: MicrosoftOutlookChangeToken =
+        syncJob.config as MicrosoftOutlookChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.MicrosoftOutlook,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+    }
+  }
+
+  // Handle Calendar sync jobs
+  const calendarSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.MicrosoftCalendar,
+    AuthType.OAuth,
+  )
+  for (const syncJob of calendarSyncJobs) {
+    let stats = newStats()
+    try {
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
+
+      let config: MicrosoftCalendarChangeToken =
+        syncJob.config as MicrosoftCalendarChangeToken
+
+      const graphClient = createMicrosoftGraphClient(
+        oauthTokens.access_token,
+        oauthTokens.refresh_token,
+        "", // clientId
+        "", // clientSecret
+      )
+
+      let {
+        eventChanges,
+        stats: calendarStats,
+        newCalendarEventsSyncToken,
+        changesExist,
+      } = await handleMicrosoftCalendarEventsChanges(
+        graphClient,
+        config.calendarDeltaToken,
+        syncJob.email,
+      )
+
+      if (changesExist) {
+        config.calendarDeltaToken = newCalendarEventsSyncToken
+
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: calendarStats.added,
+            dataDeleted: calendarStats.removed,
+            dataUpdated: calendarStats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: calendarStats.summary },
+            errorMessage: "",
+            app: Apps.MicrosoftCalendar,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+
+        loggerWithChild({ email: data.email ?? "" }).info(
+          `Changes successfully synced for Microsoft Calendar: ${JSON.stringify(calendarStats)}`,
+        )
+      } else {
+        loggerWithChild({ email: data.email ?? "" }).info(
+          `No Microsoft Calendar changes to sync`,
+        )
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      loggerWithChild({ email: data.email ?? "" }).error(
+        error,
+        `Could not successfully complete sync for Microsoft Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+
+      const config: MicrosoftCalendarChangeToken =
+        syncJob.config as MicrosoftCalendarChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.MicrosoftCalendar,
         status: SyncJobStatus.Failed,
         config: newConfig,
         type: SyncCron.ChangeToken,
