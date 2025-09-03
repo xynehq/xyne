@@ -9,7 +9,6 @@ import type {
   RunConfig as JAFRunConfig,
   Message as JAFMessage,
 } from "@xynehq/jaf"
-import { AnthropicVertex } from "@anthropic-ai/vertex-sdk"
 
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
@@ -108,6 +107,20 @@ function zodSchemaToJsonSchema(zodSchema: any): any {
   const def = zodSchema?._def
   const typeName = def?.typeName
 
+  // Helper to attach description from any Zod node (including wrappers)
+  const withDesc = (schema: any) => {
+    if (def?.description) {
+      schema.description = def.description
+    }
+    return schema
+  }
+
+  if (typeName === "ZodOptional") {
+    // Preserve description on the optional wrapper
+    const inner = zodSchemaToJsonSchema(def.innerType)
+    return withDesc(inner)
+  }
+
   if (typeName === "ZodObject") {
     const shape = def.shape()
     const properties: Record<string, any> = {}
@@ -116,26 +129,30 @@ function zodSchemaToJsonSchema(zodSchema: any): any {
       properties[key] = zodSchemaToJsonSchema(value)
       if (!(value as any).isOptional()) required.push(key)
     }
-    return {
+    return withDesc({
       type: "object",
       properties,
       required: required.length ? required : undefined,
       additionalProperties: false,
-    }
+    })
   }
 
   if (typeName === "ZodString") {
-    const schema: any = { type: "string" }
-    if (def?.description) schema.description = def.description
-    return schema
+    return withDesc({ type: "string" })
   }
-  if (typeName === "ZodNumber") return { type: "number" }
-  if (typeName === "ZodBoolean") return { type: "boolean" }
-  if (typeName === "ZodArray")
-    return { type: "array", items: zodSchemaToJsonSchema(def.type) }
-  if (typeName === "ZodOptional") return zodSchemaToJsonSchema(def.innerType)
-  if (typeName === "ZodEnum") return { type: "string", enum: def.values }
+  if (typeName === "ZodNumber") {
+    return withDesc({ type: "number" })
+  }
+  if (typeName === "ZodBoolean") {
+    return withDesc({ type: "boolean" })
+  }
+  if (typeName === "ZodArray") {
+    return withDesc({ type: "array", items: zodSchemaToJsonSchema(def.type) })
+  }
+  if (typeName === "ZodEnum") {
+    return withDesc({ type: "string", enum: def.values })
+  }
 
   // Fallback
-  return { type: "string", description: "Unsupported schema type" }
+  return withDesc({ type: "string", description: "Unsupported schema type" })
 }
