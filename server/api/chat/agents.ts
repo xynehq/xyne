@@ -2809,8 +2809,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    // @ts-ignore
-    const body = c.req.valid("query")
     let {
       message,
       chatId,
