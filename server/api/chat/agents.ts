@@ -1256,131 +1256,168 @@ export const MessageWithToolsApi = async (c: Context) => {
           const imageCitations: any[] = []
           const citationMap: Record<number, number> = {}
           const citationValues: Record<number, string> = {}
-          const gatheredFragments: MinimalAgentFragment[] = []
+          let gatheredFragments: MinimalAgentFragment[] = []
           let planningContext = ""
+          let parseSynthesisResult = null
 
-          // Handle fileIds data for MessageWithToolsApi flow
-          if (fileIds && fileIds.length > 0) {
-            const contextFetchSpan = streamSpan.startSpan("fetch_context_from_file_ids")
-            try {
-              const results = await GetDocumentsByDocIds(
-                fileIds,
-                contextFetchSpan,
+          if (hasReferencedContext && iterationCount === 0) {
+              const contextFetchSpan = rootSpan.startSpan(
+                "fetchDocumentContext",
               )
-              if (
-                results?.root?.children &&
-                results.root.children.length > 0
-              ) {
-                const contextPromises = results?.root?.children?.map(
-                  async (v, i) => {
-                    let content = answerContextMap(
-                      v as z.infer<typeof VespaSearchResultsSchema>,
-                      0,
-                      true,
-                    )
-                    if (
-                      v.fields &&
-                      "sddocname" in v.fields &&
-                      v.fields.sddocname === chatContainerSchema &&
-                      (v.fields as any).creator
-                    ) {
-                      const creator = await getDocumentOrNull(
-                        chatUserSchema,
-                        (v.fields as any).creator,
-                      )
-                      if (creator) {
-                        content += `\nCreator: ${(creator.fields as any).name}`
-                      }
-                    }
-                    return `Index ${i + 1} \n ${content}`
-                  },
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.Iteration,
+                iteration: iterationCount,
+              })
+              try {
+                const results = await GetDocumentsByDocIds(
+                  fileIds,
+                  contextFetchSpan,
                 )
-                const resolvedContexts = contextPromises
-                  ? await Promise.all(contextPromises)
-                  : []
-
-                const chatContexts: VespaSearchResult[] = []
-                const threadContexts: VespaSearchResult[] = []
-                if (results?.root?.children) {
-                  for (const v of results.root.children) {
-                    if (
-                      v.fields &&
-                      "sddocname" in v.fields &&
-                      v.fields.sddocname === chatContainerSchema
-                    ) {
-                      const channelId = (v.fields as any).docId
-
-                      if (channelId) {
-                        const searchResults = await searchSlackInVespa(
-                          message,
-                          email,
-                          {
-                            limit: 10,
-                            channelIds: [channelId],
-                          },
+                if (
+                  results?.root?.children &&
+                  results.root.children.length > 0
+                ) {
+                  const contextPromises = results?.root?.children?.map(
+                    async (v, i) => {
+                      let content = answerContextMap(
+                        v as z.infer<typeof VespaSearchResultsSchema>,
+                        0,
+                        true,
+                      )
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema &&
+                        (v.fields as any).creator
+                      ) {
+                        const creator = await getDocumentOrNull(
+                          chatUserSchema,
+                          (v.fields as any).creator,
                         )
-                        if (searchResults.root.children) {
-                          chatContexts.push(...searchResults.root.children)
-                          const threadMessages = await getThreadContext(
-                            searchResults,
+                        if (creator) {
+                          content += `\nCreator: ${(creator.fields as any).name}`
+                        }
+                      }
+                      return `Index ${i + 1} \n ${content}`
+                    },
+                  )
+                  const resolvedContexts = contextPromises
+                    ? await Promise.all(contextPromises)
+                    : []
+
+                  const chatContexts: VespaSearchResult[] = []
+                  const threadContexts: VespaSearchResult[] = []
+                  if (results?.root?.children) {
+                    for (const v of results.root.children) {
+                      if (
+                        v.fields &&
+                        "sddocname" in v.fields &&
+                        v.fields.sddocname === chatContainerSchema
+                      ) {
+                        const channelId = (v.fields as any).docId
+
+                        if (channelId) {
+                          const searchResults = await searchSlackInVespa(
+                            message,
                             email,
-                            contextFetchSpan,
+                            {
+                              limit: 10,
+                              channelIds: [channelId],
+                            },
                           )
-                          if (
-                            threadMessages &&
-                            threadMessages.root.children
-                          ) {
-                            threadContexts.push(
-                              ...threadMessages.root.children,
+                          if (searchResults.root.children) {
+                            chatContexts.push(...searchResults.root.children)
+                            const threadMessages = await getThreadContext(
+                              searchResults,
+                              email,
+                              contextFetchSpan,
                             )
+                            if (
+                              threadMessages &&
+                              threadMessages.root.children
+                            ) {
+                              threadContexts.push(
+                                ...threadMessages.root.children,
+                              )
+                            }
                           }
                         }
                       }
                     }
                   }
-                }
-                planningContext = cleanContext(resolvedContexts?.join("\n"))
-                if (chatContexts.length > 0) {
-                  planningContext += "\n" + buildContext(chatContexts, 10)
-                }
-                if (threadContexts.length > 0) {
-                  planningContext += "\n" + buildContext(threadContexts, 10)
-                }
+                  planningContext = cleanContext(resolvedContexts?.join("\n"))
+                  if (chatContexts.length > 0) {
+                    planningContext += "\n" + buildContext(chatContexts, 10)
+                  }
+                  if (threadContexts.length > 0) {
+                    planningContext += "\n" + buildContext(threadContexts, 10)
+                  }
 
-                gatheredFragments.push(
-                  ...results.root.children.map(
+                  gatheredFragments = results.root.children.map(
                     (child: VespaSearchResult, idx) =>
                       vespaResultToMinimalAgentFragment(child, idx),
                   )
-                )
-                if (chatContexts.length > 0) {
-                  gatheredFragments.push(
-                    ...chatContexts.map((child, idx) =>
-                      vespaResultToMinimalAgentFragment(child, idx),
-                    ),
+                  if (chatContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...chatContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
+                  if (threadContexts.length > 0) {
+                    gatheredFragments.push(
+                      ...threadContexts.map((child, idx) =>
+                        vespaResultToMinimalAgentFragment(child, idx),
+                      ),
+                    )
+                  }
+                  const parseSynthesisOutput = await performSynthesis(
+                    ctx,
+                    message,
+                    planningContext,
+                    gatheredFragments,
+                    messagesWithNoErrResponse,
+                    logAndStreamReasoning,
+                    sub,
+                    attachmentFileIds,
                   )
-                }
-                if (threadContexts.length > 0) {
-                  gatheredFragments.push(
-                    ...threadContexts.map((child, idx) =>
-                      vespaResultToMinimalAgentFragment(child, idx),
-                    ),
-                  )
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                  })
+                  await logAndStreamReasoning({
+                    type: AgentReasoningStepType.LogMessage,
+                    message: ` Synthesis: ${
+                      parseSynthesisOutput?.answer || "No Synthesis details"
+                    }`,
+                  })
+                  const isContextSufficient =
+                    parseSynthesisOutput?.synthesisState ===
+                    ContextSysthesisState.Complete
+
+                    console.log("SYNTHESIS OUTPUT", parseSynthesisOutput?.answer)
+
+                  if (isContextSufficient) {
+                    parseSynthesisResult = JSON.stringify(parseSynthesisOutput)
+                    // Context is complete. We can break the loop and generate the final answer.
+                    await logAndStreamReasoning({
+                      type: AgentReasoningStepType.LogMessage,
+                      message:
+                        "Context is sufficient. Proceeding to generate final answer.",
+                    })
+                  }
                 }
 
-                loggerWithChild({ email: sub }).info(
-                  `Added ${gatheredFragments.length} fragments from fileIds to gatheredFragments`,
+              } catch (error) {
+                loggerWithChild({ email: sub }).error(
+                  error,
+                  "Failed to fetch document context for agent tools",
                 )
+              } finally {
+                contextFetchSpan?.end()
               }
-            } catch (error) {
-              loggerWithChild({ email: sub }).error(
-                error,
-                "Error fetching documents by docIds",
-              )
-            } finally {
-              contextFetchSpan.end()
             }
-          }
+          
 
           // Compose JAF tools: internal + MCP
           const baseCtx: JAFAdapterCtx = {
@@ -1403,6 +1440,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             const agentSection = agentPromptForLLM
               ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
               : ""
+            const synthesisSection = parseSynthesisResult;
             return (
               `You are Xyne, an enterprise search assistant.\n` +
               `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
@@ -1410,9 +1448,11 @@ export const MessageWithToolsApi = async (c: Context) => {
               `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
               `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
               `- Be concise, accurate, and avoid hallucinations.\n` +
+              `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
               `\nAvailable Tools:\n${toolOverview}` +
               contextSection +
-              agentSection
+              agentSection +
+              `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
             )
           }
 
