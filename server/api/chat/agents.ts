@@ -28,11 +28,17 @@ import {
   getConnectorByExternalId,
   getConnectorByApp,
   getConnectorById,
-} from "@/db/connector";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js";
-import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+} from "@/db/connector"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import {
+  SSEClientTransport,
+  type SSEClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/sse.js"
+import {
+  StreamableHTTPClientTransport,
+  type StreamableHTTPClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import {
   Models,
   QueryType,
@@ -1109,13 +1115,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               const client = new Client({
                 name: `connector-${connectorId}`,
                 version: connector.config.version,
-              });
+              })
               try {
                 const loadedConfig = connector.config as {
-                  url?: string;
-                  command?: string;
-                  args?: string[];
-                  mode?: "sse" | "streamable-http";
+                  url?: string
+                  command?: string
+                  args?: string[]
+                  mode?: "sse" | "streamable-http"
                   version: string
                 }
 
@@ -1142,7 +1148,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     loadedHeaders["Authorization"] =
                       `Bearer ${connector.apiKey}`
                   }
-                 loggerWithChild({ email: sub }).info(
+                  loggerWithChild({ email: sub }).info(
                     `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
                   )
 
@@ -1153,15 +1159,18 @@ export const MessageWithToolsApi = async (c: Context) => {
                           headers: loadedHeaders,
                         },
                       }
-                  await client.connect(
-                    new StreamableHTTPClientTransport(new URL(loadedUrl), transportOptions),
-                  )
-                } else {
+                    await client.connect(
+                      new StreamableHTTPClientTransport(
+                        new URL(loadedUrl),
+                        transportOptions,
+                      ),
+                    )
+                  } else {
                     // 'sse' mode
                     const transportOptions: SSEClientTransportOptions = {
                       requestInit: {
                         headers: loadedHeaders,
-                      }
+                      },
                     }
                     await client.connect(
                       new SSEClientTransport(
@@ -1183,7 +1192,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   )
                 } else {
                   throw new Error(
-                    "Invalid MCP connector configuration: missing url or command."
+                    "Invalid MCP connector configuration: missing url or command.",
                   )
                 }
               } catch (error) {

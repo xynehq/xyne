@@ -90,121 +90,134 @@ const processReasoningWithCitations = (
 const formatParametersInText = (text: string): string => {
   // Look for "Parameters:" followed by bullet points or structured data
   const parameterPattern = /Parameters:\s*(.*?)(?=\n\n|\n[A-Z]|$)/gis
-  
+
   return text.replace(parameterPattern, (match, paramContent) => {
     // First try to split by bullet points (•)
-    let items = paramContent.split('•').filter((item: string) => item.trim())
-    
+    let items = paramContent.split("•").filter((item: string) => item.trim())
+
     // If no bullet points found, try to split by common parameter separators
     if (items.length <= 1) {
       // Look for pattern like "key: value • key: value" or "key: value, key: value"
-      items = paramContent.split(/\s*•\s*|\s*,\s*(?=[a-zA-Z_]+:)/).filter((item: string) => item.trim())
+      items = paramContent
+        .split(/\s*•\s*|\s*,\s*(?=[a-zA-Z_]+:)/)
+        .filter((item: string) => item.trim())
     }
-    
+
     if (items.length > 0) {
       const formattedItems = items.map((item: string) => {
         const trimmed = item.trim()
         // Check if it's a key-value pair
-        if (trimmed.includes(':')) {
-          const [key, ...valueParts] = trimmed.split(':')
-          const value = valueParts.join(':').trim()
+        if (trimmed.includes(":")) {
+          const [key, ...valueParts] = trimmed.split(":")
+          const value = valueParts.join(":").trim()
           return `**${key.trim()}:** ${value}`
         }
         return trimmed
       })
-      
+
       // Use proper markdown formatting with line breaks
-      const result = `**Parameters:**\n\n${formattedItems.map((item: string) => `• ${item}`).join('\n\n')}\n\n`
+      const result = `**Parameters:**\n\n${formattedItems.map((item: string) => `• ${item}`).join("\n\n")}\n\n`
       return result
     }
-    
+
     return match
   })
 }
 
-  // Parse reasoning content into structured steps
-  const parseReasoningContent = (content: string): ReasoningStep[] => {
-    if (!content.trim()) return []
+// Parse reasoning content into structured steps
+const parseReasoningContent = (content: string): ReasoningStep[] => {
+  if (!content.trim()) return []
 
-    const lines = content.split('\n').filter(line => line.trim())
-    const steps: ReasoningStep[] = []
-    const stepMap = new Map<string, ReasoningStep>()
-    let currentIteration: ReasoningStep | null = null
-    
-    // Track steps per iteration for limiting display (same as backend)
-    let currentIterationSteps = 0
-    let currentIterationNumber = 0
-    let currentIterationToolName: string | undefined = undefined
-    const MAX_STEPS_PER_ITERATION = 3
-    
-    lines.forEach((line, lineIndex) => {
-      try {
-        const jsonData = JSON.parse(line)
-        
-        if (jsonData.step && jsonData.text) {
-          const stepId = jsonData.step.stepId || `step_${lineIndex}`
-          
-          // Check if we already have this step (by stepId)
-          const existingStep = stepMap.get(stepId)
-          if (existingStep) {
-            // Update existing step with new data
-            existingStep.stepSummary = jsonData.quickSummary || existingStep.stepSummary
-            existingStep.aiGeneratedSummary = jsonData.aiSummary || existingStep.aiGeneratedSummary
-            return
-          }
-          
-          // Create new step
-          const step: ReasoningStep = {
-            type: jsonData.step.type || AgentReasoningStepType.LogMessage,
-            content: jsonData.text,
-            timestamp: jsonData.step.timestamp || generateStableId(jsonData.text, lineIndex),
-            status: jsonData.step.status || 'info',
-            iterationNumber: jsonData.step.iteration,
-            stepSummary: jsonData.quickSummary,
-            aiGeneratedSummary: jsonData.aiSummary,
-            stepId: stepId,
-            substeps: [],
-            toolName: jsonData.step.toolName,
-            app: jsonData.step.app,
-            isIterationSummary: jsonData.isIterationSummary || false,
-            iterationToolName: currentIterationToolName,
-          }
-        
+  const lines = content.split("\n").filter((line) => line.trim())
+  const steps: ReasoningStep[] = []
+  const stepMap = new Map<string, ReasoningStep>()
+  let currentIteration: ReasoningStep | null = null
+
+  // Track steps per iteration for limiting display (same as backend)
+  let currentIterationSteps = 0
+  let currentIterationNumber = 0
+  let currentIterationToolName: string | undefined = undefined
+  const MAX_STEPS_PER_ITERATION = 3
+
+  lines.forEach((line, lineIndex) => {
+    try {
+      const jsonData = JSON.parse(line)
+
+      if (jsonData.step && jsonData.text) {
+        const stepId = jsonData.step.stepId || `step_${lineIndex}`
+
+        // Check if we already have this step (by stepId)
+        const existingStep = stepMap.get(stepId)
+        if (existingStep) {
+          // Update existing step with new data
+          existingStep.stepSummary =
+            jsonData.quickSummary || existingStep.stepSummary
+          existingStep.aiGeneratedSummary =
+            jsonData.aiSummary || existingStep.aiGeneratedSummary
+          return
+        }
+
+        // Create new step
+        const step: ReasoningStep = {
+          type: jsonData.step.type || AgentReasoningStepType.LogMessage,
+          content: jsonData.text,
+          timestamp:
+            jsonData.step.timestamp ||
+            generateStableId(jsonData.text, lineIndex),
+          status: jsonData.step.status || "info",
+          iterationNumber: jsonData.step.iteration,
+          stepSummary: jsonData.quickSummary,
+          aiGeneratedSummary: jsonData.aiSummary,
+          stepId: stepId,
+          substeps: [],
+          toolName: jsonData.step.toolName,
+          app: jsonData.step.app,
+          isIterationSummary: jsonData.isIterationSummary || false,
+          iterationToolName: currentIterationToolName,
+        }
+
         // Handle iteration summaries - add them as top-level steps
         if (step.isIterationSummary) {
           steps.push(step)
           stepMap.set(stepId, step)
           return
         }
-        
+
         // Apply the same 3-steps-per-iteration logic as backend
         if (step.type === AgentReasoningStepType.Iteration) {
           currentIteration = step
-          currentIterationNumber = step.iterationNumber ?? currentIterationNumber + 1
+          currentIterationNumber =
+            step.iterationNumber ?? currentIterationNumber + 1
           currentIterationSteps = 0 // Reset step counter for new iteration
           currentIterationToolName = undefined // Reset tool name for new iteration
           // Add iteration step to show attempt headers
           steps.push(step)
           stepMap.set(stepId, step)
-        } else if (currentIteration && step.type !== AgentReasoningStepType.Iteration) {
+        } else if (
+          currentIteration &&
+          step.type !== AgentReasoningStepType.Iteration
+        ) {
           // Track tool name from ToolExecuting steps for the entire iteration
-          if (step.type === AgentReasoningStepType.ToolExecuting && step.toolName) {
+          if (
+            step.type === AgentReasoningStepType.ToolExecuting &&
+            step.toolName
+          ) {
             currentIterationToolName = step.toolName
             // Update the current iteration with the tool name
             currentIteration.iterationToolName = currentIterationToolName
             // Update all existing substeps in this iteration with the tool name
             if (currentIteration.substeps) {
-              currentIteration.substeps.forEach(substep => {
+              currentIteration.substeps.forEach((substep) => {
                 if (!substep.app && !substep.toolName) {
                   substep.iterationToolName = currentIterationToolName
                 }
               })
             }
           }
-          
+
           // Set the iteration tool name for this step
           step.iterationToolName = currentIterationToolName
-          
+
           // Check if we've already added 3 steps for this iteration
           if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
             // Skip this step to maintain 3-step limit per iteration
@@ -212,7 +225,7 @@ const formatParametersInText = (text: string): string => {
             return
           }
           currentIterationSteps++
-          
+
           // Add to substeps array of the current iteration
           if (!currentIteration.substeps) {
             currentIteration.substeps = []
@@ -224,21 +237,29 @@ const formatParametersInText = (text: string): string => {
           steps.push(step)
           stepMap.set(stepId, step)
         }
-      } else if (jsonData.step && jsonData.step.type === AgentReasoningStepType.LogMessage && 
-                 jsonData.step.stepId && jsonData.step.stepId.startsWith('consolidated_')) {
+      } else if (
+        jsonData.step &&
+        jsonData.step.type === AgentReasoningStepType.LogMessage &&
+        jsonData.step.stepId &&
+        jsonData.step.stepId.startsWith("consolidated_")
+      ) {
         // Handle consolidated summary steps
         const step: ReasoningStep = {
           type: AgentReasoningStepType.LogMessage,
-          content: jsonData.text || jsonData.quickSummary || jsonData.aiSummary || 'Additional processing completed',
+          content:
+            jsonData.text ||
+            jsonData.quickSummary ||
+            jsonData.aiSummary ||
+            "Additional processing completed",
           timestamp: jsonData.step.timestamp || Date.now(),
-          status: 'info',
+          status: "info",
           iterationNumber: jsonData.step.iteration,
           stepSummary: jsonData.quickSummary || jsonData.aiSummary,
           aiGeneratedSummary: jsonData.aiSummary || jsonData.quickSummary,
           stepId: jsonData.step.stepId,
           substeps: [],
         }
-        
+
         // Add consolidated summary as a regular step
         steps.push(step)
         stepMap.set(step.stepId!, step)
@@ -251,7 +272,7 @@ const formatParametersInText = (text: string): string => {
           type: "ReasoningStep",
           content,
           timestamp: generateStableId(content, lineIndex),
-          status
+          status,
         }
 
         // Add consolidated summary as a regular step
@@ -262,7 +283,7 @@ const formatParametersInText = (text: string): string => {
       }
     }
   })
-  
+
   return steps
 }
 
@@ -276,217 +297,157 @@ const ReasoningStepComponent: React.FC<{
   citations?: Citation[]
   citationMap?: Record<number, number>
   parentApp?: string
-  getAppIcon: (app?: string, stepType?: string, stepIndex?: number, toolName?: string, iterationToolName?: string) => JSX.Element | null
+  getAppIcon: (
+    app?: string,
+    stepType?: string,
+    stepIndex?: number,
+    toolName?: string,
+    iterationToolName?: string,
+  ) => JSX.Element | null
   allSteps?: ReasoningStep[]
-}> = React.memo(({
-  step,
-  index,
-  isStreaming,
-  isLastStep,
-  depth = 0,
-  citations,
-  citationMap,
-  parentApp,
-  getAppIcon,
-  allSteps = [],
-}) => {
-  const [showFullDetails, setShowFullDetails] = useState(false)
-  const { theme } = useTheme()
-  const isIteration = step.type === AgentReasoningStepType.Iteration
-  const isIterationSummary = step.isIterationSummary
-  const hasSubsteps = step.substeps && step.substeps.length > 0
-  
-  // Check if this is an initial message that should always show full content
-  const isInitialMessage = step.type === AgentReasoningStepType.LogMessage && 
-    (step.content.includes("We're reading your question") || 
-     step.content.includes("figuring out the best way") ||
-     step.content.includes("This might take a few seconds"))
-  
-  // Get the display text - show actual message for step 1, summaries for steps 2 and 3
-  const getDisplayText = () => {
-    if (isIteration) {
-      return `Attempt ${step.iterationNumber}`
-    }
-    
-    // For initial messages, always show full content
-    if (isInitialMessage) {
-      return step.content
-    }
-    
-    // For iteration summaries, show the summary content
-    if (isIterationSummary) {
-      return step.content
-    }
-    
-    // For substeps (steps within an iteration), show actual message for step 1, summaries for steps 2 and 3
-    if (depth > 0) {
-      // Step 1 (index 0): show actual message
-      if (index === 0) {
+}> = React.memo(
+  ({
+    step,
+    index,
+    isStreaming,
+    isLastStep,
+    depth = 0,
+    citations,
+    citationMap,
+    parentApp,
+    getAppIcon,
+    allSteps = [],
+  }) => {
+    const [showFullDetails, setShowFullDetails] = useState(false)
+    const { theme } = useTheme()
+    const isIteration = step.type === AgentReasoningStepType.Iteration
+    const isIterationSummary = step.isIterationSummary
+    const hasSubsteps = step.substeps && step.substeps.length > 0
+
+    // Check if this is an initial message that should always show full content
+    const isInitialMessage =
+      step.type === AgentReasoningStepType.LogMessage &&
+      (step.content.includes("We're reading your question") ||
+        step.content.includes("figuring out the best way") ||
+        step.content.includes("This might take a few seconds"))
+
+    // Get the display text - show actual message for step 1, summaries for steps 2 and 3
+    const getDisplayText = () => {
+      if (isIteration) {
+        return `Attempt ${step.iterationNumber}`
+      }
+
+      // For initial messages, always show full content
+      if (isInitialMessage) {
         return step.content
       }
-      // Steps 2 and 3 (index 1 and 2): show summary only
-      if (index >= 1 && (step.aiGeneratedSummary || step.stepSummary)) {
+
+      // For iteration summaries, show the summary content
+      if (isIterationSummary) {
+        return step.content
+      }
+
+      // For substeps (steps within an iteration), show actual message for step 1, summaries for steps 2 and 3
+      if (depth > 0) {
+        // Step 1 (index 0): show actual message
+        if (index === 0) {
+          return step.content
+        }
+        // Steps 2 and 3 (index 1 and 2): show summary only
+        if (index >= 1 && (step.aiGeneratedSummary || step.stepSummary)) {
+          return step.aiGeneratedSummary || step.stepSummary
+        }
+        // Fallback to content if no summary available
+        return step.content
+      }
+
+      // For top-level messages with summaries, always show the summary
+      if (step.aiGeneratedSummary || step.stepSummary) {
         return step.aiGeneratedSummary || step.stepSummary
       }
-      // Fallback to content if no summary available
+
+      // Otherwise show full content
       return step.content
     }
-    
-    // For top-level messages with summaries, always show the summary
-    if (step.aiGeneratedSummary || step.stepSummary) {
-      return step.aiGeneratedSummary || step.stepSummary
-    }
-    
-    // Otherwise show full content
-    return step.content
-  }
-  
-  const hasAISummary = Boolean(step.aiGeneratedSummary || step.stepSummary)
-  // Only allow toggling details for step 1 (index 0) in substeps, or for top-level messages
-  const canToggleDetails = hasAISummary && !isIteration && !isInitialMessage && !isIterationSummary && 
-    step.content !== (step.aiGeneratedSummary || step.stepSummary) && 
-    (depth === 0 || index === 0) // Only step 1 in iterations or top-level steps
-  const isWaitingForSummary = isStreaming && isLastStep && !hasAISummary && step.content && !isInitialMessage && !isIterationSummary
 
-  // Special styling for iteration headers and summaries
-  const getStepClassName = () => {
-    if (isIteration) {
-      return "font-semibold text-blue-700 dark:text-blue-300"
-    }
-    if (isIterationSummary) {
+    const hasAISummary = Boolean(step.aiGeneratedSummary || step.stepSummary)
+    // Only allow toggling details for step 1 (index 0) in substeps, or for top-level messages
+    const canToggleDetails =
+      hasAISummary &&
+      !isIteration &&
+      !isInitialMessage &&
+      !isIterationSummary &&
+      step.content !== (step.aiGeneratedSummary || step.stepSummary) &&
+      (depth === 0 || index === 0) // Only step 1 in iterations or top-level steps
+    const isWaitingForSummary =
+      isStreaming &&
+      isLastStep &&
+      !hasAISummary &&
+      step.content &&
+      !isInitialMessage &&
+      !isIterationSummary
+
+    // Special styling for iteration headers and summaries
+    const getStepClassName = () => {
+      if (isIteration) {
+        return "font-semibold text-blue-700 dark:text-blue-300"
+      }
+      if (isIterationSummary) {
+        return ""
+      }
       return ""
     }
-    return ""
-  }
 
-  if (isIteration) {
-    // Check if there are multiple iterations in the entire steps array
-    const totalIterations = allSteps.filter(s => s.type === AgentReasoningStepType.Iteration).length
-    const showAttemptHeader = totalIterations > 1
-    
-    return (
-      <div className={cn("mt-4", index > 0 && "mt-8")}>
-        {/* Header outside the white div - show for all attempts if there are multiple */}
-        {showAttemptHeader && (
-          <div className="flex items-center mb-2 gap-2">
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              {getDisplayText()}
-            </span>
-          </div>
-        )}
-        
-        {/* White div with fixed height and scrollable content */}
-        <div className="bg-white dark:bg-slate-700 rounded-xl py-4 shadow-sm h-36 overflow-y-auto overflow-x-hidden flex flex-col items-start gap-4 w-full max-w-full">
-          {hasSubsteps && (
-            <div className="space-y-1 w-full max-w-full">
-              {step.substeps!.map((substep, substepIndex) => (
-                <ReasoningStepComponent
-                  key={substep.stepId || substep.timestamp}
-                  step={substep}
-                  index={substepIndex}
-                  isStreaming={isStreaming}
-                  isLastStep={substepIndex === step.substeps!.length - 1}
-                  depth={depth + 1}
-                  citations={citations}
-                  citationMap={citationMap}
-                  parentApp={step.app}
-                  getAppIcon={getAppIcon}
-                  allSteps={allSteps}
-                />
-              ))}
+    if (isIteration) {
+      // Check if there are multiple iterations in the entire steps array
+      const totalIterations = allSteps.filter(
+        (s) => s.type === AgentReasoningStepType.Iteration,
+      ).length
+      const showAttemptHeader = totalIterations > 1
+
+      return (
+        <div className={cn("mt-4", index > 0 && "mt-8")}>
+          {/* Header outside the white div - show for all attempts if there are multiple */}
+          {showAttemptHeader && (
+            <div className="flex items-center mb-2 gap-2">
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {getDisplayText()}
+              </span>
             </div>
           )}
-        </div>
-      </div>
-    )
-  }
 
-      // Handle iteration summary with its own dedicated container
-  if (isIterationSummary) {
-    return (
-      <div className="rounded-lg p-4 mt-16 mb-16 ">
-        <div className="w-full max-w-full">
-          <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-            <MarkdownPreview
-              source={processReasoningWithCitations(
-                getDisplayText() || "",
-                citations,
-                citationMap,
-              )}
-              wrapperElement={{
-                "data-color-mode": theme,
-              }}
-              style={{
-                padding: 0,
-                backgroundColor: "transparent",
-                fontSize: "inherit",
-                color: "inherit",
-                display: "block",
-                overflowWrap: "break-word",
-                wordBreak: "break-word",
-                maxWidth: "100%",
-                overflow: "hidden",
-              }}
-              components={{
-                p: ({ children }) => (
-                  <div className="mb-2">{children}</div>
-                ),
-                ul: ({ children }) => (
-                  <ul className="list-disc pl-4 mt-1 space-y-0.5">{children}</ul>
-                ),
-                li: ({ children }) => (
-                  <li className="text-sm">{children}</li>
-                ),
-                strong: ({ children }) => (
-                  <strong className="font-semibold text-gray-800 dark:text-gray-200">{children}</strong>
-                ),
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
-            />
+          {/* White div with fixed height and scrollable content */}
+          <div className="bg-white dark:bg-slate-700 rounded-xl py-4 shadow-sm h-36 overflow-y-auto overflow-x-hidden flex flex-col items-start gap-4 w-full max-w-full">
+            {hasSubsteps && (
+              <div className="space-y-1 w-full max-w-full">
+                {step.substeps!.map((substep, substepIndex) => (
+                  <ReasoningStepComponent
+                    key={substep.stepId || substep.timestamp}
+                    step={substep}
+                    index={substepIndex}
+                    isStreaming={isStreaming}
+                    isLastStep={substepIndex === step.substeps!.length - 1}
+                    depth={depth + 1}
+                    citations={citations}
+                    citationMap={citationMap}
+                    parentApp={step.app}
+                    getAppIcon={getAppIcon}
+                    allSteps={allSteps}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // Determine which app to use for icon (parentApp if available, otherwise step's app)
-  const appForIcon = parentApp || step.app
-  
-  // Get the icon for this step
-  const stepIcon = getAppIcon(appForIcon, step.type, index, step.toolName, step.iterationToolName)
-
-  return (
-    <div className={cn(
-      "w-full max-w-full space-y-1",
-      !isInitialMessage && !isIteration && "ml-8", 
-      depth > 0 && "ml-6", 
-      isInitialMessage && "mb-6"
-    )}>
-      <div className="w-full max-w-full">
-        <div className={cn("flex items-center space-x-2 py-1 w-full max-w-full pr-4", getStepClassName())}>
-          {/* Add icon for substeps */}
-          {depth > 0 && stepIcon && (
-            <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
-              {stepIcon}
-            </span>
-          )}
-          <div className="flex-1 min-w-0 w-full">
-            <div 
-              className={cn(
-                "text-sm leading-relaxed text-gray-700 dark:text-gray-300",
-                canToggleDetails && "cursor-pointer"
-              )}
-              onClick={canToggleDetails ? () => setShowFullDetails(!showFullDetails) : undefined}
-            >
+    // Handle iteration summary with its own dedicated container
+    if (isIterationSummary) {
+      return (
+        <div className="rounded-lg p-4 mt-16 mb-16 ">
+          <div className="w-full max-w-full">
+            <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
               <MarkdownPreview
                 source={processReasoningWithCitations(
                   getDisplayText() || "",
@@ -508,38 +469,17 @@ const ReasoningStepComponent: React.FC<{
                   overflow: "hidden",
                 }}
                 components={{
-                  p: ({ children }) => (
-                    <div className="mb-2">
-                      {children}
-                      {canToggleDetails && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowFullDetails(!showFullDetails);
-                          }}
-                          aria-expanded={showFullDetails}
-                          aria-label={
-                            showFullDetails
-                              ? "Collapse step details"
-                              : "Expand step details"
-                          }
-                          className="inline-block align-middle ml-1 p-0.5 text-gray-400"
-                        >
-                          {showFullDetails ? null : (
-                            <ChevronRight className=" w-4 h-3.5" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ),
+                  p: ({ children }) => <div className="mb-2">{children}</div>,
                   ul: ({ children }) => (
-                    <ul className="list-disc pl-4 mt-1 space-y-0.5">{children}</ul>
+                    <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                      {children}
+                    </ul>
                   ),
-                  li: ({ children }) => (
-                    <li className="text-sm">{children}</li>
-                  ),
+                  li: ({ children }) => <li className="text-sm">{children}</li>,
                   strong: ({ children }) => (
-                    <strong className="font-semibold text-gray-700 dark:text-gray-200">{children}</strong>
+                    <strong className="font-semibold text-gray-800 dark:text-gray-200">
+                      {children}
+                    </strong>
                   ),
                   a: ({ href, children }) => (
                     <a
@@ -553,73 +493,200 @@ const ReasoningStepComponent: React.FC<{
                   ),
                 }}
               />
-            </div>
-            <div className="w-full">
-              {isWaitingForSummary && step.type !== "ReasoningStep" && (
-                <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center">
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                  Generating AI summary...
-                </div>
-              )}
             </div>
           </div>
         </div>
-        
-        {/* Show full details below when expanded */}
-        {showFullDetails && canToggleDetails && (
-          <div className="mt-2 ml-4 pl-2 ">
-            <div className="text-sm text-[#6B757F] leading-relaxed w-full break-words flex">
-              <span className="mr-1 flex-shrink-0">-</span>
-              <MarkdownPreview
-                source={processReasoningWithCitations(
-                  step.content,
-                  citations,
-                  citationMap,
+      )
+    }
+
+    // Determine which app to use for icon (parentApp if available, otherwise step's app)
+    const appForIcon = parentApp || step.app
+
+    // Get the icon for this step
+    const stepIcon = getAppIcon(
+      appForIcon,
+      step.type,
+      index,
+      step.toolName,
+      step.iterationToolName,
+    )
+
+    return (
+      <div
+        className={cn(
+          "w-full max-w-full space-y-1",
+          !isInitialMessage && !isIteration && "ml-8",
+          depth > 0 && "ml-6",
+          isInitialMessage && "mb-6",
+        )}
+      >
+        <div className="w-full max-w-full">
+          <div
+            className={cn(
+              "flex items-center space-x-2 py-1 w-full max-w-full pr-4",
+              getStepClassName(),
+            )}
+          >
+            {/* Add icon for substeps */}
+            {depth > 0 && stepIcon && (
+              <span className="text-gray-500 dark:text-gray-400 flex-shrink-0">
+                {stepIcon}
+              </span>
+            )}
+            <div className="flex-1 min-w-0 w-full">
+              <div
+                className={cn(
+                  "text-sm leading-relaxed text-gray-700 dark:text-gray-300",
+                  canToggleDetails && "cursor-pointer",
                 )}
-                wrapperElement={{
-                  "data-color-mode": theme,
-                }}
-                style={{
-                  padding: 0,
-                  backgroundColor: "transparent",
-                  fontSize: "inherit",
-                  color: "inherit",
-                  maxWidth: "100%",
-                  overflowWrap: "break-word",
-                  wordBreak: "break-word",
-                  minWidth: 0,
-                  display: "inline",
-                }}
-                components={{
-                  p: ({ children }) => <div className="mb-2">{children}</div>,
-                  ul: ({ children }) => (
-                    <ul className="list-disc pl-4 mt-2 mb-2 space-y-1">{children}</ul>
-                  ),
-                  li: ({ children }) => (
-                    <li className="text-sm">{children}</li>
-                  ),
-                  strong: ({ children }) => (
-                    <strong className="font-semibold text-gray-700 dark:text-gray-200">{children}</strong>
-                  ),
-                  a: ({ href, children }) => (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {children}
-                    </a>
-                  ),
-                }}
-              />
+                onClick={
+                  canToggleDetails
+                    ? () => setShowFullDetails(!showFullDetails)
+                    : undefined
+                }
+              >
+                <MarkdownPreview
+                  source={processReasoningWithCitations(
+                    getDisplayText() || "",
+                    citations,
+                    citationMap,
+                  )}
+                  wrapperElement={{
+                    "data-color-mode": theme,
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    fontSize: "inherit",
+                    color: "inherit",
+                    display: "block",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                  }}
+                  components={{
+                    p: ({ children }) => (
+                      <div className="mb-2">
+                        {children}
+                        {canToggleDetails && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setShowFullDetails(!showFullDetails)
+                            }}
+                            aria-expanded={showFullDetails}
+                            aria-label={
+                              showFullDetails
+                                ? "Collapse step details"
+                                : "Expand step details"
+                            }
+                            className="inline-block align-middle ml-1 p-0.5 text-gray-400"
+                          >
+                            {showFullDetails ? null : (
+                              <ChevronRight className=" w-4 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                        {children}
+                      </ul>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-sm">{children}</li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-gray-700 dark:text-gray-200">
+                        {children}
+                      </strong>
+                    ),
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                  }}
+                />
+              </div>
+              <div className="w-full">
+                {isWaitingForSummary && step.type !== "ReasoningStep" && (
+                  <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center">
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Generating AI summary...
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Show full details below when expanded */}
+          {showFullDetails && canToggleDetails && (
+            <div className="mt-2 ml-4 pl-2 ">
+              <div className="text-sm text-[#6B757F] leading-relaxed w-full break-words flex">
+                <span className="mr-1 flex-shrink-0">-</span>
+                <MarkdownPreview
+                  source={processReasoningWithCitations(
+                    step.content,
+                    citations,
+                    citationMap,
+                  )}
+                  wrapperElement={{
+                    "data-color-mode": theme,
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    fontSize: "inherit",
+                    color: "inherit",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    minWidth: 0,
+                    display: "inline",
+                  }}
+                  components={{
+                    p: ({ children }) => <div className="mb-2">{children}</div>,
+                    ul: ({ children }) => (
+                      <ul className="list-disc pl-4 mt-2 mb-2 space-y-1">
+                        {children}
+                      </ul>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-sm">{children}</li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-gray-700 dark:text-gray-200">
+                        {children}
+                      </strong>
+                    ),
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  )
-})
+    )
+  },
+)
 
 // Progress state enum
 enum ProgressState {
@@ -632,38 +699,55 @@ enum ProgressState {
 }
 
 // Get current progress state based on steps
-const getCurrentProgressState = (steps: ReasoningStep[], isStreaming: boolean, startTime: number | null): { state: ProgressState; text: string; attemptNumber?: number } => {
+const getCurrentProgressState = (
+  steps: ReasoningStep[],
+  isStreaming: boolean,
+  startTime: number | null,
+): { state: ProgressState; text: string; attemptNumber?: number } => {
   if (steps.length === 0) {
-    return { state: ProgressState.UnderstandingQuery, text: "Understanding the user's query..." }
+    return {
+      state: ProgressState.UnderstandingQuery,
+      text: "Understanding the user's query...",
+    }
   }
 
   // Check if streaming has ended
   if (!isStreaming && steps.length > 0) {
     if (startTime) {
       const duration = Math.round((Date.now() - startTime) / 1000)
-      return { state: ProgressState.SearchCompleted, text: `The search was completed in ${duration} seconds` }
+      return {
+        state: ProgressState.SearchCompleted,
+        text: `The search was completed in ${duration} seconds`,
+      }
     }
-    return { state: ProgressState.SearchCompleted, text: "The search was completed" }
+    return {
+      state: ProgressState.SearchCompleted,
+      text: "The search was completed",
+    }
   }
 
   // Find the latest step
   const latestStep = steps[steps.length - 1]
-  
+
   // Check for initial message
-  const hasInitialMessage = steps.some(step => 
-    step.type === AgentReasoningStepType.LogMessage && 
-    (step.content.includes("We're reading your question") || 
-     step.content.includes("figuring out the best way"))
+  const hasInitialMessage = steps.some(
+    (step) =>
+      step.type === AgentReasoningStepType.LogMessage &&
+      (step.content.includes("We're reading your question") ||
+        step.content.includes("figuring out the best way")),
   )
-  
+
   if (hasInitialMessage && steps.length === 1) {
-    return { state: ProgressState.UnderstandingQuery, text: "Understanding the user's query..." }
+    return {
+      state: ProgressState.UnderstandingQuery,
+      text: "Understanding the user's query...",
+    }
   }
 
   // Find current iteration
   let currentIteration: ReasoningStep | null = null
   let currentIterationNumber = 0
-  
+
   for (let i = steps.length - 1; i >= 0; i--) {
     if (steps[i].type === AgentReasoningStepType.Iteration) {
       currentIteration = steps[i]
@@ -674,52 +758,55 @@ const getCurrentProgressState = (steps: ReasoningStep[], isStreaming: boolean, s
 
   // Check if we're in an iteration summary
   if (latestStep.isIterationSummary) {
-    return { 
-      state: ProgressState.GeneratingSummary, 
+    return {
+      state: ProgressState.GeneratingSummary,
       text: `Generating summary for attempt ${currentIterationNumber}...`,
-      attemptNumber: currentIterationNumber
+      attemptNumber: currentIterationNumber,
     }
   }
 
   // If we have an iteration
   if (currentIteration) {
     const substeps = currentIteration.substeps || []
-    
+
     // No substeps yet = just started iteration (planning phase)
     if (substeps.length === 0) {
-      return { 
-        state: ProgressState.PlanningTask, 
+      return {
+        state: ProgressState.PlanningTask,
         text: "Planning the task...",
-        attemptNumber: currentIterationNumber
+        attemptNumber: currentIterationNumber,
       }
     }
-    
+
     // Based on step position in the attempt (1st, 2nd, 3rd step)
     const stepPosition = substeps.length
-    
+
     if (stepPosition === 1) {
-      return { 
-        state: ProgressState.PlanningTask, 
+      return {
+        state: ProgressState.PlanningTask,
         text: "Planning the task...",
-        attemptNumber: currentIterationNumber
+        attemptNumber: currentIterationNumber,
       }
     } else if (stepPosition === 2) {
-      return { 
-        state: ProgressState.ScanningDocuments, 
+      return {
+        state: ProgressState.ScanningDocuments,
         text: "Scanning the documents...",
-        attemptNumber: currentIterationNumber
+        attemptNumber: currentIterationNumber,
       }
     } else if (stepPosition >= 3) {
-      return { 
-        state: ProgressState.ExtractingInformation, 
+      return {
+        state: ProgressState.ExtractingInformation,
         text: "Extracting information from documents...",
-        attemptNumber: currentIterationNumber
+        attemptNumber: currentIterationNumber,
       }
     }
   }
 
   // Default
-  return { state: ProgressState.UnderstandingQuery, text: "Understanding the user's query..." }
+  return {
+    state: ProgressState.UnderstandingQuery,
+    text: "Understanding the user's query...",
+  }
 }
 
 export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
@@ -734,9 +821,13 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const hasAutoCollapsedRef = useRef(false)
-  const [progressState, setProgressState] = useState<{ state: ProgressState; text: string; attemptNumber?: number }>({
+  const [progressState, setProgressState] = useState<{
+    state: ProgressState
+    text: string
+    attemptNumber?: number
+  }>({
     state: ProgressState.UnderstandingQuery,
-    text: "Understanding the user's query..."
+    text: "Understanding the user's query...",
   })
   const startTimeRef = useRef<number | null>(null)
 
@@ -783,36 +874,45 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       case XyneTools.FilteredSearch:
       case XyneTools.TimeSearch:
         return <SearchIcon className="w-4 h-4" />
-      
+
       case XyneTools.getSlackRelatedMessages:
       case XyneTools.getSlackThreads:
       case XyneTools.getUserSlackProfile:
         return <SlackIcon className="w-4 h-4" />
-        
+
       default:
         // Default for unknown tools
         return <XyneIcon className="w-4 h-4" />
     }
   }, [])
 
-  const getAppIcon = useCallback((app?: string, stepType?: string, stepIndex?: number, toolName?: string, iterationToolName?: string) => {
-    // For planning steps (first step in iteration)
-    if (stepType === AgentReasoningStepType.Planning || stepIndex === 0) {
-      return <Brain className="w-4 h-4" />
-    }
-    
-    // First try to get icon from app
-    const appIcon = getIconFromApp(app)
-    if (appIcon) return appIcon
-    
-    // If no app, try to get icon from tool name (current step's tool or iteration's tool)
-    const currentToolName = toolName || iterationToolName
-    if (currentToolName) {
-      return getIconFromToolName(currentToolName)
-    }
-    
-    return null
-  }, [getIconFromApp, getIconFromToolName])
+  const getAppIcon = useCallback(
+    (
+      app?: string,
+      stepType?: string,
+      stepIndex?: number,
+      toolName?: string,
+      iterationToolName?: string,
+    ) => {
+      // For planning steps (first step in iteration)
+      if (stepType === AgentReasoningStepType.Planning || stepIndex === 0) {
+        return <Brain className="w-4 h-4" />
+      }
+
+      // First try to get icon from app
+      const appIcon = getIconFromApp(app)
+      if (appIcon) return appIcon
+
+      // If no app, try to get icon from tool name (current step's tool or iteration's tool)
+      const currentToolName = toolName || iterationToolName
+      if (currentToolName) {
+        return getIconFromToolName(currentToolName)
+      }
+
+      return null
+    },
+    [getIconFromApp, getIconFromToolName],
+  )
 
   // Memoize expensive computations
   const parsedSteps = useMemo(() => {
@@ -864,7 +964,12 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
 
   // Auto-collapse when streaming ends (only once)
   useEffect(() => {
-    if (!isStreaming && steps.length > 0 && !isCollapsed && !hasAutoCollapsedRef.current) {
+    if (
+      !isStreaming &&
+      steps.length > 0 &&
+      !isCollapsed &&
+      !hasAutoCollapsedRef.current
+    ) {
       setIsCollapsed(true)
       hasAutoCollapsedRef.current = true // Mark that auto-collapse has happened
     }
@@ -897,27 +1002,36 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
     return null
   }
 
-  const toggleCollapsed = useCallback(() => setIsCollapsed(!isCollapsed), [isCollapsed])
+  const toggleCollapsed = useCallback(
+    () => setIsCollapsed(!isCollapsed),
+    [isCollapsed],
+  )
 
   return (
-    <div className={cn("mb-8 w-full max-w-none rounded-2xl bg-[#F8FAFC] dark:bg-slate-800", className)}>
+    <div
+      className={cn(
+        "mb-8 w-full max-w-none rounded-2xl bg-[#F8FAFC] dark:bg-slate-800",
+        className,
+      )}
+    >
       <div className="p-1">
         <button
           onClick={toggleCollapsed}
           className="sticky top-0 z-10 w-full bg-white dark:bg-slate-700 rounded-2xl border border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors cursor-pointer"
         >
-        <div className="flex items-center gap-3">
-          <Brain className="w-5 h-5 text-gray-500 dark:text-gray-300" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {progressState.text}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {isCollapsed ? (
-            <div className="border px-2 py-1 rounded-xl ">
-              <ExpandIcon className="w-3.5 h-3.5" />
-           </div>) : null}
-        </div>
+          <div className="flex items-center gap-3">
+            <Brain className="w-5 h-5 text-gray-500 dark:text-gray-300" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {progressState.text}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {isCollapsed ? (
+              <div className="border px-2 py-1 rounded-xl ">
+                <ExpandIcon className="w-3.5 h-3.5" />
+              </div>
+            ) : null}
+          </div>
         </button>
       </div>
 
@@ -930,8 +1044,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
               onScroll={handleScroll}
               className="space-y-6 max-h-80 overflow-y-auto overflow-x-hidden w-full max-w-full pr-4 pb-2 scrollbar-hide"
               style={{
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
               }}
             >
               {steps.length > 0 ? (
