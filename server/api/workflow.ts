@@ -469,6 +469,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         status: "completed",
         completedBy: "api",
         completedAt: new Date(),
+        toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
         metadata: {
           ...(rootStepExecution.metadata || {}),
           formSubmission: {
@@ -850,13 +851,14 @@ const executeWorkflowChain = async (
       }
     }
 
-    // Update step as completed
+    // Update step as completed and add tool execution ID
     await db
       .update(workflowStepExecution)
       .set({
         status: "completed",
         completedBy: "system",
         completedAt: new Date(),
+        toolExecIds: [toolExecutionRecord.id],
       })
       .where(eq(workflowStepExecution.id, currentStepId))
 
@@ -1261,6 +1263,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         status: "completed",
         completedBy: "demo",
         completedAt: new Date(),
+        toolExecIds: [toolExecutionRecord.id],
         metadata: {
           ...stepExecution.metadata,
           formSubmission: {
@@ -1339,55 +1342,32 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
   }
 }
 
-// Execute workflow tool (Python scripts, etc.)
-const executeWorkflowTool = async (
-  tool: any,
-  previousStepResults: any = {},
+// Unified Python script execution function
+const executePythonScript = async (
+  scriptContent: string,
+  previousStepResults: any,
+  config: any,
+  scriptType: string = "python_script"
 ) => {
   try {
-    switch (tool.type) {
-      case "form":
-        // Form tools are handled by form submission API
-        return {
-          status: "awaiting_user_input",
-          result: {
-            formDefinition: tool.value,
-            message: "User input required - handled by form submission API",
-          },
-        }
-
-      case "python_script":
-        // Execute actual Python script from database
-        const scriptContent =
-          typeof tool.value === "string" ? tool.value : tool.value?.script
-        const config = tool.config
-
-        if (!scriptContent) {
-          return {
-            status: "error",
-            result: { error: "No script content found in tool value" },
-          }
-        }
-
-        try {
-          // Create a temporary directory for the script execution
-          const tempDir = `/tmp/workflow_scripts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-          await mkdir(tempDir, { recursive: true })
-
-          // Write the script to a temporary file
-          const scriptPath = `${tempDir}/script.py`
-
-          // Prepare the script with context injection
-          const previousStepResultsJson = JSON.stringify(previousStepResults)
-            .replace(/null/g, "None")
-            .replace(/true/g, "True")
-            .replace(/false/g, "False")
-          const configJson = JSON.stringify(config)
-            .replace(/null/g, "None")
-            .replace(/true/g, "True")
-            .replace(/false/g, "False")
-
-          const scriptWithContext = `
+    // Create a temporary directory for the script execution
+    const tempDir = `/tmp/${scriptType}_scripts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    await mkdir(tempDir, { recursive: true })
+    
+    // Write the script to a temporary file
+    const scriptPath = `${tempDir}/script.py`
+    
+    // Prepare the script with context injection
+    const previousStepResultsJson = JSON.stringify(previousStepResults)
+      .replace(/null/g, "None")
+      .replace(/true/g, "True")
+      .replace(/false/g, "False")
+    const configJson = JSON.stringify(config || {})
+      .replace(/null/g, "None")
+      .replace(/true/g, "True")
+      .replace(/false/g, "False")
+    
+    const scriptWithContext = `
 import json
 import sys
 import os
@@ -1406,69 +1386,172 @@ if 'result' in locals():
 else:
     print(json.dumps({"status": "error", "error_message": "Script did not produce a result variable"}))
 `
+    
+    await Bun.write(scriptPath, scriptWithContext)
+    
+    // Execute the Python script using Bun's spawn
+    const proc = Bun.spawn(["python3", scriptPath], {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: tempDir,
+    })
+    
+    const stdout = await new Response(proc.stdout).text()
+    const stderr = await new Response(proc.stderr).text()
+    await proc.exited
+    
+    // Clean up temporary files
+    try {
+      const fs = await import("node:fs/promises")
+      await fs.rm(tempDir, { recursive: true, force: true })
+    } catch (cleanupError) {
+      Logger.warn(`Failed to cleanup temporary ${scriptType} files:`, cleanupError)
+    }
+    
+    if (proc.exitCode !== 0) {
+      return {
+        status: "error",
+        result: {
+          error: `${scriptType} execution failed`,
+          stderr: stderr,
+          stdout: stdout,
+          exit_code: proc.exitCode,
+        },
+      }
+    }
+    
+    if (stderr && stderr.trim()) {
+      Logger.warn(`${scriptType} stderr:`, stderr)
+    }
+    
+    // Parse the output as JSON
+    try {
+      const result = JSON.parse(stdout.trim())
+      return {
+        status: "success",
+        result: result,
+      }
+    } catch (parseError) {
+      return {
+        status: "error",
+        result: {
+          error: `Failed to parse ${scriptType} output as JSON`,
+          raw_output: stdout,
+          stderr: stderr,
+          parse_error: parseError instanceof Error ? parseError.message : String(parseError),
+        },
+      }
+    }
+    
+  } catch (error) {
+    return {
+      status: "error",
+      result: {
+        error: `${scriptType} execution failed`,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    }
+  }
+}
 
-          await Bun.write(scriptPath, scriptWithContext)
+// Execute workflow tool (Python scripts, etc.)
+const executeWorkflowTool = async (
+  tool: any,
+  previousStepResults: any = {},
+) => {
+  try {
+    switch (tool.type) {
+      case "form":
+        // Form tools are handled by form submission API
+        return {
+          status: "awaiting_user_input",
+          result: {
+            formDefinition: tool.value,
+            message: "User input required - handled by form submission API",
+          },
+        }
 
-          // Execute the Python script using Bun's spawn
-          const proc = Bun.spawn(["python3", scriptPath], {
-            stdout: "pipe",
-            stderr: "pipe",
-            cwd: tempDir,
+      case "python_script":
+        // Execute actual Python script from database using unified function
+        const scriptContent =
+          typeof tool.value === "string" ? tool.value : tool.value?.script
+        const config = tool.config
+
+        if (!scriptContent) {
+          return {
+            status: "error",
+            result: { error: "No script content found in tool value" },
+          }
+        }
+
+        // Use unified Python execution function
+        return await executePythonScript(scriptContent, previousStepResults, config, "python_script")
+
+      case "email":
+        // Execute Python script to get email details, then send email
+        const emailScriptContent =
+          typeof tool.value === "string" ? tool.value : tool.value?.script
+        const emailConfig = tool.config
+        
+        if (!emailScriptContent) {
+          return {
+            status: "error",
+            result: { error: "No script content found in email tool value" },
+          }
+        }
+        
+        try {
+          // Use unified Python execution function
+          const pythonResult = await executePythonScript(emailScriptContent, previousStepResults, emailConfig, "email")
+          
+          if (pythonResult.status === "error") {
+            return pythonResult
+          }
+          
+          const emailData = pythonResult.result
+          
+          // Validate email data structure
+          if (!emailData.to || !emailData.subject || !emailData.body) {
+            return {
+              status: "error",
+              result: {
+                error: "Email script must return object with 'to', 'subject', and 'body' fields",
+                script_output: emailData,
+              },
+            }
+          }
+          
+          // Import and use the email service to actually send the email
+          const { emailService } = await import("@/services/emailService")
+          
+          // Send the email using the TypeScript emailService
+          const emailSent = await emailService.sendEmail({
+            to: emailData.to,
+            subject: emailData.subject,
+            body: emailData.body,
+            contentType: emailData.content_type === "text/html" ? "html" : "text",
           })
-
-          const stdout = await new Response(proc.stdout).text()
-          const stderr = await new Response(proc.stderr).text()
-          await proc.exited
-
-          // Clean up temporary files
-          try {
-            const fs = await import("node:fs/promises")
-            await fs.rm(tempDir, { recursive: true, force: true })
-          } catch (cleanupError) {
-            Logger.warn(
-              "Failed to cleanup temporary script files:",
-              cleanupError,
-            )
-          }
-
-          if (proc.exitCode !== 0) {
-            return {
-              status: "error",
-              result: {
-                error: "Python script execution failed",
-                stderr: stderr,
-                stdout: stdout,
-                exit_code: proc.exitCode,
+          
+          return {
+            status: emailSent ? "success" : "error",
+            result: {
+              email_sent: emailSent,
+              email_details: {
+                to: emailData.to,
+                subject: emailData.subject,
+                body_length: emailData.body.length,
               },
-            }
+              python_script_output: emailData,
+              message: emailSent ? "Email sent successfully via TypeScript emailService" : "Email failed to send (check AWS SES configuration)",
+              email_service_used: "typescript_emailService",
+            },
           }
-
-          // Parse the output as JSON
-          try {
-            const result = JSON.parse(stdout.trim())
-            return {
-              status: "success",
-              result: result,
-            }
-          } catch (parseError) {
-            return {
-              status: "error",
-              result: {
-                error: "Failed to parse script output as JSON",
-                raw_output: stdout,
-                stderr: stderr,
-                parse_error:
-                  parseError instanceof Error
-                    ? parseError.message
-                    : String(parseError),
-              },
-            }
-          }
+          
         } catch (error) {
           return {
             status: "error",
             result: {
-              error: "Script execution failed",
+              error: "Email tool execution failed",
               message: error instanceof Error ? error.message : String(error),
             },
           }
