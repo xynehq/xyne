@@ -63,6 +63,7 @@ export const toolTypeEnum = pgEnum("tool_type", [
   "agent",
   "merged_node",
   "form",
+  "email",
 ])
 
 // Tool Execution Status Enum
@@ -300,6 +301,7 @@ export const createWorkflowToolSchema = z.object({
     "agent",
     "merged_node",
     "form",
+    "email",
   ]),
   value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
   config: z.record(z.any()).optional(),
