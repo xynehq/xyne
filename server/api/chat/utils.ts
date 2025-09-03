@@ -1010,50 +1010,36 @@ export function findOptimalCitationInsertionPoint(
     return 0
   }
 
-  // Check if targetIndex is within a URL
-  const urlRegex = /https?:\/\/[^\s\])\}]+/g
-  let match: RegExpExecArray | null
-
-  while ((match = urlRegex.exec(text)) !== null) {
-    const urlStart = match.index
-    const urlEnd = match.index + match[0].length
-
-    // If target index is within this URL, move to after the URL
-    if (targetIndex >= urlStart && targetIndex <= urlEnd) {
-      return urlEnd + 1
+  // Look for the next newline after the target index
+  for (let i = targetIndex; i < text.length; i++) {
+    if (text[i] === '\n' || text[i] === '\r') {
+      return i // Place citation just before the newline
     }
   }
 
-  const charAtTarget = text[targetIndex]
-  const charBeforeTarget = text[targetIndex - 1]
-
-  // Word boundaries: space, punctuation, or start/end of text
-  const isWordBoundary = (char: string) => /[\s\.,;:!?\-\(\)\[\]{}"]/.test(char)
-
-  if (isWordBoundary(charBeforeTarget) || isWordBoundary(charAtTarget)) {
-    return targetIndex
+  // If no newline found, look for sentence endings (., !, ?)
+  for (let i = targetIndex; i < text.length; i++) {
+    if (/[.!?]/.test(text[i])) {
+      // Check if it's a real sentence ending (not decimal number)
+      const prevChar = i > 0 ? text[i - 1] : ''
+      const nextChar = i < text.length - 1 ? text[i + 1] : ''
+      
+      // Skip if it's a decimal number
+      if (text[i] === '.' && /\d/.test(prevChar) && /\d/.test(nextChar)) {
+        continue
+      }
+      
+      return i + 1 // Place after the sentence ending
+    }
   }
 
-  let leftBoundary = targetIndex
-  let rightBoundary = targetIndex
-
-  // Search backwards for a word boundary
-  while (leftBoundary > 0 && !isWordBoundary(text[leftBoundary - 1])) {
-    leftBoundary--
+  // Fallback: find the next space
+  for (let i = targetIndex; i < text.length; i++) {
+    if (text[i] === ' ') {
+      return i + 1 // Place after the space
+    }
   }
 
-  // Search forwards for a word boundary
-  while (rightBoundary < text.length && !isWordBoundary(text[rightBoundary])) {
-    rightBoundary++
-  }
-
-  const leftDistance = targetIndex - leftBoundary
-  const rightDistance = rightBoundary - targetIndex
-
-  // Prefer the closer boundary, but lean towards right boundary (end of word) for better readability
-  if (leftDistance <= rightDistance || rightBoundary >= text.length) {
-    return leftBoundary
-  } else {
-    return rightBoundary
-  }
+  // Final fallback: end of text
+  return text.length
 }

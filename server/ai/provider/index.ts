@@ -84,6 +84,7 @@ import {
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
   deepResearchPrompt,
+  webSearchSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1808,15 +1809,14 @@ export const webSearchQuestion = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-    const webSearchSystemPrompt = `User-Details: ${userCtx} \n 
-      You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately. 
-      `
     params.webSearch = true
 
     if (!params.systemPrompt) {
       params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
-        ? webSearchSystemPrompt + "\n\n" + parseAgentPrompt(params.agentPrompt)
-        : webSearchSystemPrompt
+        ? webSearchSystemPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : webSearchSystemPrompt(userCtx)
     }
 
     const baseMessage: Message = {
