@@ -22,7 +22,7 @@ export interface AIAgentConfig {
 
 const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({ isVisible, onBack, onSave }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
-    name: 'Document Summariser',
+    name: 'AI Agent',
     description: '',
     model: 'gpt-oss-120b',
     inputPrompt: '$json.input',
@@ -69,14 +69,14 @@ Return only the enhanced system prompt without any additional explanation.`;
       const eventSource = new EventSource(url);
       
       let enhancedPrompt = '';
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: ReturnType<typeof setTimeout>;
       
       // Set a timeout to prevent hanging
       timeoutId = setTimeout(() => {
         eventSource.close();
         setIsEnhancingPrompt(false);
-        throw new Error('Request timeout');
-      }, 30000); // 30 second timeout
+        // TODO: surface a toast to the user about timeout
+      }, 30000); // 30s
       
       eventSource.onmessage = (event) => {
         try {
@@ -389,10 +389,10 @@ Always strive for accuracy and helpfulness in your responses.`;
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-4 border-t border-slate-200 bg-gray-50">
+      <div className="px-6 py-4 border-t border-slate-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <Button 
           onClick={handleSave}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          className="w-full bg-black hover:bg-gray-800 text-white"
         >
           Save Configuration
         </Button>

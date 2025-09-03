@@ -8,36 +8,42 @@ interface ApiResponse<T> {
 }
 
 // Base URL for workflow service
-const WORKFLOW_BASE_URL = 'http://localhost:3000/v1';
+const WORKFLOW_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}/v1` || 'http://localhost:3000/v1';
 
-// Generic API request handler with ngrok headers
 async function apiRequest<T>(
   url: string,
   options?: RequestInit
 ): Promise<ApiResponse<T>> {
   try {
-    const response = await fetch(url, {
+    const init: RequestInit = {
+      ...options,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        ...options?.headers,
+        ...(options?.headers ?? {}),
       },
-      ...options,
-    });
+    };
+    const response = await fetch(url, init);
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') ?? '';
+    let data: any = undefined;
+    if (response.status !== 204 && response.status !== 205) {
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        try { data = JSON.parse(text); } catch { data = text; }
+      }
+    }
 
     if (!response.ok) {
       return {
-        error: data.message || `HTTP ${response.status}: ${response.statusText}`,
+        error: (data && (data.message || data.error)) || `HTTP ${response.status}: ${response.statusText}`,
         status: response.status,
       };
     }
 
-    return {
-      data,
-      status: response.status,
-    };
+    return { data: data as T, status: response.status };
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : 'Network error',
@@ -93,5 +99,84 @@ export const workflowsAPI = {
     return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/step/${stepId}/complete`, {
       method: 'POST',
     });
+  },
+
+  /**
+   * Poll for workflow process completion status
+   */
+  async pollProcessStatus(): Promise<ApiResponse<{ status: string; message?: string }>> {
+    return apiRequest<{ status: string; message?: string }>(`${WORKFLOW_BASE_URL}/status`, {
+      method: 'GET',
+    });
+  },
+
+  /**
+   * Start polling for process completion with callback
+   * @param onComplete - Callback function called when process is completed
+   * @param onError - Callback function called on polling error
+   * @param interval - Polling interval in milliseconds (default: 2000)
+   * @returns Function to stop polling
+   */
+  startPolling(
+    onComplete: () => void,
+    onError?: (error: string) => void,
+    interval: number = 2000
+  ): () => void {
+    const pollingInterval = setInterval(async () => {
+      try {
+        const response = await this.pollProcessStatus();
+        
+        if (response.data) {
+          if (response.data.status === 'completed' || response.data.message === 'process completed') {
+            clearInterval(pollingInterval);
+            onComplete();
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+        if (onError) {
+          onError(error instanceof Error ? error.message : 'Polling error');
+        }
+      }
+    }, interval);
+    
+    // Return function to stop polling
+    return () => {
+      clearInterval(pollingInterval);
+    };
+  },
+
+  /**
+   * Upload a file to the workflow service
+   */
+  async uploadFile(file: File, uploadUrl: string = `${WORKFLOW_BASE_URL}/upload`): Promise<ApiResponse<any>> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          error: data.message || `Upload failed (${response.status}): ${response.statusText}`,
+          status: response.status,
+        };
+      }
+
+      return {
+        data,
+        status: response.status,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Upload failed: Please check your connection and try again.',
+        status: 0,
+      };
+    }
   },
 };
