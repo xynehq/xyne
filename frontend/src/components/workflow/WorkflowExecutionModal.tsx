@@ -285,12 +285,10 @@ export function WorkflowExecutionModal({
     
     const checkStatus = async () => {
       try {
-        const response = await fetch(`https://2f66b479bc76.ngrok-free.app/api/v1/workflow/executions/${executionId}/status`, {
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}/api/v1/workflow/executions/${executionId}/status`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-            'Access-Control-Allow-Origin': '*',
           },
           mode: 'cors',
         })

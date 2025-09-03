@@ -112,17 +112,20 @@ interface WorkflowExecutionsResponse {
 
 
 
+// Base URL for API services
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
 // Base URL for workflow service
-const WORKFLOW_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/v1';
+const WORKFLOW_BASE_URL = `${API_BASE_URL}/v1`;
 
 // Base URL for workflow templates
-const WORKFLOW_TEMPLATES_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/api/v1';
+const WORKFLOW_TEMPLATES_BASE_URL = `${API_BASE_URL}/api/v1`;
 
 // Base URL for user service  
-const USER_SERVICE_BASE_URL = 'https://2f66b479bc76.ngrok-free.app';
+const USER_SERVICE_BASE_URL = API_BASE_URL;
 
 // Base URL for workflow execution
-const WORKFLOW_EXECUTION_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/api/v1';
+const WORKFLOW_EXECUTION_BASE_URL = `${API_BASE_URL}/api/v1`;
 
 async function apiRequest<T>(
   url: string,
@@ -134,8 +137,6 @@ async function apiRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        'Access-Control-Allow-Origin': '*',
         ...options?.headers,
       },
       mode: 'cors',
@@ -175,8 +176,6 @@ async function apiFormRequest<T>(
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'ngrok-skip-browser-warning': 'true',
-        'Access-Control-Allow-Origin': '*',
         // Don't set Content-Type for FormData - browser will set it with boundary
       },
       mode: 'cors',

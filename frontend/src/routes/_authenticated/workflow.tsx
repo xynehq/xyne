@@ -146,8 +146,7 @@ function WorkflowComponent() {
       
       console.log('Workflows API Response:', workflows)
       if (Array.isArray(workflows.data)) {
-        const filteredWorkflows = workflows.data.filter(workflow => workflow.id === 'acd589c3-cc73-4fc0-860c-798800b512d4') //temporary
-        setWorkflows(filteredWorkflows)
+        setWorkflows(workflows.data)
       } else {
         console.error('Workflows response is not an array')
         setWorkflows([])
@@ -182,16 +181,14 @@ function WorkflowComponent() {
         // }))
 
 
-        const convertedTemplates: Template[] = templates.data
-          .filter((workflowTemplate) => workflowTemplate.id === 'acd589c3-cc73-4fc0-860c-798800b512d4')
-          .map((workflowTemplate) => ({
-            id: workflowTemplate.id,
-            name: workflowTemplate.name,
-            description: workflowTemplate.description,
-            icon: getTemplateIcon(workflowTemplate),
-            iconBgColor: getTemplateIconBgColor(workflowTemplate),
-            isPlaceholder: false
-          }))
+        const convertedTemplates: Template[] = templates.data.map((workflowTemplate) => ({
+          id: workflowTemplate.id,
+          name: workflowTemplate.name,
+          description: workflowTemplate.description,
+          icon: getTemplateIcon(workflowTemplate),
+          iconBgColor: getTemplateIconBgColor(workflowTemplate),
+          isPlaceholder: false
+        }))
         
         // Add placeholder cards to fill the grid
         const placeholderCount = Math.max(0, 3 - convertedTemplates.length)
@@ -425,12 +422,10 @@ function WorkflowComponent() {
       console.log('🔄 Fetching execution by ID:', executionId)
       
       // Hit the specific execution endpoint
-      const response = await fetch(`https://2f66b479bc76.ngrok-free.app/api/v1/workflow/executions/${executionId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}/api/v1/workflow/executions/${executionId}`, {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-          'Access-Control-Allow-Origin': '*',
         },
         mode: 'cors',
       })
