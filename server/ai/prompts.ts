@@ -1,5 +1,9 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType, type QueryRouterLLMResponse, type ChainBreakClassifications } from "./types"
+import {
+  QueryType,
+  type QueryRouterLLMResponse,
+  type ChainBreakClassifications,
+} from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -1052,7 +1056,7 @@ export const SearchQueryToolContextPrompt = (
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
-  userContext: string, 
+  userContext: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
 ): string => {
@@ -1065,12 +1069,18 @@ export const searchQueryPrompt = (
 
     **User Context:** ${userContext}
 
-    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+    ${
+      previousClassification
+        ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
 
-    ${chainBreakClassifications ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${
+      chainBreakClassifications
+        ? `**Chain Break Classifications (Previous Conversation Chains):**
     ${JSON.stringify(chainBreakClassifications, null, 2)}
 
-    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES` : ''}
+    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES`
+        : ""
+    }
 
     **IMPORTANT - Chain Context Integration:**
     The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
@@ -1078,7 +1088,9 @@ export const searchQueryPrompt = (
     - This allows queries to reconnect with earlier conversation threads even after chain breaks
     - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
       use Chain 1's classification to understand "him" refers to John and the context is emails
-    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains` : ''}
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains`
+        : ""
+    }
 
     **IMPORTANT - For Follow-Up Queries:**
     When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
@@ -2332,3 +2344,9 @@ ${retrievedContext}
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
+
+export const webSearchSystemPrompt = (userCtx: string) =>
+  `User-Details: ${userCtx} \n\n
+       You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately. 
+       
+       IMPORTANT: Always consider the user's timezone and current time when performing web searches. If the user asks about current events, prices, weather, business hours, or any time-sensitive information, make sure to search for information relevant to their timezone and current date/time. When providing time-sensitive information like business hours, event schedules, or deadlines, always reference them in the user's timezone.`
