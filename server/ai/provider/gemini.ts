@@ -146,7 +146,21 @@ export class GeminiAIProvider extends BaseProvider {
               },
             ],
           },
-        } satisfies GenerateContentConfig,
+          // Tool calling support: function declarations
+          ...(params.tools && params.tools.length
+            ? {
+                tools: [
+                  {
+                    functionDeclarations: params.tools.map((t) => ({
+                      name: t.name,
+                      description: t.description,
+                      parameters: t.parameters || { type: 'object', properties: {} },
+                    })),
+                  },
+                ],
+              }
+            : {}),
+        } as any,
       })
 
       const lastMessage = messages[messages.length - 1]
@@ -174,8 +188,20 @@ export class GeminiAIProvider extends BaseProvider {
 
       const text = response.text
       const cost = 0
+      // Extract function calls if any
+      const parts: any[] = (response as any)?.response?.candidates?.[0]?.content?.parts || []
+      const functionCalls = parts
+        .filter((p: any) => p.functionCall)
+        .map((p: any) => ({
+          id: '',
+          type: 'function' as const,
+          function: {
+            name: p.functionCall?.name || '',
+            arguments: p.functionCall?.args ? JSON.stringify(p.functionCall.args) : '{}',
+          },
+        }))
 
-      return { text, cost }
+      return { text, cost, ...(functionCalls.length ? { tool_calls: functionCalls } : {}) }
     } catch (error) {
       Logger.error("Converse Error:", error)
       throw new Error(`Failed to get response from GenAI: ${error}`)
@@ -221,7 +247,20 @@ export class GeminiAIProvider extends BaseProvider {
               },
             ],
           },
-        } satisfies GenerateContentConfig,
+          ...(params.tools && params.tools.length
+            ? {
+                tools: [
+                  {
+                    functionDeclarations: params.tools.map((t) => ({
+                      name: t.name,
+                      description: t.description,
+                      parameters: t.parameters || { type: 'object', properties: {} },
+                    })),
+                  },
+                ],
+              }
+            : {}),
+        } as any,
       })
 
       const lastMessage = messages[messages.length - 1]
@@ -250,6 +289,8 @@ export class GeminiAIProvider extends BaseProvider {
       let isThinkingStarted = false
       let wasThinkingInPreviousChunk = false
 
+      // Accumulate function call (best-effort)
+      let pendingFn: { name: string; args: string } | null = null
       for await (const chunk of stream) {
         let chunkText = ""
 
@@ -272,6 +313,24 @@ export class GeminiAIProvider extends BaseProvider {
           if (wasThinkingInPreviousChunk) {
             chunkText += "</think>"
             wasThinkingInPreviousChunk = false
+          }
+        }
+
+        // Detect function call in this chunk
+        const fnPart = chunk.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.functionCall,
+        )
+        if (fnPart?.functionCall) {
+          const fc = fnPart.functionCall
+          pendingFn = { name: fc.name || '', args: fc.args ? JSON.stringify(fc.args) : '{}' }
+          yield {
+            tool_calls: [
+              {
+                id: '',
+                type: 'function' as const,
+                function: { name: pendingFn.name, arguments: pendingFn.args },
+              },
+            ],
           }
         }
 

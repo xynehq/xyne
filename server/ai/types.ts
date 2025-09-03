@@ -80,6 +80,14 @@ export interface ModelParams {
   prompt?: string
   agentPrompt?: string
   imageFileNames?: string[]
+  // Tool calling (optional)
+  tools?: Array<{
+    name: string
+    description?: string
+    parameters?: any
+  }>
+  tool_choice?: 'auto' | 'none' | 'required'
+  parallel_tool_calls?: boolean
 }
 
 export interface ConverseResponse {
@@ -87,6 +95,11 @@ export interface ConverseResponse {
   metadata?: any
   cost?: number
   reasoning?: boolean
+  tool_calls?: Array<{
+    id: string
+    type: 'function'
+    function: { name: string; arguments: string }
+  }>
 }
 
 export interface LLMProvider {

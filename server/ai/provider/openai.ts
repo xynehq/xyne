@@ -165,9 +165,33 @@ export class OpenAIProvider extends BaseProvider {
       max_tokens: modelParams.maxTokens,
       temperature: modelParams.temperature,
       top_p: modelParams.topP,
+      // tool calling support
+      tools: params.tools
+        ? params.tools.map((t) => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters || { type: "object", properties: {} },
+            },
+          }))
+        : undefined,
+      tool_choice: params.tools ? (params.tool_choice ?? "auto") : undefined,
+      parallel_tool_calls: params.tools
+        ? params.parallel_tool_calls ?? true
+        : undefined,
       ...(modelParams.json ? { response_format: { type: "json_object" } } : {}),
     })
-    const fullResponse = chatCompletion.choices[0].message?.content || ""
+    const choice = chatCompletion.choices[0]
+    const fullResponse = choice.message?.content || ""
+    const toolCalls = (choice.message?.tool_calls || []).map((tc) => ({
+      id: (tc as any).id || "",
+      type: "function" as const,
+      function: {
+        name: (tc as any).function?.name || "",
+        arguments: (tc as any).function?.arguments || "{}",
+      },
+    }))
     const cost = calculateCost(
       {
         inputTokens: chatCompletion.usage?.prompt_tokens!,
@@ -178,6 +202,7 @@ export class OpenAIProvider extends BaseProvider {
     return {
       text: fullResponse,
       cost,
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
     }
   }
 

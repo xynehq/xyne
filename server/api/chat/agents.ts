@@ -1427,12 +1427,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                   : ("assistant" as const),
               content: m.message,
             }))
-
+            
           const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
             name: "xyne-agent",
             instructions: () => agentInstructions(null),
             tools: allJAFTools,
-            modelConfig: { name: (modelId || defaultBestModel) as unknown as string },
+            modelConfig: { name: (defaultBestModel) as unknown as string },
           }
 
           const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1453,8 +1453,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const runCfg: JAFRunConfig<JAFAdapterCtx> = {
             agentRegistry,
             modelProvider,
-            maxTurns: 2, // TEMPORARY: Force MaxTurnsExceeded for testing
-            modelOverride: (modelId || defaultBestModel) as unknown as string,
+            maxTurns: 10,
+            modelOverride: (defaultBestModel) as unknown as string,
           }
 
           // Note: ResponseMetadata was already sent above with chatId
@@ -1687,7 +1687,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     imageCitations: imageCitations,
                     message: processMessage(answer, citationMap),
                     thinking: "",
-                    modelId: modelId || defaultBestModel,
+                    modelId: defaultBestModel,
                     cost: totalCost.toString(),
                     tokensUsed: totalTokens,
                   })

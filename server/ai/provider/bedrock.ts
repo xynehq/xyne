@@ -155,6 +155,22 @@ export class BedrockProvider extends BaseProvider {
       }
       return message
     })
+    // Build Bedrock tool configuration if tools provided
+    // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
+    const toolConfig = params.tools && params.tools.length
+      ? {
+          tools: params.tools.map((t) => ({
+            toolSpec: {
+              name: t.name,
+              description: t.description,
+              inputSchema: {
+                json: t.parameters || { type: "object", properties: {} },
+              },
+            },
+          })),
+        }
+      : undefined
+
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
@@ -171,6 +187,7 @@ export class BedrockProvider extends BaseProvider {
         topP: modelParams.topP || 0.9,
         temperature: modelParams.temperature || 0,
       },
+      ...(toolConfig ? { toolConfig } : {}),
     })
     const response = await (this.client as BedrockRuntimeClient).send(command)
     if (!response) {
@@ -184,6 +201,20 @@ export class BedrockProvider extends BaseProvider {
       },
       "",
     )
+    // Extract tool use calls if present
+    const toolCalls = (response.output?.message?.content || [])
+      .filter((c: any) => (c as any).toolUse)
+      .map((c: any) => {
+        const tu = (c as any).toolUse
+        return {
+          id: tu?.toolUseId || "",
+          type: "function" as const,
+          function: {
+            name: tu?.name || "",
+            arguments: tu?.input ? JSON.stringify(tu.input) : "{}",
+          },
+        }
+      })
     if (!response.usage) {
       throw new Error("Could not get usage")
     }
@@ -194,6 +225,7 @@ export class BedrockProvider extends BaseProvider {
         { inputTokens: inputTokens!, outputTokens: outputTokens! },
         modelDetailsMap[modelParams.modelId].cost.onDemand,
       ),
+      ...(toolCalls && toolCalls.length ? { tool_calls: toolCalls } : {}),
     }
   }
 
@@ -270,6 +302,22 @@ export class BedrockProvider extends BaseProvider {
       return message
     })
 
+    // Build Bedrock tool configuration if tools provided
+    // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
+    const toolConfig = params.tools && params.tools.length
+      ? {
+          tools: params.tools.map((t) => ({
+            toolSpec: {
+              name: t.name,
+              description: t.description,
+              inputSchema: {
+                json: t.parameters || { type: "object", properties: {} },
+              },
+            },
+          })),
+        }
+      : undefined
+
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
@@ -283,6 +331,7 @@ export class BedrockProvider extends BaseProvider {
       ],
       messages: transformedMessages,
       inferenceConfig,
+      ...(toolConfig ? { toolConfig } : {}),
     })
 
     let modelId = modelParams.modelId!
@@ -295,6 +344,8 @@ export class BedrockProvider extends BaseProvider {
       // we are handling the reasoning and normal text in the same iteration
       // using two different iteration for reasoning and normal text we are lossing some data of normal text
       if (response.stream) {
+        // Accumulate tool use inputs by toolUseId
+        const toolUseBuffers: Record<string, { name: string; args: string }> = {}
         for await (const chunk of response.stream) {
           // Handle reasoning content
           const reasoning =
@@ -322,6 +373,44 @@ export class BedrockProvider extends BaseProvider {
           // Handle regular content
           const text = chunk.contentBlockDelta?.delta?.text || ""
           const metadata = chunk.metadata
+
+          // Detect tool use start
+          const toolUseStart: any = (chunk as any)?.contentBlockStart?.start?.toolUse
+          if (toolUseStart?.name) {
+            const id = toolUseStart.toolUseId || `${Date.now()}-${Math.random()}`
+            toolUseBuffers[id] = { name: toolUseStart.name, args: "" }
+          }
+          // Accumulate tool use input JSON deltas (best-effort mapping of Bedrock stream)
+          const toolUseDelta: any = (chunk as any)?.contentBlockDelta?.delta?.toolUse
+          if (toolUseDelta?.inputText && Object.keys(toolUseBuffers).length) {
+            // If SDK emits inputText chunks
+            const lastId = Object.keys(toolUseBuffers).slice(-1)[0]
+            toolUseBuffers[lastId].args += toolUseDelta.inputText
+          }
+          if (toolUseDelta?.input && Object.keys(toolUseBuffers).length) {
+            const lastId = Object.keys(toolUseBuffers).slice(-1)[0]
+            toolUseBuffers[lastId].args += JSON.stringify(toolUseDelta.input)
+          }
+          // On content block stop, flush tool call if present
+          const toolUseStop: any = (chunk as any)?.contentBlockStop?.stop?.toolUse
+          if (toolUseStop) {
+            const id = toolUseStop.toolUseId
+            const rec = id ? toolUseBuffers[id] : undefined
+            if (rec) {
+              const toolCalls = [
+                {
+                  id,
+                  type: "function" as const,
+                  function: {
+                    name: rec.name,
+                    arguments: rec.args || "{}",
+                  },
+                },
+              ]
+              yield { tool_calls: toolCalls }
+              delete toolUseBuffers[id]
+            }
+          }
 
           if (text) {
             yield {

@@ -1,6 +1,7 @@
-import OpenAI from "openai"
 import { z } from "zod"
 import config from "@/config"
+import { getProviderByModel } from "@/ai/provider"
+import type { Message as ProviderMessage } from "@aws-sdk/client-bedrock-runtime"
 import type {
   ModelProvider as JAFModelProvider,
   RunState,
@@ -10,9 +11,6 @@ import type {
 } from "@xynehq/jaf"
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk"
 
-type OpenAIChatMsg = OpenAI.Chat.Completions.ChatCompletionMessageParam
-type AnthropicMessage = { role: "user" | "assistant"; content: string }
-
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
   apiKey?: string
@@ -21,180 +19,89 @@ export type MakeXyneJAFProviderOptions = {
 export const makeXyneJAFProvider = <Ctx>(
   opts: MakeXyneJAFProviderOptions = {},
 ): JAFModelProvider<Ctx> => {
-  // Check for Vertex AI environment variables
-  const vertexProjectId = process.env.VERTEX_PROJECT_ID
-  const vertexRegion = process.env.VERTEX_REGION
-  const vertexModel = process.env.VERTEX_AI_MODEL
+  return {
+    async getCompletion(state, agent, runCfg) {
+      const model = runCfg.modelOverride ?? agent.modelConfig?.name
+      if (!model) {
+        throw new Error(`Model not specified for agent ${agent.name}`)
+      }
+      // Use Xyne’s native provider stack for the selected model.
+      const provider = getProviderByModel(model as any)
 
-  const isVertexAI = !!(vertexProjectId && vertexRegion && vertexModel)
+      // Convert JAF message history to provider format (Bedrock-style Message[])
+      const providerMessages: ProviderMessage[] = jafToProviderMessages(
+        state.messages,
+      )
 
-  if (isVertexAI) {
-    // Use Anthropic Vertex SDK for Vertex AI
-    const vertexClient = new AnthropicVertex({
-      projectId: vertexProjectId,
-      region: vertexRegion,
-    })
+      // Map JAF tools (if any) into provider tool specs via JSON Schema
+      const tools = (agent.tools || []).map((t) => ({
+        name: t.schema.name,
+        description: t.schema.description,
+        parameters: zodSchemaToJsonSchema(t.schema.parameters),
+      }))
 
-    return {
-      async getCompletion(state, agent, _runCfg) {
-        // Always use Vertex AI Claude model when Vertex AI is configured
-        const model = vertexModel
-        if (!model) {
-          throw new Error(`Vertex AI model not specified: ${vertexModel}`)
-        }
+      // Allow per-agent/per-run toggles from context.advancedConfig.run
+      const advRun = (state.context as any)?.advancedConfig?.run || {}
 
-        const systemPrompt = agent.instructions(state)
-        const messages = state.messages.map(convertToAnthropicMessage)
+      const result = await provider.converse(providerMessages, {
+        modelId: model as any,
+        stream: false,
+        json: !!agent.outputCodec,
+        temperature: agent.modelConfig?.temperature,
+        max_new_tokens: agent.modelConfig?.maxTokens,
+        systemPrompt: agent.instructions(state),
+        tools: tools.length ? tools : undefined,
+        tool_choice: tools.length ? advRun.toolChoice ?? 'auto' : undefined,
+        parallel_tool_calls: tools.length ? advRun.parallelToolCalls ?? true : undefined,
+      } as any)
 
-        const tools = (agent.tools || []).map((t) => ({
-          name: t.schema.name,
-          description: t.schema.description,
-          input_schema: zodSchemaToJsonSchema(t.schema.parameters),
-        }))
-
-        const requestParams: any = {
-          model,
-          max_tokens: agent.modelConfig?.maxTokens || 4096,
-          temperature: agent.modelConfig?.temperature || 0.7,
-          system: systemPrompt,
-          messages,
-          tools: tools.length ? tools : undefined,
-        }
-
-        const response = await vertexClient.beta.messages.create(requestParams)
-
-        // Convert Anthropic response to OpenAI-compatible format for JAF
-        const content = response.content
-          .filter((c: any) => c.type === "text")
-          .map((c: any) => c.text)
-          .join("")
-
-        const toolCalls = response.content
-          .filter((c: any) => c.type === "tool_use")
-          .map((c: any) => ({
-            id: c.id,
-            type: "function" as const,
-            function: {
-              name: c.name,
-              arguments: JSON.stringify(c.input),
-            },
-          }))
-
-        const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-
-        return {
-          message: {
-            content: content || null,
-            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-          },
-          usage: {
-            prompt_tokens: usage.input_tokens,
-            completion_tokens: usage.output_tokens,
-            total_tokens: usage.input_tokens + usage.output_tokens,
-          },
-        } as any
-      },
-    }
-  } else {
-    // Use OpenAI for non-Vertex AI cases
-    const baseURL = opts.baseURL ?? config.aiProviderBaseUrl
-    const apiKey = (opts.apiKey ?? config.OpenAIKey) || "anything"
-
-    const client = new OpenAI({
-      ...(baseURL ? { baseURL } : {}),
-      apiKey,
-      dangerouslyAllowBrowser: true,
-    })
-
-    return {
-      async getCompletion(state, agent, runCfg) {
-        const model = runCfg.modelOverride ?? agent.modelConfig?.name
-        if (!model) {
-          throw new Error(`Model not specified for agent ${agent.name}`)
-        }
-
-        const systemMessage: OpenAIChatMsg = {
-          role: "system",
-          content: agent.instructions(state),
-        }
-
-        const messages: OpenAIChatMsg[] = [systemMessage, ...state.messages.map(convertMessage)]
-
-        const tools = (agent.tools || []).map((t) => ({
-          type: "function" as const,
-          function: {
-            name: t.schema.name,
-            description: t.schema.description,
-            parameters: zodSchemaToJsonSchema(t.schema.parameters),
-          },
-        }))
-
-        const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
-          model,
-          messages,
-          temperature: agent.modelConfig?.temperature,
-          max_tokens: agent.modelConfig?.maxTokens,
-          tools: tools.length ? tools : undefined,
-          tool_choice: tools.length ? "auto" : undefined,
-          parallel_tool_calls: tools.length ? true : undefined,
-          response_format: agent.outputCodec ? { type: "json_object" } : undefined,
-        }
-
-        const resp = await client.chat.completions.create(requestParams)
-        const choice = resp.choices[0]
-
-        return {
-          ...choice,
-          usage: resp.usage,
-        } as any
-      },
-    }
+      const content = result.text || ""
+      // Return JAF-compatible shape with message content and tool calls, if any
+      return {
+        message: {
+          content,
+          ...(result.tool_calls && result.tool_calls.length
+            ? { tool_calls: result.tool_calls }
+            : {}),
+        },
+      }
+    },
   }
 }
 
-function convertMessage(msg: JAFMessage): OpenAIChatMsg {
-  switch (msg.role) {
-    case "user":
-      return { role: "user", content: msg.content }
-    case "assistant":
-      return {
+// Map JAF message history into provider Message[] (AWS Bedrock-style)
+function jafToProviderMessages(
+  jafMessages: ReadonlyArray<JAFMessage>,
+): ProviderMessage[] {
+  const out: ProviderMessage[] = []
+  for (const m of jafMessages) {
+    if (m.role === "user" || m.role === "assistant") {
+      out.push({
+        role: m.role,
+        content: [
+          {
+            text: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          },
+        ],
+      } as ProviderMessage)
+    } else if (m.role === "tool") {
+      // Providers outside OpenAI don’t support tool messages; embed as assistant text for context
+      const text =
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+      out.push({
         role: "assistant",
-        content: msg.content,
-        tool_calls: msg.tool_calls as any,
-      }
-    case "tool":
-      return {
-        role: "tool",
-        content: msg.content,
-        tool_call_id: msg.tool_call_id!,
-      }
-    default:
-      throw new Error(`Unknown message role: ${(msg as any).role}`)
+        content: [
+          {
+            text,
+          },
+        ],
+      } as ProviderMessage)
+    }
   }
+  return out
 }
 
-function convertToAnthropicMessage(msg: JAFMessage): AnthropicMessage {
-  switch (msg.role) {
-    case "user":
-      return { role: "user", content: msg.content }
-    case "assistant":
-      // For Anthropic, we need to handle tool calls differently
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        // If there are tool calls, we need to include them in the content
-        let content = msg.content || ""
-        // Note: Anthropic handles tool calls in the content array, not as separate tool_calls
-        // This is a simplified approach - in practice, you might need more sophisticated handling
-        return { role: "assistant", content }
-      }
-      return { role: "assistant", content: msg.content }
-    case "tool":
-      // Tool responses become user messages in Anthropic format
-      // Include the tool response content
-      return { role: "user", content: msg.content }
-    default:
-      throw new Error(`Unknown message role: ${(msg as any).role}`)
-  }
-}
+// No OpenAI message conversion needed when using native provider hub only.
 
 // Minimal Zod -> JSON Schema converter sufficient for tool parameters
 function zodSchemaToJsonSchema(zodSchema: any): any {
