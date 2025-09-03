@@ -318,7 +318,7 @@ export const extractImageFileNames = (
     let imageContent = match[1].trim()
     try {
       if (imageContent) {
-        const docId = imageContent.split("_")[0]
+        const docId = imageContent.substring(0, imageContent.lastIndexOf("_"))
         // const docIndex =
         //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
         const docIndex =

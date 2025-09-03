@@ -12,6 +12,8 @@ import { db } from "@/db/client"
 import {
   checkIfDataSourceFileExistsByNameAndId,
   getDataSourceByNameAndCreator,
+  insert,
+  NAMESPACE,
 } from "../search/vespa"
 import { NoUserFound } from "@/errors"
 import config from "@/config"
@@ -19,9 +21,12 @@ import { HTTPException } from "hono/http-exception"
 import { isValidFile } from "../../shared/filesutils"
 import { generateThumbnail, isImageFile, getThumbnailPath } from "@/utils/image"
 import type { AttachmentMetadata } from "@/shared/types"
+import { FileProcessorService } from "@/services/fileProcessor"
+import { Apps, dataSourceFileSchema, datasourceSchema } from "@/search/types"
+import type { VespaDataSourceFile } from "@/search/types"
+import { createFileMetadata } from "@/integrations/dataSource"
 
 const { JwtPayloadKey } = config
-const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
 
 const DOWNLOADS_DIR = join(process.cwd(), "downloads")
@@ -216,28 +221,73 @@ export const handleAttachmentUpload = async (c: Context) => {
 
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
-      const fileId = crypto.randomUUID()
+      const fileId = `att_${crypto.randomUUID()}`
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const fullFileName = `${0}.${ext}`
-      const baseDir = isImageFile(file.type)
-        ? path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
-        : path.resolve(
-            process.env.ATTACHMENTS_DIR || "downloads/xyne_attachments",
-          )
-      const outputDir = path.join(baseDir, fileId)
+      const isImage = isImageFile(file.type)
+      let thumbnailPath: string | undefined
+      let outputDir: string | undefined
 
       try {
-        await mkdir(outputDir, { recursive: true })
-        const filePath = path.join(outputDir, fullFileName)
-        await Bun.write(filePath, new Uint8Array(fileBuffer))
-
-        const isImage = isImageFile(file.type)
-        let thumbnailPath: string | undefined
-
-        // Generate thumbnail for images
         if (isImage) {
+          // For images: save to disk and generate thumbnail
+          const baseDir = path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+          outputDir = path.join(baseDir, fileId)
+          
+          await mkdir(outputDir, { recursive: true })
+          const filePath = path.join(outputDir, fullFileName)
+          await Bun.write(filePath, new Uint8Array(fileBuffer))
+
+          // Generate thumbnail for images
           thumbnailPath = getThumbnailPath(outputDir, fileId)
           await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
+        } else {
+          // For non-images: process through FileProcessorService and ingest into Vespa
+          
+          // Process the file content using FileProcessorService
+          const processingResult = await FileProcessorService.processFile(
+            Buffer.from(fileBuffer),
+            file.type,
+            file.name,
+            fileId,
+            undefined,
+            true,
+            false,
+          )
+          
+          // TODO: Ingest the processed content into Vespa
+          // This would typically involve calling your Vespa ingestion service
+          // For now, we'll log the processing result
+          loggerWithChild({ email }).info(
+            `Processed non-image file "${file.name}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`
+          )
+
+          const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+          
+          const vespaDoc: VespaDataSourceFile = {
+            docId: fileId,
+            description: `File: ${file.name} for Attachment`,
+            app: Apps.DataSource,
+            fileName: file.name,
+            fileSize: file.size,
+            chunks: chunks,
+            image_chunks: image_chunks || [],
+            chunks_pos: chunks_pos || [],
+            image_chunks_pos: image_chunks_pos || [],
+            uploadedBy: email,
+            mimeType: file.type,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            dataSourceRef: `id:${NAMESPACE}:${datasourceSchema}::${fileId}`,
+            metadata: createFileMetadata(
+              file.name,
+              email,
+              chunks.length,
+              "file",
+            ),
+          }
+
+          await insert(vespaDoc, dataSourceFileSchema)
         }
 
         // Create attachment metadata
@@ -247,9 +297,9 @@ export const handleAttachmentUpload = async (c: Context) => {
           fileType: file.type,
           fileSize: file.size,
           isImage,
-          thumbnailPath: thumbnailPath
-            ? path.relative(baseDir, thumbnailPath)
-            : undefined,
+          thumbnailPath: (thumbnailPath && outputDir)
+            ? path.relative(outputDir, thumbnailPath)
+            : "",
           createdAt: new Date(),
           url: `/api/v1/attachments/${fileId}`,
         }
@@ -257,20 +307,22 @@ export const handleAttachmentUpload = async (c: Context) => {
         attachmentMetadata.push(metadata)
 
         loggerWithChild({ email }).info(
-          `Attachment "${file.name}" stored with ID ${fileId}${isImage ? " (thumbnail generated)" : ""}`,
+          `Attachment "${file.name}" processed with ID ${fileId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
         )
       } catch (error) {
-        // Cleanup: remove the directory if file write fails
-        try {
-          await rm(outputDir, { recursive: true, force: true })
-          loggerWithChild({ email }).warn(
-            `Cleaned up directory ${outputDir} after failed file write`,
-          )
-        } catch (cleanupError) {
-          loggerWithChild({ email }).error(
-            cleanupError,
-            `Failed to cleanup directory ${outputDir} after file write error`,
-          )
+        // Cleanup: remove the directory if file write fails (only for images)
+        if (isImage && outputDir) {
+          try {
+            await rm(outputDir, { recursive: true, force: true })
+            loggerWithChild({ email }).warn(
+              `Cleaned up directory ${outputDir} after failed file write`,
+            )
+          } catch (cleanupError) {
+            loggerWithChild({ email }).error(
+              cleanupError,
+              `Failed to cleanup directory ${outputDir} after file write error`,
+            )
+          }
         }
         throw error
       }
@@ -303,7 +355,7 @@ export const handleAttachmentServe = async (c: Context) => {
       throw new HTTPException(400, { message: "File ID is required" })
     }
 
-    // First, try the legacy path structure
+    // First, try the legacy path structure (for images)
     const legacyBaseDir = path.resolve(
       process.env.IMAGE_DIR || "downloads/xyne_images_db",
     )
@@ -330,7 +382,10 @@ export const handleAttachmentServe = async (c: Context) => {
     // Check if file exists
     const file = Bun.file(filePath || "")
     if (!(await file.exists())) {
-      throw new HTTPException(404, { message: "File not found on disk" })
+      // File not found on disk - it might be a non-image file processed through Vespa
+      throw new HTTPException(404, { 
+        message: "File not found. Non-image files are processed through Vespa and not stored on disk." 
+      })
     }
 
     loggerWithChild({ email }).info(

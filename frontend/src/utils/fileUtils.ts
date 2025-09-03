@@ -19,6 +19,41 @@ const isImageFile = (file: File): boolean => {
   )
 }
 
+// Get file type category for display purposes
+export const getFileType = (file: File | { type: string, name: string }): string => {
+  if (file instanceof File && isImageFile(file)) {
+    return "Image"
+  }
+  
+  // Check for document types
+  if (file.type.includes("word") || file.name.toLowerCase().match(/\.(doc|docx)$/)) {
+    return "Document"
+  }
+  
+  // Check for spreadsheet types
+  if (file.type.includes("excel") || file.type.includes("spreadsheet") || file.name.toLowerCase().match(/\.(xls|xlsx|csv)$/)) {
+    return "Spreadsheet"
+  }
+  
+  // Check for presentation types
+  if (file.type.includes("powerpoint") || file.type.includes("presentation") || file.name.toLowerCase().match(/\.(ppt|pptx)$/)) {
+    return "Presentation"
+  }
+  
+  // Check for PDF
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    return "PDF"
+  }
+  
+  // Check for text files
+  if (file.type.startsWith("text/") || file.name.toLowerCase().match(/\.(txt|md)$/)) {
+    return "Text"
+  }
+  
+  // Default fallback
+  return "File"
+}
+
 // Create preview URL for image files
 export const createImagePreview = (file: File): string | undefined => {
   if (isImageFile(file)) {
