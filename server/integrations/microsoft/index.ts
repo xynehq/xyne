@@ -170,7 +170,7 @@ export const getJoiningLink = (event: any) => {
   }
 }
 
-// Insert calendar events from Microsoft using calendarView/delta for proper delta token
+// Insert calendar events from Microsoft using the simple /me/events endpoint
 const insertCalendarEvents = async (
   client: MicrosoftGraphClient,
   userEmail: string,
@@ -182,21 +182,12 @@ const insertCalendarEvents = async (
   let deltaToken: string = ""
 
   try {
-    // Set up date range for calendarView/delta
-    const now = new Date()
-    const syncStartDate = startDate
-      ? new Date(startDate)
-      : new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()) // 1 year back
-    const syncEndDate = endDate
-      ? new Date(endDate)
-      : new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()) // 1 year ahead
-
     loggerWithChild({ email: userEmail }).info(
-      `Performing initial calendar sync using /me/calendarView/delta from ${syncStartDate.toISOString()} to ${syncEndDate.toISOString()}`,
+      `Performing initial calendar sync using /me/events`,
     )
 
-    // Use calendarView/delta to get events with proper delta token
-    const endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled`
+    // Use the new API endpoint with all required fields for proper event ingestion
+    const endpoint = `/me/events?$select=id,subject,body,bodyPreview,organizer,attendees,start,end,location,webLink,createdDateTime,lastModifiedDateTime,onlineMeeting,attachments,recurrence,isCancelled`
 
     let nextLink: string | undefined = endpoint
 
@@ -213,20 +204,16 @@ const insertCalendarEvents = async (
       if (response.value) {
         // Process events from response
         for (const event of response.value) {
-          if (event.type != "occurrence") events.push(event)
+          events.push(event)
         }
       }
 
-      // Check for next page or delta link
+      // Check for next page
       if (response["@odata.nextLink"]) {
         // More pages available, continue with next page
         nextLink = response["@odata.nextLink"]
-      } else if (response["@odata.deltaLink"]) {
-        // Got delta link - this is what we need for future incremental syncs
-        deltaToken = response["@odata.deltaLink"]
-        nextLink = undefined
       } else {
-        // No more data and no delta link
+        // No more data
         nextLink = undefined
       }
     }
@@ -241,7 +228,7 @@ const insertCalendarEvents = async (
   }
 
   loggerWithChild({ email: userEmail }).info(
-    `Initial calendar sync completed with delta token: ${deltaToken ? "received" : "not received"}`,
+    `Initial calendar sync completed. Retrieved ${events.length} events.`,
   )
 
   const confirmedEvents = events.filter((e) => !e.isCancelled)

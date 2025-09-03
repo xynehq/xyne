@@ -118,29 +118,34 @@ const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
 // Get OneDrive delta changes using Microsoft Graph API
 export const getOneDriveDelta = async (
   graphClient: MicrosoftGraphClient,
-  deltaToken?: string,
+  deltaTokenUrl?: string,
 ): Promise<{
   changes: OneDriveFile[]
-  nextDeltaToken: string | null
+  nextDeltaTokenUrl: string | null
 } | null> => {
   try {
     let endpoint = "/me/drive/root/delta"
-    if (deltaToken) {
-      endpoint = `/me/drive/root/delta?token=${deltaToken}`
+    let search = ""
+    if (deltaTokenUrl) {
+      if (deltaTokenUrl.startsWith("http")) {
+        search = new URL(deltaTokenUrl).search
+      } else {
+        search = `?token=${deltaTokenUrl}`
+      }
     }
 
     const response = await retryWithBackoff(
-      () => makeGraphApiCall(graphClient, endpoint),
-      `Fetching OneDrive delta changes with token ${deltaToken || "initial"}`,
+      () => makeGraphApiCall(graphClient, endpoint + search),
+      `Fetching OneDrive delta changes with url ${deltaTokenUrl || "initial"}`,
       Apps.MicrosoftDrive,
     )
 
     const changes = response.value || []
-    const nextDeltaToken = response["@odata.deltaLink"]
-      ? new URL(response["@odata.deltaLink"]).searchParams.get("token")
+    const nextDeltaTokenUrl = response["@odata.deltaLink"]
+      ? response["@odata.deltaLink"]
       : null
 
-    return { changes, nextDeltaToken }
+    return { changes, nextDeltaTokenUrl }
   } catch (error: unknown) {
     Logger.error(
       error,
@@ -531,16 +536,20 @@ const handleOutlookChanges = async (
         const deltaToken = currentDeltaTokens[folder.id]
         let endpoint: string
 
+        let search: string
         if (deltaToken && deltaToken.startsWith("http")) {
           // Use existing delta token URL
           const url = new URL(deltaToken)
-          endpoint = url.pathname + url.search
+          endpoint = folder.endpoint
+          search = url.search
         } else {
           // Start fresh delta sync for this folder
-          endpoint = `${folder.endpoint}?$top=100&$select=id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,hasAttachments,internetMessageId,conversationId`
+          endpoint = folder.endpoint
+          search =
+            "?$top=100&$select=id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients,bccRecipients,hasAttachments,internetMessageId,conversationId"
         }
 
-        const response = await makeGraphApiCall(client, endpoint)
+        const response = await makeGraphApiCall(client, endpoint + search)
         const folderDeltaToken =
           response["@odata.deltaLink"] || response["@odata.nextLink"]
 
@@ -718,204 +727,210 @@ const handleOutlookChanges = async (
   }
 }
 
-// Handle Microsoft Calendar Events changes using calendarView/delta approach
+// Handle Microsoft Calendar Events changes using proper events/delta API
 const handleMicrosoftCalendarEventsChanges = async (
   client: MicrosoftGraphClient,
-  syncToken: string,
+  syncTokenUrl: string,
   userEmail: string,
 ) => {
   let changesExist = false
   const stats = newStats()
-  let newSyncToken = syncToken
+  let newSyncTokenUrl = syncTokenUrl
 
   try {
-    let endpoint: string
+    let search: string
+    let endpoint = `/me/calendar/events/delta`
 
-    // Check if we have a proper delta token (URL) or need to create a new calendarView/delta request
-    if (syncToken && syncToken.startsWith("http")) {
-      // Check if the delta token might be expired by looking for date parameters
-      const url = new URL(syncToken)
-      const endDateParam = url.searchParams.get("endDateTime")
-
-      if (endDateParam) {
-        const endDate = new Date(endDateParam)
-        const now = new Date()
-        const daysUntilExpiry = Math.ceil(
-          (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-        )
-
-        // If less than 30 days until expiry, create a new date range
-        if (daysUntilExpiry < 30) {
-          loggerWithChild({ email: userEmail }).info(
-            `Delta token expires in ${daysUntilExpiry} days, creating new calendarView/delta request`,
-          )
-
-          const syncStartDate = new Date() // Start from now
-          const syncEndDate = new Date(
-            now.getFullYear() + 1,
-            now.getMonth(),
-            now.getDate(),
-          ) // 1 year ahead
-
-          endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
-        } else {
-          // Use existing delta token URL
-          endpoint = url.pathname + url.search
-        }
-      } else {
-        // Use existing delta token URL (no date range detected)
-        endpoint = url.pathname + url.search
-      }
-    } else if (
-      syncToken &&
-      syncToken.startsWith("microsoft-calendar-initial-")
-    ) {
-      // This is a placeholder token from initial sync, create new calendarView/delta request
-      const now = new Date()
-      const lastSyncDate = new Date(
-        syncToken.replace("microsoft-calendar-initial-", ""),
-      )
-      const syncEndDate = new Date(
-        now.getFullYear() + 1,
-        now.getMonth(),
-        now.getDate(),
-      ) // 1 year ahead
-
+    // Use the proper events/delta API endpoint
+    if (syncTokenUrl && syncTokenUrl.startsWith("http")) {
+      // Use existing delta token URL
+      const url = new URL(syncTokenUrl)
+      search = url.search
       loggerWithChild({ email: userEmail }).info(
-        `Converting placeholder token to calendarView/delta from ${lastSyncDate.toISOString()} to ${syncEndDate.toISOString()}`,
+        `Using existing delta token for events/delta`,
       )
-
-      endpoint = `/me/calendarView/delta?startDateTime=${lastSyncDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
     } else {
-      // Fallback: create new calendarView/delta request for the next year
-      const now = new Date()
-      const syncStartDate = new Date() // Start from now
-      const syncEndDate = new Date(
-        now.getFullYear() + 1,
-        now.getMonth(),
-        now.getDate(),
-      ) // 1 year ahead
-
+      // Start fresh with events/delta
+      search = ""
       loggerWithChild({ email: userEmail }).info(
-        `Creating new calendarView/delta request from ${syncStartDate.toISOString()} to ${syncEndDate.toISOString()}`,
+        `Starting fresh events/delta sync`,
       )
-
-      endpoint = `/me/calendarView/delta?startDateTime=${syncStartDate.toISOString()}&endDateTime=${syncEndDate.toISOString()}&$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled&$top=999`
     }
 
-    const response = await makeGraphApiCall(client, endpoint)
-    newSyncToken =
-      response["@odata.deltaLink"] || response["@odata.nextLink"] || syncToken
+    // Step 1: Get delta changes (only IDs, start, end times)
+    const deltaResponse = await makeGraphApiCall(client, endpoint + search)
+    newSyncTokenUrl =
+      deltaResponse["@odata.deltaLink"] ||
+      deltaResponse["@odata.nextLink"] ||
+      syncTokenUrl
 
-    if (newSyncToken === syncToken) {
+    if (newSyncTokenUrl === syncTokenUrl) {
+      loggerWithChild({ email: userEmail }).info(`No calendar changes detected`)
       return {
         eventChanges: [],
         stats,
-        newCalendarEventsSyncToken: newSyncToken,
+        newCalendarEventsSyncToken: newSyncTokenUrl,
         changesExist,
       }
     }
 
-    if (response.value) {
-      for (const eventChange of response.value) {
-        const docId = eventChange.id
+    if (!deltaResponse.value || deltaResponse.value.length === 0) {
+      loggerWithChild({ email: userEmail }).info(
+        `No calendar events in delta response`,
+      )
+      return {
+        eventChanges: [],
+        stats,
+        newCalendarEventsSyncToken: newSyncTokenUrl,
+        changesExist,
+      }
+    }
 
-        if (docId && eventChange["@removed"]) {
-          // Handle removed events
-          try {
-            const event = await getDocumentOrNull(eventSchema, docId)
-            if (event) {
-              const permissions = (event?.fields as VespaEvent)?.permissions
-              if (permissions?.length === 1) {
-                if (!(permissions[0] === userEmail)) {
-                  throw new Error(
-                    "We got a change for us that we didn't have access to in Vespa",
-                  )
-                }
-                await DeleteDocument(docId, eventSchema)
-                stats.removed += 1
-                stats.summary += `${docId} event removed\n`
-                changesExist = true
-              } else {
-                const newPermissions = permissions?.filter(
-                  (v) => v !== userEmail,
-                )
-                await UpdateDocumentPermissions(
-                  eventSchema,
-                  docId,
-                  newPermissions,
-                )
-                stats.updated += 1
-                stats.summary += `user lost permission to change event info: ${docId}\n`
-                changesExist = true
-              }
+    loggerWithChild({ email: userEmail }).info(
+      `Found ${deltaResponse.value.length} calendar event changes`,
+    )
+
+    // Step 2: Separate removed events from events that need full data
+    const removedEvents: string[] = []
+    const eventIdsToFetch: string[] = []
+
+    for (const deltaEvent of deltaResponse.value) {
+      if (deltaEvent["@removed"]) {
+        removedEvents.push(deltaEvent.id)
+      } else {
+        eventIdsToFetch.push(deltaEvent.id)
+      }
+    }
+
+    // Step 3: Handle removed events
+    for (const eventId of removedEvents) {
+      try {
+        const event = await getDocumentOrNull(eventSchema, eventId)
+        if (event) {
+          const permissions = (event?.fields as VespaEvent)?.permissions
+          if (permissions?.length === 1) {
+            if (!(permissions[0] === userEmail)) {
+              throw new Error(
+                "We got a change for us that we didn't have access to in Vespa",
+              )
             }
-          } catch (err: any) {
-            Logger.error(
-              err,
-              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
-            )
-          }
-        } else if (docId && eventChange.isCancelled) {
-          // Handle cancelled events
-          try {
-            const event = await getDocumentOrNull(eventSchema, docId)
-            if (event) {
-              const permissions = (event?.fields as VespaEvent)?.permissions
-              if (permissions?.length === 1) {
-                if (!(permissions[0] === userEmail)) {
-                  throw new Error(
-                    "We got a change for us that we didn't have access to in Vespa",
-                  )
-                }
-                await DeleteDocument(docId, eventSchema)
-                stats.removed += 1
-                stats.summary += `${docId} cancelled event removed\n`
-                changesExist = true
-              } else {
-                const newPermissions = permissions?.filter(
-                  (v) => v !== userEmail,
-                )
-                await UpdateDocumentPermissions(
-                  eventSchema,
-                  docId,
-                  newPermissions,
-                )
-                stats.updated += 1
-                stats.summary += `user lost permission to cancelled event: ${docId}\n`
-                changesExist = true
-              }
-            }
-          } catch (err: any) {
-            Logger.error(
-              err,
-              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
-            )
-          }
-        } else if (docId && !eventChange["@removed"]) {
-          // Handle added/updated events
-          let event = null
-          event = await getDocumentOrNull(eventSchema, docId)
-
-          await insertEventIntoVespa(eventChange, userEmail)
-
-          if (event) {
-            stats.updated += 1
-            stats.summary += `updated event ${docId}\n`
+            await DeleteDocument(eventId, eventSchema)
+            stats.removed += 1
+            stats.summary += `${eventId} event removed\n`
             changesExist = true
           } else {
-            stats.added += 1
-            stats.summary += `added new event ${docId}\n`
+            const newPermissions = permissions?.filter((v) => v !== userEmail)
+            await UpdateDocumentPermissions(
+              eventSchema,
+              eventId,
+              newPermissions,
+            )
+            stats.updated += 1
+            stats.summary += `user lost permission to event: ${eventId}\n`
             changesExist = true
           }
+        }
+      } catch (err: any) {
+        Logger.error(
+          err,
+          `Error handling removed event ${eventId}: ${err.message}`,
+        )
+      }
+    }
+
+    // Step 4: Batch fetch full event details for non-removed events
+    if (eventIdsToFetch.length > 0) {
+      loggerWithChild({ email: userEmail }).info(
+        `Fetching full details for ${eventIdsToFetch.length} events`,
+      )
+
+      // Microsoft Graph supports batch requests with up to 20 requests per batch
+      const batchSize = 20
+      const batches: string[][] = []
+
+      for (let i = 0; i < eventIdsToFetch.length; i += batchSize) {
+        batches.push(eventIdsToFetch.slice(i, i + batchSize))
+      }
+
+      for (const batch of batches) {
+        try {
+          const fullEvents = await fetchEventsBatch(client, batch)
+
+          // Step 5: Process each full event
+          for (const fullEvent of fullEvents) {
+            if (!fullEvent) continue
+
+            try {
+              const eventId = fullEvent.id
+              const existingEvent = await getDocumentOrNull(
+                eventSchema,
+                eventId,
+              )
+
+              // Check if event is cancelled
+              if (fullEvent.isCancelled) {
+                if (existingEvent) {
+                  const permissions = (existingEvent?.fields as VespaEvent)
+                    ?.permissions
+                  if (permissions?.length === 1) {
+                    if (!(permissions[0] === userEmail)) {
+                      throw new Error(
+                        "We got a change for us that we didn't have access to in Vespa",
+                      )
+                    }
+                    await DeleteDocument(eventId, eventSchema)
+                    stats.removed += 1
+                    stats.summary += `${eventId} cancelled event removed\n`
+                    changesExist = true
+                  } else {
+                    const newPermissions = permissions?.filter(
+                      (v) => v !== userEmail,
+                    )
+                    await UpdateDocumentPermissions(
+                      eventSchema,
+                      eventId,
+                      newPermissions,
+                    )
+                    stats.updated += 1
+                    stats.summary += `user lost permission to cancelled event: ${eventId}\n`
+                    changesExist = true
+                  }
+                }
+              } else {
+                // Insert/update the event
+                await insertEventIntoVespa(fullEvent, userEmail)
+
+                if (existingEvent) {
+                  stats.updated += 1
+                  stats.summary += `updated event ${eventId}\n`
+                  changesExist = true
+                } else {
+                  stats.added += 1
+                  stats.summary += `added new event ${eventId}\n`
+                  changesExist = true
+                }
+              }
+            } catch (err: any) {
+              Logger.error(
+                err,
+                `Error processing event ${fullEvent.id}: ${err.message}`,
+              )
+            }
+          }
+        } catch (err: any) {
+          Logger.error(err, `Error processing batch of events: ${err.message}`)
         }
       }
     }
 
+    loggerWithChild({ email: userEmail }).info(
+      `Calendar sync completed: ${stats.added} added, ${stats.updated} updated, ${stats.removed} removed`,
+    )
+
     return {
-      eventChanges: response.value || [],
+      eventChanges: deltaResponse.value || [],
       stats,
-      newCalendarEventsSyncToken: newSyncToken,
+      newCalendarEventsSyncToken: newSyncTokenUrl,
       changesExist,
     }
   } catch (err) {
@@ -926,9 +941,74 @@ const handleMicrosoftCalendarEventsChanges = async (
     return {
       eventChanges: [],
       stats,
-      newCalendarEventsSyncToken: newSyncToken,
+      newCalendarEventsSyncToken: newSyncTokenUrl,
       changesExist,
     }
+  }
+}
+
+// Fetch full event details using batch API
+const fetchEventsBatch = async (
+  client: MicrosoftGraphClient,
+  eventIds: string[],
+): Promise<any[]> => {
+  try {
+    // Create batch request
+    const batchRequests = eventIds.map((eventId, index) => ({
+      id: index.toString(),
+      method: "GET",
+      url: `/me/events/${eventId}?$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled`,
+    }))
+
+    const batchRequestBody = {
+      requests: batchRequests,
+    }
+
+    // Make batch request
+    const batchResponse = await client.client
+      .api("/$batch")
+      .post(batchRequestBody)
+
+    const events: any[] = []
+
+    if (batchResponse.responses) {
+      for (const response of batchResponse.responses) {
+        if (response.status === 200 && response.body) {
+          events.push(response.body)
+        } else if (response.status === 404) {
+          // Event was deleted between delta and batch fetch
+          Logger.info(
+            `Event ${eventIds[parseInt(response.id)]} was deleted between delta and batch fetch`,
+          )
+        } else {
+          Logger.warn(
+            `Failed to fetch event ${eventIds[parseInt(response.id)]}: ${response.status}`,
+          )
+        }
+      }
+    }
+
+    return events
+  } catch (error) {
+    Logger.error(error, `Error in batch fetch of events: ${error}`)
+
+    // Fallback: fetch events individually
+    const events: any[] = []
+    for (const eventId of eventIds) {
+      try {
+        const event = await makeGraphApiCall(
+          client,
+          `/me/events/${eventId}?$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled`,
+        )
+        events.push(event)
+      } catch (individualError) {
+        Logger.warn(
+          `Failed to fetch individual event ${eventId}: ${individualError}`,
+        )
+      }
+    }
+
+    return events
   }
 }
 
@@ -1065,13 +1145,13 @@ export const handleMicrosoftOAuthChanges = async (
         continue
       }
 
-      const { changes, nextDeltaToken } = deltaResult
+      const { changes, nextDeltaTokenUrl } = deltaResult
 
       // Process changes if any exist
       if (
         changes.length > 0 &&
-        nextDeltaToken &&
-        nextDeltaToken !== config.driveToken
+        nextDeltaTokenUrl &&
+        nextDeltaTokenUrl !== config.driveToken
       ) {
         Logger.info(`Processing ${changes.length} OneDrive changes`)
 
@@ -1097,7 +1177,7 @@ export const handleMicrosoftOAuthChanges = async (
       if (changesExist) {
         const newConfig: MicrosoftDriveChangeToken = {
           type: "microsoftDriveDeltaToken",
-          driveToken: nextDeltaToken!,
+          driveToken: nextDeltaTokenUrl!,
           contactsToken: config.contactsToken || "",
           lastSyncedAt: new Date(),
         }
