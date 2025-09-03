@@ -2,6 +2,7 @@ import { Client } from "@microsoft/microsoft-graph-client"
 import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
 import { retryWithBackoff } from "@/utils"
 import { Apps } from "@/shared/types"
+import { Readable } from "stream"
 
 // Custom authentication provider for Microsoft Graph
 class CustomAuthProvider implements AuthenticationProvider {
@@ -151,21 +152,51 @@ export async function downloadFileFromGraph(
       .api(`/me/drive/items/${fileId}/content`)
       .get()
 
-    // Convert response to Buffer
-    if (response instanceof ArrayBuffer) {
-      return Buffer.from(response)
-    } else if (Buffer.isBuffer(response)) {
-      return response
-    } else if (typeof response === "string") {
-      return Buffer.from(response, "binary")
-    } else {
-      // For other types, try to convert to string first
-      return Buffer.from(String(response), "binary")
-    }
+    return await streamToBuffer(response);
+
   } catch (error) {
     throw new Error(`Failed to download file ${fileId}: ${error}`)
   }
 }
+
+
+async function streamToBuffer(stream: any): Promise<Buffer> {
+  if (Buffer.isBuffer(stream)) {
+    return stream; // already a Buffer
+  }
+
+  if (stream instanceof ArrayBuffer) {
+    return Buffer.from(stream);
+  }
+
+  if (typeof stream === "string") {
+    return Buffer.from(stream, "binary");
+  }
+
+  // Node.js Readable or Web ReadableStream
+  if (stream instanceof Readable) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  if (typeof stream.getReader === "function") {
+    // Web ReadableStream (Bun / Fetch)
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  }
+
+  throw new Error("Unsupported response type: " + stream?.constructor?.name);
+}
+
 
 // Export types for consistency with Google integration
 export type { Client as MicrosoftClient }
