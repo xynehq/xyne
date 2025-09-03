@@ -157,6 +157,7 @@ export const sharedAgentUsageSchema = z.object({
 export const agentChatMessageSchema = z.object({
   message: z.string(),
   chatId: z.string().optional(),
+  path:z.string().optional(),
   modelId: z.string().optional(),
   isReasoningEnabled: z
     .string()
