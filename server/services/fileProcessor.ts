@@ -26,8 +26,6 @@ export class FileProcessorService {
     fileName: string,
     vespaDocId: string,
     storagePath?: string,
-    extractImages: boolean = false,
-    describeImages: boolean = false,
   ): Promise<ProcessingResult> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
