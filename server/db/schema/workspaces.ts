@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm"
-import { serial, pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { serial, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 
@@ -12,6 +12,7 @@ export const workspaces = pgTable("workspaces", {
   createdBy: text("created_by").notNull().unique(),
   externalId: text("external_id").unique().notNull(),
   photoLink: text("photoLink"),
+  config: jsonb("config"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
