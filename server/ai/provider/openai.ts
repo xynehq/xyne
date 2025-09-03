@@ -300,7 +300,6 @@ export class OpenAIProvider extends BaseProvider {
     let reasoningSteps: Map<string, string> = new Map() // Track reasoning content by ID
 
     for await (const event of responseStream) {
-      console.log(event.type, "event_type")
       switch (event.type) {
         case "response.created":
           yield {
@@ -318,9 +317,9 @@ export class OpenAIProvider extends BaseProvider {
           if (addedItem.type === "reasoning") {
             // Initialize reasoning content for this item
             reasoningSteps.set(addedItem.id, "")
-            addedDisplayText = "🧠 Starting reasoning process..."
+            addedDisplayText = "Starting reasoning process..."
           } else if (addedItem.type === "web_search_call") {
-            addedDisplayText = "🌐 Initiating web search..."
+            addedDisplayText = "Initiating web search..."
           }
 
           yield {
@@ -341,14 +340,14 @@ export class OpenAIProvider extends BaseProvider {
 
           if (doneItem.type === "reasoning") {
             const reasoningContent = reasoningSteps.get(doneItem.id) || ""
-            doneDisplayText = `💭 Reasoning complete${reasoningContent ? ` (${reasoningContent.length} chars)` : ""}`
+            doneDisplayText = `Reasoning complete${reasoningContent ? ` (${reasoningContent.length} chars)` : ""}`
           } else if (doneItem.type === "web_search_call") {
             searchDetails = extractSearchDetails(doneItem)
             doneDisplayText = searchDetails?.query
-              ? `🔍 Searched: "${searchDetails.query}"`
+              ? `Searched: "${searchDetails.query}"`
               : searchDetails?.domain
-                ? `📖 Opened page: ${searchDetails.domain}`
-                : "🌐 Web search completed"
+                ? `Opened page: ${searchDetails.domain}`
+                : "Web search completed"
           } else if (doneItem.type === "message" && doneItem.content) {
             for (const content of doneItem.content) {
               if (content.type === "output_text" && content.annotations) {
@@ -356,7 +355,7 @@ export class OpenAIProvider extends BaseProvider {
                   (annotation) => annotation.type === "url_citation",
                 )
                 if (citationData.length > 0) {
-                  doneDisplayText = `📚 Found ${citationData.length} citation${citationData.length > 1 ? "s" : ""}`
+                  doneDisplayText = `Found ${citationData.length} citation${citationData.length > 1 ? "s" : ""}`
                 }
               }
             }
@@ -448,7 +447,7 @@ export class OpenAIProvider extends BaseProvider {
               "response.reasoning_text.done",
               event,
               {
-                displayText: "💭 Finished reasoning step",
+                displayText: "Finished reasoning step",
                 item_id: doneReasoningEvent.item_id,
                 reasoningContent: finalReasoningContent,
               },
@@ -467,7 +466,7 @@ export class OpenAIProvider extends BaseProvider {
               "response.reasoning_summary_text.done",
               event,
               {
-                displayText: `💭 Finished reasoning summary (${finalSummaryContent.length} chars)`,
+                displayText: `Finished reasoning summary (${finalSummaryContent.length} chars)`,
                 item_id: doneSummaryEvent.item_id,
                 reasoningContent: finalSummaryContent,
                 summary_index: doneSummaryEvent.summary_index,
@@ -525,10 +524,10 @@ export class OpenAIProvider extends BaseProvider {
         case "response.web_search_call.completed":
           // Handle web search progress events
           const progressDisplayText = event.type.includes("searching")
-            ? "� Actively searching the web..."
+            ? "Actively searching the web..."
             : event.type.includes("completed")
-              ? "✅ Web search completed successfully"
-              : "🔄 Web search in progress..."
+              ? "Web search completed successfully"
+              : "Web search in progress..."
 
           yield {
             text: "",
@@ -548,7 +547,7 @@ export class OpenAIProvider extends BaseProvider {
             yield {
               text: "",
               metadata: createEventMetadata(event.type, event, {
-                displayText: "⚡ Deep research process is actively running...",
+                displayText: "Deep research process is actively running...",
               }),
             }
           }

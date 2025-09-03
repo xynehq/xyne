@@ -39,38 +39,38 @@ const getStepIcon = (type: string, status: string) => {
   const iconClass = "w-4 h-4"
 
   if (status === "active") {
-    return <Loader2 className={cn(iconClass, "animate-spin text-blue-500")} />
+    return <Loader2 className={cn(iconClass, "animate-spin text-slate-600")} />
   }
 
   switch (type) {
     case "reasoning":
-      return <Brain className={cn(iconClass, "text-blue-500")} />
+      return <Brain className={cn(iconClass, "text-slate-600")} />
     case "web_search":
-      return <Search className={cn(iconClass, "text-green-500")} />
+      return <Search className={cn(iconClass, "text-slate-600")} />
     case "analysis":
-      return <FileText className={cn(iconClass, "text-purple-500")} />
+      return <FileText className={cn(iconClass, "text-slate-600")} />
     case "synthesis":
-      return <Zap className={cn(iconClass, "text-orange-500")} />
+      return <Zap className={cn(iconClass, "text-slate-600")} />
     default:
-      return <Globe className={cn(iconClass, "text-gray-500")} />
+      return <Globe className={cn(iconClass, "text-slate-500")} />
   }
 }
 
 const getStepColor = (type: string, status: string) => {
-  if (status === "pending") return "text-gray-400"
-  if (status === "active") return "text-blue-600"
+  if (status === "pending") return "text-slate-400"
+  if (status === "active") return "text-slate-700"
 
   switch (type) {
     case "reasoning":
-      return "text-blue-600"
+      return "text-slate-700"
     case "web_search":
-      return "text-green-600"
+      return "text-slate-700"
     case "analysis":
-      return "text-purple-600"
+      return "text-slate-700"
     case "synthesis":
-      return "text-orange-600"
+      return "text-slate-700"
     default:
-      return "text-gray-600"
+      return "text-slate-600"
   }
 }
 
@@ -94,36 +94,36 @@ const getEnhancedStepTitle = (
   switch (step.type) {
     case "web_search":
       if (step.query) {
-        return `🔍 Searched: "${step.query}"`
+        return `Searched: "${step.query}"`
       }
-      return `🔍 Web search ${typeCount > 1 ? `#${typeCount}` : ""}`
+      return `Web search ${typeCount > 1 ? `#${typeCount}` : ""}`
 
     case "reasoning":
       // Show a preview of the reasoning content if available
       if (step.content && step.content.length > 0) {
         const preview = step.content.substring(0, 80).replace(/\n/g, " ").trim()
         const suffix = step.content.length > 80 ? "..." : ""
-        return `🧠 ${preview}${suffix}`
+        return `${preview}${suffix}`
       }
       if (
         step.focus &&
         step.focus !== "Analyzing and thinking through the problem"
       ) {
-        return `🧠 ${step.focus}`
+        return `${step.focus}`
       }
       if (step.query) {
-        return `🧠 Analyzing search results for "${step.query}"`
+        return `Analyzing search results for "${step.query}"`
       }
-      return `🧠 Reasoning ${typeCount > 1 ? `#${typeCount}` : ""}`
+      return `Reasoning ${typeCount > 1 ? `#${typeCount}` : ""}`
 
     case "analysis":
       if (step.focus && step.focus !== step.title) {
-        return `📄 Analyzing: ${step.focus}`
+        return `Analyzing: ${step.focus}`
       }
-      return `📄 Analysis ${typeCount > 1 ? `#${typeCount}` : ""}`
+      return `Analysis ${typeCount > 1 ? `#${typeCount}` : ""}`
 
     case "synthesis":
-      return `⚡ Synthesizing findings`
+      return `Synthesizing findings`
 
     default:
       return step.title
@@ -207,22 +207,22 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
   return (
     <div
       className={cn(
-        "mb-6 w-full max-w-none rounded-2xl bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-700",
+        "mb-6 w-full max-w-none rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700",
         className,
       )}
     >
       <div className="p-1">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="sticky top-0 z-10 w-full bg-white dark:bg-slate-700 rounded-2xl border border-blue-200 dark:border-slate-600 px-6 py-3 flex items-center justify-between hover:bg-blue-50 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+          className="sticky top-0 z-10 w-full bg-white dark:bg-slate-700 rounded-2xl border border-slate-200 dark:border-slate-600 px-6 py-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-3">
             {isStreaming && latestStep ? (
               getStepIcon(latestStep.type, latestStep.status)
             ) : (
-              <Brain className="w-5 h-5 text-blue-500" />
+              <Brain className="w-5 h-5 text-slate-600" />
             )}
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span className="text-sm font-medium text-slate-700 dark:text-gray-300">
               {isStreaming
                 ? latestStep
                   ? getEnhancedStepTitle(latestStep, stepCounts)
@@ -231,12 +231,12 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
             </span>
             {/* Only show loader if latest step is not active (since getStepIcon already shows loader for active steps) */}
             {isStreaming && (!latestStep || latestStep.status !== "active") && (
-              <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+              <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
             )}
             {totalSourcesCount > 0 && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 rounded-full">
-                <ExternalLink className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+              <div className="flex items-center gap-1 px-2 py-1 bg-slate-100 dark:bg-blue-900 rounded-full">
+                <ExternalLink className="w-3 h-3 text-slate-600 dark:text-blue-400" />
+                <span className="text-xs font-medium text-slate-700 dark:text-blue-300">
                   {totalSourcesCount} sources
                 </span>
               </div>
@@ -244,9 +244,9 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
           </div>
           <div className="flex items-center gap-3">
             {isExpanded ? (
-              <ChevronUp className="w-4 h-4 text-gray-500" />
+              <ChevronUp className="w-4 h-4 text-slate-500" />
             ) : (
-              <ChevronDown className="w-4 h-4 text-gray-500" />
+              <ChevronDown className="w-4 h-4 text-slate-500" />
             )}
           </div>
         </button>
@@ -277,7 +277,7 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                   className={cn(
                     "flex items-start gap-3 p-3 rounded-lg transition-all duration-200",
                     step.status === "active" &&
-                      "bg-blue-100 dark:bg-blue-900/30",
+                      "bg-slate-100 dark:bg-slate-600/30",
                     step.status === "completed" &&
                       "bg-white dark:bg-slate-600/50",
                     step.status === "error" && "bg-red-50 dark:bg-red-900/20",
@@ -296,17 +296,17 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                       {getEnhancedStepTitle(step, currentStepCounts)}
                     </div>
                     {step.content && (
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-h-20 overflow-y-auto">
+                      <div className="text-xs text-slate-600 dark:text-gray-400 mt-1 max-h-55 overflow-y-auto">
                         {step.type === "reasoning" &&
-                        step.content.length > 200 ? (
+                        step.content.length > 150 ? (
                           <details className="cursor-pointer">
-                            <summary className="hover:text-gray-800 dark:hover:text-gray-200">
-                              {step.content.substring(0, 200)}...
-                              <span className="text-blue-500 ml-1">
+                            <summary className="hover:text-slate-800 dark:hover:text-gray-200">
+                              {step.content.substring(0, 150)}...
+                              <span className="text-slate-600 ml-1">
                                 (click to expand)
                               </span>
                             </summary>
-                            <div className="mt-2 p-2 bg-gray-50 dark:bg-slate-700 rounded text-xs whitespace-pre-wrap">
+                            <div className="mt-2 p-4 bg-slate-50 dark:bg-slate-700 rounded text-sm whitespace-pre-wrap max-h-64 overflow-y-auto">
                               {step.content}
                             </div>
                           </details>
@@ -325,25 +325,25 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                     )}
                     {step.fullReasoningContent &&
                       step.fullReasoningContent !== step.content && (
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        <div className="text-xs text-slate-600 dark:text-gray-400 mt-1">
                           <details className="cursor-pointer">
-                            <summary className="text-blue-500 hover:text-blue-600">
+                            <summary className="text-slate-600 hover:text-slate-700">
                               View complete reasoning (
                               {step.fullReasoningContent.length} chars)
                             </summary>
-                            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            <div className="mt-2 p-4 bg-slate-50 dark:bg-slate-600/20 rounded text-sm whitespace-pre-wrap max-h-80 overflow-y-auto">
                               {step.fullReasoningContent}
                             </div>
                           </details>
                         </div>
                       )}
                     {step.query && step.type !== "web_search" && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">
                         Query: "{step.query}"
                       </div>
                     )}
                     {step.focus && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">
                         Focus: {step.focus}
                       </div>
                     )}
@@ -355,13 +355,13 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                         >
-                          🔗 {step.sourceUrl}
+                          {step.sourceUrl}
                         </a>
                       </div>
                     )}
                     {step.recentSources && step.recentSources.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div className="text-xs text-slate-500 dark:text-gray-400">
                           {step.recentSources.length} source
                           {step.recentSources.length > 1 ? "s" : ""} found:
                         </div>
@@ -373,11 +373,11 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                             rel="noopener noreferrer"
                             className="block text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
                           >
-                            🔗 {url}
+                            {url}
                           </a>
                         ))}
                         {step.recentSources.length > 3 && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-slate-500 dark:text-gray-400">
                             ... and {step.recentSources.length - 3} more
                           </div>
                         )}
@@ -385,11 +385,11 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                     )}
                   </div>
                   <div className="flex-shrink-0 flex flex-col items-end gap-2">
-                    <div className="text-xs text-gray-400 dark:text-gray-500">
+                    <div className="text-xs text-slate-400 dark:text-gray-500">
                       Step {index + 1}
                     </div>
                     {step.status === "completed" && (
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                     )}
                   </div>
                 </div>
@@ -397,9 +397,9 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
             })}
 
             {isStreaming && steps.length === 0 && (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                <span className="text-sm text-blue-600 dark:text-blue-400">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-100 dark:bg-slate-600/30">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+                <span className="text-sm text-slate-600 dark:text-slate-400">
                   Initializing deep research...
                 </span>
               </div>
