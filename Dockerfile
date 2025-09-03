@@ -36,12 +36,22 @@ RUN bun run build
 # Set the environment as production
 ENV NODE_ENV=production
 
-# Install required tools and vespa CLI
+# Install required tools, canvas dependencies, and vespa CLI
 USER root
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
     tar \
+    libexpat1 \
+    libexpat1-dev \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev \
+    libpixman-1-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
     && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
     && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
     && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
@@ -64,7 +74,7 @@ EXPOSE 80/tcp
 
 WORKDIR /usr/src/app/server
 
-RUN mkdir -p downloads vespa-data vespa-logs uploads
+RUN mkdir -p downloads vespa-data vespa-logs uploads migrations
 
 # Copy and setup startup script
 COPY start.sh /usr/src/app/start.sh

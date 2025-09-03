@@ -1,0 +1,73 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Application logs from the app service
+  - job_name: app-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: app-logs
+          service: xyne-app
+          __path__: /var/log/app/*.log
+
+  # Docker container logs with improved service detection
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Extract container name (remove leading slash)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/?(.*)'
+        target_label: 'container_name'
+      
+      # Use container name as service if compose service label is missing
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/?(.*)'
+        target_label: 'service'
+      
+      # Override with compose service name if available
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        regex: '(.+)'
+        target_label: 'service'
+      
+      # Add log stream (stdout/stderr)
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+      
+      # Add container ID for debugging
+      - source_labels: ['__meta_docker_container_id']
+        regex: '(.{12}).*'
+        target_label: 'container_id'
+      
+      # Add image name
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_image']
+        target_label: 'image'
+      
+      # Fallback to docker image if compose image not available
+      - source_labels: ['__meta_docker_container_image']
+        regex: '([^:]+):?.*'
+        target_label: 'image'
+        
+      # Add project name if available
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'project'
+      
+      # Only collect logs from containers with our project prefix or xyne network
+      - source_labels: ['__meta_docker_container_name', '__meta_docker_network_mode']
+        regex: '/(xyne-.*|.*xyne.*|loki|promtail|grafana|vespa|postgres).*;.*'
+        action: keep
+
+limits_config:
+  readline_rate_enabled: true
+  readline_rate: 10000
+  readline_burst: 20000

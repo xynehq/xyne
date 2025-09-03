@@ -40,7 +40,6 @@ if [ ! -f "$INIT_MARKER_FILE" ]; then
   
   # Run database migrations
   echo "Running database setup..."
-  rm -rf migrations
   # Try to generate migrations, but don't fail if none exist
   bun run generate
   # Try to run migrations, but don't fail if none exist
