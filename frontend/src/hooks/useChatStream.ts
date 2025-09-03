@@ -421,9 +421,38 @@ export const startStream = async (
     streamState.isStreaming = false
     streamState.es.close()
 
-    if (streamKey && queryClient) {
-      queryClient.invalidateQueries({ queryKey: ["chatHistory", streamKey] })
+    // we are persisting streamed assistant msg to local cache without forcing it to referch.
+    if (queryClient && streamKey) {
+      try {
+        queryClient.setQueryData(
+          ["chatHistory", streamKey],
+          (old: { messages?: any[] } | undefined) => {
+            const base = old?.messages ?? []
+            // If last message is assistant one, update it, else append a new assistant message.
+            const hasTrailingAssistant =
+              base.length > 0 && base[base.length - 1]?.messageRole === "assistant"
+
+            const assistantMsg = {
+              ...(hasTrailingAssistant ? base[base.length - 1] : {}),
+              messageRole: "assistant",
+              message: streamState.partial || "",
+              thinking: streamState.thinking || "",
+              sources: streamState.sources || [],
+              externalId: streamState.messageId || crypto.randomUUID(),
+            }
+
+            const messages = hasTrailingAssistant
+              ? [...base.slice(0, -1), assistantMsg]
+              : [...base, assistantMsg]
+
+            return { ...(old ?? {}), messages }
+          },
+        )
+      } catch (e) {
+        console.error("Failed to cache streamed message on end:", e)
+      }
     }
+
     notifySubscribers(streamKey)
   })
 
