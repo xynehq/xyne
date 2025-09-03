@@ -1,15 +1,68 @@
 import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Upload } from "lucide-react"
+import { X } from "lucide-react"
 import fileUpIcon from "@/assets/file-up.svg"
 import checkCircleIcon from "@/assets/check-circle.svg"
+import { workflowExecutionsAPI } from "./api/ApiHandlers"
+
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  status: string;
+  config: {
+    ai_model?: string;
+    max_file_size?: string;
+    auto_execution?: boolean;
+    schema_version?: string;
+    allowed_file_types?: string[];
+    supports_file_upload?: boolean;
+  };
+  createdBy: string;
+  rootWorkflowStepTemplateId: string;
+  createdAt: string;
+  updatedAt: string;
+  rootStep?: {
+    id: string;
+    workflowTemplateId: string;
+    name: string;
+    description: string;
+    type: string;
+    timeEstimate: number;
+    metadata: {
+      icon?: string;
+      step_order?: number;
+      schema_version?: string;
+      user_instructions?: string;
+    };
+    tool?: {
+      id: string;
+      type: string;
+      value: {
+        fields?: Array<{
+          name: string;
+          type: string;
+          required?: boolean;
+          default?: any;
+        }>;
+        [key: string]: any;
+      };
+      config: any;
+      createdBy: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+  };
+}
 
 interface WorkflowExecutionModalProps {
   isOpen: boolean
   onClose: () => void
   workflowName: string
   workflowDescription: string
-  uploadApiUrl: string
+  templateId: string
+  workflowTemplate: WorkflowTemplate
 }
 
 const SUPPORTED_FILE_TYPES = {
@@ -39,7 +92,8 @@ export function WorkflowExecutionModal({
   onClose,
   workflowName,
   workflowDescription,
-  uploadApiUrl
+  templateId,
+  workflowTemplate
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [, setIsUploading] = useState(false)
@@ -47,6 +101,7 @@ export function WorkflowExecutionModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState<string>('Processing the File')
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -57,6 +112,7 @@ export function WorkflowExecutionModal({
     setUploadError(null)
     setIsProcessing(false)
     setIsCompleted(false)
+    setProcessingMessage('')
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
@@ -101,37 +157,63 @@ export function WorkflowExecutionModal({
     }
   }
 
-  const uploadFile = async (file: File) => {
+  const executeWorkflow = async (file: File) => {
     setIsUploading(true)
     try {
-      console.log('Uploading file to:', uploadApiUrl)
-      const formData = new FormData()
-      formData.append('file', file)
+      console.log('Executing workflow with template ID:', templateId)
+      console.log('Selected file:', file.name)
+      console.log('Workflow template:', workflowTemplate)
+      
+      // Create form data matching the curl command format
+      const formData: Record<string, any> = {
+        name: `${workflowName} - ${new Date().toLocaleString()}`,
+        description: `Execution of ${workflowName} with file: ${file.name}`,
+        file_description: `Test document: ${file.name}`
+      }
+      
+      console.log('Generated form data:', formData)
+      
+      const executionData = {
+        name: formData.name,
+        description: formData.description,
+        file: file,
+        formData: formData
+      }
 
-      const response = await fetch(uploadApiUrl, {
-        method: 'POST',
-        body: formData
-      })
+      const response = await workflowExecutionsAPI.executeTemplate(templateId, executionData)
 
-      console.log('Upload response status:', response.status)
-      console.log('Upload response ok:', response.ok)
-
-      if (response.ok) {
-        setIsUploaded(true)
-        // Start polling for completion
-        startPolling()
-      } else {
+      console.log('🚀 WORKFLOW EXECUTION RESPONSE:', response)
+      
+      // Extract message from response and set it for display
+      if (response.message) {
+        setProcessingMessage(response.message)
+      }
+      
+      if (response.error || response.status === 'error') {
         setIsUploaded(false)
         setIsProcessing(false)
-        const errorText = await response.text()
-        console.error('Upload failed with status:', response.status, 'Error:', errorText)
-        setUploadError(`Upload failed (${response.status}): ${errorText || 'Please try again.'}`)
+        setUploadError(`Execution failed: ${response.error || response.message}`)
+      } else {
+        setIsUploaded(true)
+        
+        // Extract execution ID from response.data.execution.id
+        const executionId = response.data?.execution?.id
+        console.log('📋 Extracted execution ID:', executionId)
+        
+        if (executionId) {
+          // Start polling for completion with the execution ID
+          startStatusPolling(executionId)
+        } else {
+          console.warn('No execution ID found in response')
+          // Fallback to old polling mechanism
+          startPolling()
+        }
       }
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error('Execution error:', error)
       setIsUploaded(false)
       setIsProcessing(false)
-      setUploadError(`Upload failed: ${error instanceof Error ? error.message : 'Please check your connection and try again.'}`)
+      setUploadError(`Execution failed: ${error instanceof Error ? error.message : 'Please check your connection and try again.'}`)
     } finally {
       setIsUploading(false)
     }
@@ -165,7 +247,7 @@ export function WorkflowExecutionModal({
     console.log('File type:', selectedFile.type)
     
     setIsProcessing(true)
-    await uploadFile(selectedFile)
+    await executeWorkflow(selectedFile)
   }
 
   const handleDiscardFile = () => {
@@ -182,6 +264,7 @@ export function WorkflowExecutionModal({
     setIsProcessing(false)
     setIsCompleted(false)
     setUploadError(null)
+    setProcessingMessage('')
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
@@ -191,30 +274,79 @@ export function WorkflowExecutionModal({
     }
   }
 
-  const startPolling = () => {
-    console.log('Starting polling for process completion...')
-    const interval = setInterval(async () => {
+  const startStatusPolling = async (executionId: string) => {
+    console.log('🔄 Starting status polling for execution ID:', executionId)
+    
+    // Clear any existing interval first
+    if (pollingInterval) {
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
+    }
+    
+    const checkStatus = async () => {
       try {
-        const response = await fetch('http://localhost:8000/status', {
-          method: 'GET',
+        const response = await fetch(`https://2f66b479bc76.ngrok-free.app/api/v1/workflow/executions/${executionId}/status`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+            'Access-Control-Allow-Origin': '*',
+          },
+          mode: 'cors',
         })
         
-        if (response.ok) {
-          const data = await response.json()
-          console.log('Polling response:', data)
-          
-          if (data.status === 'completed' || data.message === 'process completed') {
-            console.log('Process completed!')
-            clearInterval(interval)
-            setPollingInterval(null)
-            setIsProcessing(false)
-            setIsCompleted(true)
-          }
+        const statusData = await response.json()
+        console.log('📊 Status polling response:', statusData)
+        
+        if (statusData.success && statusData.status === 'completed') {
+          console.log('✅ Execution completed!')
+          setIsProcessing(false)
+          setIsCompleted(true)
+          // Clear the polling interval
+          setPollingInterval((currentInterval) => {
+            if (currentInterval) {
+              console.log('🛑 Stopping polling - execution completed')
+              clearInterval(currentInterval)
+            }
+            return null
+          })
+        } else if (statusData.status === 'failed') {
+          console.log('❌ Execution failed!')
+          setIsProcessing(false)
+          setUploadError('Execution failed')
+          // Clear the polling interval
+          setPollingInterval((currentInterval) => {
+            if (currentInterval) {
+              console.log('🛑 Stopping polling - execution failed')
+              clearInterval(currentInterval)
+            }
+            return null
+          })
         }
+        // If status is still pending, continue polling
       } catch (error) {
-        console.error('Polling error:', error)
+        console.error('Status polling error:', error)
       }
-    }, 2000) // Poll every 2 seconds
+    }
+    
+    // Start polling every 2 seconds
+    const interval = setInterval(checkStatus, 2000)
+    setPollingInterval(interval)
+    console.log('⏰ Polling interval started:', interval)
+    
+    // Also check immediately
+    checkStatus()
+  }
+
+  const startPolling = () => {
+    console.log('Starting polling for process completion...')
+    // For now, simulate completion after 5 seconds since we don't have a status endpoint
+    const interval = setTimeout(() => {
+      console.log('Process completed!')
+      setPollingInterval(null)
+      setIsProcessing(false)
+      setIsCompleted(true)
+    }, 5000) // Complete after 5 seconds
     
     setPollingInterval(interval)
   }
@@ -283,7 +415,10 @@ export function WorkflowExecutionModal({
             <div className="px-8 pb-8">
               <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
                 <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-6"></div>
-                <p className="text-gray-900 text-lg font-medium mb-2">Processing the File</p>
+                {/* <p className="text-gray-900 text-lg font-medium mb-2">Processing the File</p> */}
+                {processingMessage && (
+                  <p className="text-gray-900 text-lg font-medium mb-2">{processingMessage}</p>
+                )}
               </div>
               
               {/* Executing Button */}
@@ -346,14 +481,14 @@ export function WorkflowExecutionModal({
 
               {/* Upload Button */}
               <Button 
-                className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-full font-mono font-medium text-xs leading-none tracking-wider uppercase"
+                className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 px-6 py-2 rounded-full uppercase font-medium text-sm leading-6 tracking-normal"
+                style={{ fontFamily: 'Inter' }}
                 onClick={(e) => {
                   e.stopPropagation()
                   fileInputRef.current?.click()
                 }}
               >
-                <Upload className="w-4 h-4 mr-2" />
-                UPLOAD FILE
+                BROWSE FILES
               </Button>
 
               {/* Or text */}

@@ -23,6 +23,81 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Flow, TemplateFlow, Step, UserDetail, Tool, StepExecution } from './Types';
+
+// Import WorkflowTemplate type
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  status: string;
+  config: {
+    ai_model?: string;
+    max_file_size?: string;
+    auto_execution?: boolean;
+    schema_version?: string;
+    allowed_file_types?: string[];
+    supports_file_upload?: boolean;
+  };
+  createdBy: string;
+  rootWorkflowStepTemplateId: string;
+  createdAt: string;
+  updatedAt: string;
+  steps?: Array<{
+    id: string;
+    workflowTemplateId: string;
+    name: string;
+    description: string;
+    type: string;
+    parentStepId: string | null;
+    prevStepIds: string[];
+    nextStepIds: string[];
+    toolIds: string[];
+    timeEstimate: number;
+    metadata: {
+      icon?: string;
+      step_order?: number;
+      schema_version?: string;
+      user_instructions?: string;
+      ai_model?: string;
+      automated_description?: string;
+    };
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  workflow_tools?: Array<{
+    id: string;
+    type: string;
+    value: any;
+    config: any;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  rootStep?: {
+    id: string;
+    workflowTemplateId: string;
+    name: string;
+    description: string;
+    type: string;
+    timeEstimate: number;
+    metadata: {
+      icon?: string;
+      step_order?: number;
+      schema_version?: string;
+      user_instructions?: string;
+    };
+    tool?: {
+      id: string;
+      type: string;
+      value: any;
+      config: any;
+      createdBy: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+  };
+}
 import ActionBar from './ActionBar';
 import {
   DelayIcon,
@@ -41,6 +116,9 @@ import {
   AddIcon,
   FormDocumentIcon
 } from './WorkflowIcons';
+import botLogo from '@/assets/bot-logo.svg';
+import androidIcon from '@/assets/android.svg';
+import documentIcon from '@/assets/document.svg';
 import { workflowTemplatesAPI, workflowsAPI } from './api/ApiHandlers';
 import WhatHappensNextUI from './WhatHappensNextUI';
 import AIAgentConfigUI, { AIAgentConfig } from './AIAgentConfigUI';
@@ -92,8 +170,203 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
     hasNext?: boolean;
   };
 
-  // Special rendering for AI Agent nodes
-  if (step.type === 'ai_agent') {
+  // Get icon and colors based on step type
+  const getStepIcon = (type: string) => {
+    switch (type) {
+      case 'form_submission':
+      case 'manual':
+        return <img src={documentIcon} alt="Document" className="w-4 h-4" />;
+      // case 'ai_agent':
+      case 'python_script':
+        return <img src={botLogo} alt="Bot" className="w-4 h-4" />;
+      case 'email':
+        return <img src={androidIcon} alt="Android" className="w-4 h-4" />;
+      default:
+        return <img src={documentIcon} alt="Default" className="w-4 h-4" />;
+    }
+  };
+
+  const getStepColors = (type: string, isCompleted?: boolean, isExecution?: boolean) => {
+    // If step is completed in an execution, use green colors
+    if (isCompleted && isExecution) {
+      return {
+        border: '#10B981',
+        background: '#ECFDF5',
+        iconBg: '#D1FAE5'
+      };
+    }
+    
+    // For templates viewed from "Your Workflows" (not executions), use neutral colors
+    if (!isExecution) {
+      return {
+        border: '#E5E7EB',
+        background: '#F9FAFB',
+        iconBg: '#F3F4F6'
+      };
+    }
+    
+    // For executions, use type-based colors
+    switch (type) {
+      case 'form_submission':
+      case 'manual':
+        return {
+          border: '#22C55E',
+          background: '#F0FDF4',
+          iconBg: '#DCFCE7'
+        };
+      case 'ai_agent':
+      case 'automated':
+        return {
+          border: '#3B82F6',
+          background: '#EFF6FF',
+          iconBg: '#DBEAFE'
+        };
+      case 'email':
+        return {
+          border: '#A855F7',
+          background: '#FAF5FF',
+          iconBg: '#F3E8FF'
+        };
+      default:
+        return {
+          border: '#6B7280',
+          background: '#F9FAFB',
+          iconBg: '#F3F4F6'
+        };
+    }
+  };
+
+  const colors = getStepColors(step.type || 'default', isCompleted, (step as any).isExecution);
+  const icon = getStepIcon(step.type || 'default');
+
+  // Unified node design matching the image
+  return (
+    <>
+      <div 
+        className="relative cursor-pointer hover:shadow-lg transition-all duration-200"
+        style={{
+          width: '380px',
+          minHeight: '140px',
+          borderRadius: '16px',
+          border: `2px solid ${colors.border}`,
+          background: colors.background,
+          boxShadow: selected ? `0 0 0 2px ${colors.border}` : '0 2px 8px rgba(0,0,0,0.08)'
+        }}
+      >
+        {/* Header with icon and title */}
+        <div className="flex items-center gap-3 p-4 pb-3">
+          {/* Icon with background */}
+          <div 
+            className="flex justify-center items-center flex-shrink-0"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              background: colors.iconBg,
+              fontSize: '16px'
+            }}
+          >
+            {icon}
+          </div>
+          
+          <div className="flex-1 min-w-0">
+            <h3 
+              className="font-semibold text-gray-800"
+              style={{
+                fontFamily: 'Inter',
+                fontSize: '16px',
+                fontWeight: '600',
+                lineHeight: '20px',
+                color: '#1F2937'
+              }}
+            >
+              {step.name || 'Workflow Step'}
+            </h3>
+          </div>
+        </div>
+        
+        {/* Full-width separator */}
+        <div className="w-full h-px bg-gray-200 mb-3"></div>
+        
+        {/* Description content */}
+        <div className="px-4 pb-1">
+          {step.description && (
+            <p className="text-sm text-gray-600 leading-relaxed">
+              {step.description}
+            </p>
+          )}
+          
+          {/* Fallback descriptions based on step type if no description */}
+          {!step.description && (
+            <div>
+              {step.type === 'form_submission' && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Upload a file in formats such as PDF, DOCX, or JPG.
+                </p>
+              )}
+              {step.type === 'manual' && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Manual trigger to start the workflow process.
+                </p>
+              )}
+              {step.type === 'ai_agent' && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  AI agent powered by {(step as any).config?.model || 'gpt-oss-120b'}.
+                </p>
+              )}
+              {step.type === 'python_script' && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Execute custom Python script for data processing.
+                </p>
+              )}
+              {step.type === 'email' && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Send automated email notifications to configured recipients.
+                </p>
+              )}
+              {!['form_submission', 'manual', 'ai_agent', 'python_script', 'email'].includes(step.type || '') && (
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Workflow step for automated processing.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ReactFlow Handles */}
+        <Handle
+          type="target"
+          position={Position.Top}
+          id="top"
+          isConnectable={isConnectable}
+          style={{
+            width: '12px',
+            height: '12px',
+            background: '#E5E7EB',
+            border: '2px solid white',
+            top: '-6px'
+          }}
+        />
+        
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="bottom"
+          isConnectable={isConnectable}
+          style={{
+            width: '12px',
+            height: '12px',
+            background: '#E5E7EB',
+            border: '2px solid white',
+            bottom: '-6px'
+          }}
+        />
+      </div>
+    </>
+  );
+
+  // Legacy code below (not used anymore)
+  if (false && step.type === 'ai_agent') {
     return (
       <>
         <div 
@@ -553,7 +826,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 };
 
 // Header component
-const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
+const Header = ({ onBackToWorkflows, workflowName }: { onBackToWorkflows?: () => void; workflowName?: string }) => {
   return (
     <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 bg-white min-h-[80px] gap-3">
       {/* Breadcrumb */}
@@ -565,7 +838,7 @@ const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
           >
             Workflow
           </span>
-          <span className='text-[#3B4145] text-sm font-medium leading-5'> / Untitled Workflow</span>
+          <span className='text-[#3B4145] text-sm font-medium leading-5'> / {workflowName || 'Untitled Workflow'}</span>
         </div>
       </div>
       
@@ -588,6 +861,226 @@ const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
 };
 
 // Right Sidebar - SELECT TRIGGERS Panel
+// Execution Result Modal Component
+const ExecutionResultModal = ({ isVisible, result, onClose }: { 
+  isVisible: boolean; 
+  result: any; 
+  onClose?: () => void; 
+}) => {
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] mx-4 relative overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">Execution Result</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
+          <div className="bg-gray-50 p-4 rounded-lg border">
+            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+              {typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}
+            </pre>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="flex justify-end p-6 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Tools Sidebar Component
+const ToolsSidebar = ({ isVisible, nodeInfo, tools, onClose, onResultClick }: { 
+  isVisible: boolean; 
+  nodeInfo: any; 
+  tools: Tool[] | null; 
+  onClose?: () => void;
+  onResultClick?: (result: any) => void; 
+}) => {
+  return (
+    <div className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      isVisible ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0'
+    }`}>
+      {/* Header */}
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
+            NODE DETAILS
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="text-sm text-slate-500 leading-5 font-normal">
+          {nodeInfo?.step?.name || 'Selected node information'}
+        </div>
+      </div>
+
+      {/* Node Information */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-6">
+        {/* Step Information */}
+        {nodeInfo?.step && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Step Information</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">Name:</span>
+                  <span className="text-xs text-gray-900">{nodeInfo.step.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">Type:</span>
+                  <span className="text-xs text-gray-900">{nodeInfo.step.type || 'Unknown'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">Status:</span>
+                  <span className="text-xs text-gray-900">{nodeInfo.step.status || 'Pending'}</span>
+                </div>
+                {nodeInfo.step.description && (
+                  <div>
+                    <span className="text-xs font-medium text-gray-500">Description:</span>
+                    <p className="text-xs text-gray-900 mt-1">{nodeInfo.step.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tools Information */}
+        {tools && tools.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-gray-700">Associated Tools</h3>
+            {tools.map((tool, index) => (
+              <div key={tool.id || index} className="border border-gray-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">{tool.type}</span>
+                  <div className="flex gap-2">
+                    {(tool as any).status && (
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        (tool as any).status === 'completed' 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {(tool as any).status}
+                      </span>
+                    )}
+                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">Tool</span>
+                  </div>
+                </div>
+                
+                {/* Tool Execution Result (for executions) */}
+                {(tool as any).result && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-gray-600">Execution Result</h4>
+                      <button
+                        onClick={() => onResultClick?.((tool as any).result)}
+                        className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                      >
+                        View Full
+                      </button>
+                    </div>
+                    <div 
+                      className="text-xs text-gray-900 bg-green-50 p-3 rounded max-h-40 overflow-y-auto border border-green-200 cursor-pointer hover:bg-green-100 transition-colors"
+                      onClick={() => onResultClick?.((tool as any).result)}
+                    >
+                      <pre className="whitespace-pre-wrap">{typeof (tool as any).result === 'object' ? JSON.stringify((tool as any).result, null, 2) : String((tool as any).result)}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* Regular tool config (for templates) */}
+                {tool.config && !(tool as any).result && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-gray-600">Configuration</h4>
+                    <div className="space-y-1">
+                      {Object.entries(tool.config).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-xs">
+                          <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}:</span>
+                          <span className="text-gray-900 max-w-[200px] truncate" title={String(value)}>
+                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(tool as any).value && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-gray-600">Tool Value</h4>
+                    <div className="text-xs text-gray-900 bg-gray-50 p-2 rounded max-h-20 overflow-y-auto">
+                      <pre>{typeof (tool as any).value === 'object' ? JSON.stringify((tool as any).value, null, 2) : String((tool as any).value)}</pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* No Tools Message */}
+        {(!tools || tools.length === 0) && (
+          <div className="text-center py-8">
+            <div className="text-gray-400 mb-2">
+              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+              </svg>
+            </div>
+            <p className="text-sm text-gray-500">No tools associated with this node</p>
+          </div>
+        )}
+
+        {/* Position Information */}
+        {nodeInfo?.position && (
+          <div className="space-y-2 pt-4 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700">Position</h3>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">X:</span>
+                <span className="text-gray-900">{Math.round(nodeInfo.position.x)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Y:</span>
+                <span className="text-gray-900">{Math.round(nodeInfo.position.y)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: boolean; onClose?: () => void; onTriggerClick?: (triggerId: string) => void }) => {
   const triggers = [
     {
@@ -802,15 +1295,20 @@ interface WorkflowBuilderProps {
   onStepClick?: (step: Step) => void;
   user?: UserDetail;
   onBackToWorkflows?: () => void;
+  selectedTemplate?: WorkflowTemplate | null;
+  isLoadingTemplate?: boolean;
+  isEditableMode?: boolean;
 }
 
 // Internal component that uses ReactFlow hooks
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({ 
   onStepClick,
   onBackToWorkflows,
+  selectedTemplate,
+  isLoadingTemplate,
+  isEditableMode,
 }) => {
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
-  const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
   const [nodeCounter, setNodeCounter] = useState(1);
   const [showEmptyCanvas, setShowEmptyCanvas] = useState(true);
   const [showTriggersSidebar, setShowTriggersSidebar] = useState(false);
@@ -821,6 +1319,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(null);
   const [selectedEmailNodeId, setSelectedEmailNodeId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [showToolsSidebar, setShowToolsSidebar] = useState(false);
+  const [selectedNodeTools, setSelectedNodeTools] = useState<Tool[] | null>(null);
+  const [selectedNodeInfo, setSelectedNodeInfo] = useState<any>(null);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<any>(null);
   // Template workflow state (for creating the initial workflow)
   const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(null);
   const [, setIsLoadingTemplate] = useState(false);
@@ -839,33 +1342,160 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { fitView, zoomTo, getViewport } = useReactFlow();
 
-  // Fetch specific workflow template by ID on component mount
+  // Create nodes and edges from selectedTemplate
   useEffect(() => {
-    const fetchWorkflowTemplate = async () => {
-      const templateId = 'a50e8400-e29b-41d4-a716-446655440010';
-      setIsLoadingTemplate(true);
-      setTemplateError(null);
+    if (selectedTemplate && (selectedTemplate.steps || selectedTemplate.stepExecutions)) {
+      console.log('Creating workflow from template:', selectedTemplate);
       
-      try {
-        const response = await workflowTemplatesAPI.fetchById(templateId);
+      // Check if this is an execution (has stepExecutions) or template (has steps)
+      const isExecution = selectedTemplate.stepExecutions && Array.isArray(selectedTemplate.stepExecutions);
+      const stepsData = isExecution ? selectedTemplate.stepExecutions : selectedTemplate.steps;
+      
+      // Sort steps by step_order or creation order before creating nodes
+      const sortedSteps = [...stepsData].sort((a, b) => {
+        // First try to sort by step_order in metadata
+        const orderA = a.metadata?.step_order ?? 999;
+        const orderB = b.metadata?.step_order ?? 999;
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        // Fallback to sorting by nextStepIds relationships
+        // If step A's nextStepIds contains step B's id, A should come first
+        if (a.nextStepIds?.includes(b.id)) return -1;
+        if (b.nextStepIds?.includes(a.id)) return 1;
+        // Final fallback to creation time
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+      
+      console.log('Original steps:', stepsData);
+      console.log('Sorted steps:', sortedSteps);
+      
+      // Create nodes from steps in top-down layout
+      const templateNodes: Node[] = sortedSteps.map((step, index) => {
+        // Find associated tools for this step
+        let stepTools = [];
+        let toolExecutions = [];
         
-        if (response.error) {
-          throw new Error(response.error);
+        if (isExecution) {
+          // For executions, get tool executions from toolExecIds
+          toolExecutions = selectedTemplate.toolExecutions?.filter(toolExec => 
+            step.toolExecIds?.includes(toolExec.id)
+          ) || [];
+          
+          // Create tool info from executions
+          stepTools = toolExecutions.map(toolExec => ({
+            id: toolExec.id,
+            type: 'execution_tool',
+            config: toolExec.result || {},
+            toolExecutionId: toolExec.id,
+            status: toolExec.status,
+            result: toolExec.result
+          }));
+        } else {
+          // For templates, use workflow_tools
+          stepTools = selectedTemplate.workflow_tools?.filter(tool => 
+            step.toolIds?.includes(tool.id)
+          ) || [];
         }
         
-        if (response.data) {
-          setTemplateWorkflow(response.data);
-        }
-      } catch (error) {
-        console.error('Fetch error:', error);
-        setTemplateError(error instanceof Error ? error.message : 'Network error');
-      } finally {
-        setIsLoadingTemplate(false);
-      }
-    };
+        return {
+          id: step.id,
+          type: 'stepNode',
+          position: { 
+            x: 400, // Keep all nodes at the same horizontal position
+            y: 100 + (index * 200) // Stack vertically with 200px spacing (reduced for new node height)
+          },
+          data: { 
+            step: {
+              id: step.id,
+              name: step.name,
+              status: isExecution ? step.status : 'pending',
+              description: step.description || step.metadata?.automated_description,
+              type: step.type,
+              contents: [],
+              metadata: step.metadata,
+              isExecution,
+              toolExecutions: isExecution ? toolExecutions : undefined
+            }, 
+            tools: stepTools,
+            isActive: isExecution && step.status === 'running', 
+            isCompleted: isExecution && step.status === 'completed',
+            hasNext: isEditableMode && step.nextStepIds && step.nextStepIds.length > 0
+          },
+          draggable: true,
+        };
+      });
 
-    fetchWorkflowTemplate();
-  }, []);
+      // Create edges from nextStepIds
+      const templateEdges: Edge[] = [];
+      stepsData.forEach(step => {
+        step.nextStepIds?.forEach(nextStepId => {
+          // For executions, we need to map template step IDs to execution step IDs
+          let targetStepId = nextStepId;
+          
+          if (isExecution) {
+            // Find the step execution that corresponds to this template step ID
+            const targetStepExecution = stepsData.find((s: any) => s.workflowStepTemplateId === nextStepId);
+            if (targetStepExecution) {
+              targetStepId = targetStepExecution.id;
+            }
+          }
+          
+          templateEdges.push({
+            id: `${step.id}-${targetStepId}`,
+            source: step.id,
+            target: targetStepId,
+            type: 'straight',
+            animated: false,
+            style: {
+              stroke: '#D1D5DB',
+              strokeWidth: 2,
+            },
+            markerEnd: {
+              type: 'arrowclosed',
+              color: '#D1D5DB',
+            },
+          });
+        });
+      });
+      
+      console.log('Created nodes:', templateNodes.length);
+      console.log('Created edges:', templateEdges.length);
+      
+      setNodes(templateNodes);
+      setEdges(templateEdges);
+      setNodeCounter(stepsData.length + 1);
+      setShowEmptyCanvas(false);
+      
+      setTimeout(() => {
+        fitView({ padding: 0.2 });
+      }, 50);
+    }
+  }, [selectedTemplate, setNodes, setEdges, fitView]);
+
+  // Fetch specific workflow template by ID on component mount (keep for backwards compatibility)
+  useEffect(() => {
+    // Only fetch template if no selectedTemplate is provided
+    if (!selectedTemplate) {
+      const fetchWorkflowTemplate = async () => {
+        const templateId = 'a50e8400-e29b-41d4-a716-446655440010';
+        setIsLoadingTemplate(true);
+        setTemplateError(null);
+        
+        try {
+          const templateData = await workflowTemplatesAPI.fetchById(templateId);
+          setTemplateWorkflow(templateData);
+        } catch (error) {
+          console.error('Fetch error:', error);
+          setTemplateError(error instanceof Error ? error.message : 'Network error');
+        } finally {
+          setIsLoadingTemplate(false);
+        }
+      };
+
+      fetchWorkflowTemplate();
+    }
+  }, [selectedTemplate]);
 
 
   const onConnect = useCallback(
@@ -891,47 +1521,32 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     setSelectedNodes(params.nodes);
-    setSelectedEdges(params.edges);
   }, []);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    // Generic node click handler that opens appropriate config sidebar
+    // Generic node click handler that opens tools sidebar
     const step = node.data?.step as Step;
+    const tools = node.data?.tools as Tool[] || [];
+    
     if (!step) return;
 
-    // Handle different node types
-    switch (step.type) {
-      case 'ai_agent':
-        // Open AI Agent config sidebar
-        setSelectedAgentNodeId(node.id);
-        setShowAIAgentConfigUI(true);
-        setShowTriggersSidebar(false);
-        setShowWhatHappensNextUI(false);
-        setShowEmailConfigUI(false);
-        break;
-        
-      case 'email':
-        // Open Email config sidebar
-        setSelectedEmailNodeId(node.id);
-        setShowEmailConfigUI(true);
-        setShowTriggersSidebar(false);
-        setShowWhatHappensNextUI(false);
-        setShowAIAgentConfigUI(false);
-        break;
-        
-      case 'form_submission':
-        // Form submission nodes are just clickable for now
-        // Could add form configuration UI here in the future
-        console.log('Form submission node clicked:', step);
-        break;
-        
-      default:
-        if (onStepClick) {
-          onStepClick(step);
-        }
-        break;
-    }
-  }, [onStepClick]);
+    // Show tools sidebar with node information
+    setSelectedNodeInfo({
+      step,
+      nodeId: node.id,
+      position: node.position
+    });
+    setSelectedNodeTools(tools);
+    setShowToolsSidebar(true);
+    
+    // Close other sidebars
+    setShowTriggersSidebar(false);
+    setShowWhatHappensNextUI(false);
+    setShowAIAgentConfigUI(false);
+    setShowEmailConfigUI(false);
+    
+    console.log('Node clicked:', step.name, 'Tools:', tools);
+  }, []);
 
   const onNodesDelete = useCallback<OnNodesDelete>((_deleted) => {
     if (nodes.length === _deleted.length) {
@@ -1148,17 +1763,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   // Function to fetch workflow status
   const fetchWorkflowStatus = useCallback(async (workflowId: string) => {
     try {
-      const response = await workflowsAPI.fetchById(workflowId);
-      
-      if (response.error) {
-        throw new Error(`Failed to fetch workflow status: ${response.error}`);
-      }
-
-      if (!response.data) {
-        throw new Error('No workflow data received');
-      }
-      
-      const workflowData = response.data;
+      const workflowData = await workflowsAPI.fetchById(workflowId);
       
       // Update the running workflow state
       setWorkflow(workflowData);
@@ -1260,7 +1865,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     
     try {
       // Step 1: Instantiate the workflow template
-      const instantiateResponse = await workflowTemplatesAPI.instantiate(templateWorkflow.template_id, {
+      const workflowInstance = await workflowTemplatesAPI.instantiate(templateWorkflow.template_id, {
         name: "Test Webhook Flow",
         metadata: {
           description: "Testing webhook workflow",
@@ -1268,37 +1873,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         }
       });
       
-      if (instantiateResponse.error || !instantiateResponse.data) {
-        throw new Error(`Failed to instantiate workflow: ${instantiateResponse.error || 'No data returned'}`);
-      }
-      
-      const workflowInstance = instantiateResponse.data;
-      
       // Set initial workflow state after instantiation
       try {
-        const initialWorkflowResponse = await workflowsAPI.fetchById(workflowInstance.workflowId);
-        
-        if (!initialWorkflowResponse.error && initialWorkflowResponse.data) {
-          setWorkflow(initialWorkflowResponse.data);
-        }
+        const initialWorkflowData = await workflowsAPI.fetchById(workflowInstance.workflowId);
+        setWorkflow(initialWorkflowData);
       } catch (error) {
         console.warn('Failed to fetch initial workflow state:', error);
       }
       
       // Step 2: Run the workflow
-      const runResponse = await workflowsAPI.run(workflowInstance.workflowId);
-      
-      if (runResponse.error) {
-        throw new Error(`Failed to run workflow: ${runResponse.error}`);
-      }
-      
-      // const runResult = runResponse.data; // Not used currently
+      await workflowsAPI.run(workflowInstance.workflowId);
       
       // Step 3: Complete a workflow step (root step ID)
-      const stepCompleteResponse = await workflowsAPI.completeStep(workflowInstance.rootStepId);
-
-      if (stepCompleteResponse.error) {
-        console.warn(`Failed to complete step: ${stepCompleteResponse.error}`);
+      try {
+        await workflowsAPI.completeStep(workflowInstance.rootStepId);
+      } catch (error) {
+        console.warn(`Failed to complete step:`, error);
         // Continue execution even if step completion fails
       } 
       
@@ -1603,10 +2193,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setSelectedEmailNodeId(null);
    }, [selectedEmailNodeId, setNodes, zoomTo]);
 
+  const handleResultClick = useCallback((result: any) => {
+    setSelectedResult(result);
+    setShowResultModal(true);
+  }, []);
+
+  const handleResultModalClose = useCallback(() => {
+    setShowResultModal(false);
+    setSelectedResult(null);
+  }, []);
+
   return (
     <div className="w-full h-full flex flex-col bg-white relative">
       {/* Header */}
-      <Header onBackToWorkflows={onBackToWorkflows} />
+      <Header onBackToWorkflows={onBackToWorkflows} workflowName={selectedTemplate?.name} />
       
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
@@ -1631,32 +2231,24 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         snapToGrid={true}
         snapGrid={[15, 15]}
       >
-        {/* Selection Info Panel */}
-        {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
-          <Panel position="top-right">
-            <div className="bg-white p-3 rounded-lg shadow-md border border-slate-200 min-w-[200px]">
-              <div className="text-sm font-semibold mb-2">
-                Selection Info
-              </div>
-              <div className="text-xs text-gray-500">
-                Nodes: {selectedNodes.length} | Edges: {selectedEdges.length}
-              </div>
-              {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                <div className="text-xs mt-1">
-                  <strong>Step:</strong> {(selectedNodes[0].data.step as Step).name || 'Unnamed'}
-                </div>
-              ) : null}
-            </div>
-          </Panel>
-        )}
 
         {/* Empty Canvas Content */}
-        {showEmptyCanvas && (
+        {showEmptyCanvas && !isLoadingTemplate && (
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
             <EmptyCanvas 
               onAddFirstStep={addFirstStep}
               onStartWithTemplate={startWithTemplate}
             />
+          </div>
+        )}
+
+        {/* Loading Template Content */}
+        {isLoadingTemplate && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
+            <div className="bg-white p-6 rounded-lg shadow-md border border-slate-200">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-slate-600">Loading workflow template...</p>
+            </div>
           </div>
         )}
         <Background 
@@ -1667,7 +2259,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         />
 
         {/* Action Bar at bottom center */}
-        {!showEmptyCanvas && (
+        {!showEmptyCanvas && isEditableMode && (
           <Panel position="bottom-center">
             <ActionBar 
               onExecute={executeNode} 
@@ -1679,8 +2271,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       </ReactFlow>
           </div>
         
+        {/* Tools Sidebar */}
+        <ToolsSidebar 
+          isVisible={showToolsSidebar}
+          nodeInfo={selectedNodeInfo}
+          tools={selectedNodeTools}
+          onClose={() => setShowToolsSidebar(false)}
+          onResultClick={handleResultClick}
+        />
+        
         {/* Right Triggers Sidebar */}
-        {!showWhatHappensNextUI && !showAIAgentConfigUI && !showEmailConfigUI && (
+        {!showWhatHappensNextUI && !showAIAgentConfigUI && !showEmailConfigUI && !showToolsSidebar && isEditableMode && (
           <TriggersSidebar 
             isVisible={showTriggersSidebar}
             onTriggerClick={handleTriggerClick}
@@ -1689,7 +2290,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* What Happens Next Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && (
+        {!showAIAgentConfigUI && !showEmailConfigUI && isEditableMode && (
           <WhatHappensNextUI 
             isVisible={showWhatHappensNextUI}
             onClose={handleWhatHappensNextClose}
@@ -1698,7 +2299,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && (
+        {!showEmailConfigUI && isEditableMode && (
           <AIAgentConfigUI 
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -1707,7 +2308,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
         
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && (
+        {!showAIAgentConfigUI && isEditableMode && (
           <EmailConfigUI 
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -1715,6 +2316,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           />
         )}
       </div>
+      
+      {/* Execution Result Modal */}
+      <ExecutionResultModal 
+        isVisible={showResultModal}
+        result={selectedResult}
+        onClose={handleResultModalClose}
+      />
     </div>
   );
 };
