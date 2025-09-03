@@ -86,3 +86,23 @@ export const toolTypeEnum = pgEnum('tool_type_enum', [
   'delay',
   'merged_node'
 ]);
+
+export const organizationStatusEnum = pgEnum('organization_status_enum', [
+  'active', 
+  'inactive', 
+  'suspended', 
+  'pending'
+]);
+
+export const userRoleEnum = pgEnum('user_role_enum', [
+  'admin', 
+  'manager', 
+  'user', 
+  'viewer'
+]);
+
+export const userStatusEnum = pgEnum('user_status_enum', [
+  'active',
+  'inactive', 
+  'suspended'
+]);

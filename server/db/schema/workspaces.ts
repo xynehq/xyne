@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm"
-import { serial, pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { serial, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
+import { organizationStatusEnum } from "./workflowEnums"
 
 // Workspaces Table
 export const workspaces = pgTable("workspaces", {
@@ -12,6 +13,10 @@ export const workspaces = pgTable("workspaces", {
   createdBy: text("created_by").notNull().unique(),
   externalId: text("external_id").unique().notNull(),
   photoLink: text("photoLink"),
+  description: text("description"),
+  config: jsonb("config"),
+  settings: jsonb("settings"),
+  status: organizationStatusEnum("status").default("active"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),

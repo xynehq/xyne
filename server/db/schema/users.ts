@@ -7,6 +7,8 @@ import {
   timestamp,
   uniqueIndex,
   pgEnum,
+  jsonb,
+  varchar,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -14,6 +16,7 @@ import { UserRole } from "@/shared/types"
 import { workspaces } from "./workspaces"
 import { encryptedText } from "../customType"
 import { Encryption } from "@/utils/encryption"
+import { userStatusEnum } from "./workflowEnums"
 const encryptionKey = process.env.ENCRYPTION_KEY!
 
 export const userRoleEnum = pgEnum(
@@ -37,6 +40,9 @@ export const users = pgTable(
     externalId: text("external_id").unique().notNull(),
     // this will come handy for jwt token
     workspaceExternalId: text("workspace_external_id").notNull(),
+    phoneNumber: varchar("phone_number", { length: 20 }),
+    permissions: jsonb("permissions"),
+    status: userStatusEnum("status").default("active").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
