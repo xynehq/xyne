@@ -3496,7 +3496,6 @@ export const AgentMessageApi = async (c: Context) => {
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
     )
-    console.log(body)
     let attachmentStorageError: Error | null = null
     let {
       message,
