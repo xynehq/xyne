@@ -197,19 +197,19 @@ async function streamToBuffer(stream: any): Promise<Buffer> {
     for await (const chunk of stream) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     }
-    return Buffer.concat(chunks)
+    return Buffer.concat(chunks as any)
   }
 
   if (typeof stream.getReader === "function") {
     // Web ReadableStream (Bun / Fetch)
     const reader = stream.getReader()
-    const chunks: Uint8Array[] = []
+    const chunks: Buffer[] = []
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      chunks.push(value)
+      chunks.push(Buffer.from(value))
     }
-    return Buffer.concat(chunks.map((c) => Buffer.from(c)))
+    return Buffer.concat(chunks as any)
   }
 
   throw new Error("Unsupported response type: " + stream?.constructor?.name)

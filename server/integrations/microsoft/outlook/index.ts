@@ -42,10 +42,11 @@ const htmlToText = require("html-to-text")
 export const getTextFromEventDescription = (description: string): string => {
   return htmlToText.convert(description, { wordwrap: 130 })
 }
-
+const processString = (str: string): string => {
+  return str.replace(/\s+/g, "").toLowerCase()
+}
 // System folders that should be excluded from sync (based on wellKnownName and displayName)
 const EXCLUDED_WELL_KNOWN_NAMES = [
-  "deleteditems",
   "junkemail",
   "outbox",
   "archive",
@@ -61,7 +62,6 @@ const EXCLUDED_WELL_KNOWN_NAMES = [
 ]
 
 const EXCLUDED_DISPLAY_NAMES = [
-  "Deleted Items",
   "Junk Email",
   "Outbox",
   "Archive",
@@ -98,7 +98,7 @@ export const discoverMailFolders = async (
 
     if (response.value && Array.isArray(response.value)) {
       for (const folder of response.value) {
-        const folderName = folder.displayName
+        const folderName = processString(folder.displayName)
         const folderId = folder.id
 
         // Skip excluded system folders (check both wellKnownName and displayName)
@@ -115,7 +115,6 @@ export const discoverMailFolders = async (
           continue
         }
 
-        // Test if the folder supports delta sync by making a test call
         try {
           const testEndpoint = `/me/mailFolders/${folderId}/messages/delta?$top=1`
           await makeGraphApiCall(client, testEndpoint)
@@ -469,12 +468,12 @@ export const handleOutlookIngestion = async (
           endpoint = `${folder.endpoint}?${new URLSearchParams(queryParams).toString()}`
         }
 
-        const response = await makeBetaGraphApiCall(client, endpoint)
+        const response = await makeGraphApiCall(client, endpoint)
 
         nextPageToken = response["@odata.nextLink"] ?? ""
         folderDeltaToken = response["@odata.deltaLink"] || folderDeltaToken
 
-        if (response.value) {
+        if (response.value && folder.name != "deleteditems") {
           let messageBatch = response.value.slice(0, batchSize)
           let batchRequests = messageBatch.map((message: any) =>
             limit(async () => {
@@ -511,9 +510,8 @@ export const handleOutlookIngestion = async (
                   userEmail,
                   tracker,
                 )
-                console.log(JSON.stringify(mailData))
                 await insert(mailData, mailSchema)
-                // metric has to be added for OutLook
+                tracker.updateUserStats(userEmail, StatType.Gmail, 1)
               } catch (error) {
                 Logger.child({ email: userEmail }).error(
                   error,

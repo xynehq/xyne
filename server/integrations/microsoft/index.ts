@@ -170,28 +170,26 @@ export const getJoiningLink = (event: any) => {
   }
 }
 
-// Insert calendar events from Microsoft using the simple /me/events endpoint
+// Insert calendar events from Microsoft using /me/calendar/events/delta for proper delta token
 const insertCalendarEvents = async (
   client: MicrosoftGraphClient,
   userEmail: string,
   tracker: Tracker,
-  startDate?: string,
-  endDate?: string,
 ): Promise<{ events: any[]; calendarEventsToken: string }> => {
   let events: any[] = []
   let deltaToken: string = ""
 
   try {
     loggerWithChild({ email: userEmail }).info(
-      `Performing initial calendar sync using /me/events`,
+      `Performing initial calendar sync using /me/calendar/events/delta`,
     )
 
-    // Use the new API endpoint with all required fields for proper event ingestion
-    const endpoint = `/me/events?$select=id,subject,body,bodyPreview,organizer,attendees,start,end,location,webLink,createdDateTime,lastModifiedDateTime,onlineMeeting,attachments,recurrence,isCancelled`
+    // Use /me/calendar/events/delta to get event IDs with proper delta token
+    const endpoint = `/me/calendar/events/delta?`
 
     let nextLink: string | undefined = endpoint
 
-    // Process events with pagination
+    // Process events with pagination to get event IDs
     while (nextLink) {
       const response: any = await makeGraphApiCallWithHeaders(
         client,
@@ -202,9 +200,25 @@ const insertCalendarEvents = async (
       )
 
       if (response.value) {
-        // Process events from response
-        for (const event of response.value) {
-          events.push(event)
+        // Process event IDs from response
+        for (const eventRef of response.value) {
+          if (eventRef.id && !eventRef["@removed"]) {
+            try {
+              // Fetch full event data using /me/events/{id}
+              const fullEvent = await makeGraphApiCall(
+                client,
+                `/me/events/${eventRef.id}?$select=id,subject,body,webLink,start,end,location,createdDateTime,lastModifiedDateTime,organizer,attendees,onlineMeeting,attachments,recurrence,isCancelled`,
+              )
+
+              if (fullEvent && fullEvent.type !== "occurrence") {
+                events.push(fullEvent)
+              }
+            } catch (eventError) {
+              loggerWithChild({ email: userEmail }).warn(
+                `Could not fetch event details for ${eventRef.id}: ${eventError}`,
+              )
+            }
+          }
         }
       }
 
@@ -228,11 +242,10 @@ const insertCalendarEvents = async (
   }
 
   loggerWithChild({ email: userEmail }).info(
-    `Initial calendar sync completed. Retrieved ${events.length} events.`,
+    `Initial calendar sync completed with delta token: ${deltaToken ? "received" : "not received"}. Fetched ${events.length} events.`,
   )
 
   const confirmedEvents = events.filter((e) => !e.isCancelled)
-  const cancelledEvents = events.filter((e) => e.isCancelled)
 
   const totalDurationForEventIngestion = ingestionDuration.startTimer({
     file_type: CalendarEntity.Event,
@@ -291,21 +304,6 @@ const insertCalendarEvents = async (
       tracker.updateUserStats(userEmail, StatType.Events, 1)
     } catch (error) {
       Logger.error(`Error inserting Microsoft Event: ${event.id}`)
-    }
-  }
-
-  // current microsoft graph api don't return the cancelled api
-  for (const event of cancelledEvents) {
-    try {
-      const eventId = event.id ?? ""
-      loggerWithChild({ email: userEmail }).info(
-        `Cancelled event found: ${eventId}`,
-      )
-    } catch (error) {
-      loggerWithChild({ email: userEmail }).error(
-        error,
-        `Error handling cancelled Microsoft event ${event.id}`,
-      )
     }
   }
 
@@ -1112,7 +1110,7 @@ async function processMicrosoftPDFs(
       const pdfPath = `${downloadDir}/${pdfFileName}`
 
       // Write buffer to file
-      await fs.promises.writeFile(pdfPath, pdfBuffer)
+      await fs.promises.writeFile(pdfPath, new Uint8Array(pdfBuffer))
 
       // Use existing PDF processing utilities
       const docs = await safeLoadPDF(pdfPath)
