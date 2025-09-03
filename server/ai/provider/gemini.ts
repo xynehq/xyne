@@ -6,7 +6,13 @@ import {
 } from "@google/genai"
 import BaseProvider from "@/ai/provider/base"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import { type ModelParams, type ConverseResponse, AIProviders } from "../types"
+import {
+  type ModelParams,
+  type ConverseResponse,
+  AIProviders,
+  type WebSearchSource,
+  type GroundingSupport,
+} from "../types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import path from "path"
@@ -107,6 +113,7 @@ export class GeminiAIProvider extends BaseProvider {
   constructor(client: GoogleGenAI) {
     super(client, AIProviders.GoogleAI)
   }
+
   async converse(
     messages: Message[],
     params: ModelParams,
@@ -125,12 +132,21 @@ export class GeminiAIProvider extends BaseProvider {
         parts: [{ text: v.content?.[0]?.text || "" }],
       }))
 
+      const tools = []
+      if (params.webSearch) {
+        tools.push({
+          googleSearch: {},
+        })
+      }
+
       const chat = ai.chats.create({
         model: modelParams.modelId,
         history,
         config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
+          // Add tools configuration for web search
+          tools: tools.length > 0 ? tools : undefined,
           thinkingConfig: {
             includeThoughts: params.reasoning,
             thinkingBudget: params.reasoning ? -1 : 0,
@@ -142,7 +158,10 @@ export class GeminiAIProvider extends BaseProvider {
                 text:
                   modelParams.systemPrompt +
                   "\n\n" +
-                  "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+                  "Important: In case you don't have the context, you can use the images in the context to answer questions." +
+                  (params.webSearch
+                    ? "\n\nYou have access to web search for up-to-date information when needed."
+                    : ""),
               },
             ],
           },
@@ -175,7 +194,34 @@ export class GeminiAIProvider extends BaseProvider {
       const text = response.text
       const cost = 0
 
-      return { text, cost }
+      let sources: WebSearchSource[] = []
+      let groundingSupports: GroundingSupport[] = []
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata
+      if (groundingMetadata?.groundingChunks) {
+        sources = groundingMetadata.groundingChunks
+          .filter((chunk: any) => chunk.web) // Only include web sources
+          .map((chunk: any) => ({
+            uri: chunk.web.uri,
+            title: chunk.web.title,
+            searchQuery: groundingMetadata.webSearchQueries?.[0] || undefined,
+          }))
+      }
+
+      // Extract grounding supports
+      if (groundingMetadata?.groundingSupports) {
+        groundingSupports = groundingMetadata.groundingSupports.map(
+          (support: any) => ({
+            segment: {
+              startIndex: support.segment.startIndex,
+              endIndex: support.segment.endIndex,
+              text: support.segment.text,
+            },
+            groundingChunkIndices: support.groundingChunkIndices || [],
+          }),
+        )
+      }
+
+      return { text, cost, sources, groundingSupports }
     } catch (error) {
       Logger.error("Converse Error:", error)
       throw new Error(`Failed to get response from GenAI: ${error}`)
@@ -200,12 +246,20 @@ export class GeminiAIProvider extends BaseProvider {
         parts: [{ text: v.content?.[0]?.text || "" }],
       }))
 
+      const tools = []
+      if (params.webSearch) {
+        tools.push({
+          googleSearch: {},
+        })
+      }
+
       const chat = ai.chats.create({
         model: modelParams.modelId,
         history,
         config: {
           maxOutputTokens: modelParams.maxTokens,
           temperature: modelParams.temperature,
+          tools: tools.length > 0 ? tools : undefined,
           thinkingConfig: {
             includeThoughts: params.reasoning,
             thinkingBudget: params.reasoning ? -1 : 0,
@@ -217,7 +271,10 @@ export class GeminiAIProvider extends BaseProvider {
                 text:
                   modelParams.systemPrompt +
                   "\n\n" +
-                  "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+                  "Important: In case you don't have the context, you can use the images in the context to answer questions." +
+                  (params.webSearch
+                    ? "\n\nYou have access to web search for up-to-date information when needed."
+                    : ""),
               },
             ],
           },
@@ -249,9 +306,48 @@ export class GeminiAIProvider extends BaseProvider {
 
       let isThinkingStarted = false
       let wasThinkingInPreviousChunk = false
+      let accumulatedSources: any[] = []
+      let accumulatedGroundingSupports: GroundingSupport[] = []
 
       for await (const chunk of stream) {
         let chunkText = ""
+        // Extract sources from grounding metadata if available
+        const groundingMetadata = chunk.candidates?.[0]?.groundingMetadata
+        if (groundingMetadata?.groundingChunks) {
+          const chunkSources = groundingMetadata.groundingChunks
+            .filter((chunk: any) => chunk.web) // Only include web sources
+            .map((chunk: any) => ({
+              uri: chunk.web.uri,
+              title: chunk.web.title,
+              searchQuery: groundingMetadata.webSearchQueries?.[0] || undefined,
+            }))
+
+          // Merge sources (avoid duplicates based on URI)
+          chunkSources.forEach((source) => {
+            if (
+              !accumulatedSources.some(
+                (existing) => existing.uri === source.uri,
+              )
+            ) {
+              accumulatedSources.push(source)
+            }
+          })
+        }
+
+        // Extract grounding supports
+        if (groundingMetadata?.groundingSupports) {
+          const chunkGroundingSupports =
+            groundingMetadata.groundingSupports.map((support: any) => ({
+              segment: {
+                startIndex: support.segment.startIndex,
+                endIndex: support.segment.endIndex,
+                text: support.segment.text,
+              },
+              groundingChunkIndices: support.groundingChunkIndices || [],
+            }))
+
+          accumulatedGroundingSupports.push(...chunkGroundingSupports)
+        }
 
         // Check if this chunk contains thinking content
         const thinkingPart = chunk.candidates?.[0]?.content?.parts?.find(
@@ -284,6 +380,12 @@ export class GeminiAIProvider extends BaseProvider {
           yield {
             text: chunkText,
             cost: 0,
+            sources:
+              accumulatedSources.length > 0 ? accumulatedSources : undefined,
+            groundingSupports:
+              accumulatedGroundingSupports.length > 0
+                ? accumulatedGroundingSupports
+                : undefined,
           }
         }
       }
