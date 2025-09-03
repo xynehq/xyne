@@ -49,6 +49,7 @@ export const chats = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     platform: platformEnum(platform).notNull().default(Platform.Web),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
     isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),

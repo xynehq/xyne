@@ -15,6 +15,7 @@ import { Route as AuthImport } from './routes/auth'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
+import { Route as AuthenticatedWorkflowImport } from './routes/_authenticated/workflow'
 import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
@@ -61,6 +62,12 @@ const OauthSuccessRoute = OauthSuccessImport.update({
   id: '/oauth/success',
   path: '/oauth/success',
   getParentRoute: () => rootRoute,
+} as any)
+
+const AuthenticatedWorkflowRoute = AuthenticatedWorkflowImport.update({
+  id: '/workflow',
+  path: '/workflow',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const AuthenticatedTuningRoute = AuthenticatedTuningImport.update({
@@ -277,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTuningImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/workflow': {
+      id: '/_authenticated/workflow'
+      path: '/workflow'
+      fullPath: '/workflow'
+      preLoaderRoute: typeof AuthenticatedWorkflowImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/oauth/success': {
       id: '/oauth/success'
       path: '/oauth/success'
@@ -420,6 +434,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
+  AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsCreatetoolRoute: typeof AuthenticatedIntegrationsCreatetoolRoute
@@ -445,6 +460,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
+  AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsCreatetoolRoute:
@@ -484,6 +500,7 @@ export interface FileRoutesByFullPath {
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -512,6 +529,7 @@ export interface FileRoutesByTo {
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -542,6 +560,7 @@ export interface FileRoutesById {
   '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tuning': typeof AuthenticatedTuningRoute
+  '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -573,6 +592,7 @@ export interface FileRouteTypes {
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -600,6 +620,7 @@ export interface FileRouteTypes {
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -628,6 +649,7 @@ export interface FileRouteTypes {
     | '/_authenticated/knowledgeManagement'
     | '/_authenticated/search'
     | '/_authenticated/tuning'
+    | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
@@ -685,6 +707,7 @@ export const routeTree = rootRoute
         "/_authenticated/knowledgeManagement",
         "/_authenticated/search",
         "/_authenticated/tuning",
+        "/_authenticated/workflow",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/createtool",
@@ -734,6 +757,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/tuning": {
       "filePath": "_authenticated/tuning.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/workflow": {
+      "filePath": "_authenticated/workflow.tsx",
       "parent": "/_authenticated"
     },
     "/oauth/success": {
