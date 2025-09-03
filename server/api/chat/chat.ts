@@ -3905,7 +3905,7 @@ export const MessageApi = async (c: Context) => {
     }: MessageReqType = body
     const deepResearchEnabled = false
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
-    if (isAgentic && !enableWebSearch) {
+    if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -3925,7 +3925,12 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
-      if (!isAgentic && !enableWebSearch && agentDetails) {
+      if (
+        !isAgentic &&
+        !enableWebSearch &&
+        !deepResearchEnabled &&
+        agentDetails
+      ) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
