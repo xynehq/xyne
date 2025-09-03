@@ -233,7 +233,15 @@ const generateStepSummary = async (
   userQuery: string,
   contextInfo?: string,
 ): Promise<string> => {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("generateStepSummary")
+  
   try {
+    span.setAttribute("step_type", step.type)
+    span.setAttribute("step_iteration", step.iteration || 0)
+    span.setAttribute("user_query_length", userQuery.length)
+    span.setAttribute("has_context_info", !!contextInfo)
+    
     const prompt = generateAgentStepSummaryPromptJson(
       step,
       userQuery,
@@ -241,6 +249,7 @@ const generateStepSummary = async (
     )
 
     // Use a fast model for summary generation
+    const summarySpan = span.startSpan("synthesis_call")
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
       modelId: defaultFastModel,
       stream: false,
@@ -248,17 +257,37 @@ const generateStepSummary = async (
       reasoning: false,
       messages: [],
     })
+    summarySpan.setAttribute("model_id", defaultFastModel)
+    summarySpan.end()
 
     const summaryResponse = summary.text || ""
+    span.setAttribute("summary_response_length", summaryResponse.length)
 
     // Parse the JSON response
+    const parseSpan = span.startSpan("parse_json_response")
     const parsed = jsonParseLLMOutput(summaryResponse)
+    parseSpan.setAttribute("parse_success", !!parsed)
+    parseSpan.setAttribute("has_summary", !!(parsed && parsed.summary))
+    parseSpan.end()
+    
     Logger.debug("Parsed reasoning step:", { parsed })
     Logger.debug("Generated summary:", { summary: parsed.summary })
-    return parsed.summary || generateFallbackSummary(step)
+    const finalSummary = parsed.summary || generateFallbackSummary(step)
+    span.setAttribute("final_summary_length", finalSummary.length)
+    span.setAttribute("used_fallback", !parsed.summary)
+    span.end()
+    return finalSummary
   } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
     Logger.error(`Error generating step summary: ${error}`)
-    return generateFallbackSummary(step)
+    const fallbackSummary = generateFallbackSummary(step)
+    span.setAttribute("fallback_summary", fallbackSummary)
+    span.setAttribute("used_fallback", true)
+    span.end()
+    return fallbackSummary
   }
 }
 
@@ -291,98 +320,150 @@ const checkAndYieldCitationsForAgent = async function* (
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
 ) {
-  const text = splitGroupedCitationsWithSpaces(textInput)
-  let match
-  let imgMatch
-  while (
-    (match = textToCitationIndex.exec(text)) !== null ||
-    (imgMatch = textToImageCitationIndex.exec(text)) !== null
-  ) {
-    if (match) {
-      const citationIndex = parseInt(match[1], 10)
-      if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - 1]
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("checkAndYieldCitationsForAgent")
+  
+  try {
+    span.setAttribute("text_input_length", textInput.length)
+    span.setAttribute("results_count", results.length)
+    span.setAttribute("yielded_citations_size", yieldedCitations.size)
+    span.setAttribute("has_image_citations", !!(yieldedImageCitations))
+    span.setAttribute("user_email", email)
+    
+    const text = splitGroupedCitationsWithSpaces(textInput)
+    let match
+    let imgMatch
+    let citationsProcessed = 0
+    let imageCitationsProcessed = 0
+    let citationsYielded = 0
+    let imageCitationsYielded = 0
+    
+    while (
+      (match = textToCitationIndex.exec(text)) !== null ||
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    ) {
+      if (match) {
+        citationsProcessed++
+        const citationIndex = parseInt(match[1], 10)
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - 1]
 
-        if (!item?.source?.docId || !item.source?.url) {
-          Logger.info(
-            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
-          )
-          continue
-        }
-
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      }
-    } else if (imgMatch && yieldedImageCitations) {
-      const parts = imgMatch[1].split("_")
-      if (parts.length >= 2) {
-        const docIndex = parseInt(parts[0], 10)
-        const imageIndex = parseInt(parts[1], 10)
-        if (
-          !yieldedImageCitations.has(docIndex) ||
-          !yieldedImageCitations.get(docIndex)?.has(imageIndex)
-        ) {
-          const item = results[docIndex]
-          if (item) {
-            try {
-              const imageData = await getCitationToImage(
-                imgMatch[1],
-                {
-                  id: item.id,
-                  relevance: item.confidence,
-                  fields: {
-                    docId: item.source.docId,
-                  } as any,
-                } as VespaSearchResult,
-                email,
-              )
-              if (imageData) {
-                if (!imageData.imagePath || !imageData.imageBuffer) {
-                  loggerWithChild({ email: email }).error(
-                    "Invalid imageData structure returned",
-                    { citationKey: imgMatch[1], imageData },
-                  )
-                  continue
-                }
-                yield {
-                  imageCitation: {
-                    citationKey: imgMatch[1],
-                    imagePath: imageData.imagePath,
-                    imageData: imageData.imageBuffer.toString("base64"),
-                    ...(imageData.extension
-                      ? { mimeType: mimeTypeMap[imageData.extension] }
-                      : {}),
-                    item: item.source,
-                  },
-                }
-              }
-            } catch (error) {
-              loggerWithChild({ email: email }).error(
-                error,
-                "Error processing image citation",
-                { citationKey: imgMatch[1], error: getErrorMessage(error) },
-              )
-            }
-            if (!yieldedImageCitations.has(docIndex)) {
-              yieldedImageCitations.set(docIndex, new Set<number>())
-            }
-            yieldedImageCitations.get(docIndex)?.add(imageIndex)
-          } else {
-            loggerWithChild({ email: email }).warn(
-              "Found a citation index but could not find it in the search result ",
-              imageIndex,
-              results.length,
+          if (!item?.source?.docId || !item.source?.url) {
+            Logger.info(
+              "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
             )
             continue
+          }
+
+          yield {
+            citation: {
+              index: citationIndex,
+              item: item.source,
+            },
+          }
+          yieldedCitations.add(citationIndex)
+          citationsYielded++
+        }
+      } else if (imgMatch && yieldedImageCitations) {
+        imageCitationsProcessed++
+        const parts = imgMatch[1].split("_")
+        if (parts.length >= 2) {
+          const docIndex = parseInt(parts[0], 10)
+          const imageIndex = parseInt(parts[1], 10)
+          if (
+            !yieldedImageCitations.has(docIndex) ||
+            !yieldedImageCitations.get(docIndex)?.has(imageIndex)
+          ) {
+            const item = results[docIndex]
+            if (item) {
+              const imageProcessingSpan = span.startSpan("process_image_citation")
+              try {
+                imageProcessingSpan.setAttribute("citation_key", imgMatch[1])
+                imageProcessingSpan.setAttribute("doc_index", docIndex)
+                imageProcessingSpan.setAttribute("image_index", imageIndex)
+                
+                const imageData = await getCitationToImage(
+                  imgMatch[1],
+                  {
+                    id: item.id,
+                    relevance: item.confidence,
+                    fields: {
+                      docId: item.source.docId,
+                    } as any,
+                  } as VespaSearchResult,
+                  email,
+                )
+                if (imageData) {
+                  if (!imageData.imagePath || !imageData.imageBuffer) {
+                    loggerWithChild({ email: email }).error(
+                      "Invalid imageData structure returned",
+                      { citationKey: imgMatch[1], imageData },
+                    )
+                    imageProcessingSpan.setAttribute("processing_success", false)
+                    imageProcessingSpan.setAttribute("error_reason", "invalid_image_data")
+                    imageProcessingSpan.end()
+                    continue
+                  }
+                  yield {
+                    imageCitation: {
+                      citationKey: imgMatch[1],
+                      imagePath: imageData.imagePath,
+                      imageData: imageData.imageBuffer.toString("base64"),
+                      ...(imageData.extension
+                        ? { mimeType: mimeTypeMap[imageData.extension] }
+                        : {}),
+                      item: item.source,
+                    },
+                  }
+                  imageCitationsYielded++
+                  imageProcessingSpan.setAttribute("processing_success", true)
+                  imageProcessingSpan.setAttribute("image_size", imageData.imageBuffer.length)
+                  imageProcessingSpan.setAttribute("image_extension", imageData.extension || "unknown")
+                }
+                imageProcessingSpan.end()
+              } catch (error) {
+                imageProcessingSpan.addEvent("image_processing_error", {
+                  message: getErrorMessage(error),
+                  stack: (error as Error).stack || "",
+                })
+                imageProcessingSpan.setAttribute("processing_success", false)
+                imageProcessingSpan.end()
+                
+                loggerWithChild({ email: email }).error(
+                  error,
+                  "Error processing image citation",
+                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
+                )
+              }
+              if (!yieldedImageCitations.has(docIndex)) {
+                yieldedImageCitations.set(docIndex, new Set<number>())
+              }
+              yieldedImageCitations.get(docIndex)?.add(imageIndex)
+            } else {
+              loggerWithChild({ email: email }).warn(
+                "Found a citation index but could not find it in the search result ",
+                imageIndex,
+                results.length,
+              )
+              continue
+            }
           }
         }
       }
     }
+    
+    span.setAttribute("citations_processed", citationsProcessed)
+    span.setAttribute("image_citations_processed", imageCitationsProcessed)
+    span.setAttribute("citations_yielded", citationsYielded)
+    span.setAttribute("image_citations_yielded", imageCitationsYielded)
+    span.end()
+  } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    span.end()
+    throw error
   }
 }
 
@@ -553,14 +634,26 @@ async function performSynthesis(
   sub: string,
   attachmentFileIds?: string[],
 ): Promise<SynthesisResponse | null> {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("performSynthesis")
+  
   let parseSynthesisOutput: SynthesisResponse | null = null
 
   try {
+    span.setAttribute("message_length", message.length)
+    span.setAttribute("planning_context_length", planningContext.length)
+    span.setAttribute("gathered_fragments_count", gatheredFragments.length)
+    span.setAttribute("messages_count", messagesWithNoErrResponse.length)
+    span.setAttribute("user_email", sub)
+    span.setAttribute("has_attachment_file_ids", !!(attachmentFileIds && attachmentFileIds.length > 0))
+    span.setAttribute("attachment_file_ids_count", attachmentFileIds?.length || 0)
+    
     await logAndStreamReasoning({
       type: AgentReasoningStepType.Synthesis,
       details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
     })
 
+    const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
       message,
@@ -576,10 +669,19 @@ async function performSynthesis(
         ),
       },
     )
+    synthesisSpan.setAttribute("model_id", defaultBestModel)
+    synthesisSpan.setAttribute("response_length", synthesisResponse.text?.length || 0)
+    synthesisSpan.end()
 
     if (synthesisResponse.text) {
+      const parseSpan = span.startSpan("parse_synthesis_response")
       try {
         parseSynthesisOutput = jsonParseLLMOutput(synthesisResponse.text)
+        parseSpan.setAttribute("parse_success", !!parseSynthesisOutput)
+        parseSpan.setAttribute("has_synthesis_state", !!(parseSynthesisOutput && parseSynthesisOutput.synthesisState))
+        parseSpan.setAttribute("synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
+        parseSpan.setAttribute("has_answer", !!(parseSynthesisOutput && parseSynthesisOutput.answer))
+        
         if (!parseSynthesisOutput || !parseSynthesisOutput.synthesisState) {
           loggerWithChild({ email: sub }).error(
             "Synthesis response was valid JSON but missing 'synthesisState' key.",
@@ -589,8 +691,18 @@ async function performSynthesis(
             synthesisState: ContextSysthesisState.Partial,
             answer: null,
           }
+          parseSpan.setAttribute("fallback_used", true)
+          parseSpan.setAttribute("fallback_reason", "missing_synthesis_state")
         }
+        parseSpan.end()
       } catch (jsonError) {
+        parseSpan.addEvent("json_parse_error", {
+          message: getErrorMessage(jsonError),
+          stack: (jsonError as Error).stack || "",
+        })
+        parseSpan.setAttribute("parse_success", false)
+        parseSpan.end()
+        
         loggerWithChild({ email: sub }).error(
           jsonError,
           "Failed to parse synthesis LLM output as JSON.",
@@ -609,8 +721,18 @@ async function performSynthesis(
         synthesisState: ContextSysthesisState.Partial,
         answer: "",
       }
+      span.setAttribute("no_text_response", true)
     }
+    
+    span.setAttribute("final_synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
+    span.setAttribute("final_answer_length", parseSynthesisOutput?.answer?.length || 0)
+    span.end()
   } catch (synthesisError) {
+    span.addEvent("synthesis_error", {
+      message: getErrorMessage(synthesisError),
+      stack: (synthesisError as Error).stack || "",
+    })
+    
     loggerWithChild({ email: sub }).error(
       synthesisError,
       "Error during synthesis LLM call.",
@@ -624,6 +746,8 @@ async function performSynthesis(
       synthesisState: ContextSysthesisState.Partial,
       answer: parseSynthesisOutput?.answer || "",
     }
+    span.setAttribute("error_fallback_used", true)
+    span.end()
   }
 
   return parseSynthesisOutput
@@ -650,11 +774,13 @@ export const MessageWithToolsApi = async (c: Context) => {
   let isDebugMode = config.isDebugMode
   let email = ""
   try {
+    const initSpan = rootSpan.startSpan("initialization")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
     loggerWithChild({ email: email }).info("MessageApi..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
+    rootSpan.setAttribute("debug_mode", isDebugMode)
 
     // @ts-ignore
     const body = c.req.valid("query")
@@ -667,13 +793,33 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
+    
+    initSpan.setAttribute("is_agentic", isAgentic)
+    initSpan.setAttribute("has_chat_id", !!chatId)
+    initSpan.setAttribute("chat_id", chatId || "new_chat")
+    initSpan.setAttribute("model_id", modelId || "default")
+    initSpan.setAttribute("reasoning_enabled", isReasoningEnabled)
+    initSpan.setAttribute("has_tools_list", !!(toolsList && toolsList.length > 0))
+    initSpan.setAttribute("tools_count", toolsList?.length || 0)
+    initSpan.setAttribute("has_agent_id", !!agentId)
+    initSpan.setAttribute("agent_id", agentId || "none")
+    initSpan.setAttribute("message_length", message?.length || 0)
+    initSpan.setAttribute("user_email", email)
+    initSpan.setAttribute("workspace_external_id", workspaceId)
+    
+    const attachmentParsingSpan = initSpan.startSpan("attachment_parsing")
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
     )
+    attachmentParsingSpan.setAttribute("attachment_count", attachmentMetadata.length)
+    attachmentParsingSpan.end()
+    
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
+    
+    const contextExtractionSpan = initSpan.startSpan("context_extraction")
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -691,6 +837,12 @@ export const MessageWithToolsApi = async (c: Context) => {
       `Total attachment files received: ${attachmentFileIds.length}`,
     )
     const hasReferencedContext = fileIds && fileIds.length > 0
+    contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
+    contextExtractionSpan.setAttribute("has_referenced_context", hasReferencedContext)
+    contextExtractionSpan.setAttribute("is_message_with_context", isMsgWithContext)
+    contextExtractionSpan.setAttribute("total_valid_file_ids_from_link_count", totalValidFileIdsFromLinkCount)
+    contextExtractionSpan.setAttribute("extracted_file_ids", JSON.stringify(fileIds || []))
+    contextExtractionSpan.end()
 
     if (!message) {
       throw new HTTPException(400, {
@@ -700,22 +852,30 @@ export const MessageWithToolsApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
+    const userLookupSpan = initSpan.startSpan("user_workspace_lookup")
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
       email,
     )
     const { user, workspace } = userAndWorkspace
+    userLookupSpan.setAttribute("user_id", user.id)
+    userLookupSpan.setAttribute("workspace_id", workspace.id)
+    userLookupSpan.end()
+    
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
+    initSpan.end()
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
+    
     if (agentId && isCuid(agentId)) {
+      const agentLookupSpan = chatCreationSpan.startSpan("agent_lookup")
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -724,6 +884,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         user.id,
       )
       if (!agentForDb) {
+        agentLookupSpan.end()
         throw new HTTPException(403, {
           message: "Access denied: You don't have permission to use this agent",
         })
@@ -732,6 +893,9 @@ export const MessageWithToolsApi = async (c: Context) => {
         isAgentic = false
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
+      agentLookupSpan.setAttribute("agent_external_id", agentForDb.externalId)
+      agentLookupSpan.setAttribute("is_rag_on", agentForDb.isRagOn)
+      agentLookupSpan.end()
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
@@ -751,6 +915,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       titleSpan.setAttribute("title", title)
       titleSpan.end()
 
+      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -795,6 +960,10 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
+      dbTransactionSpan.setAttribute("chat_external_id", insertedChat.externalId)
+      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
+      dbTransactionSpan.end()
+      
       loggerWithChild({ email: sub }).info(
         "First mesage of the conversation, successfully created the chat",
       )
@@ -802,6 +971,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
+      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_existing_chat")
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
@@ -846,6 +1016,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
+      dbTransactionSpan.setAttribute("chat_external_id", existingChat.externalId)
+      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
+      dbTransactionSpan.setAttribute("previous_messages_count", allMessages.length)
+      dbTransactionSpan.end()
+      
       loggerWithChild({ email: sub }).info(
         "Existing conversation, fetched previous messages",
       )
@@ -1250,6 +1425,8 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
           // ====== JAF-based agent loop starts here (replaces manual loop) ======
+          const jafProcessingSpan = streamSpan.startSpan("jaf_processing")
+          
           // Prepare streaming state holders
           let answer = ""
           const citations: any[] = []
@@ -1420,6 +1597,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           
 
           // Compose JAF tools: internal + MCP
+          const toolsCompositionSpan = jafProcessingSpan.startSpan("tools_composition")
           const baseCtx: JAFAdapterCtx = {
             email: sub,
             userCtx: ctx,
@@ -1432,6 +1610,10 @@ export const MessageWithToolsApi = async (c: Context) => {
           const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] =
             buildMCPJAFTools(finalToolsList as unknown as JAFinalToolsList)
           const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+          toolsCompositionSpan.setAttribute("internal_tools_count", internalJAFTools.length)
+          toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
+          toolsCompositionSpan.setAttribute("total_tools_count", allJAFTools.length)
+          toolsCompositionSpan.end()
 
           // Build dynamic instructions that include tools + current context fragments
           const agentInstructions = (_state: any) => {
@@ -1456,6 +1638,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             )
           }
 
+          const jafSetupSpan = jafProcessingSpan.startSpan("jaf_setup")
           const runId = generateRunId()
           const traceId = generateTraceId()
           const initialMessages: JAFMessage[] = messages
@@ -1496,12 +1679,21 @@ export const MessageWithToolsApi = async (c: Context) => {
             maxTurns: 10,
             modelOverride: (defaultBestModel) as unknown as string,
           }
+          jafSetupSpan.setAttribute("run_id", runId)
+          jafSetupSpan.setAttribute("trace_id", traceId)
+          jafSetupSpan.setAttribute("initial_messages_count", initialMessages.length)
+          jafSetupSpan.setAttribute("max_turns", 10)
+          jafSetupSpan.end()
 
           // Note: ResponseMetadata was already sent above with chatId
 
           // Stream JAF events → existing SSE protocol
+          const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
           const yieldedCitations = new Set<number>()
           const yieldedImageCitations = new Map<number, Set<number>>()
+          let currentTurn = 0
+          let totalToolCalls = 0
+          
           for await (const evt of runStream<JAFAdapterCtx, string>(runState, runCfg)) {
             if (stream.closed) {
               wasStreamClosedPrematurely = true
@@ -1509,6 +1701,10 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
             switch (evt.type) {
               case "turn_start": {
+                currentTurn = evt.data.turn
+                const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
+                turnSpan.setAttribute("turn_number", currentTurn)
+                turnSpan.setAttribute("agent_name", evt.data.agentName)
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
                   data: JSON.stringify({
@@ -1521,10 +1717,20 @@ export const MessageWithToolsApi = async (c: Context) => {
                     },
                   }),
                 })
+                turnSpan.end()
                 break
               }
               case "tool_requests": {
+                const toolRequestsSpan = jafStreamingSpan.startSpan("tool_requests")
+                totalToolCalls += evt.data.toolCalls.length
+                toolRequestsSpan.setAttribute("tool_calls_count", evt.data.toolCalls.length)
+                toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
+                
                 for (const r of evt.data.toolCalls) {
+                  const toolSelectionSpan = toolRequestsSpan.startSpan("tool_selection")
+                  toolSelectionSpan.setAttribute("tool_name", r.name)
+                  toolSelectionSpan.setAttribute("args_count", Object.keys(r.args || {}).length)
+                  
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: JSON.stringify({
@@ -1549,10 +1755,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                       },
                     }),
                   })
+                  toolSelectionSpan.end()
                 }
+                toolRequestsSpan.end()
                 break
               }
               case "tool_call_start": {
+                const toolStartSpan = jafStreamingSpan.startSpan("tool_call_start")
+                toolStartSpan.setAttribute("tool_name", evt.data.toolName)
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
                   data: JSON.stringify({
@@ -1565,17 +1775,27 @@ export const MessageWithToolsApi = async (c: Context) => {
                     },
                   }),
                 })
+                toolStartSpan.end()
                 break
               }
               case "tool_call_end": {
+                const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
                 type ToolCallEndEventData = Extract<
                   JAFTraceEvent,
                   { type: "tool_call_end" }
                 >["data"]
                 const contexts = (evt.data as ToolCallEndEventData)?.toolResult?.metadata?.contexts
+                const contextsCount = Array.isArray(contexts) ? contexts.length : 0
+                
                 if (Array.isArray(contexts) && contexts.length) {
                   gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
                 }
+                
+                toolEndSpan.setAttribute("tool_name", evt.data.toolName)
+                toolEndSpan.setAttribute("status", evt.data.status || "completed")
+                toolEndSpan.setAttribute("contexts_found", contextsCount)
+                toolEndSpan.setAttribute("total_fragments", gatheredFragments.length)
+                
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
                   data: JSON.stringify({
@@ -1585,14 +1805,16 @@ export const MessageWithToolsApi = async (c: Context) => {
                       toolName: evt.data.toolName,
                       status: evt.data.status || "completed",
                       resultSummary: "Tool execution completed",
-                      itemsFound: Array.isArray(contexts) ? contexts.length : undefined,
-                      stepSummary: `Found ${Array.isArray(contexts) ? contexts.length : 0} results`,
+                      itemsFound: contextsCount,
+                      stepSummary: `Found ${contextsCount} results`,
                     },
                   }),
                 })
+                toolEndSpan.end()
                 break
               }
               case "assistant_message": {
+                const messageSpan = jafStreamingSpan.startSpan("assistant_message")
                 const content = evt.data.message.content || ""
                 if (content && content.length) {
                   // Chunk and stream answer updates; also detect citations on the fly
@@ -1636,16 +1858,30 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   }
                 }
+                messageSpan.setAttribute("content_length", content.length)
+                messageSpan.setAttribute("answer_length", answer.length)
+                messageSpan.setAttribute("citations_count", citations.length)
+                messageSpan.setAttribute("image_citations_count", imageCitations.length)
+                messageSpan.end()
                 break
               }
               case "token_usage": {
+                const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
+                const inputTokens = (evt.data.prompt as number) || 0
+                const outputTokens = (evt.data.completion as number) || 0
                 tokenArr.push({
-                  inputTokens: (evt.data.prompt as number) || 0,
-                  outputTokens: (evt.data.completion as number) || 0,
+                  inputTokens,
+                  outputTokens,
                 })
+                tokenUsageSpan.setAttribute("input_tokens", inputTokens)
+                tokenUsageSpan.setAttribute("output_tokens", outputTokens)
+                tokenUsageSpan.setAttribute("total_tokens", inputTokens + outputTokens)
+                tokenUsageSpan.end()
                 break
               }
               case "guardrail_violation": {
+                const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
+                guardrailSpan.setAttribute("reason", evt.data.reason)
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
                   data: JSON.stringify({
@@ -1653,9 +1889,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     message: evt.data.reason,
                   }),
                 })
+                guardrailSpan.end()
                 break
               }
               case "decode_error": {
+                const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
                   data: JSON.stringify({
@@ -1663,9 +1901,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                     message: "Failed to decode model output",
                   }),
                 })
+                decodeErrorSpan.end()
                 break
               }
               case "handoff_denied": {
+                const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
+                handoffSpan.setAttribute("reason", evt.data.reason)
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
                   data: JSON.stringify({
@@ -1673,9 +1914,12 @@ export const MessageWithToolsApi = async (c: Context) => {
                     message: evt.data.reason,
                   }),
                 })
+                handoffSpan.end()
                 break
               }
               case "turn_end": {
+                const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
+                turnEndSpan.setAttribute("turn_number", evt.data.turn)
                 // Emit an iteration summary (fallback version)
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
@@ -1691,9 +1935,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     },
                   }),
                 })
+                turnEndSpan.end()
                 break
               }
               case "final_output": {
+                const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
                 const out = evt.data.output
                 if (typeof out === "string" && out.trim().length) {
                   // Ensure any remainder is streamed
@@ -1706,16 +1952,36 @@ export const MessageWithToolsApi = async (c: Context) => {
                     answer = out
                   }
                 }
+                // Store the actual output instead of just length
+                finalOutputSpan.setAttribute("final_output", typeof out === "string" ? out : "")
+                finalOutputSpan.setAttribute("final_output_length", typeof out === "string" ? out.length : 0)
+                finalOutputSpan.setAttribute("citation_map", JSON.stringify(citationMap))
+                finalOutputSpan.setAttribute("citation_values", JSON.stringify(citationValues))
+                finalOutputSpan.setAttribute("citations_count", citations.length)
+                finalOutputSpan.setAttribute("image_citations_count", imageCitations.length)
+                finalOutputSpan.end()
                 break
               }
               case "run_end": {
+                const runEndSpan = jafStreamingSpan.startSpan("run_end")
                 const outcome = evt.data.outcome as JAFRunResult<string>["outcome"]
+                runEndSpan.setAttribute("outcome_status", outcome?.status || "unknown")
+                
                 if (outcome?.status === "completed") {
+                  const costCalculationSpan = runEndSpan.startSpan("cost_calculation")
                   const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
                   const totalTokens = tokenArr.reduce(
                     (sum, t) => sum + t.inputTokens + t.outputTokens,
                     0,
                   )
+                  costCalculationSpan.setAttribute("total_cost", totalCost)
+                  costCalculationSpan.setAttribute("total_tokens", totalTokens)
+                  costCalculationSpan.setAttribute("total_tool_calls", totalToolCalls)
+                  costCalculationSpan.setAttribute("final_answer_length", answer.length)
+                  costCalculationSpan.setAttribute("citations_count", citations.length)
+                  costCalculationSpan.end()
+                  
+                  const dbInsertSpan = runEndSpan.startSpan("insert_assistant_message")
                   const msg = await insertMessage(db, {
                     chatId: chat.id,
                     userId: user.id,
@@ -1732,6 +1998,23 @@ export const MessageWithToolsApi = async (c: Context) => {
                     tokensUsed: totalTokens,
                   })
                   assistantMessageId = msg.externalId
+                  dbInsertSpan.setAttribute("message_external_id", assistantMessageId)
+                  dbInsertSpan.end()
+                  
+                  const traceInsertSpan = runEndSpan.startSpan("insert_chat_trace")
+                  const traceJson = tracer.serializeToJson()
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: msg.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: msg.externalId,
+                    traceJson,
+                  })
+                  traceInsertSpan.end()
+                  
                   await stream.writeSSE({
                     event: ChatSSEvents.ResponseMetadata,
                     data: JSON.stringify({
@@ -1742,6 +2025,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
                 } else {
                   // Error outcome: stream error and do not insert assistant message
+                  const errorHandlingSpan = runEndSpan.startSpan("error_handling")
                   const allMessages = await getChatMessagesWithAuth(
                     db,
                     chat?.externalId,
@@ -1940,6 +2224,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                     error: errTag,
                     message: errMsg,
                   }
+                  errorHandlingSpan.setAttribute("error_tag", errTag)
+                  errorHandlingSpan.setAttribute("error_message", errMsg)
+                  errorHandlingSpan.end()
+                  
                   await stream.writeSSE({
                     event: ChatSSEvents.Error,
                     data: JSON.stringify(errPayload),
@@ -1947,10 +2235,20 @@ export const MessageWithToolsApi = async (c: Context) => {
                   await addErrMessageToMessage(lastMessage, JSON.stringify(errPayload))
                   await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
                 }
+                runEndSpan.end()
                 break
               }
             }
           }
+          
+          jafStreamingSpan.setAttribute("total_turns", currentTurn)
+          jafStreamingSpan.setAttribute("total_tool_calls", totalToolCalls)
+          jafStreamingSpan.setAttribute("final_answer_length", answer.length)
+          jafStreamingSpan.setAttribute("citations_count", citations.length)
+          jafStreamingSpan.setAttribute("image_citations_count", imageCitations.length)
+          jafStreamingSpan.end()
+          
+          jafProcessingSpan.end()
 
           // Early return to skip legacy manual loop
           streamSpan.end()
