@@ -780,19 +780,51 @@ export const generateCollectionVespaDocId = (): string => {
 }
 
 export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+  let collectionName: string
   let directoryPath: string
   let currItem: string
-  const lastSlashIndex = path.lastIndexOf("/")
-  if (lastSlashIndex === -1) {
-    // No slash found, entire path is filename
+
+  // Remove leading slash if present
+  const cleanPath = path.startsWith("/") ? path.substring(1) : path
+  const segments = cleanPath.split("/")
+
+  if (segments.length === 0) {
+    throw new Error("Invalid path")
+  }
+
+  if (segments.length === 1) {
+    // Only collection name
+    collectionName = segments[0]
     directoryPath = "/"
-    currItem = path
+    currItem = ""
+  } else if (segments.length === 2) {
+    // Collection and item (no intermediate directories)
+    collectionName = segments[0]
+    directoryPath = "/"
+    currItem = segments[1]
   } else {
-    directoryPath = path.substring(0, lastSlashIndex + 1) // Include the trailing slash
-    currItem = path.substring(lastSlashIndex + 1)
+    // Collection, directories, and item
+    collectionName = segments[0]
+    // Everything between collection and last segment becomes the directory path
+    const middleSegments = segments.slice(1, -1)
+    directoryPath = "/" + middleSegments.join("/") + "/"
+    currItem = segments[segments.length - 1]
+  }
+
+  // First, get the collection by name to get its ID
+  const [collection] = await trx
+    .select({ id: collections.id })
+    .from(collections)
+    .where(
+      and(eq(collections.name, collectionName), isNull(collections.deletedAt)),
+    )
+
+  if (!collection) {
+    return null // Collection not found
   }
 
   const whereConditions = [
+    eq(collectionItems.collectionId, collection.id),
     eq(collectionItems.path, directoryPath),
     isNull(collectionItems.deletedAt),
   ]
@@ -800,6 +832,7 @@ export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
   if (currItem !== "") {
     whereConditions.push(eq(collectionItems.name, currItem))
   }
+
   let result = await trx
     .select({ docId: collectionItems.vespaDocId })
     .from(collectionItems)
