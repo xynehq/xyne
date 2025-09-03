@@ -169,6 +169,11 @@ function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObje
 export function buildInternalJAFTools(baseCtx: JAFAdapterCtx): Tool<any, JAFAdapterCtx>[] {
   const tools: Tool<any, JAFAdapterCtx>[] = []
   for (const [name, at] of Object.entries(agentTools)) {
+    // Skip the fallbackTool as it's no longer needed
+    if (name === "fall_back" || name === "get_user_info") {
+      continue
+    }
+    
     tools.push({
       schema: {
         name,

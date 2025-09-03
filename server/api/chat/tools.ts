@@ -856,7 +856,7 @@ export const getSlackThreads: AgentTool = {
     filter_query: {
       type: "string",
       description: "Optional keywords to filter thread messages",
-      required: false,
+      required: true,
     },
     limit: {
       type: "number",
