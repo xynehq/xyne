@@ -148,7 +148,11 @@ export const formatOneDriveMetadata = (file: any): string => {
 export const extractDeltaToken = (deltaLink: string): string | null => {
   try {
     const url = new URL(deltaLink)
-    return url.searchParams.get("token")
+    return (
+      url.searchParams.get("token") ||
+      url.searchParams.get("$deltatoken") ||
+      url.searchParams.get("$skiptoken")
+    )
   } catch (error) {
     Logger.error(error, `Error extracting delta token from ${deltaLink}`)
     return null

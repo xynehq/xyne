@@ -62,6 +62,8 @@ import path from "path"
 import os from "os"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
+import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
+import { processSpreadsheetFileWithSheetInfo } from "./attachment-utils"
 import { discoverMailFolders } from "./outlook"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -117,7 +119,6 @@ const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
   return prev
 }
 
-// Get OneDrive delta changes using Microsoft Graph API
 export const getOneDriveDelta = async (
   graphClient: MicrosoftGraphClient,
   deltaTokenUrl?: string,
@@ -126,27 +127,31 @@ export const getOneDriveDelta = async (
   nextDeltaTokenUrl: string | null
 } | null> => {
   try {
-    let endpoint = "/me/drive/root/delta"
-    let search = ""
-    if (deltaTokenUrl) {
-      if (deltaTokenUrl.startsWith("http")) {
-        search = new URL(deltaTokenUrl).search
+    let endpoint =
+      deltaTokenUrl && deltaTokenUrl.startsWith("http")
+        ? deltaTokenUrl
+        : "/me/drive/root/delta" +
+          (deltaTokenUrl ? `?token=${deltaTokenUrl}` : "")
+
+    const changes: OneDriveFile[] = []
+    let nextDeltaTokenUrl: string | null = null
+
+    while (endpoint) {
+      const response = await retryWithBackoff(
+        () => makeGraphApiCall(graphClient, endpoint),
+        `Fetching OneDrive delta changes`,
+        Apps.MicrosoftDrive,
+      )
+      if (Array.isArray(response.value)) {
+        changes.push(...response.value)
+      }
+      if (response["@odata.nextLink"]) {
+        endpoint = response["@odata.nextLink"]
       } else {
-        search = `?token=${deltaTokenUrl}`
+        nextDeltaTokenUrl = response["@odata.deltaLink"] ?? null
+        break
       }
     }
-
-    const response = await retryWithBackoff(
-      () => makeGraphApiCall(graphClient, endpoint + search),
-      `Fetching OneDrive delta changes with url ${deltaTokenUrl || "initial"}`,
-      Apps.MicrosoftDrive,
-    )
-
-    const changes = response.value || []
-    const nextDeltaTokenUrl = response["@odata.deltaLink"]
-      ? response["@odata.deltaLink"]
-      : null
-
     return { changes, nextDeltaTokenUrl }
   } catch (error: unknown) {
     Logger.error(
@@ -247,6 +252,62 @@ const extractOneDriveFileContent = async (
       return await extractPDFContent(graphClient, file)
     }
 
+    // For DOCX files, download and extract using docxChunks helper
+    if (
+      mimeType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) {
+      try {
+        Logger.info(`Processing DOCX file: ${file.name}`)
+        const fileBuffer = await downloadFileFromGraph(
+          graphClient.client,
+          file.id,
+        )
+        const docxResult = await extractTextAndImagesWithChunksFromDocx(
+          new Uint8Array(fileBuffer),
+          file.id,
+          false, // Don't extract images for OneDrive sync
+        )
+        return docxResult.text_chunks.filter((chunk) => chunk.trim())
+      } catch (error) {
+        Logger.error(error, `Error processing DOCX file ${file.name}`)
+        // Fall back to Graph API text extraction
+      }
+    }
+
+    // For XLSX files, download and extract using spreadsheet helper
+    if (
+      mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ) {
+      try {
+        Logger.info(`Processing XLSX file: ${file.name}`)
+        const fileBuffer = await downloadFileFromGraph(
+          graphClient.client,
+          file.id,
+        )
+        const sheetsData = await processSpreadsheetFileWithSheetInfo(
+          fileBuffer,
+          file.name,
+        )
+
+        // Combine all sheet chunks into a single array
+        const allChunks: string[] = []
+        for (const sheet of sheetsData) {
+          // Add sheet name as a header if there are multiple sheets
+          if (sheetsData.length > 1) {
+            allChunks.push(`Sheet: ${sheet.sheetName}`)
+          }
+          allChunks.push(...sheet.chunks)
+        }
+
+        return allChunks.filter((chunk) => chunk.trim())
+      } catch (error) {
+        Logger.error(error, `Error processing XLSX file ${file.name}`)
+        // Fall back to Graph API text extraction
+      }
+    }
+
     // For Office documents, try to get content via Graph API
     if (
       mimeType.includes("officedocument") ||
@@ -331,8 +392,8 @@ export const handleOneDriveChange = async (
     try {
       const doc = await getDocumentOrNull(fileSchema, docId)
       if (doc) {
-        const permissions = (doc.fields as VespaFileWithDrivePermission)
-          ?.permissions
+        const permissions =
+          (doc.fields as VespaFileWithDrivePermission)?.permissions ?? []
         if (permissions.length === 1) {
           // Remove the document entirely
           if (permissions[0] === userEmail) {
@@ -346,7 +407,7 @@ export const handleOneDriveChange = async (
           }
         } else {
           // Remove our user's permission from the document
-          const newPermissions = permissions.filter((v) => v !== userEmail)
+          const newPermissions = permissions.filter((v) => v && v !== userEmail)
           await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
           stats.updated += 1
           stats.summary += `user lost permission for doc: ${docId}\n`
