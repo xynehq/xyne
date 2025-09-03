@@ -22,7 +22,10 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 // Schema for search request
 export const searchKnowledgeBaseSchema = z.object({
   query: z.string().optional(),
-  type: z.enum(["collection", "folder", "file", "all"]).optional().default("all"),
+  type: z
+    .enum(["collection", "folder", "file", "all"])
+    .optional()
+    .default("all"),
   collectionId: z.string().optional(), // If provided, search only within this collection
   limit: z
     .string()
@@ -42,7 +45,9 @@ export const searchKnowledgeBaseSchema = z.object({
     }),
 })
 
-export type SearchKnowledgeBaseRequest = z.infer<typeof searchKnowledgeBaseSchema>
+export type SearchKnowledgeBaseRequest = z.infer<
+  typeof searchKnowledgeBaseSchema
+>
 
 // Response types
 export interface SearchKnowledgeBaseResult {
@@ -77,7 +82,7 @@ export interface SearchKnowledgeBaseResponse {
  */
 export const SearchKnowledgeBaseApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
-  
+
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
   if (!users || users.length === 0) {
@@ -91,7 +96,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     const { query, type, collectionId, limit, offset } = params
 
     loggerWithChild({ email: userEmail }).info(
-      `Searching knowledge base: query="${query}", type="${type}", collectionId="${collectionId}", limit=${limit}, offset=${offset}`
+      `Searching knowledge base: query="${query}", type="${type}", collectionId="${collectionId}", limit=${limit}, offset=${offset}`,
     )
 
     const results: SearchKnowledgeBaseResult[] = []
@@ -99,16 +104,17 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     // Search collections (if type allows)
     if (type === "all" || type === "collection") {
       const accessibleCollections = await getAccessibleCollections(db, user.id)
-      
+
       let filteredCollections = accessibleCollections
-      
+
       // Filter by search query if provided
       if (query && query.trim()) {
         const searchTerm = query.trim().toLowerCase()
         filteredCollections = accessibleCollections.filter(
           (collection) =>
             collection.name.toLowerCase().includes(searchTerm) ||
-            (collection.description && collection.description.toLowerCase().includes(searchTerm))
+            (collection.description &&
+              collection.description.toLowerCase().includes(searchTerm)),
         )
       }
 
@@ -138,7 +144,11 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
         // Build where conditions
         const whereConditions = [
           isNull(collectionItems.deletedAt),
-          or(...accessibleCollectionIds.map((id) => eq(collectionItems.collectionId, id))),
+          or(
+            ...accessibleCollectionIds.map((id) =>
+              eq(collectionItems.collectionId, id),
+            ),
+          ),
         ]
 
         // Filter by collection if specified
@@ -167,8 +177,8 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
             or(
               ilike(collectionItems.name, searchTerm),
               ilike(collectionItems.originalName, searchTerm),
-              ilike(collectionItems.path, searchTerm)
-            )
+              ilike(collectionItems.path, searchTerm),
+            ),
           )
         }
 
@@ -191,13 +201,16 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
             metadata: collectionItems.metadata,
           })
           .from(collectionItems)
-          .innerJoin(collections, eq(collectionItems.collectionId, collections.id))
+          .innerJoin(
+            collections,
+            eq(collectionItems.collectionId, collections.id),
+          )
           .where(and(...whereConditions))
           .orderBy(
             desc(collectionItems.type), // Folders first, then files
-            asc(collectionItems.name)
+            asc(collectionItems.name),
           )
-          // Remove limit and offset here - we'll paginate the final combined results
+        // Remove limit and offset here - we'll paginate the final combined results
 
         // Add items to results
         itemsQuery.forEach((item) => {
@@ -226,11 +239,11 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
       const typePriority = { collection: 0, folder: 1, file: 2 }
       const aPriority = typePriority[a.type]
       const bPriority = typePriority[b.type]
-      
+
       if (aPriority !== bPriority) {
         return aPriority - bPriority
       }
-      
+
       // Within same type, sort by name
       return a.name.localeCompare(b.name)
     })
@@ -246,7 +259,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     }
 
     loggerWithChild({ email: userEmail }).info(
-      `Knowledge base search completed: ${response.results.length} results returned, ${response.total} total found`
+      `Knowledge base search completed: ${response.results.length} results returned, ${response.total} total found`,
     )
 
     return c.json(response)
@@ -261,7 +274,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to search knowledge base: ${errMsg}`
+      `Failed to search knowledge base: ${errMsg}`,
     )
     throw new HTTPException(500, {
       message: "Failed to search knowledge base",

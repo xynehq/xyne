@@ -4868,7 +4868,7 @@ export const MessageApi = async (c: Context) => {
               startTime,
               intent,
               offset,
-            } = parsed?.filters
+            } = parsed?.filters || {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -6107,7 +6107,7 @@ export const MessageRetryApi = async (c: Context) => {
                 entities,
                 sortDirection,
                 startTime,
-              } = parsed?.filters
+              } = parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
@@ -6120,8 +6120,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0,
-                  intent: parsed.filters.intent || {},
+                  offset: parsed?.filters?.offset || 0,
+                  intent: parsed?.filters?.intent || {},
                 },
               } as QueryRouterLLMResponse
 

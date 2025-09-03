@@ -13,7 +13,7 @@ vi.mock("@uiw/react-markdown-preview", () => ({
 
 vi.mock("@/components/PdfViewer", () => ({
   default: () => <div data-testid="pdf-viewer-mock" />,
-}));
+}))
 
 // Mock window.matchMedia
 Object.defineProperty(window, "matchMedia", {

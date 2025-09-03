@@ -10,7 +10,17 @@ export interface SwitchProps {
 }
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ className, checked = false, onCheckedChange, disabled = false, id, ...props }, ref) => {
+  (
+    {
+      className,
+      checked = false,
+      onCheckedChange,
+      disabled = false,
+      id,
+      ...props
+    },
+    ref,
+  ) => {
     const handleClick = () => {
       if (!disabled && onCheckedChange) {
         onCheckedChange(!checked)
@@ -36,7 +46,7 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
           checked
             ? "bg-slate-700 dark:bg-slate-50"
             : "bg-slate-200 dark:bg-slate-700",
-          className
+          className,
         )}
         id={id}
         ref={ref}
@@ -49,12 +59,12 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
             "pointer-events-none block h-5 w-5 rounded-full shadow-lg ring-0 transition-transform",
             checked
               ? "translate-x-5 bg-white dark:bg-slate-900"
-              : "translate-x-0 bg-white dark:bg-slate-300"
+              : "translate-x-0 bg-white dark:bg-slate-300",
           )}
         />
       </button>
     )
-  }
+  },
 )
 
 Switch.displayName = "Switch"

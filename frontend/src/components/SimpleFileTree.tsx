@@ -74,10 +74,10 @@ const FileNodeComponent = ({
         isSelected
           ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           : isHovered
-          ? "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-          : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#404040]"
+            ? "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#404040]"
       }`}
-      style={{ 
+      style={{
         paddingLeft: `${level * 24 + 16}px`,
       }}
       onMouseEnter={() => setIsHovered(true)}

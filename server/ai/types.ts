@@ -213,12 +213,12 @@ export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>
 
 export interface ChainBreakClassifications {
   availableChainBreaks: Array<{
-    chainIndex: number;
-    messageIndex: number;
-    originalQuery: string;
-    classification: QueryRouterLLMResponse;
-  }>;
-  usage: string;
+    chainIndex: number
+    messageIndex: number
+    originalQuery: string
+    classification: QueryRouterLLMResponse
+  }>
+  usage: string
 }
 
 export const QueryContextRank = z.object({

@@ -17,7 +17,6 @@ export class Encryption {
     ) {
       throw new Error("Encryption key must be base64-encoded and 256-bit long.")
     }
-    
   }
 
   getKey() {
@@ -73,7 +72,7 @@ export class Encryption {
       r: 8, // Block size parameter
       p: 1, // Parallelization parameter
     })
-    
+
     return hash.toString(this.encoding)
   }
 }

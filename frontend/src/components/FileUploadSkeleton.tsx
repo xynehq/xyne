@@ -15,7 +15,7 @@ const FileUploadSkeleton: React.FC<FileUploadSkeletonProps> = ({
 }) => {
   // Show 3-4 skeleton rows
   const skeletonCount = Math.min(4, totalFiles - processedFiles)
-  
+
   return (
     <div className="w-full">
       {/* Table header */}
@@ -26,14 +26,11 @@ const FileUploadSkeleton: React.FC<FileUploadSkeletonProps> = ({
         <div className="col-span-2">LAST UPDATED</div>
         <div className="col-span-2">UPDATED BY</div>
       </div>
-      
+
       {/* Skeleton rows */}
       <div className="mt-2">
         {Array.from({ length: skeletonCount }).map((_, index) => (
-          <div
-            key={index}
-            className="py-3 animate-pulse"
-          >
+          <div key={index} className="py-3 animate-pulse">
             <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full w-full"></div>
           </div>
         ))}

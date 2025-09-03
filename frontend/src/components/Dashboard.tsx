@@ -3604,7 +3604,9 @@ export const Dashboard = ({
         <div className="p-6 space-y-6 max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl tracking-wider font-display ">Dashboard</h1>
+              <h1 className="text-3xl tracking-wider font-display ">
+                Dashboard
+              </h1>
               <p className="text-muted-foreground">
                 Monitor your Xyne chat activity and agent usage
               </p>

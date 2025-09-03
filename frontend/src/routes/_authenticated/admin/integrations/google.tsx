@@ -368,22 +368,25 @@ export const ServiceAccountForm = ({
         validators={{
           onChange: ({ value }) => {
             if (!value) return "File is required"
-            
+
             // Check file type
-            if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+            if (
+              value.type !== "application/json" &&
+              !value.name?.endsWith(".json")
+            ) {
               return "File must be a JSON file"
             }
-            
+
             // Check file size
             if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
               return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
             }
-            
+
             return undefined
           },
           onChangeAsync: async ({ value }) => {
             if (!value) return undefined
-            
+
             // Validate JSON content asynchronously
             try {
               const content = await value.text()
@@ -488,22 +491,25 @@ export const UpdateServiceAccountForm = ({
           validators={{
             onChange: ({ value }) => {
               if (!value) return "File is required"
-              
+
               // Check file type
-              if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+              if (
+                value.type !== "application/json" &&
+                !value.name?.endsWith(".json")
+              ) {
                 return "File must be a JSON file"
               }
-              
+
               // Check file size
               if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
                 return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
               }
-              
+
               return undefined
             },
             onChangeAsync: async ({ value }) => {
               if (!value) return undefined
-              
+
               // Validate JSON content asynchronously
               try {
                 const content = await value.text()

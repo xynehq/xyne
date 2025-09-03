@@ -20,7 +20,7 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@/components/ui/select";
+} from "@/components/ui/select"
 
 import {
   Card,
@@ -63,10 +63,10 @@ interface FetchedTool {
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
   value: {
-    name: string;
-    url: string;
-    mode: "sse" | "streamable-http";
-    headers: Record<string, string>;
+    name: string
+    url: string
+    mode: "sse" | "streamable-http"
+    headers: Record<string, string>
   },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
@@ -150,10 +150,10 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<{
-    name: string;
-    url: string;
-    mode: "sse" | "streamable-http";
-    headers: { u_id: number; key: string; value: string }[];
+    name: string
+    url: string
+    mode: "sse" | "streamable-http"
+    headers: { u_id: number; key: string; value: string }[]
   }>({
     defaultValues: {
       name: "",
@@ -167,12 +167,12 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         const headersObject = value.headers.reduce(
           (acc, header) => {
             if (header.key) {
-              acc[header.key] = header.value;
+              acc[header.key] = header.value
             }
-            return acc;
+            return acc
           },
           {} as Record<string, string>,
-        );
+        )
 
         await submitMCPClient(
           {
@@ -182,7 +182,7 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
             headers: headersObject,
           },
           navigate,
-        );
+        )
         toast({
           title: "MCP Client Connected",
           description: "MCP Client successfully connected. Updating status...",
@@ -269,7 +269,9 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
             </Label>
             <Select
               value={field.state.value}
-              onValueChange={(value) => field.handleChange(value as "streamable-http" | "sse")}
+              onValueChange={(value) =>
+                field.handleChange(value as "streamable-http" | "sse")
+              }
             >
               <SelectTrigger id={field.name}>
                 <SelectValue placeholder="Select a mode" />
@@ -334,14 +336,19 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
                   type="button"
                   variant="outline"
                   className="w-full mt-2"
-                  onClick={() => field.pushValue({ u_id: Date.now() /* using Date.now() here so that we can keep this as key for our list */
-                                                  , key: "", value: "" })}
+                  onClick={() =>
+                    field.pushValue({
+                      u_id: Date.now() /* using Date.now() here so that we can keep this as key for our list */,
+                      key: "",
+                      value: "",
+                    })
+                  }
                 >
                   <PlusCircle className="h-4 w-4 mr-2" />
                   Add Header
                 </Button>
               </div>
-            );
+            )
           }}
         />
       </>
@@ -703,8 +710,12 @@ const MCPClientsList = ({
                 {client.name || client.config?.name || client.app || "Unnamed"}
               </TableCell>
               <TableCell>
-                {client.type === ConnectorType.MCP || client.app === Apps.MCP || client.app === Apps.Github
-                  ? (client.config?.command ? "Stdio" : "API Key")
+                {client.type === ConnectorType.MCP ||
+                client.app === Apps.MCP ||
+                client.app === Apps.Github
+                  ? client.config?.command
+                    ? "Stdio"
+                    : "API Key"
                   : client.authType}
               </TableCell>
               <TableCell>
@@ -721,45 +732,45 @@ const MCPClientsList = ({
                 >
                   {client.status}
                 </span>
-</TableCell>
+              </TableCell>
               <TableCell>
                 {(client.type === ConnectorType.MCP ||
                   client.app === Apps.MCP ||
                   client.app === Apps.Github) && (
-                <Button
+                  <Button
                     variant="ghost"
                     size="icon"
-                  onClick={() => handleManageTools(client)}
+                    onClick={() => handleManageTools(client)}
                     title="Manage Tools"
-                >
+                  >
                     <PlusCircle className="h-4 w-4" />
-                </Button>
+                  </Button>
                 )}
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
-                <Button
+                  <Button
                     variant="ghost"
-                  size="icon"
-                  onClick={async () => {
-                    try {
+                    size="icon"
+                    onClick={async () => {
+                      try {
                         await onDelete(client.id)
-                      toast({
-                        title: "Client Removed",
+                        toast({
+                          title: "Client Removed",
                           description:
                             "MCP Client has been removed successfully",
                         })
-                    } catch (error) {
-                      toast({
-                        title: "Removal Failed",
-                        description: getErrorMessage(error),
-                        variant: "destructive",
+                      } catch (error) {
+                        toast({
+                          title: "Removal Failed",
+                          description: getErrorMessage(error),
+                          variant: "destructive",
                         })
-                    }
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                      }
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               </TableCell>
             </TableRow>
@@ -804,7 +815,7 @@ const MCPClientsList = ({
                 className="mb-1"
               />
             </div>
-              {isLoadingTools ? (
+            {isLoadingTools ? (
               <div className="flex justify-center items-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-primary" />
               </div>
@@ -828,22 +839,22 @@ const MCPClientsList = ({
                         key={tool.id} // Use tool.id (internal DB id) as key
                         className="flex items-center justify-between py-2 px-1 hover:bg-muted rounded cursor-pointer"
                         onClick={() => {
-                            setSelectedTools((prev) => {
-                              const newSelectedForClient = new Set(
-                                prev[selectedClientForTools!.id] || [],
+                          setSelectedTools((prev) => {
+                            const newSelectedForClient = new Set(
+                              prev[selectedClientForTools!.id] || [],
                             )
                             if (newSelectedForClient.has(tool.toolName)) {
                               newSelectedForClient.delete(tool.toolName)
-                              } else {
+                            } else {
                               newSelectedForClient.add(tool.toolName)
-                              }
-                              return {
-                                ...prev,
-                                [selectedClientForTools!.id]:
-                                  newSelectedForClient,
+                            }
+                            return {
+                              ...prev,
+                              [selectedClientForTools!.id]:
+                                newSelectedForClient,
                             }
                           })
-                          }}
+                        }}
                       >
                         <span
                           className="text-sm flex-grow mr-2 truncate"
@@ -860,10 +871,10 @@ const MCPClientsList = ({
                           ).has(tool.toolName) && (
                             <Check className="h-4 w-4 text-green-500" />
                           )}
+                        </div>
                       </div>
-                </div>
                     ))
-              ) : (
+                ) : (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No tools found
                     {toolSearchTerm
@@ -873,8 +884,8 @@ const MCPClientsList = ({
                         : ""}
                     .
                   </p>
-              )}
-            </div>
+                )}
+              </div>
             )}
             <DialogFooter className="mt-auto pt-2 pb-1 flex justify-between items-center">
               {selectedClientForTools &&
@@ -886,22 +897,22 @@ const MCPClientsList = ({
                 )}
               {selectedClientForTools &&
                 (selectedTools[selectedClientForTools.id]?.size || 0) > 0 && (
-                <Button
-                  variant="ghost"
+                  <Button
+                    variant="ghost"
                     size="icon"
                     className="h-6 w-6"
-                  onClick={() => {
-                    if (selectedClientForTools) {
-                      setSelectedTools((prev) => ({
-                        ...prev,
-                        [selectedClientForTools.id]: new Set(),
+                    onClick={() => {
+                      if (selectedClientForTools) {
+                        setSelectedTools((prev) => ({
+                          ...prev,
+                          [selectedClientForTools.id]: new Set(),
                         }))
-                    }
-                  }}
-                  title="Clear all selected tools"
-                >
+                      }
+                    }}
+                    title="Clear all selected tools"
+                  >
                     <RotateCcw className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                </Button>
+                  </Button>
                 )}
             </DialogFooter>
           </DialogContent>
