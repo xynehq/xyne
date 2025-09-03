@@ -744,6 +744,18 @@ export const AppRoutes = app
   .post("/refresh-token", getNewAccessRefreshToken)
   // Workflow Routes (No Auth) - MUST come before AuthMiddleware
   .use("/workflow/*", honoMiddlewareLogger)
+  .use("/workflow/*", async (c, next) => {
+    // Add CORS headers for workflow API
+    c.header('Access-Control-Allow-Origin', 'http://localhost:3003')
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    
+    if (c.req.method === 'OPTIONS') {
+      return new Response(null, { status: 200 })
+    }
+    
+    await next()
+  })
   .post(
     "/workflow/templates",
     zValidator("json", createWorkflowTemplateSchema),
