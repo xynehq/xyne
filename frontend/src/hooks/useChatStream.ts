@@ -430,14 +430,15 @@ export const startStream = async (
       queryClient.setQueryData(["chatHistory", streamState.chatId], (old: any) => {
         if (!old?.messages) return old
         
-        // Create the complete assistant message
+        // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
+       // Save the complete assistant message to React Query cache to persist the conversation history
         const newAssistantMessage = {
           externalId: streamState.messageId,
           messageRole: "assistant",
-          message: streamState.response, // Final accumulated text
-          sources: streamState.sources, // Citations from stream
-          citationMap: streamState.citationMap, // Citation mapping
-          thinking: streamState.thinking, // Reasoning content
+          message: streamState.response,
+          sources: streamState.sources,
+          citationMap: streamState.citationMap,
+          thinking: streamState.thinking,
           imageCitations: streamState.imageCitations,
           isStreaming: false,
           attachments: [],
