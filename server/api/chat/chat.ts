@@ -1,32 +1,18 @@
+import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
-  answerContextMap,
-  cleanContext,
-  constructToolContext,
-  userContext,
-} from "@/ai/context"
-import {
-  // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
-  temporalPromptJsonStream,
   queryRewriter,
-  generateAnswerBasedOnToolOutput,
   meetingPromptJsonStream,
-  generateToolSelectionOutput,
-  generateSynthesisBasedOnToolOutput,
   extractEmailsFromContext,
   generateFollowUpQuestions,
   webSearchQuestion,
+  getDeepResearchResponse,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
-import { getDateForAI } from "@/utils/index"
-import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import {
   Models,
   QueryType,
@@ -65,27 +51,17 @@ import {
 } from "@/db/message"
 import { eq, and } from "drizzle-orm"
 import { nanoid } from "nanoid"
-import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
   selectPublicMessagesSchema,
-  messageFeedbackEnum,
-  type SelectChat,
-  type SelectMessage,
   selectMessageSchema,
   sharedChats,
+  type SelectChat,
+  type SelectMessage,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import {
-  AgentReasoningStepType,
-  AgentToolName,
-  ChatSSEvents,
-  ContextSysthesisState,
-  OpenAIError,
-  type AgentReasoningStep,
-  type MessageReqType,
-} from "@/shared/types"
+import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -95,13 +71,12 @@ import {
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
-  ToolResultContentBlock,
   type ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
+import { streamSSE, type SSEStreamingApi } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
@@ -122,39 +97,26 @@ import {
   Apps,
   CalendarEntity,
   chatContainerSchema,
-  chatMessageSchema,
   chatUserSchema,
   dataSourceFileSchema,
-  KbItemsSchema,
   DriveEntity,
-  entitySchema,
-  eventSchema,
-  fileSchema,
   GooglePeopleEntity,
   isValidApp,
   isValidEntity,
   MailAttachmentEntity,
-  mailAttachmentSchema,
   MailEntity,
   mailSchema,
   SlackEntity,
-  SystemEntity,
-  userSchema,
   WebSearchEntity,
   type Entity,
-  type VespaChatMessage,
-  type VespaEvent,
-  type VespaEventSearch,
-  type VespaFile,
   type VespaMail,
-  type VespaMailAttachment,
   type VespaMailSearch,
+  type VespaEventSearch,
   type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
   type VespaSearchResults,
   type VespaSearchResultsSchema,
-  type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -170,7 +132,6 @@ import {
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-// import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
@@ -227,6 +188,11 @@ import {
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
 import type { GroundingSupport } from "@google/genai"
+import {
+  processDeepSearchIterator,
+  processOpenAICitations,
+  processWebSearchCitations,
+} from "./deepsearch"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -3906,87 +3872,6 @@ function buildTopicConversationThread(
   return conversationThread
 }
 
-function processWebSearchCitations(
-  answer: string,
-  allSources: WebSearchSource[],
-  finalGroundingSupports: GroundingSupport[],
-  citations: Citation[],
-  citationMap: Record<number, number>,
-  sourceIndex: number,
-): {
-  updatedAnswer: string
-  newCitations: Citation[]
-  newCitationMap: Record<number, number>
-  updatedSourceIndex: number
-} | null {
-  if (finalGroundingSupports.length > 0 && allSources.length > 0) {
-    let answerWithCitations = answer
-    let newCitations: Citation[] = []
-    let newCitationMap: Record<number, number> = {}
-    let urlToIndexMap: Map<string, number> = new Map()
-
-    for (const support of finalGroundingSupports) {
-      const segment = support.segment
-      const groundingChunkIndices = support.groundingChunkIndices || []
-
-      let citationText = ""
-      for (const chunkIndex of groundingChunkIndices) {
-        if (allSources[chunkIndex]) {
-          const source = allSources[chunkIndex]
-
-          let citationIndex: number
-          if (urlToIndexMap.has(source.uri)) {
-            // Reuse existing citation index
-            citationIndex = urlToIndexMap.get(source.uri)!
-          } else {
-            citationIndex = sourceIndex
-            const webSearchCitation: Citation = {
-              docId: `websearch_${sourceIndex}`,
-              title: source.title,
-              url: source.uri,
-              app: Apps.WebSearch,
-              entity: WebSearchEntity.WebSearch,
-            }
-
-            newCitations.push(webSearchCitation)
-            newCitationMap[sourceIndex] =
-              citations.length + newCitations.length - 1
-            urlToIndexMap.set(source.uri, sourceIndex)
-            sourceIndex++
-          }
-
-          citationText += ` [${citationIndex}]`
-        }
-      }
-
-      if (
-        citationText &&
-        segment?.endIndex !== undefined &&
-        segment.endIndex <= answerWithCitations.length
-      ) {
-        // Find optimal insertion point that respects word boundaries
-        const optimalIndex = findOptimalCitationInsertionPoint(
-          answerWithCitations,
-          segment.endIndex,
-        )
-        answerWithCitations =
-          answerWithCitations.slice(0, optimalIndex) +
-          citationText +
-          answerWithCitations.slice(optimalIndex)
-      }
-    }
-
-    return {
-      updatedAnswer: answerWithCitations,
-      newCitations,
-      newCitationMap,
-      updatedSourceIndex: sourceIndex,
-    }
-  }
-
-  return null
-}
-
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -4018,6 +3903,7 @@ export const MessageApi = async (c: Context) => {
       agentId,
       enableWebSearch,
     }: MessageReqType = body
+    const deepResearchEnabled = false
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
@@ -4592,7 +4478,23 @@ export const MessageApi = async (c: Context) => {
 
             const webSearchEnabled = enableWebSearch ?? false
             let searchOrAnswerIterator
-            if (webSearchEnabled) {
+            if (deepResearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Using deep research for the question",
+              )
+              searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
+                modelId: Models.O3_Deep_Research,
+                stream: true,
+                json: false,
+                agentPrompt: agentPromptValue,
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: llmFormattedMessages,
+                webSearch: false,
+                deepResearchEnabled: true,
+              })
+            } else if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
@@ -4644,6 +4546,7 @@ export const MessageApi = async (c: Context) => {
             let citations: Citation[] = []
             let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
+            let deepResearchSteps: any[] = []
             let queryFilters = {
               apps: [],
               entities: [],
@@ -4671,8 +4574,68 @@ export const MessageApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
+            if (deepResearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Processing deep research response",
+              )
 
-            if (webSearchEnabled) {
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              let sourceIndex = 0
+              let finalText = ""
+              let finalAnnotations: any[] = []
+
+              const deepSearchIterator = await processDeepSearchIterator({
+                iterator: searchOrAnswerIterator,
+                answer,
+                costArr,
+                deepResearchSteps,
+                email,
+                finalAnnotations,
+                finalText,
+                stream,
+                tokenArr,
+                wasStreamClosedPrematurely,
+              })
+
+              // Process citations if we have final text and annotations
+              if (
+                deepSearchIterator.finalText &&
+                deepSearchIterator.finalAnnotations.length > 0
+              ) {
+                const citationResult = processOpenAICitations(
+                  deepSearchIterator.answer,
+                  deepSearchIterator.finalText,
+                  deepSearchIterator.finalAnnotations,
+                  citations,
+                  citationMap,
+                  sourceIndex,
+                )
+
+                if (citationResult) {
+                  answer = citationResult.updatedAnswer
+                  sourceIndex = citationResult.updatedSourceIndex
+
+                  if (citationResult.newCitations.length > 0) {
+                    citations.push(...citationResult.newCitations)
+                    Object.assign(citationMap, citationResult.newCitationMap)
+
+                    stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: citations,
+                        citationMap: citationMap,
+                      }),
+                    })
+                  }
+                }
+              }
+
+              parsed.answer = answer
+            } else if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(
                 "Processing web search response",
               )
@@ -4704,15 +4667,13 @@ export const MessageApi = async (c: Context) => {
                 }
 
                 if (chunk.sources && chunk.sources.length > 0) {
-                  chunk.sources.forEach((source) => {
-                    if (
+                  const uniqueSources = chunk.sources.filter(
+                    (source) =>
                       !allSources.some(
                         (existing) => existing.uri === source.uri,
-                      )
-                    ) {
-                      allSources.push(source)
-                    }
-                  })
+                      ),
+                  )
+                  allSources.push(...uniqueSources)
                 }
 
                 if (
@@ -5158,6 +5119,7 @@ export const MessageApi = async (c: Context) => {
                 imageCitations: imageCitations,
                 message: processMessage(answer, citationMap, email),
                 thinking: thinking,
+                deepResearchSteps: deepResearchSteps,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
                 cost: totalCost.toString(),

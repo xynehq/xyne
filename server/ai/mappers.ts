@@ -109,6 +109,35 @@ export const modelDetailsMap: Record<
       },
     },
   },
+
+  [Models.O3_Deep_Research]: {
+    name: "O3 Deep Research",
+    cost: {
+      // TODO: get actual price
+      onDemand: {
+        pricePerThousandInputTokens: 0.03,
+        pricePerThousandOutputTokens: 0.06,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.015,
+        pricePerThousandOutputTokens: 0.03,
+      },
+    },
+  },
+  [Models.O4_Mini_Deep_Research]: {
+    name: "O4 Mini Deep Research",
+    cost: {
+      // TODO: get actual price
+      onDemand: {
+        pricePerThousandInputTokens: 0.03,
+        pricePerThousandOutputTokens: 0.06,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.015,
+        pricePerThousandOutputTokens: 0.03,
+      },
+    },
+  },
   [Models.CohereCmdRPlus]: {
     name: "Command R+",
     cost: {
@@ -265,6 +294,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
   [Models.Gpt_4]: AIProviders.OpenAI,
+  [Models.O3_Deep_Research]: AIProviders.OpenAI,
+  [Models.O4_Mini_Deep_Research]: AIProviders.OpenAI,
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
@@ -280,4 +311,11 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.DeepSeek_R1]: AIProviders.AwsBedrock,
   [Models.Gemini_2_5_Flash]: AIProviders.GoogleAI,
   [Models.Gemini_2_0_Flash_Thinking]: AIProviders.GoogleAI,
+}
+
+export const isDeepResearchModel = (modelId: Models): boolean => {
+  return (
+    modelId === Models.O3_Deep_Research ||
+    modelId === Models.O4_Mini_Deep_Research
+  )
 }

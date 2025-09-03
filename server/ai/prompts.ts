@@ -1,5 +1,9 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType, type QueryRouterLLMResponse, type ChainBreakClassifications } from "./types"
+import {
+  QueryType,
+  type QueryRouterLLMResponse,
+  type ChainBreakClassifications,
+} from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -1052,7 +1056,7 @@ export const SearchQueryToolContextPrompt = (
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
-  userContext: string, 
+  userContext: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
 ): string => {
@@ -1065,12 +1069,18 @@ export const searchQueryPrompt = (
 
     **User Context:** ${userContext}
 
-    ${previousClassification ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+    ${
+      previousClassification
+        ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
 
-    ${chainBreakClassifications ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${
+      chainBreakClassifications
+        ? `**Chain Break Classifications (Previous Conversation Chains):**
     ${JSON.stringify(chainBreakClassifications, null, 2)}
 
-    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES` : ''}
+    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES`
+        : ""
+    }
 
     **IMPORTANT - Chain Context Integration:**
     The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
@@ -1078,7 +1088,9 @@ export const searchQueryPrompt = (
     - This allows queries to reconnect with earlier conversation threads even after chain breaks
     - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
       use Chain 1's classification to understand "him" refers to John and the context is emails
-    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains` : ''}
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains`
+        : ""
+    }
 
     **IMPORTANT - For Follow-Up Queries:**
     When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
@@ -2331,4 +2343,19 @@ ${retrievedContext}
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
+`
+
+export const deepResearchPrompt = (userCtx: string) => `
+User-Details: ${userCtx} \n\n 
+
+You are a professional researcher preparing a structured, data-driven report on behalf of a global health economics team. Your task is to analyze the health question the user poses.
+
+Do:
+- Focus on data-rich insights: include specific figures, trends, statistics, and measurable outcomes (e.g., reduction in hospitalization costs, market size, pricing trends, payer adoption).
+- When appropriate, summarize data in a way that could be turned into charts or tables, and call this out in the response (e.g., “this would work well as a bar chart comparing per-patient costs across regions”).
+- Prioritize reliable, up-to-date sources: peer-reviewed research, health organizations (e.g., WHO, CDC), regulatory agencies, or pharmaceutical earnings reports.
+- Include an internal file lookup tool to retrieve information from our own internal data sources. If you’ve already retrieved a file, do not call fetch again for that same file. Prioritize inclusion of that data.
+- Include inline citations and return all source metadata.
+
+Be analytical, avoid generalities, and ensure that each section supports data-backed reasoning that could inform healthcare policy or financial modeling.
 `

@@ -119,6 +119,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
+import { DeepResearchReasoning } from "@/components/DeepResearchReasoning"
 import { Tip } from "@/components/Tooltip"
 import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
@@ -371,6 +372,7 @@ export const ChatPage = ({
   const {
     partial,
     thinking,
+    deepResearchSteps,
     sources,
     imageCitations,
     citationMap,
@@ -401,6 +403,7 @@ export const ChatPage = ({
     ? {
         resp: partial,
         thinking,
+        deepResearchSteps,
         sources,
         imageCitations,
         citationMap,
@@ -2056,6 +2059,7 @@ interface VirtualizedMessagesProps {
     sources?: Citation[]
     imageCitations?: any[]
     thinking?: string
+    deepResearchSteps?: any[]
     messageId?: string | null
     citationMap?: any
   } | null
@@ -2141,6 +2145,7 @@ const VirtualizedMessages = React.forwardRef<
           sources: currentResp.sources || [],
           imageCitations: currentResp.imageCitations || [],
           thinking: currentResp.thinking || "",
+          deepResearchSteps: currentResp.deepResearchSteps || [],
           citationMap: currentResp.citationMap,
           isStreaming: true,
           attachments: [],
@@ -2281,6 +2286,7 @@ const VirtualizedMessages = React.forwardRef<
                       isUser={message.messageRole === "user"}
                       responseDone={message.externalId !== "current-resp"}
                       thinking={message.thinking}
+                      deepResearchSteps={message.deepResearchSteps}
                       citations={message.sources}
                       imageCitations={message.imageCitations || []}
                       messageId={message.externalId}
@@ -2340,6 +2346,7 @@ const VirtualizedMessages = React.forwardRef<
                         }
                         message={message.errorMessage}
                         thinking={message.thinking}
+                        deepResearchSteps={message.deepResearchSteps}
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
@@ -2416,6 +2423,7 @@ VirtualizedMessages.displayName = "VirtualizedMessages"
 export const ChatMessage = ({
   message,
   thinking,
+  deepResearchSteps = [],
   isUser,
   responseDone,
   isRetrying,
@@ -2440,6 +2448,7 @@ export const ChatMessage = ({
 }: {
   message: string
   thinking: string
+  deepResearchSteps?: any[]
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -2534,6 +2543,15 @@ export const ChatMessage = ({
                 src={logo}
               />
               <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
+                {deepResearchSteps && deepResearchSteps.length > 0 && (
+                  <>
+                    <DeepResearchReasoning
+                      steps={deepResearchSteps}
+                      isStreaming={!responseDone}
+                      className="mb-4"
+                    />
+                  </>
+                )}
                 {thinking && (
                   <>
                     <EnhancedReasoning

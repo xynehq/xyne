@@ -410,6 +410,7 @@ export enum ChatSSEvents {
   CitationsUpdate = "cu",
   ImageCitationUpdate = "icu",
   Reasoning = "rz",
+  DeepResearchReasoning = "drr",
   Error = "er",
   AttachmentUpdate = "au",
 }

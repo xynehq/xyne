@@ -12,11 +12,29 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 
+interface DeepResearchStep {
+  id: string
+  type: "reasoning" | "web_search" | "analysis" | "synthesis"
+  title: string
+  content?: string
+  sourceUrl?: string
+  sourcesCount?: number
+  recentSources?: string[]
+  timestamp: number
+  status: "active" | "completed" | "error"
+  query?: string // Search query for web_search steps
+  focus?: string // What the reasoning/analysis is focusing on
+  stepNumber?: number // Sequential number for same type steps
+  isReasoningDelta?: boolean // Whether this is a delta update for reasoning content
+  fullReasoningContent?: string // Complete reasoning content when step is done
+}
+
 // Module-level storage for persistent EventSource connections
 interface StreamState {
   es: EventSource
   partial: string
   thinking: string
+  deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
   citationMap: Record<number, number>
@@ -30,6 +48,7 @@ interface StreamState {
 interface StreamInfo {
   partial: string
   thinking: string
+  deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
   citationMap: Record<number, number>
@@ -315,6 +334,7 @@ export const startStream = async (
     es: eventSource,
     partial: "",
     thinking: "",
+    deepResearchSteps: [],
     sources: [],
     imageCitations: [],
     citationMap: {},
@@ -336,6 +356,51 @@ export const startStream = async (
     appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
   })
+
+  streamState.es.addEventListener(
+    ChatSSEvents.DeepResearchReasoning,
+    (event) => {
+      try {
+        const stepData = JSON.parse(event.data)
+        const newStep: DeepResearchStep = {
+          id: stepData.id || crypto.randomUUID(),
+          type: stepData.type || "reasoning",
+          title: stepData.title || "Processing...",
+          content: stepData.content,
+          sourceUrl: stepData.sourceUrl,
+          sourcesCount: stepData.sourcesCount,
+          recentSources: stepData.recentSources || [],
+          timestamp: stepData.timestamp || Date.now(),
+          status: stepData.status || "active",
+          query: stepData.query,
+          focus: stepData.focus,
+          stepNumber: stepData.stepNumber,
+          isReasoningDelta: stepData.isReasoningDelta,
+          fullReasoningContent: stepData.fullReasoningContent,
+        }
+
+        // Always look for existing step first by id
+        const existingIndex = streamState.deepResearchSteps.findIndex(
+          (step) => step.id === newStep.id,
+        )
+
+        if (existingIndex >= 0) {
+          // Update existing step with new data
+          streamState.deepResearchSteps[existingIndex] = {
+            ...streamState.deepResearchSteps[existingIndex],
+            ...newStep,
+          }
+        } else {
+          // Add new step
+          streamState.deepResearchSteps.push(newStep)
+        }
+
+        notifySubscribers(streamKey)
+      } catch (error) {
+        console.error("Error parsing deep research step:", error)
+      }
+    },
+  )
 
   streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
     const { contextChunks, citationMap } = JSON.parse(event.data)
@@ -517,6 +582,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     return {
       partial: "",
       thinking: "",
+      deepResearchSteps: [],
       sources: [],
       imageCitations: [],
       citationMap: {},
@@ -529,6 +595,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
   return {
     partial: stream.partial,
     thinking: stream.thinking,
+    deepResearchSteps: stream.deepResearchSteps,
     sources: stream.sources,
     imageCitations: stream.imageCitations,
     citationMap: stream.citationMap,
@@ -797,6 +864,7 @@ export const useChatStream = (
         es: eventSource,
         partial: "",
         thinking: "",
+        deepResearchSteps: [],
         sources: [],
         imageCitations: [],
         citationMap: {},

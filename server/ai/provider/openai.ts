@@ -1,8 +1,8 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import OpenAI from "openai"
-import { modelDetailsMap } from "@/ai/mappers"
+import { isDeepResearchModel, modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
+import { AIProviders, Models } from "@/ai/types"
 import BaseProvider from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
@@ -94,6 +94,40 @@ const buildOpenAIImageParts = async (imagePaths: string[]) => {
   const results = await Promise.all(imagePromises)
   return results.filter(Boolean) // Remove any null/undefined entries
 }
+
+const extractSearchDetails = (item: any) => {
+  const action =
+    item.action || item.call?.action || item.function_call?.arguments
+
+  if (!action) return null
+
+  let parsedAction = action
+  if (typeof action === "string") {
+    try {
+      parsedAction = JSON.parse(action)
+    } catch (e) {
+      return null
+    }
+  }
+
+  if (parsedAction.query) {
+    return { query: parsedAction.query, type: "search" }
+  }
+
+  if (parsedAction.url) {
+    const domain =
+      parsedAction.url.match(/https?:\/\/([^\/]+)/)?.[1] || parsedAction.url
+    return { url: parsedAction.url, domain, type: "open_page" }
+  }
+
+  return null
+}
+
+const createEventMetadata = (type: string, event: any, extras: any = {}) => ({
+  type,
+  sequence_number: event.sequence_number,
+  ...extras,
+})
 
 export class OpenAIProvider extends BaseProvider {
   constructor(client: OpenAI) {
@@ -229,10 +263,9 @@ export class OpenAIProvider extends BaseProvider {
       }
     })
 
-    const chatCompletion = await (
-      this.client as OpenAI
-    ).chat.completions.create({
-      messages: [
+    const responseStream = await (this.client as OpenAI).responses.stream({
+      model: params.modelId,
+      input: [
         {
           role: "system",
           content:
@@ -242,54 +275,284 @@ export class OpenAIProvider extends BaseProvider {
         },
         ...transformedMessages,
       ],
-      model: modelParams.modelId,
-      stream: true,
-      stream_options: { include_usage: true },
-      temperature: modelParams.temperature,
-      top_p: modelParams.topP,
+      ...(!isDeepResearchModel(modelParams.modelId) &&
+      !params.deepResearchEnabled
+        ? {
+            stream: true,
+            temperature: modelParams.temperature,
+            top_p: modelParams.topP,
+          }
+        : {
+            tools: [
+              {
+                type: "web_search_preview",
+              },
+            ],
+            max_tool_calls: 100,
+            reasoning: {
+              summary: "detailed",
+              effort: "medium",
+            },
+          }),
     })
 
     let costYielded = false
+    let reasoningSteps: Map<string, string> = new Map() // Track reasoning content by ID
 
-    for await (const chunk of chatCompletion) {
-      // Handle content chunks
-      if (chunk.choices?.[0]?.delta?.content) {
-        yield {
-          text: chunk.choices[0].delta.content,
-          metadata: chunk.choices[0].finish_reason ?? "",
-          cost:
-            !costYielded && chunk.usage
-              ? calculateCost(
-                  {
-                    inputTokens: chunk.usage.prompt_tokens,
-                    outputTokens: chunk.usage.completion_tokens,
-                  },
-                  modelDetailsMap[modelParams.modelId].cost.onDemand,
+    for await (const event of responseStream) {
+      console.log(event.type, "event_type")
+      switch (event.type) {
+        case "response.created":
+          yield {
+            text: "",
+            metadata: createEventMetadata("response.created", event, {
+              status: event.response.status,
+            }),
+          }
+          break
+
+        case "response.output_item.added":
+          const addedItem = event.item
+          let addedDisplayText = ""
+
+          if (addedItem.type === "reasoning") {
+            // Initialize reasoning content for this item
+            reasoningSteps.set(addedItem.id, "")
+            addedDisplayText = "🧠 Starting reasoning process..."
+          } else if (addedItem.type === "web_search_call") {
+            addedDisplayText = "🌐 Initiating web search..."
+          }
+
+          yield {
+            text: "",
+            metadata: createEventMetadata("response.output_item.added", event, {
+              output_index: event.output_index,
+              item: event.item,
+              displayText: addedDisplayText,
+            }),
+          }
+          break
+
+        case "response.output_item.done":
+          const doneItem = event.item
+          let doneDisplayText = ""
+          let searchDetails = null
+          let citationData = null
+
+          if (doneItem.type === "reasoning") {
+            const reasoningContent = reasoningSteps.get(doneItem.id) || ""
+            doneDisplayText = `💭 Reasoning complete${reasoningContent ? ` (${reasoningContent.length} chars)` : ""}`
+          } else if (doneItem.type === "web_search_call") {
+            searchDetails = extractSearchDetails(doneItem)
+            doneDisplayText = searchDetails?.query
+              ? `🔍 Searched: "${searchDetails.query}"`
+              : searchDetails?.domain
+                ? `📖 Opened page: ${searchDetails.domain}`
+                : "🌐 Web search completed"
+          } else if (doneItem.type === "message" && doneItem.content) {
+            for (const content of doneItem.content) {
+              if (content.type === "output_text" && content.annotations) {
+                citationData = content.annotations.filter(
+                  (annotation) => annotation.type === "url_citation",
                 )
-              : undefined,
-        }
-      }
-      // Handle completion token (finish_reason without content)
-      else if (chunk.choices?.[0]?.finish_reason) {
-        yield {
-          text: "",
-          metadata: chunk.choices[0].finish_reason,
-        }
-      }
-      // Handle cost (if not yet yielded)
-      else if (chunk.usage && !costYielded) {
-        costYielded = true
-        yield {
-          text: "",
-          metadata: "",
-          cost: calculateCost(
-            {
-              inputTokens: chunk.usage.prompt_tokens,
-              outputTokens: chunk.usage.completion_tokens,
-            },
-            modelDetailsMap[modelParams.modelId].cost.onDemand,
-          ),
-        }
+                if (citationData.length > 0) {
+                  doneDisplayText = `📚 Found ${citationData.length} citation${citationData.length > 1 ? "s" : ""}`
+                }
+              }
+            }
+          }
+
+          yield {
+            text: "",
+            metadata: createEventMetadata("response.output_item.done", event, {
+              output_index: event.output_index,
+              item: event.item,
+              displayText: doneDisplayText,
+              searchDetails,
+              citationData,
+            }),
+          }
+          break
+
+        case "response.output_text.delta":
+          yield {
+            text: event.delta,
+            metadata: "",
+          }
+          break
+
+        case "response.reasoning_text.delta":
+          // Accumulate reasoning text for the current reasoning step
+          const deltaEvent = event as any
+
+          if (deltaEvent.item_id && deltaEvent.delta) {
+            const currentContent = reasoningSteps.get(deltaEvent.item_id) || ""
+            reasoningSteps.set(
+              deltaEvent.item_id,
+              currentContent + deltaEvent.delta,
+            )
+          }
+
+          yield {
+            text: "",
+            metadata: createEventMetadata(
+              "response.reasoning_text.delta",
+              event,
+              {
+                delta: event.delta,
+                displayText: event.delta,
+                reasoning: true,
+                item_id: deltaEvent.item_id,
+              },
+            ),
+          }
+          break
+
+        case "response.reasoning_summary_text.delta":
+          const summaryDeltaEvent = event as any
+
+          if (summaryDeltaEvent.item_id && summaryDeltaEvent.delta) {
+            const currentContent =
+              reasoningSteps.get(summaryDeltaEvent.item_id) || ""
+            reasoningSteps.set(
+              summaryDeltaEvent.item_id,
+              currentContent + summaryDeltaEvent.delta,
+            )
+          }
+
+          yield {
+            text: "",
+            metadata: createEventMetadata(
+              "response.reasoning_summary_text.delta",
+              event,
+              {
+                delta: summaryDeltaEvent.delta,
+                displayText: summaryDeltaEvent.delta,
+                reasoning: true,
+                item_id: summaryDeltaEvent.item_id,
+                summary_index: summaryDeltaEvent.summary_index,
+              },
+            ),
+          }
+          break
+
+        case "response.reasoning_text.done":
+          const doneReasoningEvent = event as any
+
+          const finalReasoningContent =
+            reasoningSteps.get(doneReasoningEvent.item_id) || ""
+
+          yield {
+            text: "",
+            metadata: createEventMetadata(
+              "response.reasoning_text.done",
+              event,
+              {
+                displayText: "💭 Finished reasoning step",
+                item_id: doneReasoningEvent.item_id,
+                reasoningContent: finalReasoningContent,
+              },
+            ),
+          }
+          break
+
+        case "response.reasoning_summary_text.done":
+          const doneSummaryEvent = event as any
+          const finalSummaryContent =
+            reasoningSteps.get(doneSummaryEvent.item_id) || ""
+
+          yield {
+            text: "",
+            metadata: createEventMetadata(
+              "response.reasoning_summary_text.done",
+              event,
+              {
+                displayText: `💭 Finished reasoning summary (${finalSummaryContent.length} chars)`,
+                item_id: doneSummaryEvent.item_id,
+                reasoningContent: finalSummaryContent,
+                summary_index: doneSummaryEvent.summary_index,
+              },
+            ),
+          }
+          break
+
+        case "response.completed":
+          // Check if reasoning content is available in the completed response
+          const completedResponse = (event as any).response
+
+          // Check each output item for reasoning content
+          if (completedResponse?.output) {
+            completedResponse.output.forEach((item: any, index: number) => {
+              if (item.type === "reasoning") {
+                console.log(
+                  `Reasoning item ${index}:`,
+                  JSON.stringify(item, null, 2),
+                )
+                if (item.content || item.text || item.reasoning) {
+                  console.log("Found reasoning content in output item:", {
+                    content: item.content,
+                    text: item.text,
+                    reasoning: item.reasoning,
+                  })
+                }
+              }
+            })
+          }
+
+          if (event.response.usage && !costYielded) {
+            costYielded = true
+            yield {
+              text: "",
+              metadata: "",
+              cost: calculateCost(
+                {
+                  inputTokens: event.response.usage.input_tokens,
+                  outputTokens: event.response.usage.output_tokens,
+                },
+                modelDetailsMap[modelParams.modelId].cost.onDemand,
+              ),
+            }
+          }
+          yield {
+            text: "",
+            metadata: "stop",
+          }
+          break
+
+        case "response.in_progress":
+        case "response.web_search_call.in_progress":
+        case "response.web_search_call.searching":
+        case "response.web_search_call.completed":
+          // Handle web search progress events
+          const progressDisplayText = event.type.includes("searching")
+            ? "� Actively searching the web..."
+            : event.type.includes("completed")
+              ? "✅ Web search completed successfully"
+              : "🔄 Web search in progress..."
+
+          yield {
+            text: "",
+            metadata: createEventMetadata(event.type, event, {
+              displayText: progressDisplayText,
+              ...(event.type !== "response.in_progress" && {
+                output_index: (event as any).output_index,
+                item_id: (event as any).item_id,
+              }),
+            }),
+          }
+          break
+
+        default:
+          // Handle other event types with simplified logic
+          if (event.type.includes("in_progress")) {
+            yield {
+              text: "",
+              metadata: createEventMetadata(event.type, event, {
+                displayText: "⚡ Deep research process is actively running...",
+              }),
+            }
+          }
+          break
       }
     }
   }

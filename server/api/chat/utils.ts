@@ -1010,6 +1010,20 @@ export function findOptimalCitationInsertionPoint(
     return 0
   }
 
+  // Check if targetIndex is within a URL
+  const urlRegex = /https?:\/\/[^\s\])\}]+/g
+  let match: RegExpExecArray | null
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const urlStart = match.index
+    const urlEnd = match.index + match[0].length
+
+    // If target index is within this URL, move to after the URL
+    if (targetIndex >= urlStart && targetIndex <= urlEnd) {
+      return urlEnd + 1
+    }
+  }
+
   const charAtTarget = text[targetIndex]
   const charBeforeTarget = text[targetIndex - 1]
 

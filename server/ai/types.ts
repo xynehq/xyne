@@ -22,6 +22,8 @@ export enum Models {
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
   Gpt_4 = "gpt-4",
+  O3_Deep_Research = "o3-deep-research",
+  O4_Mini_Deep_Research = "o4-mini-deep-research",
 
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
   CohereCmdR = "cohere.command-r-v1:0",
@@ -81,6 +83,7 @@ export interface ModelParams {
   agentPrompt?: string
   imageFileNames?: string[]
   webSearch?: boolean
+  deepResearchEnabled?: boolean
 }
 
 export interface ConverseResponse {

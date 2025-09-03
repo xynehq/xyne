@@ -83,6 +83,7 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
+  deepResearchPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1479,7 +1480,11 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      previousClassification,
+      chainBreakClassifications,
+    )
   }
 
   const baseMessage = {
@@ -1803,10 +1808,11 @@ export const webSearchQuestion = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-    const webSearchSystemPrompt =
-      "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
+    const webSearchSystemPrompt = `User-Details: ${userCtx} \n 
+      You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately. 
+      `
     params.webSearch = true
-    
+
     if (!params.systemPrompt) {
       params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
         ? webSearchSystemPrompt + "\n\n" + parseAgentPrompt(params.agentPrompt)
@@ -1834,6 +1840,52 @@ export const webSearchQuestion = (
     })
 
     return vertexGoogleProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const getDeepResearchResponse = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = Models.O3_Deep_Research
+    }
+
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? deepResearchPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : deepResearchPrompt(userCtx)
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    if (!OpenAIKey) {
+      Logger.warn("OpenAIKey not configured, moving with default provider.")
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+
+    const openAIClient = new OpenAI({
+      apiKey: OpenAIKey,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
+    })
+    const openaiProvider = new OpenAIProvider(openAIClient)
+
+    return openaiProvider.converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in webSearchQuestion")
     throw error
