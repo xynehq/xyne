@@ -23,6 +23,11 @@ import {
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
 
+import { createAgentSchema } from "@/api/agent"
+import { getErrorMessage } from "@/utils"
+import type { CreateAgentPayload } from "@/api/agent"
+import type { Agent } from "openai/_shims/index.mjs"
+
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Db)
@@ -332,5 +337,45 @@ export const getAgentsByDataSourceId = async (
       `Failed to get agents for data source ID "${dataSourceId}"`,
     )
     throw new Error(`Failed to get agents for data source: ${dataSourceId}`)
+  }
+}
+
+
+export const createAgentHelper = async (
+  agentData: CreateAgentPayload,
+  userId: number,
+  workspaceId: number
+): Promise<SelectAgent> => {
+  try {
+    const validatedBody = createAgentSchema.parse(agentData)
+
+    const agentDataForInsert = {
+      name: validatedBody.name,
+      description: validatedBody.description,
+      prompt: validatedBody.prompt,
+      model: validatedBody.model,
+      isPublic: validatedBody.isPublic,
+      appIntegrations: validatedBody.appIntegrations,
+      allowWebSearch: validatedBody.allowWebSearch,
+      isRagOn: validatedBody.isRagOn,
+      uploadedFileNames: validatedBody.uploadedFileNames,
+      docIds: validatedBody.docIds,
+    }
+
+    const newAgent = await db.transaction(async (tx) => {
+      return await insertAgent(tx, agentDataForInsert, userId, workspaceId)
+    })
+
+    return newAgent
+  } catch (error) {
+    // Re-throw validation errors as-is for the caller to handle
+    // Logger.error(error, `Failed to create agent: ${getErrorMessage(error)}`)
+    if (error instanceof z.ZodError) {
+      throw error
+    }
+
+    // Wrap other errors with more context
+    const errMsg = getErrorMessage(error)
+    throw new Error(`Failed to create agent: ${errMsg}`)
   }
 }
