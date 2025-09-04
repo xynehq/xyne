@@ -228,7 +228,6 @@ export const startStream = async (
   streamKey: string,
   messageToSend: string,
   selectedSources: string[] = [],
-  isReasoningActive: boolean = true,
   isAgenticMode: boolean = false,
   queryClient?: any,
   router?: any,
@@ -236,7 +235,7 @@ export const startStream = async (
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
   metadata?: AttachmentMetadata[],
-  enableWebSearch: boolean = false,
+  selectedModel?: string,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -274,14 +273,24 @@ export const startStream = async (
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
   }
-  url.searchParams.append("modelId", "gpt-4o-mini")
-  url.searchParams.append("message", finalMessagePayload)
-
-  if (isReasoningActive) {
-    url.searchParams.append("isReasoningEnabled", "true")
+  // Build selected model JSON configuration (optional)
+  let modelConfig: { model?: string; capabilities?: any } | null = null
+  if (selectedModel) {
+    try {
+      const parsed = JSON.parse(selectedModel)
+      modelConfig =
+        typeof parsed === "string"
+          ? { model: parsed, capabilities: [] }
+          : parsed
+    } catch {
+      // Treat raw value as a label/model id
+      modelConfig = { model: String(selectedModel), capabilities: [] }
+    }
   }
-
-  url.searchParams.append("enableWebSearch", enableWebSearch.toString())
+  if (modelConfig) {
+    url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
+  }
+  url.searchParams.append("message", finalMessagePayload)
 
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
@@ -650,12 +659,11 @@ export const useChatStream = (
     async (
       messageToSend: string,
       selectedSources: string[] = [],
-      isReasoningActive: boolean = true,
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
-      enableWebSearch: boolean = false,
+      selectedModel?: string,
     ) => {
       const streamKey = currentStreamKey
 
@@ -663,7 +671,6 @@ export const useChatStream = (
         streamKey,
         messageToSend,
         selectedSources,
-        isReasoningActive,
         isAgenticMode,
         queryClient,
         router,
@@ -671,7 +678,7 @@ export const useChatStream = (
         agentIdFromChatParams,
         toolsList,
         metadata,
-        enableWebSearch,
+        selectedModel,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -694,9 +701,9 @@ export const useChatStream = (
   const retryMessage = useCallback(
     async (
       messageId: string,
-      isReasoningActive: boolean = false,
       isAgenticMode: boolean = false,
       attachmentFileIds?: string[],
+      selectedModelConfig?: string | null,
     ) => {
       if (!messageId) return
 
@@ -791,12 +798,12 @@ export const useChatStream = (
       }
 
       const url = new URL(`/api/v1/message/retry`, window.location.origin)
-      url.searchParams.append("messageId", encodeURIComponent(messageId))
-      if (isReasoningActive) {
-        url.searchParams.append("isReasoningEnabled", "true")
-      }
+      url.searchParams.append("messageId", messageId)
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
+      }
+      if (selectedModelConfig) {
+        url.searchParams.append("selectedModelConfig", selectedModelConfig)
       }
       if (attachmentFileIds) {
         url.searchParams.append(
