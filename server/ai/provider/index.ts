@@ -1811,11 +1811,15 @@ export const webSearchQuestion = (
     params.webSearch = true
 
     if (!params.systemPrompt) {
-      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
-        ? webSearchSystemPrompt(userCtx) +
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const parsed = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt =
+          webSearchSystemPrompt(userCtx) +
           "\n\n" +
-          parseAgentPrompt(params.agentPrompt)
-        : webSearchSystemPrompt(userCtx)
+          `Name: ${parsed.name}\nDescription: ${parsed.description}\nPrompt: ${parsed.prompt}`
+      } else {
+        params.systemPrompt = webSearchSystemPrompt(userCtx)
+      }
     }
 
     const baseMessage: Message = {
