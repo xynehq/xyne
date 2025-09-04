@@ -53,6 +53,10 @@ done
 echo -e "${BLUE}🚀 Xyne Portable Export${NC}"
 echo "=================================="
 
+# Set up environment variables for Docker user/group
+export DOCKER_UID=$(id -u)
+export DOCKER_GID=$(id -g)
+
 # Determine if we need to create export directory
 if [ "$NO_EXPORT" = "false" ]; then
     EXPORT_DIR="xyne-portable-$(date +%Y%m%d_%H%M%S)"
@@ -63,7 +67,7 @@ else
 fi
 
 # Build the main Xyne image
-docker-compose -f docker-compose.yml -f docker-compose.app.yml build app
+docker-compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.infrastructure.yml build app
 
 # Build Vespa GPU image if needed
 if [ "$FORCE_BUILD" = "true" ] || ! docker images | grep -q "xyne-vespa-gpu"; then
@@ -91,6 +95,7 @@ if [ "$NO_EXPORT" = "false" ]; then
     cp docker-compose.yml "$EXPORT_DIR/"
     cp docker-compose.app.yml "$EXPORT_DIR/"
     cp docker-compose.infrastructure.yml "$EXPORT_DIR/"
+    cp docker-compose.infrastructure-cpu.yml "$EXPORT_DIR/"
     cp Dockerfile-vespa-gpu "$EXPORT_DIR/" 2>/dev/null || echo "Dockerfile-vespa-gpu not found"
     cp prometheus-selfhosted.yml "$EXPORT_DIR/"
     cp loki-config.yaml "$EXPORT_DIR/"
