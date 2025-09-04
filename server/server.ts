@@ -96,7 +96,7 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo, GenerateApiKey } from "@/api/auth"
+import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -196,25 +196,6 @@ import {
   getSocketModeStatus,
 } from "@/integrations/slack/client"
 const { JwtPayloadKey } = config
-// Import Vespa proxy handlers
-import {
-  validateApiKey,
-  vespaSearchProxy,
-  vespaAutocompleteProxy,
-  vespaGroupSearchProxy,
-  vespaGetItemsProxy,
-  vespaChatContainerByChannelProxy,
-  vespaChatUserByEmailProxy,
-  vespaGetDocumentProxy,
-  vespaGetDocumentsByIdsProxy,
-  vespaGetUsersByNamesAndEmailsProxy,
-  vespaGetDocumentsByThreadIdProxy,
-  vespaGetEmailsByThreadIdsProxy,
-  vespaGetDocumentsWithFieldProxy,
-  vespaGetRandomDocumentProxy,
-  searchVespaProxy,
-  groupVespaSearchProxy,
-} from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
 
 import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
@@ -227,14 +208,6 @@ import { eq } from "drizzle-orm"
 const deleteDataSourceFileQuerySchema = z.object({
   dataSourceName: z.string().min(1),
   fileName: z.string().min(1),
-})
-
-// Add schema for API key generation
-const generateApiKeySchema = z.object({
-  expirationDays: z.coerce
-    .number()
-    .min(1 / 1440)
-    .max(30), // Allow fractional days, minimum 1 minute (1/1440 days)
 })
 
 export type Variables = JwtVariables
@@ -866,11 +839,6 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
-  .get(
-    "/auth/generate-api-key",
-    zValidator("query", generateApiKeySchema),
-    GenerateApiKey,
-  )
   //send Email Route
   .post("/email/send", sendMailHelper)
 
@@ -1045,45 +1013,6 @@ export const AppRoutes = app
     GetAllUserFeedbackMessages,
   )
 
-// Vespa Proxy Routes (for production server proxying)
-app
-  .basePath("/api/vespa")
-  .post("/search", validateApiKey, vespaSearchProxy)
-  .post("/autocomplete", validateApiKey, vespaAutocompleteProxy)
-  .post("/group-search", validateApiKey, vespaGroupSearchProxy)
-  .post("/get-items", validateApiKey, vespaGetItemsProxy)
-  .post(
-    "/chat-container-by-channel",
-    validateApiKey,
-    vespaChatContainerByChannelProxy,
-  )
-  .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
-  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
-  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
-  .post(
-    "/get-users-by-names-and-emails",
-    validateApiKey,
-    vespaGetUsersByNamesAndEmailsProxy,
-  )
-  .post(
-    "/get-documents-by-thread-id",
-    validateApiKey,
-    vespaGetDocumentsByThreadIdProxy,
-  )
-  .post(
-    "/get-emails-by-thread-ids",
-    validateApiKey,
-    vespaGetEmailsByThreadIdsProxy,
-  )
-  .post(
-    "/get-documents-with-field",
-    validateApiKey,
-    vespaGetDocumentsWithFieldProxy,
-  )
-  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
-  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
-  .post("/search-vespa", validateApiKey, searchVespaProxy)
-
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
   "/oauth/start",
@@ -1227,8 +1156,11 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
-      const emailSent = await emailService.sendWelcomeEmail(user.email, user.name)
-      if(emailSent) {
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
         Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
       }
       const opts = {
@@ -1272,9 +1204,14 @@ app.get(
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
-    const emailSent = await emailService.sendWelcomeEmail(userAcc.email, userAcc.name)
-    if(emailSent) {
-      Logger.info(`Welcome email sent to new workspace creator ${userAcc.email}`)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
     }
     const opts = {
       secure: true,
