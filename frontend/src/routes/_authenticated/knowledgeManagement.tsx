@@ -26,7 +26,10 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
-import type { Collection as CollectionType, CollectionItem } from "@/types/knowledgeBase"
+import type {
+  Collection as CollectionType,
+  CollectionItem,
+} from "@/types/knowledgeBase"
 import { api } from "@/api"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
@@ -114,7 +117,9 @@ const DocumentViewerContainer = memo(
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
-              <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
+              <p className="text-gray-600 dark:text-gray-300">
+                Loading document...
+              </p>
             </div>
           </div>
         )}
@@ -189,7 +194,9 @@ const DocumentViewerContainer = memo(
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 dark:text-gray-400">Select a document to view</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              Select a document to view
+            </p>
           </div>
         )}
       </div>
@@ -381,7 +388,8 @@ function RouteComponent() {
           const data = await response.json()
           const existingCollection = data.find(
             (collection: CollectionType) =>
-              collection.name.toLowerCase() === uploadingCollectionName.toLowerCase(),
+              collection.name.toLowerCase() ===
+              uploadingCollectionName.toLowerCase(),
           )
 
           if (
@@ -399,26 +407,55 @@ function RouteComponent() {
             setUploadingCollectionName("")
             clearUploadState()
 
-            // Refresh collections to show the new one
-            const updatedCollections = data.map((collection: CollectionType) => ({
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              files: collection.totalCount || 0,
-              items: [],
-              isOpen: false,
-              lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
+            // Refresh collections using Map-based deduplication
+            const fetchedCollections = data.map(
+              (collection: CollectionType) => ({
+                id: collection.id,
+                name: collection.name,
+                description: collection.description,
+                files: collection.totalCount || 0,
+                items: [],
+                isOpen: false,
+                lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                  "en-GB",
+                  {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  },
+                ),
+                updatedBy: collection.lastUpdatedByEmail || "Unknown",
+                totalCount: collection.totalCount,
+                isPrivate: collection.isPrivate,
               }),
-              updatedBy: collection.lastUpdatedByEmail || "Unknown",
-              totalCount: collection.totalCount,
-              isPrivate: collection.isPrivate,
-            }))
-            setCollections(updatedCollections)
+            )
+
+            // Use Map to deduplicate by ID
+            setCollections((prev) => {
+              const collectionsMap = new Map()
+
+              // First add existing collections (to preserve any state like isOpen)
+              prev.forEach((col) => collectionsMap.set(col.id, col))
+
+              // Then add/update with fetched collections
+              fetchedCollections.forEach((col: any) => {
+                const existing = collectionsMap.get(col.id)
+                if (existing) {
+                  // Preserve certain states while updating data
+                  collectionsMap.set(col.id, {
+                    ...col,
+                    isOpen: existing.isOpen,
+                    items: existing.items,
+                  })
+                } else {
+                  collectionsMap.set(col.id, col)
+                }
+              })
+
+              return Array.from(collectionsMap.values())
+            })
 
             showToast(
               "Upload Complete",
@@ -450,39 +487,42 @@ function RouteComponent() {
             files: collection.totalItems || 0,
             items: [],
             isOpen: false,
-            lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
+            lastUpdated: new Date(collection.updatedAt).toLocaleString(
+              "en-GB",
+              {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            ),
             updatedBy: collection.lastUpdatedByEmail || "Unknown",
             totalCount: collection.totalItems,
             isPrivate: collection.isPrivate,
           }))
-          
+
           // Use Map to deduplicate by ID, then convert back to array
           const collectionsMap = new Map()
-          
+
           // First add existing collections (to preserve any state like isOpen)
-          collections.forEach(col => collectionsMap.set(col.id, col))
-          
+          collections.forEach((col) => collectionsMap.set(col.id, col))
+
           // Then add/update with fetched collections
-          fetchedCollections.forEach((col:any) => {
+          fetchedCollections.forEach((col: any) => {
             const existing = collectionsMap.get(col.id)
             if (existing) {
               // Preserve certain states while updating data
               collectionsMap.set(col.id, {
                 ...col,
                 isOpen: existing.isOpen,
-                items: existing.items
+                items: existing.items,
               })
             } else {
               collectionsMap.set(col.id, col)
             }
           })
-          
+
           setCollections(Array.from(collectionsMap.values()))
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
@@ -588,16 +628,16 @@ function RouteComponent() {
       // Use Set-based approach to prevent duplicates
       setCollections((prev) => {
         const collectionsMap = new Map()
-        
+
         // Add existing collections
-        prev.forEach(col => collectionsMap.set(col.id, col))
-        
+        prev.forEach((col) => collectionsMap.set(col.id, col))
+
         // Add/update new collection
         collectionsMap.set(newCollection.id, newCollection)
-        
+
         return Array.from(collectionsMap.values())
       })
-      
+
       handleCloseModal()
       showToast(
         "Knowledge Base Created",
@@ -635,7 +675,10 @@ function RouteComponent() {
     setSelectedFiles([])
   }
 
-  const handleOpenAddFilesModal = (collection: Collection, folder?: FileNode) => {
+  const handleOpenAddFilesModal = (
+    collection: Collection,
+    folder?: FileNode,
+  ) => {
     setAddingToCollection(collection)
     setTargetFolder(folder || null)
     setCollectionName(collection.name)
@@ -676,7 +719,11 @@ function RouteComponent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, addingToCollection.id, targetFolder?.id)
+        await uploadFileBatch(
+          batchFiles,
+          addingToCollection.id,
+          targetFolder?.id,
+        )
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -696,10 +743,10 @@ function RouteComponent() {
 
       setCollections((prev) => {
         const collectionsMap = new Map()
-        
+
         // Add existing collections
-        prev.forEach(col => collectionsMap.set(col.id, col))
-        
+        prev.forEach((col) => collectionsMap.set(col.id, col))
+
         // Update the specific collection
         const updatedCollection = {
           ...collectionsMap.get(addingToCollection.id),
@@ -711,25 +758,21 @@ function RouteComponent() {
               totalFileCount: item.totalFileCount,
               updatedAt: item.updatedAt,
               id: item.id,
-              updatedBy:
-                item.lastUpdatedByEmail || user?.email || "Unknown",
+              updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
             })),
           ),
-          lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
-            "en-GB",
-            {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            },
-          ),
+          lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
           updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
         }
-        
+
         collectionsMap.set(addingToCollection.id, updatedCollection)
-        
+
         return Array.from(collectionsMap.values())
       })
 
@@ -844,26 +887,36 @@ function RouteComponent() {
 
       if (response.ok) {
         const updatedCl = await response.json()
-        setCollections((prev) =>
-          prev.map((c) =>
-            c.id === editingCollection.id
-              ? {
-                  ...c,
-                  name: updatedCl.name,
-                  lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
-                    "en-GB",
-                    {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    },
-                  ),
-                }
-              : c,
-          ),
-        )
+
+        // Use Map-based approach to prevent duplicates during update
+        setCollections((prev) => {
+          const collectionsMap = new Map()
+
+          // Add existing collections
+          prev.forEach((col) => collectionsMap.set(col.id, col))
+
+          // Update the specific collection
+          const existingCollection = collectionsMap.get(editingCollection.id)
+          if (existingCollection) {
+            collectionsMap.set(editingCollection.id, {
+              ...existingCollection,
+              name: updatedCl.name,
+              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
+                "en-GB",
+                {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                },
+              ),
+            })
+          }
+
+          return Array.from(collectionsMap.values())
+        })
+
         setEditingCollection(null)
         setCollectionName("")
         showToast("Collection Updated", "Successfully updated collection name.")
@@ -1025,19 +1078,21 @@ function RouteComponent() {
                                 if (response.ok) {
                                   const items = await response.json()
 
-                                  n.children = items.map((item: CollectionItem) => ({
-                                    id: item.id,
-                                    name: item.name,
-                                    type: item.type as "file" | "folder",
-                                    updatedAt: item.updatedAt,
-                                    updatedBy:
-                                      item.lastUpdatedByEmail ||
-                                      user?.email ||
-                                      "Unknown",
-                                    isOpen: true,
-                                    children:
-                                      item.type === "folder" ? [] : undefined,
-                                  }))
+                                  n.children = items.map(
+                                    (item: CollectionItem) => ({
+                                      id: item.id,
+                                      name: item.name,
+                                      type: item.type as "file" | "folder",
+                                      updatedAt: item.updatedAt,
+                                      updatedBy:
+                                        item.lastUpdatedByEmail ||
+                                        user?.email ||
+                                        "Unknown",
+                                      isOpen: true,
+                                      children:
+                                        item.type === "folder" ? [] : undefined,
+                                    }),
+                                  )
                                 }
                               } catch (error) {
                                 console.error(
@@ -1156,208 +1211,225 @@ function RouteComponent() {
                   </div>
                 )}
 
-                {collections.map((collection, index) => (
-                  <div key={index} className="mb-8">
-                    <div
-                      className="flex justify-between items-center mb-4 cursor-pointer"
-                      onClick={async () => {
-                        const updatedCollections = [...collections]
-                        const coll = updatedCollections.find(
-                          (c) => c.id === collection.id,
-                        )
-                        if (coll) {
-                          coll.isOpen = !coll.isOpen
-                          if (coll.isOpen) {
-                            const response = await api.cl[":id"].items.$get({
-                              param: { id: collection.id },
-                            })
-                            const data = await response.json()
-                            coll.items = buildFileTree(
-                              data.map((item: CollectionItem) => ({
-                                name: item.name,
-                                type: item.type as "file" | "folder",
-                                totalFileCount: item.totalFileCount,
-                                updatedAt: item.updatedAt,
-                                id: item.id,
-                                updatedBy:
-                                  item.lastUpdatedByEmail ||
-                                  user?.email ||
-                                  "Unknown",
-                              })),
-                            )
-                          } else {
-                            // coll.items = []; // This would clear the items, maybe not desired
+                {collections
+                  .filter((collection) => {
+                    // Filter out the collection that's currently being uploaded to avoid duplicates
+                    if (isUploading && uploadingCollectionName) {
+                      return (
+                        collection.name.toLowerCase() !==
+                        uploadingCollectionName.toLowerCase()
+                      )
+                    }
+                    return true
+                  })
+                  .map((collection, index) => (
+                    <div key={collection.id} className="mb-8">
+                      <div
+                        className="flex justify-between items-center mb-4 cursor-pointer"
+                        onClick={async () => {
+                          const updatedCollections = [...collections]
+                          const coll = updatedCollections.find(
+                            (c) => c.id === collection.id,
+                          )
+                          if (coll) {
+                            coll.isOpen = !coll.isOpen
+                            if (coll.isOpen) {
+                              const response = await api.cl[":id"].items.$get({
+                                param: { id: collection.id },
+                              })
+                              const data = await response.json()
+                              coll.items = buildFileTree(
+                                data.map((item: CollectionItem) => ({
+                                  name: item.name,
+                                  type: item.type as "file" | "folder",
+                                  totalFileCount: item.totalFileCount,
+                                  updatedAt: item.updatedAt,
+                                  id: item.id,
+                                  updatedBy:
+                                    item.lastUpdatedByEmail ||
+                                    user?.email ||
+                                    "Unknown",
+                                })),
+                              )
+                            } else {
+                              // coll.items = []; // This would clear the items, maybe not desired
+                            }
+                            setCollections(updatedCollections)
                           }
-                          setCollections(updatedCollections)
-                        }
-                      }}
-                    >
-                      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                        {collection.name}
-                      </h2>
-                      <div className="flex items-center gap-4">
-                        <Plus
-                          size={16}
-                          className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            !isUploading && handleOpenAddFilesModal(collection)
-                          }}
-                        />
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <MoreHorizontal
-                              size={16}
-                              className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                !isUploading && handleEditCollection(collection)
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              <span>Edit</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                !isUploading &&
-                                  setDeletingCollection(collection)
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                    {collection.isOpen && (
-                      <>
-                        <div className="grid grid-cols-12 gap-4 text-sm text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
-                          <div className="col-span-5">FOLDER</div>
-                          <div className="col-span-2"></div>
-                          <div className="col-span-1 text-center">FILES</div>
-                          <div className="col-span-2">LAST UPDATED</div>
-                          <div className="col-span-2">UPDATED&nbsp;BY</div>
+                        }}
+                      >
+                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                          {collection.name}
+                        </h2>
+                        <div className="flex items-center gap-4">
+                          <Plus
+                            size={16}
+                            className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              !isUploading &&
+                                handleOpenAddFilesModal(collection)
+                            }}
+                          />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <MoreHorizontal
+                                size={16}
+                                className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  !isUploading &&
+                                    handleEditCollection(collection)
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  !isUploading &&
+                                    setDeletingCollection(collection)
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        <FileTree
-                          items={collection.items}
-                          onFileClick={(file: FileNode) =>
-                            handleFileClick(file, collection)
-                          }
-                          onAddFiles={(node, path) => {
-                            const collection = collections.find((c) =>
-                              c.items.some((item) => findNode(item, node)),
-                            )
-                            if (collection) {
-                              handleOpenAddFilesModal(collection, node)
+                      </div>
+                      {collection.isOpen && (
+                        <>
+                          <div className="grid grid-cols-12 gap-4 text-sm text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
+                            <div className="col-span-5">FOLDER</div>
+                            <div className="col-span-2"></div>
+                            <div className="col-span-1 text-center">FILES</div>
+                            <div className="col-span-2">LAST UPDATED</div>
+                            <div className="col-span-2">UPDATED&nbsp;BY</div>
+                          </div>
+                          <FileTree
+                            items={collection.items}
+                            onFileClick={(file: FileNode) =>
+                              handleFileClick(file, collection)
                             }
-                          }}
-                          onDelete={(node, path) => {
-                            const collection = collections.find((c) =>
-                              c.items.some((item) => findNode(item, node)),
-                            )
-                            if (collection) {
-                              if (
-                                node.type === "folder" &&
-                                node.name === collection.name
-                              ) {
-                                setDeletingCollection(collection)
-                              } else {
-                                setDeletingItem({ collection, node, path })
+                            onAddFiles={(node, path) => {
+                              const collection = collections.find((c) =>
+                                c.items.some((item) => findNode(item, node)),
+                              )
+                              if (collection) {
+                                handleOpenAddFilesModal(collection, node)
                               }
-                            }
-                          }}
-                          onToggle={async (node) => {
-                            if (node.type !== "folder") return
+                            }}
+                            onDelete={(node, path) => {
+                              const collection = collections.find((c) =>
+                                c.items.some((item) => findNode(item, node)),
+                              )
+                              if (collection) {
+                                if (
+                                  node.type === "folder" &&
+                                  node.name === collection.name
+                                ) {
+                                  setDeletingCollection(collection)
+                                } else {
+                                  setDeletingItem({ collection, node, path })
+                                }
+                              }
+                            }}
+                            onToggle={async (node) => {
+                              if (node.type !== "folder") return
 
-                            const updatedCollections = [...collections]
-                            const coll = updatedCollections.find(
-                              (c) => c.id === collection.id,
-                            )
-                            if (coll) {
-                              // Toggle the folder state
-                              const toggleNode = async (
-                                nodes: FileNode[],
-                              ): Promise<FileNode[]> => {
-                                const updatedNodes = [...nodes]
-                                for (let i = 0; i < updatedNodes.length; i++) {
-                                  const n = updatedNodes[i]
-                                  if (n === node) {
-                                    n.isOpen = !n.isOpen
+                              const updatedCollections = [...collections]
+                              const coll = updatedCollections.find(
+                                (c) => c.id === collection.id,
+                              )
+                              if (coll) {
+                                // Toggle the folder state
+                                const toggleNode = async (
+                                  nodes: FileNode[],
+                                ): Promise<FileNode[]> => {
+                                  const updatedNodes = [...nodes]
+                                  for (
+                                    let i = 0;
+                                    i < updatedNodes.length;
+                                    i++
+                                  ) {
+                                    const n = updatedNodes[i]
+                                    if (n === node) {
+                                      n.isOpen = !n.isOpen
 
-                                    // If opening the folder and it has an ID, fetch its contents
-                                    if (n.isOpen && n.id) {
-                                      try {
-                                        const response = await api.cl[
-                                          ":id"
-                                        ].items.$get({
-                                          param: { id: collection.id },
-                                          query: { parentId: n.id },
-                                        })
-                                        if (response.ok) {
-                                          const items = await response.json()
+                                      // If opening the folder and it has an ID, fetch its contents
+                                      if (n.isOpen && n.id) {
+                                        try {
+                                          const response = await api.cl[
+                                            ":id"
+                                          ].items.$get({
+                                            param: { id: collection.id },
+                                            query: { parentId: n.id },
+                                          })
+                                          if (response.ok) {
+                                            const items = await response.json()
 
-                                          // Build the children structure
-                                          n.children = items.map(
-                                            (item: CollectionItem) => ({
-                                              id: item.id,
-                                              name: item.name,
-                                              type: item.type as
-                                                | "file"
-                                                | "folder",
-                                              files: item.totalFileCount,
-                                              lastUpdated: item.updatedAt,
-                                              updatedBy:
-                                                item.lastUpdatedByEmail ||
-                                                user?.email ||
-                                                "Unknown",
-                                              isOpen: false,
-                                              children:
-                                                item.type === "folder"
-                                                  ? []
-                                                  : undefined,
-                                            }),
+                                            // Build the children structure
+                                            n.children = items.map(
+                                              (item: CollectionItem) => ({
+                                                id: item.id,
+                                                name: item.name,
+                                                type: item.type as
+                                                  | "file"
+                                                  | "folder",
+                                                files: item.totalFileCount,
+                                                lastUpdated: item.updatedAt,
+                                                updatedBy:
+                                                  item.lastUpdatedByEmail ||
+                                                  user?.email ||
+                                                  "Unknown",
+                                                isOpen: false,
+                                                children:
+                                                  item.type === "folder"
+                                                    ? []
+                                                    : undefined,
+                                              }),
+                                            )
+                                          }
+                                        } catch (error) {
+                                          console.error(
+                                            `Failed to fetch folder contents for ${n.name}:`,
+                                            error,
+                                          )
+                                          showToast(
+                                            "Error",
+                                            `Failed to load folder contents`,
+                                            true,
                                           )
                                         }
-                                      } catch (error) {
-                                        console.error(
-                                          `Failed to fetch folder contents for ${n.name}:`,
-                                          error,
-                                        )
-                                        showToast(
-                                          "Error",
-                                          `Failed to load folder contents`,
-                                          true,
-                                        )
+                                      } else if (!n.isOpen) {
+                                        // Optionally clear children when closing
+                                        // n.children = [];
                                       }
-                                    } else if (!n.isOpen) {
-                                      // Optionally clear children when closing
-                                      // n.children = [];
+                                    } else if (n.children) {
+                                      n.children = await toggleNode(n.children)
                                     }
-                                  } else if (n.children) {
-                                    n.children = await toggleNode(n.children)
                                   }
+                                  return updatedNodes
                                 }
-                                return updatedNodes
-                              }
 
-                              coll.items = await toggleNode(coll.items)
-                              setCollections(updatedCollections)
-                            }
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
-                ))}
+                                coll.items = await toggleNode(coll.items)
+                                setCollections(updatedCollections)
+                              }
+                            }}
+                          />
+                        </>
+                      )}
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
@@ -1477,7 +1549,7 @@ function RouteComponent() {
               <div className="flex justify-between items-center">
                 <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
                   {addingToCollection
-                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ''}`
+                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ""}`
                     : "CREATE NEW COLLECTION"}
                 </h2>
                 <Button
