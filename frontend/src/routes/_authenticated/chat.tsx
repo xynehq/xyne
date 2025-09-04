@@ -2563,7 +2563,9 @@ export const ChatMessage = ({
                     />
                   </>
                 )}
-                {message === "" && (!responseDone || isRetrying) ? (
+                {message === "" &&
+                (!responseDone || isRetrying) &&
+                !deepResearchSteps.length ? (
                   <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
                     {`${THINKING_PLACEHOLDER}${dots}`}
                   </div>

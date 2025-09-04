@@ -135,7 +135,7 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
   isStreaming = false,
   className,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(true)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
 
@@ -222,6 +222,9 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
             ) : (
               <Brain className="w-5 h-5 text-slate-600" />
             )}
+            {isStreaming && (!latestStep || latestStep.status !== "active") && (
+              <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+            )}
             <span className="text-sm font-medium text-slate-700 dark:text-gray-300">
               {isStreaming
                 ? latestStep
@@ -229,10 +232,6 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                   : "Deep research in progress..."
                 : `Deep research completed • ${completedSteps.length} steps`}
             </span>
-            {/* Only show loader if latest step is not active (since getStepIcon already shows loader for active steps) */}
-            {isStreaming && (!latestStep || latestStep.status !== "active") && (
-              <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
-            )}
             {totalSourcesCount > 0 && (
               <div className="flex items-center gap-1 px-2 py-1 bg-slate-100 dark:bg-blue-900 rounded-full">
                 <ExternalLink className="w-3 h-3 text-slate-600 dark:text-blue-400" />
@@ -254,7 +253,7 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
 
       {/* Content */}
       {isExpanded && (
-        <div className="px-6 pb-6">
+        <div className="px-6 pb-6 pt-4">
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
@@ -385,9 +384,6 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                     )}
                   </div>
                   <div className="flex-shrink-0 flex flex-col items-end gap-2">
-                    <div className="text-xs text-slate-400 dark:text-gray-500">
-                      Step {index + 1}
-                    </div>
                     {step.status === "completed" && (
                       <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                     )}

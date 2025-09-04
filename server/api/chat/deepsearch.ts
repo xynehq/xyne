@@ -98,7 +98,7 @@ export async function processDeepSearchIterator(
           const step = {
             id: metadata.item_id,
             type: "reasoning",
-            title: "💭 Reasoning",
+            title: "Reasoning",
             content: metadata.delta,
             focus: "Analyzing and thinking through the problem",
             timestamp: Date.now(),
@@ -130,7 +130,7 @@ export async function processDeepSearchIterator(
         if (existingStep) {
           // Update existing step to completed status
           existingStep.status = "completed"
-          existingStep.title = `💭 Reasoning Complete (${metadata.reasoningContent.length} chars)`
+          existingStep.title = `Reasoning Complete (${metadata.reasoningContent.length} chars)`
           existingStep.fullReasoningContent = metadata.reasoningContent
           existingStep.timestamp = Date.now()
 
@@ -143,7 +143,7 @@ export async function processDeepSearchIterator(
           const step = {
             id: metadata.item_id + "_complete",
             type: "reasoning",
-            title: `💭 Reasoning Complete (${metadata.reasoningContent.length} chars)`,
+            title: `Reasoning Complete (${metadata.reasoningContent.length} chars)`,
             content: metadata.reasoningContent,
             focus: "Completed reasoning analysis",
             timestamp: Date.now(),
@@ -342,8 +342,9 @@ export function processOpenAICitations(
     let newCitationMap: Record<number, number> = {}
     let urlToIndexMap: Map<string, number> = new Map()
 
-    const urlAnnotations = annotations
-      .filter((annotation) => annotation.type === "url_citation")
+    const urlAnnotations = annotations.filter(
+      (annotation) => annotation.type === "url_citation",
+    )
 
     for (const annotation of urlAnnotations) {
       let citationIndex: number
