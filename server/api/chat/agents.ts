@@ -707,9 +707,14 @@ export const MessageWithToolsApi = async (c: Context) => {
     
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
-    // If label lookup failed, treat input as a concrete model id
-    if (!actualModelId && modelId) {
-      actualModelId = modelId as Models
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
     }
     
     const attachmentMetadata = parseAttachmentMetadata(c)
@@ -811,7 +816,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: actualModelId || "gemini-2-5-pro",
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -862,7 +867,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: actualModelId || "gemini-2-5-pro",
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -2896,9 +2901,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
-    // If label lookup failed, treat input as a concrete model id
-    if (!actualModelId && modelId) {
-      actualModelId = modelId as Models
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
     }
     
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -2992,7 +3002,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: actualModelId || "gemini-2-5-pro",
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
 
@@ -3044,7 +3054,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: actualModelId || "gemini-2-5-pro",
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
@@ -3653,14 +3663,14 @@ export const AgentMessageApi = async (c: Context) => {
           `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
         )
       } catch (e) {
-        loggerWithChild({ email: email }).warn(
+        loggerWithChild({ email }).warn(
           `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
         )
-        modelId = "gemini-2-5-pro" // fallback
+        modelId = defaultBestModel as string // fallback
       }
     } else {
       // Fallback if no model config provided
-      modelId = "gemini-2-5-pro"
+      modelId = defaultBestModel as string
       loggerWithChild({ email: email }).info("[AgentMessageApi] No model config provided, using default")
     }
     
@@ -3785,7 +3795,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: modelId || "gemini-2-5-pro",
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -3836,7 +3846,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: modelId || "gemini-2-5-pro",
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist

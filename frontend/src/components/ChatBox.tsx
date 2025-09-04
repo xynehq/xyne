@@ -480,6 +480,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     
     const [isModelsLoading, setIsModelsLoading] = useState(false)
     
+    // Animation state for model text changes
+    const [isModelTextAnimating, setIsModelTextAnimating] = useState(false)
 
 
     // Selected model capabilities state - now single selection
@@ -580,6 +582,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
     }, [selectedCapability])
 
+    // Effect to trigger animation when model changes
+    useEffect(() => {
+      if (selectedModel) {
+        setIsModelTextAnimating(true)
+        const timer = setTimeout(() => {
+          setIsModelTextAnimating(false)
+        }, 300) // Match animation duration
+        
+        return () => clearTimeout(timer)
+      }
+    }, [selectedModel])
+
     // Handle capability mode switching
     const handleCapabilityChange = useCallback((newCapability: 'reasoning' | 'websearch' | 'deepResearch' | null) => {
       if (newCapability === selectedCapability) {
@@ -657,7 +671,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
 
       fetchAvailableModels()
-    }, [selectedModel, selectedCapability])
+    }, [selectedCapability])
 
     // File upload utility functions
     const showToast = createToastNotifier(toast)
@@ -2750,6 +2764,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   : "Attach files"
               }
             />
+            
+            {/* Vertical Divider */}
+            {showAdvancedOptions && (
+              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+            )}
+            
             {showAdvancedOptions && (
               <>
                 <AtSign
@@ -2803,10 +2823,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   <div 
                     className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
                     style={{
-                      width: '28px', // Same as button width
+                      width: '40px', // Same as button width
                       left: selectedCapability === 'reasoning' ? '4px' :   // Centered on first button
-                             selectedCapability === 'websearch' ? '36px' :   // Centered on second button  
-                             selectedCapability === 'deepResearch' ? '68px' : '4px', // Centered on third button
+                             selectedCapability === 'websearch' ? '48px' :   // Centered on second button  
+                             selectedCapability === 'deepResearch' ? '92px' : '4px', // Centered on third button
                       opacity: selectedCapability ? 1 : 0
                     }}
                   />
@@ -2814,7 +2834,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   {/* Always show all three capability buttons */}
                   <button
                     onClick={() => handleCapabilityChange('reasoning')}
-                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                       selectedCapability === 'reasoning'
                         ? 'text-gray-900 dark:text-gray-100'
                         : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
@@ -2825,7 +2845,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   
                   <button
                     onClick={() => handleCapabilityChange('websearch')}
-                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                       selectedCapability === 'websearch'
                         ? 'text-gray-900 dark:text-gray-100'
                         : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
@@ -2836,7 +2856,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   
                   <button
                     onClick={() => handleCapabilityChange('deepResearch')}
-                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                       selectedCapability === 'deepResearch'
                         ? 'text-gray-900 dark:text-gray-100'
                         : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
@@ -3488,16 +3508,25 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button 
-                    className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2"
+                    className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2 transition-all duration-200"
                     style={{ marginLeft: "auto" }}
                   >
-                    <span className="truncate max-w-[100px]">
+                    <span 
+                      className={`truncate max-w-[100px] transition-all duration-300 ease-in-out ${
+                        isModelTextAnimating 
+                          ? 'transform scale-105' 
+                          : 'transform scale-100'
+                      }`}
+                      style={{
+                        animation: isModelTextAnimating ? 'modelTextChange 0.3s ease-in-out' : 'none'
+                      }}
+                    >
                       {isModelsLoading 
                         ? "Loading..." 
                         : selectedModelData?.labelName || "Select Model"
                       }
                     </span>
-                    <ChevronDown size={14} className="ml-1" />
+                    <ChevronDown size={14} className="ml-1 transition-transform duration-200" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent 
@@ -3506,7 +3535,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   side="bottom"
                 >
                   {/* Models list with provider grouping */}
-                  <div className="max-h-80 overflow-y-auto py-2">
+                  <div className="max-h-80 overflow-y-auto py-2 scrollbar-thin">
                     {filteredModels.length > 0 ? (
                       (() => {
                         // Group models by provider
@@ -3525,8 +3554,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           return acc
                         }, {} as Record<string, typeof filteredModels>)
 
-                        // Define provider order and icons
-                        const providerOrder = ['Claude', 'OpenAI', 'Gemini', 'Other'] as const
+                        // Sort models within each provider - selected model first
+                        Object.keys(modelsByProvider).forEach(provider => {
+                          modelsByProvider[provider].sort((a, b) => {
+                            const aSelected = selectedModel === a.labelName
+                            const bSelected = selectedModel === b.labelName
+                            if (aSelected && !bSelected) return -1
+                            if (!aSelected && bSelected) return 1
+                            return 0
+                          })
+                        })
+
+                        // Find which provider has the selected model
+                        const selectedModelProvider = Object.keys(modelsByProvider).find(provider =>
+                          modelsByProvider[provider].some(model => model.labelName === selectedModel)
+                        )
+
+                        // Reorder providers - selected model's provider first
+                        const baseProviderOrder = ['Claude', 'OpenAI', 'Gemini', 'Other'] as const
+                        const providerOrder = selectedModelProvider 
+                          ? [selectedModelProvider, ...baseProviderOrder.filter(p => p !== selectedModelProvider)]
+                          : baseProviderOrder
                         
                         // Provider icon components
                         const ProviderIcon = ({ provider }: { provider: string }) => {
@@ -3570,9 +3618,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           return (
                             <div key={provider}>
                               {/* Provider Header */}
-                              <div className="px-4 py-2 flex items-center gap-2">
+                              <div className="pl-4 pr-4 py-2 flex items-center gap-2">
                                 <ProviderIcon provider={provider} />
-                                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                <span className="text-sm font-medium" style={{ color: '#788187' }}>
                                   {provider}
                                 </span>
                               </div>
@@ -3594,14 +3642,22 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                         }
                                       }
                                     }}
-                                    className={`mx-2 mb-1 rounded-lg ${
+                                    className={`pl-4 pr-4 mb-1 rounded-lg hover:bg-transparent focus:bg-transparent data-[highlighted]:bg-transparent ${
                                       isDisabled 
                                         ? 'opacity-50 cursor-not-allowed' 
-                                        : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700'
-                                    } ${isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                                        : 'cursor-pointer'
+                                    }`}
                                     disabled={isDisabled}
                                   >
-                                    <div className="flex items-center justify-between w-full px-2 py-2">
+                                    <div className="flex items-center w-full py-2 gap-2">
+                                      {/* Checkmark in same position as provider icon */}
+                                      <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                                        {isSelected && (
+                                          <Check size={12} strokeWidth={2.5} className="text-gray-700 dark:text-gray-300" />
+                                        )}
+                                      </div>
+                                      
+                                      {/* Text aligned with provider name */}
                                       <div className="flex flex-col flex-1 min-w-0">
                                         <span className={`font-medium text-sm ${
                                           isDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'
@@ -3639,19 +3695,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                           </span>
                                         )}
                                       </div>
-                                      
-                                      {isSelected && (
-                                        <Check size={16} className="text-green-500 flex-shrink-0 ml-3" />
-                                      )}
                                     </div>
                                   </DropdownMenuItem>
                                 )
                               })}
-                              
-                              {/* Separator between providers (except last) */}
-                              {providerIndex < providerOrder.length - 1 && modelsByProvider[providerOrder[providerIndex + 1]]?.length > 0 && (
-                                <div className="my-2 mx-4 border-t border-gray-200 dark:border-gray-600" />
-                              )}
                             </div>
                           )
                         })

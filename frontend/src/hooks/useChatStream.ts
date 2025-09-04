@@ -273,19 +273,23 @@ export const startStream = async (
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
   }
-  // Parse selectedModel JSON configuration
-  let modelConfig = {
-    model: "Claude sonnet 4",
-    capabilities: []
-  }
+  // Build selected model JSON configuration (optional)
+  let modelConfig: { model?: string; capabilities?: any } | null = null
   if (selectedModel) {
     try {
-      modelConfig = JSON.parse(selectedModel)
-    } catch (e) {
-      console.warn("Failed to parse selectedModel JSON, using defaults:", e)
+      const parsed = JSON.parse(selectedModel)
+      modelConfig =
+        typeof parsed === "string"
+          ? { model: parsed, capabilities: [] }
+          : parsed
+    } catch {
+      // Treat raw value as a label/model id
+      modelConfig = { model: String(selectedModel), capabilities: [] }
     }
   }
-  url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
+  if (modelConfig) {
+    url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
+  }
   url.searchParams.append("message", finalMessagePayload)
 
   // Add toolsList parameter if provided
@@ -794,7 +798,7 @@ export const useChatStream = (
       }
 
       const url = new URL(`/api/v1/message/retry`, window.location.origin)
-      url.searchParams.append("messageId", encodeURIComponent(messageId))
+      url.searchParams.append("messageId", messageId)
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
       }

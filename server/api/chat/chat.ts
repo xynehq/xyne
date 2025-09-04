@@ -4159,11 +4159,16 @@ export const MessageApi = async (c: Context) => {
         loggerWithChild({ email: email }).info(
           `Converted model label "${modelId}" to value "${actualModelId}"`
         )
-      } else {
-        loggerWithChild({ email: email }).warn(
-          `Could not convert model label "${modelId}" to value, will use as-is`
+      } else if (modelId in Models) {
+        actualModelId = modelId // Use the raw model ID if it exists in Models enum
+        loggerWithChild({ email: email }).info(
+          `Using model ID "${modelId}" directly as it exists in Models enum`
         )
-        actualModelId = modelId // fallback to using the label as-is
+      } else {
+        loggerWithChild({ email: email }).error(
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`
+        )
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
       }
     }
     const webSearchEnabled = enableWebSearch ?? false
@@ -5704,9 +5709,12 @@ export const MessageRetryApi = async (c: Context) => {
 
     // Use the extracted modelId if provided, otherwise use the original message's modelId
     let convertedModelId = extractedModelId ? getModelValueFromLabel(extractedModelId) : null
-    // If label lookup failed, treat input as a concrete model id
-    if (!convertedModelId && extractedModelId) {
-      convertedModelId = extractedModelId as Models
+    if (extractedModelId) {
+      if (!convertedModelId && (extractedModelId in Models)) {
+        convertedModelId = extractedModelId as Models
+      } else if (!convertedModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${extractedModelId}` })
+      }
     }
     const modelId = convertedModelId ? (convertedModelId as Models) : (originalMessage.modelId as Models)
 
