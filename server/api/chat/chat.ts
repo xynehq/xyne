@@ -4607,10 +4607,7 @@ export const MessageApi = async (c: Context) => {
               })
 
               // Process citations if we have final text and annotations
-              if (
-                deepSearchIterator.finalText &&
-                deepSearchIterator.finalAnnotations.length > 0
-              ) {
+              if (deepSearchIterator.finalText) {
                 const citationResult = processOpenAICitations(
                   deepSearchIterator.answer,
                   deepSearchIterator.finalText,
@@ -4623,7 +4620,6 @@ export const MessageApi = async (c: Context) => {
                 if (citationResult) {
                   answer = citationResult.updatedAnswer
                   sourceIndex = citationResult.updatedSourceIndex
-
                   if (citationResult.newCitations.length > 0) {
                     citations.push(...citationResult.newCitations)
                     Object.assign(citationMap, citationResult.newCitationMap)
@@ -4639,7 +4635,6 @@ export const MessageApi = async (c: Context) => {
                   }
                 }
               }
-
               parsed.answer = answer
             } else if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(

@@ -336,6 +336,14 @@ export function processOpenAICitations(
   newCitationMap: Record<number, number>
   updatedSourceIndex: number
 } | null {
+  if (!finalText) return null
+  if (!annotations || annotations.length === 0)
+    return {
+      updatedAnswer: finalText,
+      newCitations: [],
+      newCitationMap: {},
+      updatedSourceIndex: sourceIndex,
+    }
   if (annotations.length > 0 && finalText) {
     let answerWithCitations = finalText
     let newCitations: Citation[] = []

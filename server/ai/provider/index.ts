@@ -1874,14 +1874,16 @@ export const getDeepResearchResponse = (
       ? [...params.messages, baseMessage]
       : [baseMessage]
 
-    if (!OpenAIKey) {
+    const openAIKey = process.env["DS_OPENAI_API_KEY"]
+    const baseUrl = process.env["DS_BASE_URL"]
+    if (!openAIKey) {
       Logger.warn("OpenAIKey not configured, moving with default provider.")
       return getProviderByModel(params.modelId).converseStream(messages, params)
     }
 
     const openAIClient = new OpenAI({
-      apiKey: OpenAIKey,
-      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
+      apiKey: openAIKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
     })
     const openaiProvider = new OpenAIProvider(openAIClient)
 
