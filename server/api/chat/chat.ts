@@ -26,6 +26,7 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
+import { getAvailableModels, getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
@@ -377,6 +378,64 @@ export const processMessage = (
 
     return typeof index === "number" ? `[${index + 1}]` : ""
   })
+}
+
+export const processWebSearchMessage = (
+  text: string,
+  citationMap: Record<number, number>,
+  email?: string,
+) => {
+  if (!text) {
+    return ""
+  }
+
+  text = splitGroupedCitationsWithSpaces(text)
+
+  // Track citations used in current line to deduplicate
+  let currentLineCitations = new Set<number>()
+  let result = ""
+  let currentLine = ""
+
+  const lines = text.split(/(\r?\n)/)
+
+  for (let i = 0; i < lines.length; i++) {
+    const segment = lines[i]
+
+    if (segment.match(/\r?\n/)) {
+      // End of line - add deduplicated citations and reset
+      const uniqueCitations = Array.from(currentLineCitations)
+        .sort((a, b) => a - b)
+        .map((index) => ` [${index}]`)
+        .join("")
+      result += currentLine + uniqueCitations + segment
+      currentLine = ""
+      currentLineCitations.clear()
+    } else {
+      // Process current line segment
+      const processedSegment = segment.replace(
+        textToCitationIndex,
+        (match, num) => {
+          const index = citationMap[num]
+          if (typeof index === "number") {
+            currentLineCitations.add(index + 1)
+          }
+          return "" // Remove citation from text, will be added at line end
+        },
+      )
+      currentLine += processedSegment
+    }
+  }
+
+  // Handle final line if no newline at end
+  if (currentLine || currentLineCitations.size > 0) {
+    const uniqueCitations = Array.from(currentLineCitations)
+      .sort((a, b) => a - b)
+      .map((index) => ` [${index}]`)
+      .join("")
+    result += currentLine + uniqueCitations
+  }
+
+  return result
 }
 
 // the Set is passed by reference so that singular object will get updated
@@ -1847,6 +1906,7 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2085,7 +2145,7 @@ async function* generateAnswerFromGivenContext(
     initialContext,
     {
       stream: true,
-      modelId: defaultBestModel,
+      modelId: modelId ? (modelId as Models) : defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames,
@@ -2838,6 +2898,7 @@ async function* processResultsForMetadata(
   span?: Span,
   email?: string,
   agentContext?: string,
+  modelId?: string,
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -2857,7 +2918,7 @@ async function* processResultsForMetadata(
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
-    modelId: defaultBestModel,
+    modelId: modelId ? (modelId as Models) : defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
     imageFileNames,
     agentPrompt: agentContext,
@@ -2893,6 +2954,7 @@ async function* generateMetadataQueryAnswer(
   span?: Span,
   agentPrompt?: string,
   maxIterations = 5,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3206,6 +3268,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3377,6 +3440,7 @@ async function* generateMetadataQueryAnswer(
       span,
       email,
       agentPrompt,
+      modelId,
     )
     return
   } else if (
@@ -3512,6 +3576,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3623,6 +3688,7 @@ export async function* UnderstandMessageAndAnswer(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   agentPrompt?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3667,6 +3733,8 @@ export async function* UnderstandMessageAndAnswer(
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
       agentPrompt,
+      5,
+      modelId,
     )
 
     let hasYieldedAnswer = false
@@ -3750,6 +3818,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3779,6 +3848,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
+    modelId,
   )
 }
 
@@ -3898,13 +3968,92 @@ export const MessageApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
-      enableWebSearch,
     }: MessageReqType = body
+    
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        modelId = config.model
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes('reasoning')
+            enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
+          } else if (typeof config.capabilities === 'object') {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (e) {
+        loggerWithChild({ email: email }).warn(
+          `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+        )
+        modelId = config.defaultBestModel // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = config.defaultBestModel
+      loggerWithChild({ email: email }).info("No model config provided, using default")
+    }
+    // Convert modelId from friendly label to actual model value
+    let actualModelId: string = modelId || config.defaultBestModel // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string // Can be Models enum or string
+        loggerWithChild({ email: email }).info(
+          `Converted model label "${modelId}" to value "${actualModelId}"`
+        )
+      } else if (modelId in Models) {
+        actualModelId = modelId // Use the raw model ID if it exists in Models enum
+        loggerWithChild({ email: email }).info(
+          `Using model ID "${modelId}" directly as it exists in Models enum`
+        )
+      } else {
+        loggerWithChild({ email: email }).error(
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`
+        )
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    }
+    const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = false
-    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+    let agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
@@ -4024,7 +4173,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
 
@@ -4077,7 +4226,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
 
@@ -4193,6 +4342,8 @@ export const MessageApi = async (c: Context) => {
               understandSpan,
               threadIds,
               attachmentFileIds,
+              agentPromptValue,
+              actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4310,7 +4461,9 @@ export const MessageApi = async (c: Context) => {
             const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
-              processMessage(answer, citationMap, email),
+              webSearchEnabled
+                ? processWebSearchMessage(answer, citationMap, email)
+                : processMessage(answer, citationMap, email),
             )
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
@@ -4340,10 +4493,11 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                modelId: actualModelId,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -4481,7 +4635,6 @@ export const MessageApi = async (c: Context) => {
               `Found ${chainBreakClassifications.length} chain break classifications for context`,
             )
 
-            const webSearchEnabled = enableWebSearch ?? false
             let searchOrAnswerIterator
             if (deepResearchEnabled) {
               loggerWithChild({ email: email }).info(
@@ -4521,9 +4674,9 @@ export const MessageApi = async (c: Context) => {
                   message,
                   ctx,
                   {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
+                    modelId: actualModelId
+                      ? (actualModelId as Models)
+                      : config.defaultBestModel,
                     stream: true,
                     json: true,
                     agentPrompt: agentPromptValue,
@@ -4831,7 +4984,7 @@ export const MessageApi = async (c: Context) => {
               startTime,
               intent,
               offset,
-            } = parsed?.filters
+            } = parsed?.filters || {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -4919,6 +5072,10 @@ export const MessageApi = async (c: Context) => {
                     parsedMessage.data.fileIds as string[],
                     userRequestsReasoning,
                     understandSpan,
+                    undefined,
+                    undefined,
+                    agentPromptValue,
+                    actualModelId || config.defaultBestModel,
                   )
                 } else {
                   loggerWithChild({ email: email }).info(
@@ -4941,6 +5098,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning,
                   understandSpan,
                   agentPromptValue,
+                  actualModelId || config.defaultBestModel,
                 )
               }
 
@@ -5050,7 +5208,9 @@ export const MessageApi = async (c: Context) => {
               const answerSpan = ragSpan.startSpan("process_final_answer")
               answerSpan.setAttribute(
                 "final_answer",
-                processMessage(answer, citationMap, email),
+                webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
               )
               answerSpan.setAttribute("actual_answer", answer)
               answerSpan.setAttribute("final_answer_length", answer.length)
@@ -5119,11 +5279,12 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
                 deepResearchSteps: deepResearchSteps,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -5399,7 +5560,30 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, selectedModelConfig }: MessageRetryReqType = body
+    // Parse the model configuration JSON
+    let extractedModelId: string | null = null
+    let isReasoningEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        // Decode the URL-encoded string first
+        const modelConfig = JSON.parse(selectedModelConfig)
+        extractedModelId = modelConfig.model || null
+        
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig in retry:', error)
+      }
+    }
+    
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
@@ -5481,8 +5665,16 @@ export const MessageRetryApi = async (c: Context) => {
       }
     }
 
-    // Use the same modelId
-    const modelId = originalMessage.modelId as Models
+    // Use the extracted modelId if provided, otherwise use the original message's modelId
+    let convertedModelId = extractedModelId ? getModelValueFromLabel(extractedModelId) : null
+    if (extractedModelId) {
+      if (!convertedModelId && (extractedModelId in Models)) {
+        convertedModelId = extractedModelId as Models
+      } else if (!convertedModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${extractedModelId}` })
+      }
+    }
+    const modelId = convertedModelId ? (convertedModelId as Models) : (originalMessage.modelId as Models)
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -5587,6 +5779,8 @@ export const MessageRetryApi = async (c: Context) => {
               understandSpan,
               threadIds,
               attachmentFileIds,
+              undefined,
+              modelId,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -5725,9 +5919,7 @@ export const MessageRetryApi = async (c: Context) => {
                     imageCitations: imageCitations,
                     message: processMessage(answer, citationMap, email),
                     thinking,
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                        .modelId,
+                    modelId,
                     cost: totalCost.toString(),
                     tokensUsed:
                       totalTokens.inputTokens + totalTokens.outputTokens,
@@ -5915,8 +6107,9 @@ export const MessageRetryApi = async (c: Context) => {
                 message,
                 ctx,
                 {
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  modelId: modelId
+                    ? (modelId as Models)
+                    : config.defaultBestModel,
                   stream: true,
                   json: true,
                   reasoning:
@@ -6071,7 +6264,7 @@ export const MessageRetryApi = async (c: Context) => {
                 entities,
                 sortDirection,
                 startTime,
-              } = parsed?.filters
+              } = parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
@@ -6103,6 +6296,8 @@ export const MessageRetryApi = async (c: Context) => {
                 0.5,
                 userRequestsReasoning,
                 understandSpan,
+                undefined,
+                modelId,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
@@ -6810,6 +7005,54 @@ The follow-up questions should be specific to this conversation and help the use
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: "Could not generate follow-up questions",
+    })
+  }
+}
+
+export const GetAvailableModelsApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
+    
+    if (!email) {
+      throw new HTTPException(401, { message: "Unauthorized" })
+    }
+    
+    const availableModels = getAvailableModels({
+      AwsAccessKey: config.AwsAccessKey,
+      AwsSecretKey: config.AwsSecretKey,
+      OpenAIKey: config.OpenAIKey,
+      OllamaModel: config.OllamaModel,
+      TogetherAIModel: config.TogetherAIModel,
+      TogetherApiKey: config.TogetherApiKey,
+      FireworksAIModel: config.FireworksAIModel,
+      FireworksApiKey: config.FireworksApiKey,
+      GeminiAIModel: config.GeminiAIModel,
+      GeminiApiKey: config.GeminiApiKey,
+      VertexAIModel: config.VertexAIModel,
+      VertexProjectId: config.VertexProjectId,
+      VertexRegion: config.VertexRegion,
+    })
+
+    // Filter out actualName and provider fields before sending to frontend
+    const filteredModels = availableModels.map(model => ({
+      labelName: model.labelName,
+      reasoning: model.reasoning,
+      websearch: model.websearch,
+      deepResearch: model.deepResearch,
+    }))
+
+    return c.json({ models: filteredModels })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email }).error(
+      error,
+      `Get Available Models Error: ${errMsg}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not fetch available models"
     })
   }
 }

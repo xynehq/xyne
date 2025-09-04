@@ -181,6 +181,7 @@ import {
 } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
+import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
@@ -216,6 +217,7 @@ const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
   contextInfo?: string,
+  modelId?: string,
 ): Promise<string> => {
   try {
     const prompt = generateAgentStepSummaryPromptJson(
@@ -224,9 +226,9 @@ const generateStepSummary = async (
       contextInfo,
     )
 
-    // Use a fast model for summary generation
+    // Use the provided model or fallback to fast model for summary generation
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
-      modelId: defaultFastModel,
+      modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
       reasoning: false,
@@ -395,6 +397,7 @@ async function* getToolContinuationIterator(
   fallbackReasoning?: string,
   attachmentFileIds?: string[],
   email?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -427,7 +430,7 @@ async function* getToolContinuationIterator(
     message,
     userCtx,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: true,
       reasoning: false,
@@ -536,6 +539,7 @@ async function performSynthesis(
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
   attachmentFileIds?: string[],
+  modelId?: string,
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -550,7 +554,7 @@ async function performSynthesis(
       message,
       planningContext,
       {
-        modelId: defaultBestModel,
+        modelId: (modelId as Models) || defaultBestModel,
         stream: false,
         json: true,
         reasoning: false,
@@ -646,11 +650,73 @@ export const MessageWithToolsApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       toolsList,
       agentId,
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = modelConfig.reasoning === true
+        enableWebSearch = modelConfig.websearch === true
+        isDeepResearchEnabled = modelConfig.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (modelConfig.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+            enableWebSearch = modelConfig.capabilities.includes('websearch')
+            isDeepResearchEnabled = modelConfig.capabilities.includes('deepResearch')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+            enableWebSearch = modelConfig.capabilities.websearch === true
+            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
@@ -750,7 +816,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -801,7 +867,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -895,6 +961,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const aiGeneratedSummary = await generateStepSummary(
             reasoningStep,
             userQuery,
+            undefined,
+            actualModelId || undefined,
           )
 
           const enhancedStep: AgentReasoningStep = {
@@ -951,13 +1019,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               `Iteration ${iterationNumber} complete summary`,
             )
 
-            // Use a fast model for summary generation
+            // Use the selected model or fallback to fast model for summary generation
             const summaryResult = await generateSynthesisBasedOnToolOutput(
               prompt,
               "",
               "",
               {
-                modelId: defaultFastModel,
+                modelId: (actualModelId as Models) || defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -1430,6 +1498,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     logAndStreamReasoning,
                     sub,
                     attachmentFileIds,
+                    actualModelId || undefined,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1581,7 +1650,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultFastModel,
+                modelId: (actualModelId as Models) || defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -2022,6 +2091,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   attachmentFileIds,
+                  actualModelId || undefined,
                 )
 
                 await logAndStreamReasoning({
@@ -2209,6 +2279,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   attachmentFileIds,
+                  actualModelId || undefined,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -2255,6 +2326,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             fallbackReasoning,
             attachmentFileIds,
             email,
+            actualModelId || undefined,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -2376,7 +2448,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
-              modelId:
+              modelId: (actualModelId as Models) || 
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
@@ -2659,6 +2731,7 @@ async function* nonRagIterator(
   attachmentFileIds?: string[],
   email?: string,
   isReasoning = true,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2670,7 +2743,7 @@ async function* nonRagIterator(
     userCtx,
     context,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: false,
       reasoning: isReasoning,
@@ -2799,11 +2872,45 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
       streamOff,
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
@@ -2895,7 +3002,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
 
@@ -2947,7 +3054,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
@@ -3076,6 +3183,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             attachmentFileIds,
             email,
             isReasoningEnabled,
+            actualModelId || undefined,
           )
           let answer = ""
           let citations: any[] = []
@@ -3167,7 +3275,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3199,7 +3307,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3226,7 +3334,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(errorMessage, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3369,7 +3477,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking, // ALWAYS include collected thinking
-            modelId: defaultBestModel,
+            modelId: (actualModelId as Models) || defaultBestModel,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
@@ -3400,6 +3508,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           attachmentFileIds,
           email,
           isReasoningEnabled,
+          actualModelId || undefined,
         )
 
         const {
@@ -3500,12 +3609,88 @@ export const AgentMessageApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
       streamOff,
       path,
     }: MessageReqType = body
+    
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        modelId = config.model
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes('reasoning')
+            enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
+          } else if (typeof config.capabilities === 'object') {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (e) {
+        loggerWithChild({ email }).warn(
+          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+        )
+        modelId = defaultBestModel as string // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = defaultBestModel as string
+      loggerWithChild({ email: email }).info("[AgentMessageApi] No model config provided, using default")
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string // Can be Models enum or string
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`
+        )
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`
+        )
+        actualModelId = modelId // fallback to using the label as-is
+      }
+    }
+    
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3610,7 +3795,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -3661,7 +3846,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -4652,7 +4837,7 @@ export const AgentMessageApi = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking,
-            modelId:
+            modelId: (actualModelId as Models) || 
               ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
